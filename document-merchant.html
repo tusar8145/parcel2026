@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fa">
+  <title>Delivery Fast — Corporate documents</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #182230;
+      --muted: #7b8796;
+      --line: #e9edf2;
+      --canvas: #f5f7fa;
+      --surface: #fff;
+      --blue: #3766e8;
+      --blue-soft: #edf2ff;
+      --green: #16845b;
+      --green-soft: #e8f7f0;
+      --amber: #b87913;
+      --amber-soft: #fff5df;
+      --red: #c34d4d;
+      --red-soft: #fff0ef;
+      --sidebar: 250px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); font-size:14px; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; }
+    .sidebar {
+      background: #fff; border-right: 1px solid var(--line); bottom: 0; display: flex;
+      flex-direction: column; left: 0; padding: 23px 15px 16px; position: fixed; top: 0;
+      width: var(--sidebar); z-index: 20;
+    }
+    .brand { align-items: center; display: flex; gap: 11px; margin: 0 8px 28px; }
+    .brand-mark { align-items: center; background: transparent; border-radius: 0; color: #4b4d51; display: flex; height: 38px; justify-content: center; width: 38px; }
+    .brand-mark svg { height: 27px; width: 27px; }
+    .brand-name { color: #4b4d51; font-size: 16px; font-weight: 750; letter-spacing: -.5px; }
+    .brand-name span { color: #fcc118; }
+    .workspace-switch {
+      align-items: center; background: #fafbfd; border: 1px solid var(--line); border-radius: 10px;
+      display: flex; gap: 10px; margin-bottom: 25px; padding: 10px;
+    }
+    .workspace-avatar { align-items: center; background: #f0e9ff; border-radius: 8px; color: #7551b8; display: flex; font-size:13px; font-weight: 750; height: 31px; justify-content: center; width: 31px; }
+    .workspace-meta { flex: 1; min-width: 0; }
+    .workspace-meta strong { display: block; font-size:14px; font-weight: 650; }
+    .workspace-meta small { color: var(--muted); display: block; font-size:13px; margin-top: 2px; }
+    .nav-label { color: #a0a9b6; font-size: 12px; font-weight: 600; letter-spacing: .09em; margin: 0 10px 9px; text-transform: uppercase; }
+    .nav-group { margin-bottom: 23px; }
+    .nav-item {
+      align-items: center; background: transparent; border: 0; border-radius: 8px; color: #667283;
+      display: flex; font-size:14px; font-weight: 550; gap: 12px; margin: 2px 0; padding: 10px 11px;
+      text-align: left; transition: .15s; width: 100%;
+    }
+    .nav-item:hover { background: #f7f8fa; color: var(--ink); }
+    .nav-item.active { background: var(--blue-soft); color: var(--blue); font-weight: 650; }
+    .nav-item svg { height: 17px; opacity: .9; width: 17px; }
+    .nav-item .nav-count { background: #f0f2f5; border-radius: 20px; color: #7f8a98; font-size:13px; margin-left: auto; padding: 2px 7px; }
+    .nav-item.active .nav-count { background: #fff; color: var(--blue); }
+    .sidebar-bottom { margin-top: auto; }
+    .help-card { background: #f6f8ff; border: 1px solid #e9edff; border-radius: 10px; margin: 0 2px 14px; padding: 13px; }
+    .help-card strong { font-size:13px; }
+    .help-card p { color: var(--muted); font-size:13px; line-height: 1.55; margin: 5px 0 10px; }
+    .help-card button { background: #fff; border: 1px solid #e1e7fb; border-radius: 6px; color: var(--blue); font-size:13px; font-weight: 650; padding: 7px 9px; }
+    .user-profile { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 10px; padding: 15px 5px 0; }
+    .profile-avatar { align-items: center; background: #dce8fa; border-radius: 50%; color: #385c9d; display: flex; font-size:13px; font-weight: 700; height: 31px; justify-content: center; width: 31px; }
+    .profile-meta { flex: 1; }
+    .profile-meta strong { display: block; font-size:13px; }
+    .profile-meta small { color: var(--muted); font-size:13px; }
+    .main { margin-left: var(--sidebar); min-height: 100vh; }
+    .topbar {
+      align-items: center; background: rgba(255,255,255,.92); border-bottom: 1px solid var(--line);
+      display: flex; height: 66px; justify-content: space-between; padding: 0 34px; position: sticky; top: 0; z-index: 10;
+    }
+    .breadcrumb { color: #98a2af; font-size:13px; }
+    .breadcrumb strong { color: #475466; font-weight: 600; }
+    .top-actions { align-items: center; display: flex; gap: 11px; }
+    .search-wrap { position: relative; }
+    .search-wrap svg { color: #96a0ae; height: 15px; left: 11px; position: absolute; top: 10px; width: 15px; }
+    .top-search { background: #fafbfd; border: 1px solid var(--line); border-radius: 7px; font-size:13px; outline: 0; padding: 8px 12px 8px 33px; width: 210px; }
+    .top-search:focus { border-color: #b8c8ff; }
+    .icon-button { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 7px; color: #768293; display: flex; height: 34px; justify-content: center; position: relative; width: 34px; }
+    .icon-button svg { height: 16px; width: 16px; }
+    .notification-dot { background: #ec6b63; border: 2px solid #fff; border-radius: 50%; height: 8px; position: absolute; right: 6px; top: 6px; width: 8px; }
+    .main-content { margin: 0 auto; max-width: 1500px; padding: 30px 34px 48px; }
+    .page-heading { align-items: flex-start; display: flex; justify-content: space-between; margin-bottom: 23px; }
+    .eyebrow { color: #8b96a4; font-size: 13px; font-weight: 600; letter-spacing: .08em; margin: 0 0 7px; text-transform: uppercase; }
+    h1 { font-size: 22px; letter-spacing: -.7px; margin: 0; }
+    .subtitle { color: var(--muted); font-size:13px; margin: 7px 0 0; }
+    .heading-actions { align-items: center; display: flex; gap: 9px; }
+    .button { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 7px; color: #586577; display: inline-flex; font-size:13px; font-weight: 600; gap: 7px; justify-content: center; padding: 9px 12px; transition: .15s; }
+    .button:hover { border-color: #cbd5e2; background: #fbfcfe; }
+    .button svg { height: 14px; width: 14px; }
+    .button-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .button-primary:hover { background: #2e58cf; border-color: #2e58cf; }
+    .button-sm { font-size:13px; padding: 7px 9px; }
+    .date-button { color: #556274; }
+    .metrics { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0,1fr)); margin-bottom: 15px; }
+    .metric, .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .metric { min-height: 117px; padding: 16px 17px; }
+    .metric-head { align-items: center; color: #748092; display: flex; font-size:13px; justify-content: space-between; }
+    .metric-icon { align-items: center; background: #f2f5fb; border-radius: 7px; color: #6078ac; display: flex; height: 27px; justify-content: center; width: 27px; }
+    .metric-icon svg { height: 15px; width: 15px; }
+    .metric-value { font-size: 23px; font-weight: 690; letter-spacing: -.7px; margin-top: 9px; }
+    .metric-foot { align-items: center; color: #96a0ad; display: flex; font-size:12px; gap: 5px; margin-top: 5px; }
+    .trend { color: var(--green); font-weight: 650; }
+    .dashboard-grid { display: grid; gap: 15px; grid-template-columns: minmax(0,1.7fr) minmax(270px,1fr); margin-bottom: 15px; }
+    .panel { padding: 17px 18px; }
+    .panel-heading { align-items: flex-start; display: flex; justify-content: space-between; }
+    .panel-title { font-size: 14px; font-weight: 600; margin: 0; }
+    .panel-subtitle { color: #96a0ad; font-size:13px; margin: 5px 0 0; }
+    .select-small { background: #fff; border: 1px solid var(--line); border-radius: 6px; color: #667283; font-size:13px; outline: none; padding: 6px 8px; }
+    .chart-legend { align-items: center; color: #8b95a2; display: flex; font-size:12px; gap: 14px; margin-top: 15px; }
+    .legend-item { align-items: center; display: inline-flex; gap: 5px; }
+    .legend-dot { background: var(--blue); border-radius: 50%; height: 6px; width: 6px; }
+    .legend-dot.gray { background: #cbd4e4; }
+    .chart { height: 190px; margin-top: 2px; width: 100%; }
+    .chart-grid line { stroke: #edf0f4; stroke-width: 1; }
+    .chart-labels { fill: #a0a9b5; font-size:12px; }
+    .chart-area { fill: url(#areaFill); }
+    .chart-line { fill: none; stroke: var(--blue); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; }
+    .chart-line-secondary { fill: none; stroke: #c7d0df; stroke-dasharray: 4 5; stroke-linecap: round; stroke-width: 1.7; }
+    .chart-point { fill: #fff; stroke: var(--blue); stroke-width: 2.5; }
+    .dispatch-summary { display: flex; justify-content: space-between; margin: 18px 0 13px; }
+    .dispatch-summary div { min-width: 0; }
+    .dispatch-summary strong { display: block; font-size: 18px; font-weight: 680; }
+    .dispatch-summary span { color: #939dab; display: block; font-size:12px; margin-top: 4px; }
+    .dispatch-summary .divider { background: var(--line); flex: 0 0 1px; margin: 1px 8px; }
+    .progress-label { color: #758193; display: flex; font-size:12px; justify-content: space-between; margin-bottom: 7px; }
+    .progress-track { background: #eef1f5; border-radius: 6px; height: 6px; overflow: hidden; }
+    .progress-fill { background: var(--blue); border-radius: 6px; height: 100%; width: 76%; }
+    .dispatch-list { border-top: 1px solid var(--line); margin-top: 17px; padding-top: 7px; }
+    .dispatch-row { align-items: center; display: flex; justify-content: space-between; padding: 9px 0; }
+    .dispatch-label { align-items: center; color: #667283; display: flex; font-size:13px; gap: 8px; }
+    .dispatch-label i { border-radius: 50%; height: 7px; width: 7px; }
+    .dispatch-row strong { font-size:13px; font-weight: 650; }
+    .table-panel { padding: 0; overflow: hidden; }
+    .table-panel .panel-heading { align-items: center; padding: 17px 18px; }
+    .table-tools { align-items: center; display: flex; gap: 8px; }
+    .table-search { border: 1px solid var(--line); border-radius: 6px; font-size:13px; outline: none; padding: 7px 9px; width: 150px; }
+    .table-search:focus { border-color: #b8c8ff; }
+    table { border-collapse: collapse; text-align: left; width: 100%; }
+    th { background: #fafbfd; border-bottom: 1px solid var(--line); color: #94a0ae; font-size:12px; font-weight: 600; letter-spacing: .025em; padding: 10px 17px; white-space: nowrap; }
+    td { border-bottom: 1px solid #f0f2f5; color: #596678; font-size:13px; padding: 12px 17px; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .order-id { color: #354255; font-weight: 650; }
+    .customer-cell { align-items: center; display: flex; gap: 8px; }
+    .customer-mini { align-items: center; background: #eef2f9; border-radius: 50%; color: #697995; display: inline-flex; flex: 0 0 25px; font-size:12px; font-weight: 700; height: 25px; justify-content: center; width: 25px; }
+    .customer-name { color: #445165; font-size:13px; font-weight: 600; }
+    .customer-phone { color: #9aa3af; font-size:12px; margin-top: 3px; }
+    .status { border-radius: 20px; display: inline-block; font-size:12px; font-weight: 600; padding: 4px 8px; }
+    .status-delivered, .status-paid, .status-active, .status-picked { background: var(--green-soft); color: var(--green); }
+    .status-transit, .status-processing, .status-out { background: var(--blue-soft); color: #4266ce; }
+    .status-pending, .status-pickup { background: var(--amber-soft); color: var(--amber); }
+    .status-cancelled, .status-failed, .status-inactive { background: var(--red-soft); color: var(--red); }
+    .row-menu { background: transparent; border: 0; color: #9aa3af; font-size: 16px; }
+    .table-footer { align-items: center; border-top: 1px solid var(--line); color: #98a2ae; display: flex; font-size:12px; justify-content: space-between; padding: 12px 18px; }
+    .pagination { display: flex; gap: 5px; }
+    .page-btn { background: #fff; border: 1px solid var(--line); border-radius: 5px; color: #768293; font-size:12px; padding: 5px 8px; }
+    .page-btn.current { background: var(--blue-soft); border-color: #dce5ff; color: var(--blue); }
+    .content-grid { display: grid; gap: 15px; grid-template-columns: minmax(0,1.7fr) minmax(260px,1fr); }
+    .activity-list { margin-top: 15px; }
+    .activity-item { display: flex; gap: 10px; padding: 10px 0; }
+    .activity-icon { align-items: center; background: #f0f4ff; border-radius: 7px; color: var(--blue); display: flex; flex: 0 0 27px; height: 27px; justify-content: center; }
+    .activity-icon svg { height: 14px; width: 14px; }
+    .activity-copy { color: #667283; font-size:13px; line-height: 1.45; }
+    .activity-copy strong { color: #354255; font-weight: 650; }
+    .activity-copy small { color: #a0a9b5; display: block; font-size:12px; margin-top: 3px; }
+    .page-table-panel { margin-top: 3px; }
+    .empty-state { color: #929eac; padding: 28px; text-align: center; }
+    .toast { background: #1f2b3a; border-radius: 8px; bottom: 22px; box-shadow: 0 12px 35px #17203330; color: #fff; font-size:13px; opacity: 0; padding: 12px 16px; pointer-events: none; position: fixed; right: 25px; transform: translateY(8px); transition: .2s; z-index: 60; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .modal-backdrop { align-items: center; background: #17203366; display: none; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 50; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: #fff; border-radius: 12px; box-shadow: 0 24px 70px #10182840; max-width: 460px; padding: 23px; width: 100%; }
+    .modal-head { align-items: flex-start; display: flex; justify-content: space-between; margin-bottom: 18px; }
+    .modal-head h2 { font-size: 17px; letter-spacing: -.3px; margin: 0; }
+    .modal-head p { color: var(--muted); font-size:13px; margin: 6px 0 0; }
+    .modal-close { background: none; border: 0; color: #929dac; font-size: 20px; line-height: 1; }
+    .form-grid { display: grid; gap: 13px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .form-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-field label { color: #637083; font-size:13px; font-weight: 600; }
+    .form-field input, .form-field select { background: #fff; border: 1px solid #e4e8ee; border-radius: 6px; color: #3c4859; font-size:13px; outline: none; padding: 9px 10px; }
+    .api-code { background: #f7f9fc; border: 1px solid var(--line); border-radius: 7px; color: #344054; font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; margin: 0; max-width: 100%; overflow: auto; padding: 11px 12px; white-space: pre; }
+    .api-layout { align-items: start; display: grid; gap: 15px; grid-template-columns: minmax(0,1.5fr) minmax(280px,.85fr); }
+    .api-layout > .panel, .api-layout .form-field { min-width: 0; }
+    .api-layout .form-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .billing-note { align-items: center; display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .billing-note p { color: var(--muted); font-size: 13px; margin: 5px 0 0; }
+    .billing-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 220px; }
+    .billing-lower { display: grid; gap: 14px; grid-template-columns: 1.2fr 1fr; margin-top: 14px; }
+    .billing-steps { color: #596779; font-size: 13px; line-height: 1.8; margin-bottom: 0; padding-left: 20px; }
+    .billing-controls { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 14px; }
+    .billing-controls span { color: var(--muted); font-size: 12px; }
+    .billing-controls strong { color: var(--ink); display: block; font-size: 13px; font-weight: 600; margin-top: 4px; }
+    .form-field small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .form-field input:focus, .form-field select:focus { border-color: #aebfff; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .mobile-menu { display: none; }
+    @media (max-width: 1100px) {
+      :root { --sidebar: 220px; }
+      .main-content { padding-left: 23px; padding-right: 23px; }
+      .topbar { padding: 0 23px; }
+      .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .dashboard-grid, .content-grid { grid-template-columns: minmax(0,1.5fr) minmax(250px,1fr); }
+    }
+    @media (max-width: 780px) {
+      .sidebar { box-shadow: 12px 0 30px #17203312; transform: translateX(-105%); transition: transform .2s; width: 250px; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .mobile-menu { align-items: center; background: white; border: 1px solid var(--line); border-radius: 7px; color: #677487; display: flex; height: 32px; justify-content: center; margin-right: 10px; width: 32px; }
+      .mobile-menu svg { height: 16px; width: 16px; }
+      .topbar { justify-content: flex-start; padding: 0 16px; }
+      .top-actions { margin-left: auto; }
+      .top-search { width: 155px; }
+      .main-content { padding: 23px 16px 35px; }
+      .dashboard-grid, .content-grid { grid-template-columns: 1fr; }
+      .api-layout { grid-template-columns: 1fr; }
+      .billing-lower { grid-template-columns: 1fr; }
+      .page-heading { gap: 12px; }
+      .heading-actions { flex-wrap: wrap; justify-content: flex-end; }
+    }
+    @media (max-width: 520px) {
+      .top-search { width: 36px; padding-right: 0; }
+      .top-search:focus { position: absolute; right: 0; top: 42px; width: min(250px,75vw); }
+      .breadcrumb { font-size:13px; }
+      .topbar { height: 58px; }
+      .main-content { padding-top: 19px; }
+      .page-heading { align-items: flex-start; flex-direction: column; }
+      .heading-actions { justify-content: flex-start; }
+      .metrics { gap: 9px; }
+      .metric { min-height: 106px; padding: 12px; }
+      .metric-value { font-size: 20px; }
+      .panel { padding: 14px; }
+      .billing-note { align-items: flex-start; flex-direction: column; }
+      .billing-controls { grid-template-columns: 1fr; }
+      .table-panel { padding: 0; }
+      .table-panel .panel-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .table-tools { width: 100%; }
+      .table-search { flex: 1; }
+      .table-scroll { overflow-x: auto; }
+      th, td { padding-left: 12px; padding-right: 12px; }
+    }
+    [hidden]{display:none!important}.order-extra-grid{display:grid;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:12px;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)}.order-extra-grid .form-field{min-width:0}.order-extra-grid .form-field.full{grid-column:1/-1}.order-hint{grid-column:1/-1;color:var(--muted);font-size:13px;line-height:1.5}
+    @media(max-width:520px){.order-extra-grid{grid-template-columns:1fr}.order-extra-grid .form-field.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" style="height:0;position:absolute;width:0" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-orders" viewBox="0 0 24 24"><path d="M7 3h10l4 4v14H3V3h4Z"/><path d="M7 3v5h10V3M7 13h10M7 17h7"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v12H3zM14 10h4l3 3v5h-7z"/><circle cx="7.5" cy="19" r="2"/><circle cx="17.5" cy="19" r="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 3.2a4 4 0 0 1 0 7.6M21 21v-2a4 4 0 0 0-3-3.87"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="m20.6 13.4-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1 0-2.8l7.2-7.2A2 2 0 0 1 12 2.8H20a1 1 0 0 1 1 1v8a2 2 0 0 1-0.4 1.6Z"/><circle cx="16.5" cy="7.5" r="1"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 5h15a2 2 0 0 1 2 2v12H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h13"/><path d="M21 10h-5a2 2 0 0 0 0 4h5"/><circle cx="16" cy="12" r=".5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-5 5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.6.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.6-.9l-1.7.6-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.9L6.1 12l1.4-2.4 1.7.6a8 8 0 0 1 1.6-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.6.9l1.7-.6 1.4 2.4-1.4 1.1a7 7 0 0 1-.1 1.9Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  </svg>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m12 3 4-2 4 2v5l-4 2-4-2V3Z" stroke="#fcc118" stroke-width="1.8"/><path d="m12 3 4 2 4-2m-4 2v5" stroke="#fcc118" stroke-width="1.4"/><path d="M16 10v2"/><rect x="5" y="12" width="22" height="13" rx="4"/><path d="M9 17h14" stroke="#fcc118" stroke-width="1.5"/><circle cx="12" cy="20" r="1.2" fill="#fcc118" stroke="none"/><circle cx="20" cy="20" r="1.2" fill="#fcc118" stroke="none"/><path d="M11 25v2m10-2v2"/><circle cx="10" cy="28" r="2" fill="currentColor" stroke="none"/><circle cx="22" cy="28" r="2" fill="currentColor" stroke="none"/></svg></div>
+        <div class="brand-name">delivery <span>fast</span></div>
+      </div>
+      <div class="workspace-switch">
+        <div class="workspace-avatar">MB</div>
+        <div class="workspace-meta"><strong>Meridian Bank PLC</strong><small>Corporate document merchant</small></div>
+        <span style="color:#99a3af;font-size:14px">⌄</span>
+      </div>
+      <nav id="navigation">
+        <div class="nav-group">
+          <div class="nav-label">Workspace</div>
+          <button class="nav-item active" data-page="Overview"><svg fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-grid"/></svg>Overview</button>
+          <button class="nav-item" data-page="Orders"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-orders"/></svg>Document requests<span class="nav-count">24</span></button>
+          <button class="nav-item" data-page="Shipments"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-truck"/></svg>Document tracking<span class="nav-count">18</span></button>
+          <button class="nav-item" data-page="Pickup requests"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-pin"/></svg>Pickup requests<span class="nav-count">6</span></button>
+          <button class="nav-item" data-page="Customers"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-users"/></svg>Recipients & branches</button>
+          <button class="nav-item" data-page="Products"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-tag"/></svg>Document catalogue</button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Manage</div>
+          <button class="nav-item" data-page="Payments"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-wallet"/></svg>Payments</button>
+          <button class="nav-item" data-page="Billing"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-wallet"/></svg>Billing & invoices</button>
+          <button class="nav-item" data-page="Reports"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-chart"/></svg>Reports</button>
+          <button class="nav-item" data-page="API & Webhooks"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-settings"/></svg>API & Webhooks</button>
+          <button class="nav-item" data-page="Settings"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-settings"/></svg>Settings</button>
+        </div>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="help-card"><strong>Need a hand?</strong><p>Our merchant success team is here to help you grow.</p><button data-toast="Support center is ready in the full product.">Visit help center ↗</button></div>
+        <div class="user-profile"><div class="profile-avatar">FA</div>        <div class="profile-meta"><strong>Farhana Ahmed</strong><small>Corporate operations</small></div><span style="color:#98a2ae">···</span></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"><use href="#i-menu"/></svg></button>
+        <div class="breadcrumb">Meridian Bank PLC <span style="padding:0 7px;color:#c0c7d0">/</span> <strong id="breadcrumbPage">Overview</strong></div>
+        <div class="top-actions">
+          <div class="search-wrap"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"><use href="#i-search"/></svg><input class="top-search" id="globalSearch" placeholder="Search anything..." aria-label="Search anything"></div>
+          <button class="icon-button" id="notificationButton" aria-label="Notifications"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-bell"/></svg><i class="notification-dot"></i></button>
+          <div class="profile-avatar" title="Farhana Ahmed">FA</div>
+        </div>
+      </header>
+      <section class="main-content" id="mainContent"></section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="modal-backdrop" id="orderModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <div class="modal-head"><div><h2 id="modalTitle">Create a new order</h2><p>Add an order and prepare it for domestic delivery.</p></div><button class="modal-close" id="closeModal" aria-label="Close">×</button></div>
+      <form id="orderForm">
+        <div class="form-grid">
+          <div class="form-field"><label for="customerName">Customer name</label><input id="customerName" name="customerName" required placeholder="e.g. Jamie Lee"></div>
+          <div class="form-field"><label for="customerPhone">Phone number</label><input id="customerPhone" name="customerPhone" required placeholder="+880 1XXX-XXXXXX"></div>
+          <div class="form-field full"><label for="deliveryAddress">Street, house / apartment / unit</label><input id="deliveryAddress" name="deliveryAddress" required placeholder="Street, house / apartment / unit"></div>
+          <div class="form-field"><label for="orderType">Service type</label><select id="orderType"><option>Document delivery</option></select></div>
+          <div class="form-field"><label for="orderAmount">Declared value (optional)</label><input id="orderAmount" type="number" min="0" placeholder="0.00"></div>
+        </div>
+        <div class="modal-actions"><button type="button" class="button" id="cancelModal">Cancel</button><button class="button button-primary" type="submit">Create order</button></div>
+      </form>
+    </div>
+  </div>
+  <script>
+    const icon = (name) => `<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-${name}"/></svg>`;
+    const sampleOrders = [
+      {id:"DF-610284",name:"Ayesha Rahman",initials:"AR",phone:"+880 1712-•••-481",item:"Corporate Urgent Document",type:"Document delivery",documentType:"Corporate Urgent Document",packaging:"Security pouch",recipientRelation:"Authorized representative",service:"Express",date:"Today, 10:42 AM",amount:"৳ 120",deliveryFee:120,status:"In transit",address:"Office: 18 Motijheel C/A, Motijheel, Dhaka Central"},
+      {id:"DF-610283",name:"Mahir Chowdhury",initials:"MC",phone:"+880 1819-•••-205",item:"ATM card",type:"Document delivery",documentType:"ATM card",packaging:"Security pouch",recipientRelation:"Self",service:"Regular",date:"Today, 10:18 AM",amount:"৳ 60",deliveryFee:60,status:"Delivered",address:"Home: House 12, Banani, Dhaka North"},
+      {id:"DF-610282",name:"Nusrat Jahan",initials:"NJ",phone:"+880 1610-•••-932",item:"Cheque book",type:"Document delivery",documentType:"Cheque book",packaging:"Security pouch",recipientRelation:"Family member",service:"Regular",date:"Today, 9:56 AM",amount:"৳ 60",deliveryFee:60,status:"Picked up",address:"Office: Gulshan Avenue, Dhaka North"},
+      {id:"DF-610281",name:"Tanvir Ahmed",initials:"TA",phone:"+880 1911-•••-744",item:"Trade Service Document",type:"Document delivery",documentType:"Trade Service Document",packaging:"Rigid document mailer",recipientRelation:"Colleague",service:"Express",date:"Today, 9:31 AM",amount:"৳ 80",deliveryFee:80,status:"Processing",address:"Office: Agrabad C/A, Chattogram"},
+      {id:"DF-610280",name:"Farhana Islam",initials:"FI",phone:"+880 1555-•••-610",item:"B2B Document",type:"Document delivery",documentType:"B2B Document",packaging:"Document envelope",recipientRelation:"Reception",service:"Regular",date:"Today, 9:12 AM",amount:"৳ 60",deliveryFee:60,status:"Delivered",address:"Office: Dhanmondi 27, Dhaka South"}
+    ];
+    const pageData = {
+      "Orders": {description:"Submit controlled, trackable business documents for secure delivery.",columns:["Consignment ID","Recipient","Document type","Created","Delivery fee","Status"],rows:sampleOrders},
+      "Shipments": {description:"Track confidential document consignments, proof of delivery, and exceptions.",columns:["Tracking ID","Recipient","Document","Destination","Last update","Status"],rows:[
+        ["DF-610284","Ayesha Rahman","Corporate Urgent Document","Motijheel, Dhaka","Out for delivery · 10:42 AM","In transit"],["DF-610283","Mahir Chowdhury","ATM card","Banani, Dhaka","Delivered · 10:18 AM","Delivered"],["DF-610282","Nusrat Jahan","Cheque book","Gulshan, Dhaka","Picked up · 9:56 AM","Picked up"],["DF-610281","Tanvir Ahmed","Trade Service Document","Agrabad, Chattogram","At sorting hub · 9:24 AM","In transit"],["DF-610280","Farhana Islam","B2B Document","Dhanmondi, Dhaka","Delivered · 9:12 AM","Delivered"]],
+        stats:[["In transit","18"],["Delivered this month","842"],["Needs attention","3"]]},
+      "Pickup requests": {description:"Schedule branch document pickups and manage recurring courier collections.",columns:["Request ID","Origin branch","Pickup location","Document batches","Requested","Status"],rows:[
+        ["PU-41042","MBP-DHK-01","Motijheel C/A, Dhaka","12 sealed pouches","Today, 11:30 AM","Pickup scheduled"],["PU-41041","MBP-DHK-02","Banani, Dhaka","8 card envelopes","Today, 10:30 AM","Picked up"],["PU-41040","MBP-CTG-01","Agrabad C/A, Chattogram","5 document packs","Today, 9:45 AM","Picked up"],["PU-41039","MBP-DHK-03","Gulshan, Dhaka","3 cheque-book packs","Today, 1:00 PM","Processing"],["PU-41038","MBP-DHK-04","Dhanmondi, Dhaka","6 sealed pouches","Yesterday","Delivered"]],
+        stats:[["Awaiting pickup","6"],["Scheduled today","12"],["Collected today","28"]]},
+      "Customers": {description:"Approved receiving parties and corporate branch locations.",columns:["Recipient / branch","Phone","Consignments","Branch code","Last delivery","Status"],rows:[
+        ["Motijheel Main Branch","+880 1712-•••-481","128","MBP-DHK-01","Today, 10:42 AM","Active"],["Banani Service Centre","+880 1610-•••-932","86","MBP-DHK-02","Today, 9:56 AM","Active"],["Gulshan Corporate Branch","+880 1819-•••-205","64","MBP-DHK-03","Today, 10:18 AM","Active"],["Agrabad Branch","+880 1911-•••-744","42","MBP-CTG-01","Yesterday","Active"],["Dhanmondi Branch","+880 1555-•••-610","38","MBP-DHK-04","Yesterday","Active"]],
+        stats:[["Registered branches","42"],["Active receivers","1,284"],["Business units","8"]]},
+      "Products": {description:"Approved document classes and secure handling requirements for your account.",columns:["Document class","Service code","Handling","Packaging","Billing basis","Status"],rows:[
+        ["ATM card","DOC-CARD","Identity check","Security pouch","Per delivery","Active"],["Cheque book","DOC-CHQ","Signature required","Security pouch","Per delivery","Active"],["B2B Document","DOC-B2B","Recipient verification","Document envelope","Per delivery","Active"],["Trade Service Document","DOC-TRADE","Authorized receiver","Rigid document mailer","Per delivery","Active"],["Corporate Urgent Document","DOC-URGENT","Priority · signature","Security pouch","Express tariff","Active"]],
+        stats:[["Approved classes","5"],["Secure packaging","3 types"],["Custom tariffs","Contracted"]]},
+      "Payments": {description:"Review invoice settlements and corporate account adjustments.",columns:["Transaction","Invoice","Method","Date","Amount","Status"],rows:[
+        ["RCPT-99284","INV-MBP-2026-0084","Bank transfer","Sep 12, 2026","৳ 28,640","Paid"],["RCPT-99270","INV-MBP-2026-0078","Bank transfer","Aug 14, 2026","৳ 24,880","Paid"],["ADJ-00281","INV-MBP-2026-0084","Service adjustment","Sep 10, 2026","−৳ 420","Processed"]],
+        stats:[["Outstanding invoices","1"],["Paid this quarter","৳ 53,520"],["Next due date","Oct 15"]]},
+      "Reports": {description:"Branch delivery performance, proof-of-delivery compliance, and finance reconciliation.",columns:["Report","Period","Generated","Format","Owner","Status"],rows:[
+        ["Monthly branch statement","Oct 1 – Oct 14","Today, 9:00 AM","CSV · Print","Farhana Ahmed","Delivered"],["Proof of delivery audit","Oct 1 – Oct 13","Yesterday, 4:30 PM","CSV","Farhana Ahmed","Delivered"],["Invoice aging report","Oct 1 – Oct 13","Yesterday, 2:15 PM","CSV · Print","Farhana Ahmed","Processing"],["Branch volume summary","September 2026","Oct 1, 10:00 AM","CSV","Farhana Ahmed","Delivered"]],
+        stats:[["Delivery charges","৳ 3,84,250"],["Documents this month","842"],["POD compliance","99.2%"]]},
+      "Settings": {description:"Configure corporate billing, branch access, notifications, and integrations.",columns:["Setting","Details","Updated",""],rows:[
+        ["Corporate account","Meridian Bank PLC · Dhaka, Bangladesh","Oct 10, 2026","Manage"],["Billing profile","Monthly consolidated · Net 15 sample terms","Oct 9, 2026","Manage"],["Notification settings","Email and SMS alerts enabled","Oct 8, 2026","Manage"],["Team & permissions","8 users · 4 branch roles","Oct 2, 2026","Manage"],["API & integrations","Corporate API access requested","Sep 28, 2026","Manage"]],
+        stats:[["Account status","Active"],["Branch users","8"],["Connected systems","2"]]}
+    };
+    const statusClass = (status) => {
+      const normalized = String(status).toLowerCase();
+      if (normalized.includes("deliver") || normalized === "paid" || normalized === "active" || normalized.includes("picked")) return "status-delivered";
+      if (normalized.includes("transit") || normalized.includes("process")) return "status-transit";
+      if (normalized.includes("pending") || normalized.includes("scheduled")) return "status-pending";
+      if (normalized.includes("cancel") || normalized.includes("fail") || normalized.includes("inactive")) return "status-cancelled";
+      return "status-pending";
+    };
+    const merchantEscape=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const statusPill = (text) => `<span class="status ${statusClass(text)}">${merchantEscape(text)}</span>`;
+    const metricCard = (label,value,iconName,foot,trend) => `<article class="metric"><div class="metric-head"><span>${label}</span><span class="metric-icon">${icon(iconName)}</span></div><div class="metric-value">${value}</div><div class="metric-foot"><span class="trend">${trend}</span><span>${foot}</span></div></article>`;
+    const renderDashboard = () => `
+      <div class="page-heading">
+        <div><p class="eyebrow">Wednesday, October 14, 2026</p><h1>Good morning, Farhana <span style="font-size:20px">☀️</span></h1><p class="subtitle">Your corporate document deliveries, proof of delivery, and billing at a glance.</p></div>
+        <div class="heading-actions"><button class="button date-button" data-toast="Date range: October 14, 2026">${icon("calendar")} Today, Oct 14 <span style="color:#a0a9b5">⌄</span></button><button class="button" data-page-link="Billing">Billing</button><button class="button button-primary" id="createOrder">${icon("plus")} New document request</button></div>
+      </div>
+      <div class="metrics">
+        ${metricCard("Documents this month","842","orders","across all branches","↑ 12.8%")}
+        ${metricCard("In transit","18","truck","secure consignments","")}
+        ${metricCard("Unbilled charges","৳ 8,460","wallet","ready for monthly bill","2 batches")}
+        ${metricCard("Delivery success","96.8%","chart","first-attempt delivery","↑ 2.4%")}
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Document volume & delivery charges</h2><p class="panel-subtitle">Corporate consignments across branches</p></div><select class="select-small" id="chartPeriod" aria-label="Chart period"><option>Last 7 days</option><option>Last 30 days</option><option>This year</option></select></div>
+          <div class="chart-legend"><span class="legend-item"><i class="legend-dot"></i> Documents</span><span class="legend-item"><i class="legend-dot gray"></i> Previous period</span></div>
+          <svg class="chart" viewBox="0 0 700 190" preserveAspectRatio="none" role="img" aria-label="Orders trend chart for the last seven days">
+            <defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#3766e8" stop-opacity=".14"/><stop offset="100%" stop-color="#3766e8" stop-opacity="0"/></linearGradient></defs>
+            <g class="chart-grid"><line x1="45" y1="20" x2="690" y2="20"/><line x1="45" y1="60" x2="690" y2="60"/><line x1="45" y1="100" x2="690" y2="100"/><line x1="45" y1="140" x2="690" y2="140"/><line x1="45" y1="170" x2="690" y2="170"/></g>
+            <g class="chart-labels"><text x="5" y="23">100</text><text x="12" y="63">75</text><text x="12" y="103">50</text><text x="12" y="143">25</text><text x="18" y="173">0</text><text x="45" y="187">Oct 08</text><text x="145" y="187">Oct 09</text><text x="245" y="187">Oct 10</text><text x="345" y="187">Oct 11</text><text x="445" y="187">Oct 12</text><text x="545" y="187">Oct 13</text><text x="645" y="187">Oct 14</text></g>
+            <path class="chart-line-secondary" d="M45 115 C85 108 103 123 145 109 S210 102 245 116 S310 130 345 106 S410 120 445 98 S510 108 545 91 S610 105 645 83 S670 90 690 78"/>
+            <path class="chart-area" d="M45 94 C85 85 100 112 145 91 S210 52 245 73 S310 110 345 69 S410 81 445 54 S510 91 545 54 S610 45 645 27 S670 42 690 18 L690 170 L45 170Z"/>
+            <path class="chart-line" d="M45 94 C85 85 100 112 145 91 S210 52 245 73 S310 110 345 69 S410 81 445 54 S510 91 545 54 S610 45 645 27 S670 42 690 18"/>
+            <circle class="chart-point" cx="645" cy="27" r="4"/>
+          </svg>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Document delivery overview</h2><p class="panel-subtitle">Today's secure consignment status</p></div><button class="button button-sm" data-page-link="Shipments">View all</button></div>
+          <div class="dispatch-summary"><div><strong>68</strong><span>Today's documents</span></div><i class="divider"></i><div><strong>52</strong><span>Delivered</span></div><i class="divider"></i><div><strong>4</strong><span>Exceptions</span></div></div>
+          <div class="progress-label"><span>Delivery completion</span><strong>76%</strong></div><div class="progress-track"><div class="progress-fill"></div></div>
+          <div class="dispatch-list"><div class="dispatch-row"><span class="dispatch-label"><i style="background:#3766e8"></i>In transit</span><strong>18</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#16845b"></i>Delivered</span><strong>42</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#d4a13b"></i>Pickup scheduled</span><strong>6</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#c34d4d"></i>Signature / delivery issue</span><strong>2</strong></div></div>
+        </section>
+      </div>
+      <div class="content-grid">
+        <section class="panel table-panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Recent document requests</h2><p class="panel-subtitle">Latest branch consignments and delivery updates</p></div><button class="button button-sm" data-page-link="Orders">View all requests</button></div>
+          <div class="table-scroll"><table><thead><tr><th>CONSIGNMENT</th><th>RECIPIENT</th><th>DOCUMENT TYPE</th><th>DELIVERY FEE</th><th>STATUS</th><th></th></tr></thead><tbody>${sampleOrders.slice(0,4).map(order=>`<tr><td class="order-id">${order.id}</td><td><div class="customer-cell"><span class="customer-mini">${order.initials}</span><span class="customer-name">${order.name}</span></div></td><td>${order.documentType}</td><td>${order.amount}</td><td>${statusPill(order.status)}</td><td><button class="row-menu" aria-label="More actions">···</button></td></tr>`).join("")}</tbody></table></div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Recent activity</h2><p class="panel-subtitle">Latest updates from your workspace</p></div><button class="button button-sm" data-toast="You're all caught up.">See all</button></div>
+          <div class="activity-list">
+            <div class="activity-item"><span class="activity-icon">${icon("truck")}</span><div class="activity-copy"><strong>DF-610283</strong> was delivered to Mahir Chowdhury<small>12 minutes ago · Dhaka North</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("box")}</span><div class="activity-copy"><strong>Document collected</strong> from Meridian Bank Motijheel<small>34 minutes ago · Corporate Urgent</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("wallet")}</span><div class="activity-copy"><strong>Monthly invoice paid</strong> — ৳ 18,420<small>Yesterday at 4:30 PM</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("pin")}</span><div class="activity-copy"><strong>Pickup scheduled</strong> for Oliver Chen<small>Yesterday at 3:12 PM · Uttara</small></div></div>
+          </div>
+        </section>
+      </div>`;
+    const makeRow = (row, page) => {
+      if (page === "Orders") return `<tr><td class="order-id">${merchantEscape(row.id)}</td><td><div class="customer-cell"><span class="customer-mini">${merchantEscape(row.initials)}</span><span><span class="customer-name">${merchantEscape(row.name)}</span><span class="customer-phone" style="display:block">${merchantEscape(row.phone)}</span></span></div></td><td>${merchantEscape(row.item)}<div style="color:#9aa3af;font-size:12px;margin-top:3px">${merchantEscape(row.type)}</div></td><td>${merchantEscape(row.date)}</td><td>${merchantEscape(row.amount)}</td><td>${statusPill(row.status)}</td></tr>`;
+      return `<tr>${row.map((cell,i)=>`<td>${page === "Settings" && i===3 ? `<button class="button button-sm" data-toast="${merchantEscape(row[0])} settings opened.">Manage</button>` : (i === row.length-1 && ["Shipments","Pickup requests","Payments","Reports"].includes(page) ? statusPill(cell) : merchantEscape(cell))}</td>`).join("")}</tr>`;
+    };
+    const renderListPage = (page) => {
+      const data = pageData[page];
+      const stats = data.stats ? `<div class="metrics">${data.stats.map((item,i)=>metricCard(item[0],item[1],["chart","box","truck"][i],"updated just now","")).join("")}</div>` : "";
+      return `<div class="page-heading"><div><p class="eyebrow">Corporate document workspace</p><h1>${page==="Orders"?"Document requests":page==="Shipments"?"Document tracking":page==="Customers"?"Recipients & branches":page==="Products"?"Document catalogue":page}</h1><p class="subtitle">${data.description}</p></div><div class="heading-actions">${page==="Orders" ? `<button class="button button-primary" id="createOrder">${icon("plus")} New document request</button>` : `<button class="button" id="exportButton">${icon("download")} Export</button>`}</div></div>
+        ${stats}<section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">${page} list</h2><p class="panel-subtitle">Sample records · refreshed just now</p></div><div class="table-tools"><input class="table-search" id="tableSearch" placeholder="Search ${page.toLowerCase()}..." aria-label="Search ${page}"><button class="button button-sm" data-toast="Filters are ready in the full product.">Filter</button></div></div>
+        <div class="table-scroll"><table><thead><tr>${data.columns.map(column=>`<th>${column.toUpperCase()}</th>`).join("")}</tr></thead><tbody id="tableBody">${data.rows.map(row=>makeRow(row,page)).join("")}</tbody></table></div><div class="table-footer"><span>Showing ${data.rows.length} sample records</span><div class="pagination"><button class="page-btn">‹</button><button class="page-btn current">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button></div></div></section>`;
+    };
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(()=>toast.classList.remove("show"),2600);
+    }
+    function openOrderModal() { document.getElementById("orderModal").classList.add("open"); document.getElementById("customerName").focus(); }
+    function closeOrderModal() { document.getElementById("orderModal").classList.remove("open"); }
+    function renderPage(page) {
+      document.getElementById("breadcrumbPage").textContent = page;
+      document.getElementById("mainContent").innerHTML = page === "Overview" ? renderDashboard() : renderListPage(page);
+      document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
+      document.getElementById("sidebar").classList.remove("open");
+      const createButton = document.getElementById("createOrder");
+      if (createButton) createButton.addEventListener("click",openOrderModal);
+      const tableSearch = document.getElementById("tableSearch");
+      if (tableSearch) tableSearch.addEventListener("input",()=> {
+        const term = tableSearch.value.toLowerCase();
+        document.querySelectorAll("#tableBody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(term));
+      });
+      const exportButton = document.getElementById("exportButton");
+      if (exportButton) exportButton.addEventListener("click",()=>exportPage(page));
+    }
+    function exportPage(page) {
+      const rows = pageData[page].rows;
+      const csv = [pageData[page].columns, ...rows.map(row=>Array.isArray(row)?row:Object.values(row))].map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\r\n");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+      link.download = `${page.toLowerCase().replaceAll(" ","-")}-sample.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showToast(`${page} sample data exported.`);
+    }
+    document.getElementById("navigation").addEventListener("click",event=>{
+      const button = event.target.closest("[data-page]");
+      if (button) renderPage(button.dataset.page);
+    });
+    document.getElementById("mainContent").addEventListener("click",event=>{
+      const link = event.target.closest("[data-page-link]");
+      if (link) renderPage(link.dataset.pageLink);
+      const toastButton = event.target.closest("[data-toast]");
+      if (toastButton) showToast(toastButton.dataset.toast);
+    });
+    document.getElementById("notificationButton").addEventListener("click",()=>showToast("You're all caught up on notifications."));
+    document.getElementById("globalSearch").addEventListener("keydown",event=>{
+      if (event.key === "Enter") {
+        const query = event.currentTarget.value.trim();
+        if (!query) return;
+        if (/api|webhook/i.test(query)) { renderPage("API & Webhooks"); return; }
+        if (/billing|invoice|bill/i.test(query)) { renderPage("Billing"); return; }
+        const match = Object.keys(pageData).find(page=>page.toLowerCase().includes(query.toLowerCase()));
+        if (match) renderPage(match);
+        else showToast(`No matching records for “${query}”.`);
+      }
+    });
+    document.getElementById("mobileMenu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
+    document.getElementById("closeModal").addEventListener("click",closeOrderModal);
+    document.getElementById("cancelModal").addEventListener("click",closeOrderModal);
+    document.getElementById("orderModal").addEventListener("click",event=>{if(event.target.id==="orderModal") closeOrderModal();});
+    document.addEventListener("keydown",event=>{if(event.key==="Escape") closeOrderModal();});
+    document.getElementById("orderForm").addEventListener("submit",event=>{
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const name = form.get("customerName").trim();
+      const id = `PP-${28500 + sampleOrders.length}`;
+      const initials = name.split(/\s+/).map(part=>part[0]).slice(0,2).join("").toUpperCase();
+      sampleOrders.unshift({id,name,initials,phone:form.get("customerPhone"),item:document.getElementById("orderType").value,type:"Domestic delivery",date:"Just now",amount:`৳ ${Number(document.getElementById("orderAmount").value).toLocaleString("en-BD")}`,status:"Processing"});
+      pageData.Orders.rows = sampleOrders;
+      event.currentTarget.reset();
+      closeOrderModal();
+      renderPage(document.getElementById("breadcrumbPage").textContent);
+      showToast(`Order ${id} created successfully.`);
+    });
+    document.querySelector(".help-card button").addEventListener("click",event=>showToast(event.currentTarget.dataset.toast));
+    document.querySelector(".workspace-switch").addEventListener("click",()=>showToast("You're viewing the Meridian Bank PLC workspace."));
+    document.querySelector(".user-profile").addEventListener("click",()=>showToast("Profile and account settings opened."));
+    renderPage("Overview");
+  </script>
+  <script>
+    const merchantApiConfigKey="deliveryfast-meridian-api-demo";
+    const merchantApiEvents=["pickup.requested","pickup.scheduled","pickup.completed","shipment.status_updated"];
+    const merchantApiExamples={
+      pickupSingle:`curl -X POST https://api.deliveryfast.example/v1/pickups \\\n  -H "Authorization: ******" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: document-branch-2026-00481" \\\n  -d '{"contact_name":"Farhana Ahmed","phone":"+8801712345678","pickup_address":{"district":"Dhaka Central","zone":"Motijheel","area":"Motijheel C/A","street":"18 Motijheel C/A"},"document_type":"Corporate Urgent Document","external_id":"LOAN-2026-00481","packaging":"Security pouch","origin_branch_code":"MBP-DHK-01","internal_reference":"LOAN-2026-00481","requested_date":"2026-10-15","time_window":"10:00-13:00"}'`,
+      pickupBulk:`curl -X POST https://api.deliveryfast.example/v1/pickups/bulk \\\n  -H "Authorization: ******" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: document-batch-20261015-01" \\\n  -d '{"items":[{"external_id":"LOAN-2026-00481","contact_name":"Farhana Ahmed","phone":"+8801712345678","pickup_address":{"district":"Dhaka Central","zone":"Motijheel","area":"Motijheel C/A","street":"18 Motijheel C/A"},"document_type":"Corporate Urgent Document","packaging":"Security pouch","origin_branch_code":"MBP-DHK-01"},{"external_id":"CARD-2026-01984","contact_name":"Sam Lee","phone":"+8801812345678","pickup_address":{"district":"Dhaka North","zone":"Banani","area":"Banani","street":"House 12"},"document_type":"ATM card","packaging":"Security pouch","origin_branch_code":"MBP-DHK-02"}]}'`,
+      trackingStatus:`curl -H "Authorization: ******" \\\n  https://api.deliveryfast.example/v1/shipments/DF-610284`,
+      trackingHistory:`curl -H "Authorization: ******" \\\n  "https://api.deliveryfast.example/v1/shipments/DF-610284/events?limit=50&cursor=eyJwYWdlIjoyfQ"`,
+      pickupWebhook:`POST https://merchant.example.com/webhooks/delivery-fast HTTP/1.1\nContent-Type: application/json\nX-DeliveryFast-Event: pickup.scheduled\nX-DeliveryFast-Delivery: evt_01J8Q4K8\nX-DeliveryFast-Signature: sha256=HMAC_SHA256_HEX\nX-DeliveryFast-Timestamp: 1791977880\n\n{"id":"evt_01J8Q4K8","type":"pickup.scheduled","created_at":"2026-10-14T11:38:00Z","data":{"pickup_id":"PU-1042","external_id":"LOAN-2026-00481","status":"scheduled","scheduled_at":"2026-10-15T10:00:00Z"}}`,
+      trackingWebhook:`{"id":"evt_01J8Q9M2","type":"shipment.status_updated","created_at":"2026-10-14T11:42:00Z","data":{"tracking_id":"DF-610284","previous_status":"in_transit","status":"out_for_delivery","occurred_at":"2026-10-14T11:42:00Z","location":{"district":"Dhaka North","zone":"Gulshan"},"reason":null}}`
+    };
+    function readMerchantApiConfig(){try{return JSON.parse(localStorage.getItem(merchantApiConfigKey)||"{}")}catch(error){console.error("Merchant API demo settings could not be read.",error);return{}}}
+    function merchantApiDocsPage(){
+      const config=readMerchantApiConfig(),requested=Boolean(config.keyRequest),saved=Boolean(config.webhookUrl);
+      return `<div class="page-heading"><div><p class="eyebrow">Developer tools</p><h1>API & Webhooks</h1><p class="subtitle">Integrate pickups and shipment tracking with your store or business systems.</p></div><span class="status ${requested?"status-pending":"status-delivered"}">${requested?"API access requested":"Demo documentation"}</span></div>
+      <div class="metrics">${metricCard("API version","v1","settings","Versioned REST API","stable")}${metricCard("Authentication","Bearer","users","API key in Authorization header","HTTPS")}${metricCard("Webhook signing","HMAC-SHA256","bell","Verify every event signature","signed")}</div>
+      <section class="panel" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">Request API access</h2><p class="panel-subtitle">Request a production API key for your merchant account.</p></div><span class="status ${requested?"status-pending":"status-transit"}">${requested?"Pending review":"Not requested"}</span></div><div class="form-grid" style="margin-top:14px"><div class="form-field"><label>Merchant account</label><input value="Meridian Bank PLC · MER-10124" readonly></div><div class="form-field"><label>Environment</label><input value="Production access request" readonly></div></div><div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="button button-primary" id="requestMerchantApiKey" ${requested?"disabled":""}>${requested?"API access requested":"Request API key"}</button><span class="panel-subtitle">${requested?`Request reference ${merchantEscape(config.keyRequest.reference)} · A real key is not generated in this demo.`:"Keys are issued securely by Delivery Fast after account and integration review."}</span></div></section>
+      <div class="api-layout"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">API reference</h2><p class="panel-subtitle">REST over HTTPS · JSON request and response bodies</p></div><span class="status status-blue">Base URL · api.deliveryfast.example/v1</span></div>
+        <div class="form-grid" style="margin-top:16px"><div class="form-field full"><label>Authentication</label><pre class="api-code">Authorization: Bearer YOUR_API_KEY&#10;Content-Type: application/json&#10;Idempotency-Key: unique-request-id</pre></div>
+        <div class="form-field full"><label>Request a single pickup <span class="status status-good">POST /pickups · 201 Created</span></label><pre class="api-code">${merchantEscape(merchantApiExamples.pickupSingle)}</pre><small>Use one request per pickup. Keep Idempotency-Key stable when retrying the same request.</small></div>
+        <div class="form-field full"><label>Request bulk pickups <span class="status status-good">POST /pickups/bulk · 202 Accepted</span></label><pre class="api-code">${merchantEscape(merchantApiExamples.pickupBulk)}</pre><small>Returns a batch ID and per-item result references; poll GET /pickup-batches/{batch_id} for processing results. Each item supports external_id for reconciliation.</small></div>
+        <div class="form-field full"><label>Get current tracking status <span class="status status-blue">GET /shipments/{tracking_id}</span></label><pre class="api-code">${merchantEscape(merchantApiExamples.trackingStatus)}</pre></div>
+        <div class="form-field full"><label>Get paginated tracking history <span class="status status-blue">GET /shipments/{tracking_id}/events</span></label><pre class="api-code">${merchantEscape(merchantApiExamples.trackingHistory)}</pre><small>Use the returned next_cursor for pagination. History items include status, timestamp, location, and exception reason when available.</small></div></div><div style="margin-top:14px"><h3 style="font-size:14px;margin:0 0 10px">Example responses</h3><div class="form-grid">
+        <div class="form-field"><label>Single pickup ? 201 Created</label><pre class="api-code">{"pickup_id":"PU-1042","external_id":"LOAN-2026-00481","status":"scheduled","scheduled_at":"2026-10-15T10:00:00Z"}</pre></div>
+        <div class="form-field"><label>Bulk pickup ? 202 Accepted</label><pre class="api-code">{"batch_id":"PB-2081","status":"processing","accepted":2,"items":[{"external_id":"LOAN-2026-00481","pickup_id":"PU-1042","status":"accepted"}]}</pre></div>
+        <div class="form-field"><label>Shipment status ? 200 OK</label><pre class="api-code">{"tracking_id":"DF-610284","status":"out_for_delivery","updated_at":"2026-10-14T11:42:00Z","estimated_delivery":"2026-10-14"}</pre></div>
+        <div class="form-field"><label>Tracking history ? 200 OK</label><pre class="api-code">{"items":[{"event_id":"evt_01J8Q9M2","status":"out_for_delivery","occurred_at":"2026-10-14T11:42:00Z","location":{"district":"Dhaka North","zone":"Gulshan"}}],"next_cursor":null}</pre></div>
+        <div class="form-field"><label>Validation error ? 400 Bad Request</label><pre class="api-code">{"error":{"code":"invalid_request","message":"phone is required","request_id":"req_01J8Q9M2"}}</pre></div></div><p class="panel-subtitle" style="margin:12px 0 0">Errors use a consistent JSON error object. Handle 400 validation, 401 authentication, 404 unknown IDs, 409 idempotency conflicts, 422 business-rule failures, 429 throttling, and retryable 5xx responses. These examples describe the proposed demo contract; confirm production limits and enums when credentials are issued.</p></div>
+      </section><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Configure webhook</h2><p class="panel-subtitle">Receive pickup lifecycle and shipment status events.</p></div><span class="status ${saved?"status-delivered":"status-pending"}">${saved?"Configured":"Not configured"}</span></div>
+        <form id="merchantWebhookForm" style="margin-top:14px"><div class="form-field"><label for="merchantWebhookUrl">HTTPS endpoint URL</label><input id="merchantWebhookUrl" type="url" required placeholder="https://your-domain.com/webhooks/delivery-fast" value="${merchantEscape(config.webhookUrl||"")}"><small>Must be publicly reachable over HTTPS for production.</small></div><fieldset style="border:0;padding:0;margin:14px 0"><legend style="font-size:13px;font-weight:600;margin-bottom:8px">Subscribe to events</legend>${merchantApiEvents.map(eventName=>`<label style="display:flex;gap:8px;align-items:center;margin:8px 0;color:#536174;font-size:13px"><input type="checkbox" name="webhookEvent" value="${eventName}" ${(config.events||merchantApiEvents).includes(eventName)?"checked":""}> <code>${eventName}</code></label>`).join("")}</fieldset><button type="submit" class="button button-primary">Save webhook</button>${saved?` <button type="button" class="button" id="removeMerchantWebhook">Remove webhook</button>`:""}</form>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)"><h3 style="margin:0 0 7px;font-size:13px">Webhook delivery guidance</h3><ul style="margin:0;padding-left:18px;color:#697587;font-size:12px;line-height:1.7"><li>Respond with HTTP 2xx promptly; process work asynchronously.</li><li>Verify HMAC-SHA256 using the signing secret and raw request body.</li><li>Deduplicate using the event <code>id</code>; delivery is at least once.</li><li>Retry transient failures with backoff; events may arrive out of order.</li><li>Return 2xx for events you safely ignore.</li></ul></div>
+      </section></div>
+      <section class="panel" style="margin-top:14px"><div class="panel-heading"><div><h2 class="panel-title">Webhook payloads</h2><p class="panel-subtitle">Pickup callbacks and shipment status updates share a signed event envelope.</p></div></div><div class="form-grid" style="margin-top:12px"><div class="form-field"><label>Pickup scheduled event</label><pre class="api-code">${merchantEscape(merchantApiExamples.pickupWebhook)}</pre></div><div class="form-field"><label>Shipment status update event</label><pre class="api-code">${merchantEscape(merchantApiExamples.trackingWebhook)}</pre></div></div></section>
+      <p class="panel-subtitle" style="margin-top:12px">Frontend demo only: API examples are documentation and no API requests, webhook deliveries, or production credentials are issued.</p>`;
+    }
+    const merchantRenderBeforeApi=renderPage;
+    renderPage=function(page){if(page!=="API & Webhooks"){merchantRenderBeforeApi(page);return}document.getElementById("breadcrumbPage").textContent=page;document.getElementById("mainContent").innerHTML=merchantApiDocsPage();document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));document.getElementById("sidebar").classList.remove("open")};
+    document.getElementById("mainContent").addEventListener("click",event=>{
+      if(event.target.closest("#requestMerchantApiKey")){const config=readMerchantApiConfig();if(config.keyRequest){showToast("An API access request is already pending.");return}config.keyRequest={reference:`API-REQ-${Date.now().toString(36).toUpperCase()}`,createdAt:new Date().toISOString(),status:"Pending review"};try{localStorage.setItem(merchantApiConfigKey,JSON.stringify(config));renderPage("API & Webhooks");showToast("API access request saved for this demo account.")}catch(error){console.error("Merchant API access request could not be saved.",error);showToast("Could not save API access request in this browser.")}}
+      if(event.target.closest("#removeMerchantWebhook")){const config=readMerchantApiConfig();delete config.webhookUrl;delete config.events;try{localStorage.setItem(merchantApiConfigKey,JSON.stringify(config));renderPage("API & Webhooks");showToast("Webhook configuration removed from this demo.")}catch(error){console.error("Merchant webhook settings could not be removed.",error);showToast("Could not remove webhook settings in this browser.")}}
+      const copy=event.target.closest("[data-copy-api]");if(copy){const code=document.querySelector(copy.dataset.copyApi);if(code)navigator.clipboard.writeText(code.textContent).then(()=>showToast("API example copied."),error=>{console.error("API example could not be copied.",error);showToast("Copy is unavailable; select the code and copy it manually.")})}
+    });
+    document.getElementById("mainContent").addEventListener("submit",event=>{
+      if(event.target.id!=="merchantWebhookForm")return;event.preventDefault();const url=document.getElementById("merchantWebhookUrl").value.trim();let parsed;try{parsed=new URL(url)}catch(error){showToast("Enter a valid HTTPS webhook URL.");return}if(parsed.protocol!=="https:"){showToast("Webhook URL must use HTTPS.");return}const events=[...event.target.querySelectorAll('input[name="webhookEvent"]:checked')].map(input=>input.value);if(!events.length){showToast("Choose at least one webhook event.");return}const config=readMerchantApiConfig();config.webhookUrl=parsed.href;config.events=events;try{localStorage.setItem(merchantApiConfigKey,JSON.stringify(config));renderPage("API & Webhooks");showToast("Webhook settings saved in this demo browser.")}catch(error){console.error("Merchant webhook settings could not be saved.",error);showToast("Could not save webhook settings in this browser.")}});
+    document.addEventListener("keydown",event=>{if(event.key==="Escape")document.getElementById("merchantHistoryBackdrop")?.remove()});
+  </script>
+  <script>
+    let merchantExtraFieldsReady=false;
+    const merchantRegions={district:["Dhaka North","Dhaka Central","Dhaka South","Chattogram"],zone:["Gulshan","Banani","Dhanmondi","Mirpur","Uttara"],area:["Niketon Central Mosque","Road 4 Gulshan","Banani Block C","Dhanmondi Road 7"]};
+    const merchantCatalogs={ecommercePackaging:["Small carton","Large carton","Box","Poly mailer"],documentPackaging:["Document envelope","Security pouch","Rigid document mailer"],ecommerceProducts:["General merchandise","Fragile item","Clothing","Electronics"],documentProducts:["ATM card","Cheque book","Contract","Trade document"]};
+    function readMerchantConfig(){try{return JSON.parse(localStorage.getItem("deliveryfast-demo-config")||"{}")}catch(error){console.error("Shared delivery configuration could not be loaded in the merchant workspace.",error);return{}}}
+    function applyMerchantConfig(){const config=readMerchantConfig();if(config.geoCatalog)for(const key of Object.keys(merchantRegions))if(Array.isArray(config.geoCatalog[key]))merchantRegions[key]=config.geoCatalog[key];for(const key of Object.keys(merchantCatalogs))if(Array.isArray(config[key]))merchantCatalogs[key]=config[key];const account=config.entitlements?.find(item=>item.id==="MER-10124"),type=document.getElementById("orderType");if(account&&type){for(const option of type.options){option.disabled=option.value==="E-commerce parcel"?!account.ecommerce:!account.domestic;option.hidden=option.disabled}if(type.selectedOptions[0]?.disabled){const next=[...type.options].find(option=>!option.disabled);if(next)type.value=next.value}}return config}
+    function updateMerchantShipmentFields(){
+      const type=document.getElementById("orderType"),doc=document.getElementById("merchantDocumentType"),weight=document.getElementById("merchantWeight");
+      if(!type||!doc||!weight)return;
+      const isDocument=type.value==="Document delivery";
+      doc.closest(".form-field").hidden=!isDocument;weight.closest(".form-field").hidden=isDocument;
+      const packaging=document.getElementById("merchantPackaging"),product=document.getElementById("merchantProduct");
+      const config=applyMerchantConfig(),packItems=isDocument?merchantCatalogs.documentPackaging:merchantCatalogs.ecommercePackaging,productItems=isDocument?merchantCatalogs.documentProducts:merchantCatalogs.ecommerceProducts;
+      if(packaging&&packaging.dataset.catalog!==String(isDocument)){packaging.innerHTML=packItems.map(x=>`<option>${x}</option>`).join("");packaging.dataset.catalog=String(isDocument)}
+      if(product&&product.dataset.catalog!==String(isDocument)){product.innerHTML=productItems.map(x=>`<option>${x}</option>`).join("");product.dataset.catalog=String(isDocument)}
+      if(doc&&Array.isArray(config.documentTypes)&&doc.dataset.catalog!==config.documentTypes.join("|")){doc.innerHTML=config.documentTypes.map(x=>`<option>${x}</option>`).join("");doc.dataset.catalog=config.documentTypes.join("|")}
+      const levels=document.getElementById("merchantServiceLevel");if(levels&&Array.isArray(config.deliveryServices)&&levels.dataset.catalog!==config.deliveryServices.join("|")){levels.innerHTML=config.deliveryServices.map(x=>`<option>${x}</option>`).join("");levels.dataset.catalog=config.deliveryServices.join("|")}
+      const hint=document.getElementById("merchantPriceHint");if(hint)hint.textContent=`Estimated merchant rate uses configured route, weight and service rates. ${Number(config.merchantDiscounts?.["MER-10124"]??5)}% sample merchant discount applied.`;
+    }
+    const priorOpenOrderModal=openOrderModal;
+    openOrderModal=function(){
+      const config=applyMerchantConfig();
+      priorOpenOrderModal();
+      if(!merchantExtraFieldsReady){
+        const grid=document.querySelector("#orderForm .form-grid");
+        const extra=document.createElement("div");extra.className="order-extra-grid";extra.id="orderExtraFields";
+        extra.innerHTML=`<div class="form-field"><label for="merchantPickupZone">Pickup zone</label><select id="merchantPickupZone">${merchantRegions.zone.map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantAddressType">Delivery address category</label><select id="merchantAddressType"><option>Home</option><option>Office</option><option>Other</option></select></div>
+          <div class="form-field"><label for="merchantDistrict">District</label><select id="merchantDistrict">${merchantRegions.district.map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantZone">Zone</label><select id="merchantZone">${merchantRegions.zone.map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantArea">Area</label><select id="merchantArea">${merchantRegions.area.map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantRelation">Receiver relationship</label><select id="merchantRelation"><option>Self</option><option>Family member</option><option>Colleague</option><option>Reception</option><option>Authorized representative</option></select></div>
+          <div class="form-field"><label for="merchantBranchCode">Origin branch code</label><input id="merchantBranchCode" value="MBP-DHK-01" required></div>
+          <div class="form-field"><label for="merchantReferenceNo">Internal reference / cost center</label><input id="merchantReferenceNo" placeholder="e.g. CARD-2026-0012"></div>
+          <div class="form-field"><label for="merchantServiceLevel">Delivery service</label><select id="merchantServiceLevel">${(config.deliveryServices||["Regular","Same day","Express"]).map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantWeight">Parcel weight</label><select id="merchantWeight"><option value="0.5">Up to 0.5 kg</option><option value="1">Up to 1 kg</option><option value="2">Up to 2 kg</option><option value="5">Up to 5 kg</option></select></div>
+          <div class="form-field"><label for="merchantDocumentType">Document type</label><select id="merchantDocumentType">${(config.documentTypes||["B2B Document","Trade Service Document","Corporate Urgent Document","ATM card","Cheque book"]).map(x=>`<option>${x}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="merchantPackaging">Secure packaging</label><select id="merchantPackaging"><option>Security pouch</option><option>Document envelope</option><option>Rigid document mailer</option></select></div>
+          <div class="form-field"><label for="merchantProduct">Document / item</label><select id="merchantProduct"><option>ATM card</option><option>Cheque book</option><option>Contract</option><option>Trade document</option></select></div>
+          <div class="order-hint" id="merchantPriceHint">Estimated merchant rate: ৳70 · 5% negotiated discount applied in this demo.</div>`;
+        grid.append(extra);merchantExtraFieldsReady=true;
+        document.getElementById("orderType").addEventListener("change",updateMerchantShipmentFields);
+      }
+      updateMerchantShipmentFields();
+    };
+    document.addEventListener("click",event=>{const button=event.target.closest("#createOrder");if(button){event.preventDefault();event.stopImmediatePropagation();openOrderModal()}},true);
+    document.getElementById("orderForm").addEventListener("submit",event=>{
+      event.preventDefault();event.stopImmediatePropagation();
+      const form=event.currentTarget,name=document.getElementById("customerName").value.trim(),phone=document.getElementById("customerPhone").value.trim(),type=document.getElementById("orderType").value;
+      const district=document.getElementById("merchantDistrict").value,zone=document.getElementById("merchantZone").value,area=document.getElementById("merchantArea").value,street=document.getElementById("deliveryAddress").value.trim();
+      const address=`${document.getElementById("merchantAddressType").value}: ${street}, ${area}, ${zone}, ${district}`;
+      const weight=Number(document.getElementById("merchantWeight").value),service=document.getElementById("merchantServiceLevel").value;
+      const config=readMerchantConfig(),rates=config.deliveryRates||{sameZone:70,crossZone:120,extraWeight:20,documentBase:60},documentRates=config.merchantPricing?.document,discount=Number(config.merchantDiscounts?.["MER-10124"]??5),documentType=document.getElementById("merchantDocumentType").value,routeBase=document.getElementById("merchantPickupZone").value===zone?Number(documentRates?.sameZone??rates.sameZone??70):Number(documentRates?.crossZone??rates.crossZone??120),typeTariff=Number(documentRates?.documentRates?.[documentType]??config.documentTypeRates?.[documentType]??rates.documentBase??60),base=type==="Document delivery"?Math.max(routeBase,typeTariff):routeBase,surcharge=type==="Document delivery"?0:Math.max(0,Math.ceil(weight-1))*Number(rates.extraWeight??20),priority=Number(config.serviceLevelFees?.[service]??(service==="Same day"?30:service==="Express"?50:0)),fee=Math.round((base+surcharge+priority)*(1-discount/100));
+      const id=`DF-${610300+sampleOrders.length}`,initials=name.split(/\s+/).map(part=>part[0]).slice(0,2).join("").toUpperCase(),documentTypeValue=document.getElementById("merchantDocumentType").value;
+      sampleOrders.unshift({id,name,initials,phone,item:documentTypeValue,type:"Document delivery",date:"Just now",amount:`৳ ${fee.toLocaleString("en-BD")}`,declaredValue:Number(document.getElementById("orderAmount").value)||0,status:"Processing",address,recipientRelation:document.getElementById("merchantRelation").value,service,documentType:documentTypeValue,weight:null,packaging:document.getElementById("merchantPackaging").value,product:document.getElementById("merchantProduct").value,deliveryFee:fee,branchCode:document.getElementById("merchantBranchCode").value.trim(),referenceNo:document.getElementById("merchantReferenceNo").value.trim(),billedInvoiceId:""});
+      pageData.Orders.rows=sampleOrders;form.reset();merchantExtraFieldsReady=true;closeOrderModal();renderPage(document.getElementById("breadcrumbPage").textContent);showToast(`Order ${id} created · estimated delivery fee ৳${fee}.`);
+    },true);
+  </script>
+  <script>
+    const merchantBulkTemplate="recipient_name,phone,address,document_type,delivery_service,packaging,branch_code,reference_no,declared_value\r\nAyesha Rahman,+8801712345678,\"Office 18, Motijheel C/A, Dhaka\",Corporate Urgent Document,Express,Security pouch,MBP-DHK-01,LOAN-2026-00481,0\r\nMahir Chowdhury,+8801819123205,\"House 12, Banani, Dhaka\",ATM card,Regular,Security pouch,MBP-DHK-02,CARD-2026-01984,0";
+    const merchantTrackingEvents={
+      "DF-610284":[["10:42 AM","Out for delivery","Assigned rider is delivering this corporate document."],["9:55 AM","Arrived at local hub","Gulshan Sorting Hub"],["Yesterday, 6:20 PM","In transit","Shipment dispatched to Dhaka North"],["Yesterday, 2:15 PM","Picked up","Collected from Meridian Bank PLC · Branch MBP-DHK-01"]],
+      "DF-610283":[["10:18 AM","Delivered","Received by Mahir Chowdhury · signature and proof recorded"],["9:40 AM","Out for delivery","Assigned to delivery rider"],["Yesterday, 5:45 PM","In transit","Departed sorting hub"]],
+      "DF-610282":[["11:05 AM","Pickup scheduled","Corporate branch pickup confirmed"],["10:35 AM","Request created","Cheque book consignment registered by Meridian Bank PLC"]]
+    };
+    function parseMerchantCsv(text){text=text.replace(/^\uFEFF/,"");const rows=[];let row=[],cell="",quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=false;else cell+=c}else if(c==='"')quoted=true;else if(c===","){row.push(cell.trim());cell=""}else if(c==="\n"){row.push(cell.trim());if(row.some(Boolean))rows.push(row);row=[];cell=""}else if(c!=="\r")cell+=c}if(quoted)throw new Error("The CSV contains an unfinished quoted field.");row.push(cell.trim());if(row.some(Boolean))rows.push(row);return rows}
+    function inflateMerchantRaw(data,expectedSize){let bitPosition=0;const output=new Uint8Array(expectedSize),reader={read(count){let value=0;for(let bit=0;bit<count;bit++){value|=((data[bitPosition>>3]>>(bitPosition&7))&1)<<bit;bitPosition++}return value},huffman(tree){let code=0;for(let length=1;length<=tree.max;length++){code=(code<<1)|this.read(1);const symbol=tree.codes.get(`${length}:${code}`);if(symbol!==undefined)return symbol}throw new Error("Invalid compressed Excel data.")},align(){bitPosition=(bitPosition+7)&~7}};let outputLength=0;
+      const buildTree=lengths=>{const max=Math.max(...lengths);if(!max)return{max:0,codes:new Map()};const counts=Array(max+1).fill(0);for(const length of lengths)if(length)counts[length]++;const next=Array(max+1).fill(0);let code=0;for(let bits=1;bits<=max;bits++){code=(code+counts[bits-1])*2;next[bits]=code}const codes=new Map();lengths.forEach((length,symbol)=>{if(length)codes.set(`${length}:${next[length]++}`,symbol)});return{max,codes}};
+      const fixedLiteral=buildTree([...Array(288)].map((_,i)=>i<=143?8:i<=255?9:i<=279?7:8)),fixedDistance=buildTree(Array(32).fill(5)),lengthBase=[3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258],lengthExtra=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0],distanceBase=[1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577],distanceExtra=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];
+      let finalBlock=0;while(!finalBlock){finalBlock=reader.read(1);const type=reader.read(2);if(type===0){reader.align();const length=reader.read(16),inverse=reader.read(16);if((length^0xffff)!==inverse)throw new Error("Invalid uncompressed Excel block.");for(let i=0;i<length;i++)output[outputLength++]=reader.read(8);continue}if(type===3)throw new Error("Unsupported compressed Excel block.");let literalTree=fixedLiteral,distanceTree=fixedDistance;if(type===2){const literalCount=reader.read(5)+257,distanceCount=reader.read(5)+1,codeCount=reader.read(4)+4,order=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15],codeLengths=Array(19).fill(0);for(let i=0;i<codeCount;i++)codeLengths[order[i]]=reader.read(3);const codeTree=buildTree(codeLengths),allLengths=[];while(allLengths.length<literalCount+distanceCount){const symbol=reader.huffman(codeTree);if(symbol<=15)allLengths.push(symbol);else if(symbol===16){const repeat=reader.read(2)+3;for(let j=0;j<repeat;j++)allLengths.push(allLengths[allLengths.length-1])}else{const repeat=symbol===17?reader.read(3)+3:reader.read(7)+11;for(let j=0;j<repeat;j++)allLengths.push(0)}}literalTree=buildTree(allLengths.slice(0,literalCount));distanceTree=buildTree(allLengths.slice(literalCount))}while(true){const symbol=reader.huffman(literalTree);if(symbol<256){output[outputLength++]=symbol;continue}if(symbol===256)break;if(symbol<257||symbol>285)throw new Error("Invalid Excel compression length.");const lengthIndex=symbol-257,length=lengthBase[lengthIndex]+reader.read(lengthExtra[lengthIndex]),distanceSymbol=reader.huffman(distanceTree);if(distanceSymbol>29)throw new Error("Invalid Excel compression distance.");const distance=distanceBase[distanceSymbol]+reader.read(distanceExtra[distanceSymbol]);for(let i=0;i<length;i++)output[outputLength]=output[outputLength++-distance]}}
+      if(outputLength!==expectedSize)throw new Error("The Excel worksheet data is incomplete.");return output}
+    async function readMerchantSpreadsheet(file){
+      if(/\.csv$/i.test(file.name))return parseMerchantCsv(await file.text());
+      if(!/\.xlsx$/i.test(file.name))throw new Error("Choose an Excel .xlsx file or an Excel-compatible .csv file.");
+      const bytes=await file.arrayBuffer(),view=new DataView(bytes);let eocd=-1;
+      for(let p=bytes.byteLength-22;p>=Math.max(0,bytes.byteLength-65558);p--)if(view.getUint32(p,true)===0x06054b50){eocd=p;break}
+      if(eocd<0)throw new Error("This file is not a valid .xlsx workbook.");
+      const entryCount=view.getUint16(eocd+10,true);let cursor=view.getUint32(eocd+16,true);const files={};
+      for(let n=0;n<entryCount;n++){if(view.getUint32(cursor,true)!==0x02014b50)throw new Error("Could not read the Excel workbook directory.");const method=view.getUint16(cursor+10,true),compressedSize=view.getUint32(cursor+20,true),uncompressedSize=view.getUint32(cursor+24,true),nameLength=view.getUint16(cursor+28,true),extraLength=view.getUint16(cursor+30,true),commentLength=view.getUint16(cursor+32,true),localOffset=view.getUint32(cursor+42,true),name=new TextDecoder().decode(new Uint8Array(bytes,cursor+46,nameLength));cursor+=46+nameLength+extraLength+commentLength;if(!name.endsWith(".xml"))continue;const localName=view.getUint16(localOffset+26,true),localExtra=view.getUint16(localOffset+28,true),start=localOffset+30+localName+localExtra,compressed=new Uint8Array(bytes,start,compressedSize);if(method===0)files[name]=new TextDecoder().decode(compressed);else if(method===8)files[name]=new TextDecoder().decode(inflateMerchantRaw(compressed,uncompressedSize))}
+      const xmlParser=new DOMParser(),sheetName=Object.keys(files).find(name=>/^xl\/worksheets\/sheet\d+\.xml$/.test(name));if(!sheetName)throw new Error("The workbook has no readable worksheet.");const sharedDoc=files["xl/sharedStrings.xml"]?xmlParser.parseFromString(files["xl/sharedStrings.xml"],"application/xml"):null,shared=sharedDoc?[...sharedDoc.getElementsByTagName("si")].map(si=>[...si.getElementsByTagName("t")].map(t=>t.textContent).join("")):[],sheet=xmlParser.parseFromString(files[sheetName],"application/xml");if(sheet.querySelector("parsererror"))throw new Error("The Excel worksheet could not be read.");return [...sheet.getElementsByTagName("row")].map(row=>{const cells=[];for(const cell of row.getElementsByTagName("c")){const letters=(cell.getAttribute("r")||"").match(/[A-Z]+/i)?.[0]||"";let index=0;for(const char of letters.toUpperCase())index=index*26+char.charCodeAt(0)-64;index--;const value=cell.getElementsByTagName("v")[0]?.textContent||"",type=cell.getAttribute("t");cells[index]=type==="s"?shared[Number(value)]||"":type==="inlineStr"?[...cell.getElementsByTagName("t")].map(t=>t.textContent).join(""):value}return cells.map(value=>value||"")}).filter(row=>row.some(value=>String(value).trim()))
+    }
+    function csvDownload(fileName,text){const link=document.createElement("a");link.href=URL.createObjectURL(new Blob(["\uFEFF",text],{type:"text/csv;charset=utf-8"}));link.download=fileName;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000)}
+    function merchantDownloadOrders(){const headings=["order_id","customer_name","phone","address","item","shipment_type","created","order_value","status"];const csv=[headings,...sampleOrders.map(o=>[o.id,o.name,o.phone,o.address||"",o.item,o.type,o.date,o.amount,o.status])].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n");csvDownload("delivery-fast-orders.csv",csv);showToast("Orders downloaded as Excel-compatible CSV.")}
+    function merchantTrackingHistory(id){const order=sampleOrders.find(item=>item.id===id),events=merchantTrackingEvents[id]||[[order?.date||"Today","Order created","Order received from Meridian Bank PLC"],["Just now",order?.status||"Processing","Latest shipment status"]];const markup=`<div id="merchantHistoryBackdrop" role="dialog" aria-modal="true" aria-labelledby="merchantHistoryTitle" style="position:fixed;inset:0;z-index:100;background:#14203380;display:grid;place-items:center;padding:18px"><section style="width:min(540px,100%);max-height:85vh;overflow:auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 24px 70px #10182840"><header style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h2 id="merchantHistoryTitle" style="margin:0;font-size:18px">Tracking history · ${merchantEscape(id)}</h2><p style="margin:6px 0;color:#778293">${merchantEscape(order?.name||"Shipment")} · ${merchantEscape(order?.status||"In transit")}</p></div><button type="button" id="closeMerchantHistory" aria-label="Close tracking history" class="button">×</button></header><ol style="list-style:none;margin:18px 0 0;padding:0">${events.map((entry,index)=>`<li style="position:relative;margin-left:8px;padding:0 0 18px 25px;border-left:${index===events.length-1?"0":"1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index===0?"#3766e8":"#cbd5e1"}"></span><strong>${merchantEscape(entry[1])}</strong><div style="margin-top:3px;color:#647184">${merchantEscape(entry[2])}</div><small style="display:block;margin-top:4px;color:#99a3af">${merchantEscape(entry[0])}</small></li>`).join("")}</ol><p style="margin:0;color:#929eac;font-size:12px">Sample tracking events for this frontend demo.</p></section></div>`;document.getElementById("merchantHistoryBackdrop")?.remove();document.body.insertAdjacentHTML("beforeend",markup);document.getElementById("closeMerchantHistory").addEventListener("click",()=>document.getElementById("merchantHistoryBackdrop").remove());document.getElementById("merchantHistoryBackdrop").addEventListener("click",event=>{if(event.target.id==="merchantHistoryBackdrop")event.currentTarget.remove()})}
+    function merchantPrint(format){const selected=sampleOrders;const printOrder=o=>`<article class="invoice"><header><strong>DELIVERY FAST</strong><small>${format.startsWith("invoice")?"DELIVERY INVOICE":format==="label"?"SHIPMENT LABEL":"ORDER DETAILS"}</small></header><h2>${merchantEscape(o.id)}</h2><p><b>To:</b> ${merchantEscape(o.name)}<br><b>Phone:</b> ${merchantEscape(o.phone)}<br><b>Address:</b> ${merchantEscape(o.address||"Dhaka, Bangladesh")}</p><p><b>Item:</b> ${merchantEscape(o.item)}<br><b>Service:</b> ${merchantEscape(o.service||o.type)}<br><b>Order value:</b> ${merchantEscape(o.amount)}<br><b>Status:</b> ${merchantEscape(o.status)}</p><footer>Meridian Bank PLC · Sample document</footer></article>`;const body=format==="orders"||format==="shipments"?`<h1>${format==="orders"?"Orders":"Shipments"} · Meridian Bank PLC</h1><table><thead><tr><th>Order / tracking ID</th><th>Customer</th><th>Item / service</th><th>Created</th><th>Amount</th><th>Status</th></tr></thead><tbody>${selected.map(o=>`<tr><td>${merchantEscape(o.id)}</td><td>${merchantEscape(o.name)}</td><td>${merchantEscape(o.item)} · ${merchantEscape(o.type)}</td><td>${merchantEscape(o.date)}</td><td>${merchantEscape(o.amount)}</td><td>${merchantEscape(o.status)}</td></tr>`).join("")}</tbody></table>`:`<main class="${merchantEscape(format)}">${selected.map(printOrder).join("")}</main>`;const columns=format==="invoice-8"?4:format==="invoice-4"||format==="label"?2:1;const popup=window.open("","_blank");if(!popup){showToast("Allow pop-ups to open the print preview.");return}popup.document.write(`<!doctype html><html><head><title>Delivery Fast · ${merchantEscape(format)}</title><style>@page{size:${format==="pos"?"80mm auto":"A4"};margin:${format==="pos"?"4mm":"10mm"}}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#182230;margin:0}main{display:grid;grid-template-columns:repeat(${columns},1fr);gap:5mm}.invoice{border:1px solid #aeb7c2;padding:5mm;break-inside:avoid;min-height:${format==="invoice-8"?"62mm":format==="invoice-4"?"125mm":format==="label"?"90mm":"auto"}}main.invoice-4 .invoice:nth-child(4n+1):not(:first-child),main.invoice-8 .invoice:nth-child(8n+1):not(:first-child){break-before:page;page-break-before:always}.pos .invoice{border:0;border-bottom:1px dashed #888;padding:2mm}header{display:flex;justify-content:space-between;gap:4px;border-bottom:1px solid #ccd3dc;padding-bottom:5px}header strong{font-size:14px}header small{font-size:9px}h1{font-size:18px}h2{font-size:14px;margin:8px 0}p{line-height:1.5;margin:6px 0}footer{border-top:1px solid #ccd3dc;padding-top:5px;margin-top:8px;color:#687384;font-size:9px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;border-bottom:1px solid #ccd3dc}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${body}<script>window.onload=()=>window.print();window.onafterprint=()=>window.close()<\\/script></body></html>`);popup.document.close()}
+    const merchantCode39={"0":0x034,"1":0x121,"2":0x061,"3":0x160,"4":0x031,"5":0x130,"6":0x070,"7":0x025,"8":0x124,"9":0x064,A:0x109,B:0x049,C:0x148,D:0x019,E:0x118,F:0x058,G:0x00d,H:0x10c,I:0x04c,J:0x01c,K:0x103,L:0x043,M:0x142,N:0x013,O:0x112,P:0x052,Q:0x007,R:0x106,S:0x046,T:0x016,U:0x181,V:0x0c1,W:0x1c0,X:0x091,Y:0x190,Z:0x0d0,"-":0x085,".":0x184," ":0x0c4,"$":0x0a8,"/":0x0a2,"+":0x08a,"%":0x02a,"*":0x094};
+    function merchantBarcode(value){
+      const code=String(value).toUpperCase();if(!code||[...code].some(char=>merchantCode39[char]===undefined))return `<span class="barcode-fallback">Barcode unavailable · ${merchantEscape(value)}</span>`;
+      const full=`*${code}*`,unit=2,quiet=20;let x=quiet,rects="";
+      for(const char of full){const mask=merchantCode39[char];for(let i=0;i<9;i++){const width=(mask&(1<<(8-i))?3:1)*unit;if(i%2===0)rects+=`<rect x="${x}" y="0" width="${width}" height="44"/>`;x+=width}x+=unit}
+      return `<svg class="tracking-barcode" role="img" aria-label="Code 39 barcode for ${merchantEscape(code)}" viewBox="0 0 ${x+quiet} 44" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#fff"/>${rects}</svg><span class="barcode-value">${merchantEscape(code)}</span>`;
+    }
+    function merchantPrintLogo(){return `<div class="print-brand"><svg viewBox="0 0 32 32" fill="none" stroke="#344054" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true"><path d="m12 3 4-2 4 2v5l-4 2-4-2V3Z" stroke="#d69e00" stroke-width="1.8"/><path d="m12 3 4 2 4-2m-4 2v5" stroke="#d69e00" stroke-width="1.4"/><path d="M16 10v2"/><rect x="5" y="12" width="22" height="13" rx="4"/><path d="M9 17h14" stroke="#d69e00" stroke-width="1.5"/><circle cx="12" cy="20" r="1.2" fill="#d69e00" stroke="none"/><circle cx="20" cy="20" r="1.2" fill="#d69e00" stroke="none"/><path d="M11 25v2m10-2v2"/><circle cx="10" cy="28" r="2" fill="#344054" stroke="none"/><circle cx="22" cy="28" r="2" fill="#344054" stroke="none"/></svg><strong>delivery <span>fast</span></strong></div>`}
+    function merchantPrint(format){
+      const category=order=>String(order.type||"").toLowerCase().includes("document")?"document":"ecommerce";
+      const selected=sampleOrders.filter(order=>format==="invoice-ecommerce"?category(order)==="ecommerce":format==="invoice-document"?category(order)==="document":true);
+      const invoice=order=>{
+        const document=category(order)==="document",recipient=merchantEscape(order.name),id=merchantEscape(order.id);
+        const info=document
+          ?`<div class="doc-notice">SECURE DOCUMENT DELIVERY · SIGNATURE REQUIRED</div><div class="invoice-grid"><div><small>DOCUMENT TYPE</small><strong>${merchantEscape(order.documentType||order.item||"Business document")}</strong></div><div><small>RECEIVER RELATION</small><strong>${merchantEscape(order.recipientRelation||"Authorized recipient")}</strong></div><div><small>PACKAGE</small><strong>${merchantEscape(order.packaging||"Security pouch")}</strong></div><div><small>DELIVERY SERVICE</small><strong>${merchantEscape(order.service||"Regular")}</strong></div></div>`
+          :`<div class="invoice-grid"><div><small>PRODUCT</small><strong>${merchantEscape(order.item||"E-commerce goods")}</strong></div><div><small>PACKAGE TYPE</small><strong>${merchantEscape(order.packaging||"Carton / parcel")}</strong></div><div><small>WEIGHT</small><strong>${order.weight?`${merchantEscape(order.weight)} kg`:"As declared"}</strong></div><div><small>DELIVERY SERVICE</small><strong>${merchantEscape(order.service||"Regular")}</strong></div></div>`;
+        return `<article class="invoice ${document?"document-invoice":"ecommerce-invoice"}"><div class="invoice-head">${merchantPrintLogo()}<span class="invoice-kind">${document?"DOCUMENT CONSIGNMENT":"E-COMMERCE PARCEL INVOICE"}</span></div><div class="tracking-head"><div><small>TRACKING NUMBER</small><h2>${id}</h2></div>${statusPill(order.status)}</div><div class="address-grid"><div><small>FROM</small><strong>Meridian Bank PLC</strong><span>Corporate account · MER-10124</span><span>Origin branch · ${merchantEscape(order.branchCode||"MBP-DHK-01")}</span><span>Internal reference · ${merchantEscape(order.referenceNo||"—")}</span></div><div><small>DELIVER TO</small><strong>${recipient}</strong><span>${merchantEscape(order.phone)}</span><span>${merchantEscape(order.address||"Dhaka, Bangladesh")}</span></div></div>${info}<div class="amount-row"><span>${document?"Delivery charge · contract tariff":"Cash to collect (COD)"}</span><strong>${merchantEscape(order.amount||"৳ 0")}</strong></div><div class="barcode-block">${merchantBarcode(order.id)}<small>Scan barcode to find shipment and update its status</small></div><footer>Meridian Bank PLC · Demo shipment document · ${merchantEscape(order.date||"")}</footer></article>`;
+      };
+      const body=format==="orders"||format==="shipments"?`<h1>${format==="orders"?"Orders":"Shipments"} · Meridian Bank PLC</h1><table><thead><tr><th>Order / tracking ID</th><th>Customer</th><th>Item / service</th><th>Created</th><th>Amount</th><th>Status</th></tr></thead><tbody>${selected.map(order=>`<tr><td>${merchantEscape(order.id)}</td><td>${merchantEscape(order.name)}</td><td>${merchantEscape(order.item)} · ${merchantEscape(order.type)}</td><td>${merchantEscape(order.date)}</td><td>${merchantEscape(order.amount)}</td><td>${merchantEscape(order.status)}</td></tr>`).join("")}</tbody></table>`:`<main class="${format==="invoice-8"?"invoice-8":format==="invoice-4"?"invoice-4":format==="label"?"label":format==="pos"?"pos":"invoice"}">${selected.map(invoice).join("")}</main>`;
+      const columns=format==="invoice-8"?4:format==="invoice-4"||format==="label"?2:1,popup=window.open("","_blank");if(!popup){showToast("Allow pop-ups to open the print preview.");return}
+      popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Delivery Fast · ${merchantEscape(format)}</title><style>@page{size:${format==="pos"?"80mm auto":"A4"};margin:${format==="pos"?"4mm":"10mm"}}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#182230;margin:0}main{display:grid;grid-template-columns:repeat(${columns},minmax(0,1fr));gap:5mm}.invoice{border:1px solid #aeb7c2;padding:4mm;break-inside:avoid;min-height:${format==="invoice-8"?"62mm":format==="invoice-4"?"125mm":format==="label"?"90mm":"auto"}}main.invoice-4 .invoice:nth-child(4n+1):not(:first-child),main.invoice-8 .invoice:nth-child(8n+1):not(:first-child){break-before:page;page-break-before:always}.pos .invoice{border:0;border-bottom:1px dashed #888;padding:2mm}.invoice-head,.tracking-head,.amount-row{align-items:center;display:flex;justify-content:space-between;gap:8px}.print-brand{align-items:center;display:flex;gap:6px}.print-brand svg{height:28px;width:28px}.print-brand strong{font-size:15px;letter-spacing:-.4px}.print-brand span{color:#d69e00}.invoice-kind{font-size:9px;font-weight:700;text-align:right}.tracking-head{border-bottom:1px solid #d8dee8;margin:7px 0;padding:5px 0}.tracking-head small,.address-grid small,.invoice-grid small{color:#758195;display:block;font-size:8px;letter-spacing:.08em}.tracking-head h2{font:700 16px ui-monospace,monospace;margin:2px 0}.address-grid,.invoice-grid{display:grid;gap:8px;grid-template-columns:1fr 1fr;margin:8px 0}.address-grid>div,.invoice-grid>div{display:grid;gap:3px}.address-grid strong,.invoice-grid strong{font-size:10px}.address-grid span{font-size:9px;line-height:1.35}.doc-notice{background:#fff7dd;border:1px solid #f0d47b;font-size:9px;font-weight:700;margin:8px 0;padding:6px;text-align:center}.amount-row{border-top:1px solid #d8dee8;font-size:10px;margin-top:7px;padding-top:7px}.amount-row strong{font-size:13px}.barcode-block{align-items:center;display:flex;flex-direction:column;margin:8px auto 3px;max-width:78%}.tracking-barcode{display:block;height:36px;max-width:100%;width:100%}.barcode-value{font:9px ui-monospace,monospace;letter-spacing:2px;margin-top:2px}.barcode-block small{color:#758195;font-size:7px;margin-top:3px;text-align:center}.barcode-fallback{font-size:9px}footer{border-top:1px solid #ccd3dc;color:#687384;font-size:8px;margin-top:7px;padding-top:5px}.status{border:1px solid #d6dfed;border-radius:20px;color:#344054;font-size:8px;padding:3px 6px;white-space:nowrap}h1{font-size:18px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px;border-bottom:1px solid #ccd3dc}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${body}<script>window.onload=()=>window.print();window.onafterprint=()=>window.close()<\\/script></body></html>`);popup.document.close();
+    }
+    function enhanceMerchantOrderTools(page){
+      if(!["Orders","Shipments"].includes(page))return;
+      const actions=document.querySelector("#mainContent .page-heading .heading-actions");if(!actions)return;
+      if(page==="Orders"){
+        actions.insertAdjacentHTML("beforeend",`<button class="button" id="merchantDownloadOrders">${icon("download")} Download consignments</button><button class="button" id="merchantBulkTemplate">${icon("download")} Sample batch</button><button class="button" id="merchantBulkImport">${icon("box")} Import batch</button><input id="merchantBulkFile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden><select class="select-small" id="merchantPrintFormat" aria-label="Document print format"><option value="invoice">All document invoices · A4</option><option value="invoice-document">Document invoices · A4</option><option value="invoice-4">4 invoices · A4</option><option value="invoice-8">8 invoices · A4</option><option value="pos">Invoice · POS 80mm</option><option value="label">Shipment labels</option><option value="orders">Consignment list</option></select><button class="button" id="merchantPrint">Print</button>`);
+      }else{
+        actions.insertAdjacentHTML("beforeend",`<button class="button" id="merchantDownloadOrders">${icon("download")} Download shipments</button><select class="select-small" id="merchantPrintFormat" aria-label="Shipment print format"><option value="shipments">Shipment list</option><option value="label">Shipment labels</option></select><button class="button" id="merchantPrint">Print</button>`);
+      }
+      document.querySelectorAll("#tableBody tr").forEach((row,index)=>{const id=page==="Orders"?sampleOrders[index]?.id:pageData.Shipments.rows[index]?.[0];if(id){const cell=document.createElement("td");cell.innerHTML=`<button type="button" class="button button-sm" data-merchant-history="${merchantEscape(id)}">Tracking history</button>`;row.append(cell)}});
+      document.querySelector("#tableBody")?.previousElementSibling?.querySelector("tr")?.insertAdjacentHTML("beforeend","<th>HISTORY</th>");
+      document.querySelector("#mainContent .panel-title")?.insertAdjacentHTML("afterend",page==="Orders"?' <span class="panel-subtitle">Bulk upload accepts .xlsx or Excel-compatible .csv files.</span>':"");
+    }
+    const merchantRenderWithOrderTools=renderPage;
+    renderPage=function(page){merchantRenderWithOrderTools(page);enhanceMerchantOrderTools(page)};
+    document.getElementById("mainContent").addEventListener("click",event=>{
+      const history=event.target.closest("[data-merchant-history]");if(history){merchantTrackingHistory(history.dataset.merchantHistory);return}
+      if(event.target.closest("#merchantDownloadOrders")){if(document.getElementById("breadcrumbPage").textContent==="Shipments"){const rows=pageData.Shipments.rows,headers=pageData.Shipments.columns;csvDownload("delivery-fast-shipments.csv",[headers,...rows].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n"));showToast("Shipment list downloaded as CSV.")}else merchantDownloadOrders();return}
+      if(event.target.closest("#merchantBulkTemplate")){csvDownload("delivery-fast-document-batch-sample.csv",merchantBulkTemplate);showToast("Document batch template downloaded as Excel-compatible CSV.");return}
+      if(event.target.closest("#merchantBulkImport")){document.getElementById("merchantBulkFile").click();return}
+      if(event.target.closest("#merchantPrint")){const format=document.getElementById("merchantPrintFormat").value;merchantPrint(format);return}
+    });
+    document.getElementById("mainContent").addEventListener("change",async event=>{
+      if(event.target.id!=="merchantBulkFile"||!event.target.files?.length)return;
+      const file=event.target.files[0];event.target.value="";
+      try{
+        const rows=await readMerchantSpreadsheet(file);if(rows.length<2)throw new Error("Add an order header and at least one data row before uploading.");
+        const headings=rows.shift().map(value=>String(value).trim().toLowerCase().replaceAll(" ","_"));if(!headings.includes("recipient_name")||!headings.includes("phone")||!headings.includes("address")||!headings.includes("document_type"))throw new Error("Required columns: recipient_name, phone, address, and document_type. Download the document batch template.");
+        const added=[];let skipped=0;
+        for(const cells of rows){const record=Object.fromEntries(headings.map((key,index)=>[key,String(cells[index]??"").trim()]));if(!record.recipient_name||!record.phone||!record.address||!record.document_type){skipped++;continue}const id=`DF-${610300+sampleOrders.length}`,initials=record.recipient_name.split(/\s+/).map(part=>part[0]).slice(0,2).join("").toUpperCase(),config=readMerchantConfig(),service=record.delivery_service||"Regular",base=Number(config.documentTypeRates?.[record.document_type]??config.deliveryRates?.documentBase??60),discount=Number(config.merchantDiscounts?.["MER-10124"]??5),priority=Number(config.serviceLevelFees?.[service]??0),deliveryFee=Math.round((base+priority)*(1-discount/100));const order={id,name:record.recipient_name,initials,phone:record.phone,item:record.document_type,type:"Document delivery",documentType:record.document_type,packaging:record.packaging||"Security pouch",branchCode:record.branch_code,referenceNo:record.reference_no,declaredValue:Number(record.declared_value||0),date:"Just now",amount:`৳ ${deliveryFee.toLocaleString("en-BD")}`,status:"Processing",address:record.address,deliveryFee,service};sampleOrders.unshift(order);added.push(id)}
+        if(!added.length)throw new Error("No valid document consignments found. Check recipient_name, phone, address, and document_type.");
+        pageData.Orders.rows=sampleOrders;renderPage("Orders");showToast(`${added.length} order(s) imported${skipped?`; ${skipped} incomplete row(s) skipped`:""}.`);
+      }catch(error){showToast(`Import failed: ${error.message}`)}
+    });
+    document.addEventListener("keydown",event=>{if(event.key==="Escape")document.getElementById("merchantHistoryBackdrop")?.remove()});
+  </script>
+  <script>
+    const documentBillsKey="deliveryfast-meridian-document-bills";
+    const documentBillSeed=[
+      {id:"INV-MBP-2026-0091",period:"Sep 1–30, 2026",issued:"Oct 1, 2026",due:"Oct 15, 2026",shipmentCount:38,subtotal:3320,tax:0,total:3320,status:"Due",lineItems:[]},
+      {id:"INV-MBP-2026-0084",period:"Aug 1–31, 2026",issued:"Sep 1, 2026",due:"Sep 15, 2026",shipmentCount:412,subtotal:28640,tax:0,total:28640,status:"Paid",paidOn:"Sep 12, 2026",lineItems:[]}
+    ];
+    function readDocumentBills(){try{const saved=localStorage.getItem(documentBillsKey);return saved?JSON.parse(saved):documentBillSeed.map(bill=>({...bill}))}catch(error){console.error("Corporate billing demo data could not be read.",error);return documentBillSeed.map(bill=>({...bill}))}}
+    let documentBills=readDocumentBills();
+    function saveDocumentBills(){try{localStorage.setItem(documentBillsKey,JSON.stringify(documentBills));return true}catch(error){console.error("Corporate billing demo data could not be saved.",error);showToast("Could not save billing changes in this browser.");return false}}
+    function billedDocumentIds(){return new Set(documentBills.flatMap(bill=>(bill.lineItems||[]).map(item=>item.trackingId)))}
+    function documentBillingPage(){
+      const dueBills=documentBills.filter(bill=>bill.status!=="Paid"),dueTotal=dueBills.reduce((sum,bill)=>sum+bill.total,0),dueDocs=sampleOrders.filter(order=>order.status==="Delivered"&&!billedDocumentIds().has(order.id)).length;
+      return `<div class="page-heading"><div><p class="eyebrow">Corporate finance · Meridian Bank PLC</p><h1>Billing & invoices</h1><p class="subtitle">Review delivery charges, generate consolidated monthly bills, and track invoice settlement.</p></div><div class="heading-actions"><select id="documentBillingPeriod" class="select-small" aria-label="Billing period"><option value="2026-10">October 2026 · current period</option><option value="2026-09">September 2026</option><option value="2026-08">August 2026</option></select><button class="button button-primary" id="generateDocumentBill">${icon("plus")} Generate monthly bill</button></div></div>
+      <div class="metrics">${metricCard("Outstanding balance",`৳ ${dueTotal.toLocaleString("en-BD")}`,"wallet",`${dueBills.length} unpaid invoice(s)`,"Due")}${metricCard("Delivered, not billed",String(dueDocs),"box","eligible for new invoice","Ready")}${metricCard("Invoices this year",String(documentBills.length),"chart","sample account history","")}</div>
+      <section class="panel billing-note"><div><strong>Corporate billing account</strong><p>Meridian Bank PLC · MER-10124 · Monthly consolidated billing · Net 15 sample terms</p></div><span class="status status-blue">Tax handled per contract</span></section>
+      <section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">Invoices & statements</h2><p class="panel-subtitle">Invoices consolidate delivered document consignments; billed shipments are excluded from future bills.</p></div><div class="table-tools"><input class="table-search" id="documentBillSearch" placeholder="Search invoice ID..." aria-label="Search invoices"><button class="button button-sm" id="exportDocumentBills">${icon("download")} Export</button></div></div>
+      <div class="table-scroll"><table><thead><tr><th>INVOICE</th><th>BILLING PERIOD</th><th>ISSUED</th><th>DUE DATE</th><th>DOCUMENTS</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody id="documentBillRows">${documentBills.map(bill=>`<tr data-document-bill="${merchantEscape(bill.id)}"><td><strong>${merchantEscape(bill.id)}</strong></td><td>${merchantEscape(bill.period)}</td><td>${merchantEscape(bill.issued)}</td><td>${merchantEscape(bill.due)}</td><td>${bill.shipmentCount}</td><td><strong>৳ ${bill.total.toLocaleString("en-BD")}</strong></td><td>${statusPill(bill.status)}</td><td><div class="billing-actions"><button type="button" class="button button-sm" data-bill-view="${merchantEscape(bill.id)}">View / print</button><button type="button" class="button button-sm" data-bill-download="${merchantEscape(bill.id)}">Download</button>${bill.status!=="Paid"?`<button type="button" class="button button-sm" data-bill-paid="${merchantEscape(bill.id)}">Mark paid</button>`:""}</div></td></tr>`).join("")||`<tr><td colspan="8" class="empty-state">No invoices yet. Generate a bill for delivered consignments.</td></tr>`}</tbody></table></div>
+      <div class="table-footer"><span>${documentBills.length} invoice(s) · Demo billing data</span><span>Payments are simulated; no funds are collected.</span></div></section>
+      <div class="layout billing-lower"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">How monthly billing works</h2><p class="panel-subtitle">A predictable finance workflow for multi-branch institutions</p></div></div><ol class="billing-steps"><li>Generate a bill from delivered consignments not previously invoiced.</li><li>Review each tracking ID, document type, origin branch, and internal reference.</li><li>Print or download the statement and route it through your finance approval process.</li><li>Record payment status here after settlement is confirmed by your finance team.</li></ol></section><section class="panel"><h2 class="panel-title">Billing controls</h2><div class="billing-controls"><span>Billing frequency<strong>Monthly, consolidated</strong></span><span>Sample payment terms<strong>Net 15 days from issue</strong></span><span>Invoice currency<strong>BDT · ৳</strong></span><span>Taxes<strong>Not calculated in this demo</strong></span></div></section></div>`;
+    }
+    function documentBillCsv(bill){const rows=[["Invoice ID",bill.id],["Billing period",bill.period],["Issue date",bill.issued],["Due date",bill.due],[],["Tracking ID","Document type","Origin branch","Internal reference","Delivery service","Delivery charge"]];for(const item of bill.lineItems||[])rows.push([item.trackingId,item.documentType,item.branchCode,item.referenceNo,item.service,item.charge]);if(!bill.lineItems?.length)rows.push(["Consolidated document delivery service",bill.shipmentCount,"","","",bill.subtotal]);rows.push([],["Subtotal",bill.subtotal],["Tax",bill.tax],["Total due",bill.total],["Status",bill.status]);return rows.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n")}
+    function documentBillPrint(bill){
+      const lines=bill.lineItems?.length?bill.lineItems.map(item=>`<tr><td>${merchantEscape(item.trackingId)}</td><td>${merchantEscape(item.documentType)}</td><td>${merchantEscape(item.branchCode||"—")}</td><td>${merchantEscape(item.referenceNo||"—")}</td><td>${merchantEscape(item.service)}</td><td>৳ ${item.charge.toLocaleString("en-BD")}</td></tr>`).join(""):`<tr><td colspan="5">Consolidated document delivery service · ${bill.shipmentCount} consignments</td><td>৳ ${bill.subtotal.toLocaleString("en-BD")}</td></tr>`;
+      const popup=window.open("","_blank");if(!popup){showToast("Allow pop-ups to open the invoice preview.");return}
+      popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${merchantEscape(bill.id)} · Meridian Bank PLC</title><style>body{font:13px Arial,sans-serif;color:#182230;margin:30px}header{align-items:center;border-bottom:2px solid #263b58;display:flex;justify-content:space-between;padding-bottom:14px}.brand{font-size:19px;font-weight:700}.muted{color:#647184;font-size:11px}.invoice-title{text-align:right}h1{font-size:23px;margin:0 0 5px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0}.meta div{background:#f6f8fb;padding:12px}.meta small{color:#758195;display:block;font-size:10px;margin-bottom:5px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #dfe4eb;padding:9px;text-align:left}th{background:#f5f7fa;font-size:10px}.totals{margin:18px 0 0 auto;width:280px}.totals div{display:flex;justify-content:space-between;padding:6px}.totals .grand{border-top:2px solid #24364d;font-size:16px;font-weight:700;margin-top:5px;padding-top:10px}.terms{border-top:1px solid #dfe4eb;color:#647184;font-size:11px;margin-top:30px;padding-top:12px}.status{border:1px solid #d6dfed;border-radius:18px;padding:5px 10px}@media print{body{margin:14mm}}</style></head><body><header><div class="brand">DELIVERY FAST <div class="muted">Corporate document delivery statement</div></div><div class="invoice-title"><h1>Tax invoice / statement</h1><strong>${merchantEscape(bill.id)}</strong><div class="muted">Status: ${merchantEscape(bill.status)}</div></div></header><div class="meta"><div><small>BILLED TO</small><strong>Meridian Bank PLC</strong><div class="muted">Corporate account · MER-10124</div></div><div><small>BILLING PERIOD</small><strong>${merchantEscape(bill.period)}</strong></div><div><small>ISSUED / DUE</small><strong>${merchantEscape(bill.issued)} / ${merchantEscape(bill.due)}</strong></div></div><table><thead><tr><th>Tracking ID</th><th>Document type</th><th>Origin branch</th><th>Reference</th><th>Service</th><th>Charge</th></tr></thead><tbody>${lines}</tbody></table><div class="totals"><div><span>Subtotal</span><strong>৳ ${bill.subtotal.toLocaleString("en-BD")}</strong></div><div><span>Tax / VAT</span><strong>৳ ${bill.tax.toLocaleString("en-BD")}</strong></div><div class="grand"><span>Total due</span><strong>৳ ${bill.total.toLocaleString("en-BD")}</strong></div></div><div class="terms">Payment terms: sample Net 15 days from invoice issue. Taxes and remittance instructions are governed by the signed corporate agreement; confirm actual tax treatment and bank details before production use. This frontend demonstration does not collect payments.</div><script>window.onload=()=>window.print()<\\/script></body></html>`);popup.document.close();
+    }
+    const renderBeforeDocumentBilling=renderPage;
+    renderPage=function(page){if(page==="Billing"){document.getElementById("breadcrumbPage").textContent="Billing & invoices";document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));document.getElementById("sidebar").classList.remove("open");document.getElementById("mainContent").innerHTML=documentBillingPage();return}renderBeforeDocumentBilling(page)};
+    document.getElementById("mainContent").addEventListener("click",event=>{
+      if(event.target.closest("#generateDocumentBill")){
+        const period=document.getElementById("documentBillingPeriod").value,monthName=period==="2026-09"?"September":period==="2026-08"?"August":"October",billed=billedDocumentIds(),eligible=sampleOrders.filter(order=>order.status==="Delivered"&&!billed.has(order.id));
+        if(!eligible.length){showToast("No delivered, unbilled document consignments are available for this bill.");return}
+        const lineItems=eligible.map(order=>({trackingId:order.id,documentType:order.documentType||order.item,branchCode:order.branchCode||"MBP-DHK-01",referenceNo:order.referenceNo||"—",service:order.service||"Regular",charge:Number(order.deliveryFee)||Number(readMerchantConfig().documentTypeRates?.[order.documentType])||60}));
+        const subtotal=lineItems.reduce((sum,item)=>sum+item.charge,0),sequence=String(documentBills.filter(bill=>bill.id.includes(period.slice(0,4))).length+100).padStart(4,"0"),bill={id:`INV-MBP-${period}-${sequence}`,period:`${monthName} 1–${period==="2026-10"?"14":"30"}, ${period.slice(0,4)}`,issued:"Oct 14, 2026",due:"Oct 29, 2026",shipmentCount:lineItems.length,subtotal,tax:0,total:subtotal,status:"Due",lineItems};
+        documentBills.unshift(bill);if(!saveDocumentBills()){documentBills.shift();return}renderPage("Billing");showToast(`${bill.id} generated for ${lineItems.length} delivered consignment(s).`);return;
+      }
+      const paidButton=event.target.closest("[data-bill-paid]");if(paidButton){const bill=documentBills.find(item=>item.id===paidButton.dataset.billPaid);if(!bill)return;bill.status="Paid";bill.paidOn="Oct 14, 2026";if(saveDocumentBills()){renderPage("Billing");showToast(`${bill.id} marked paid in this demo.`)}return}
+      const download=event.target.closest("[data-bill-download]");if(download){const bill=documentBills.find(item=>item.id===download.dataset.billDownload);if(bill){csvDownload(`${bill.id}.csv`,documentBillCsv(bill));showToast(`${bill.id} downloaded as CSV.`)}return}
+      const view=event.target.closest("[data-bill-view]");if(view){const bill=documentBills.find(item=>item.id===view.dataset.billView);if(bill)documentBillPrint(bill);return}
+      if(event.target.closest("#exportDocumentBills")){const rows=[["Invoice ID","Billing period","Issued","Due","Documents","Subtotal","Tax","Total","Status"],...documentBills.map(bill=>[bill.id,bill.period,bill.issued,bill.due,bill.shipmentCount,bill.subtotal,bill.tax,bill.total,bill.status])];csvDownload("meridian-bank-invoices.csv",rows.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n"));showToast("Invoice register downloaded as CSV.");return}
+    });
+    document.getElementById("mainContent").addEventListener("input",event=>{if(event.target.id==="documentBillSearch"){const query=event.target.value.toLowerCase();document.querySelectorAll("#documentBillRows tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(query))}});
+  </script>
+  <script src="support.js"></script>
+</body>
+</html>

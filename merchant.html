@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fa">
+  <title>Delivery Fast — Merchant workspace</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #182230;
+      --muted: #7b8796;
+      --line: #e9edf2;
+      --canvas: #f5f7fa;
+      --surface: #fff;
+      --blue: #3766e8;
+      --blue-soft: #edf2ff;
+      --green: #16845b;
+      --green-soft: #e8f7f0;
+      --amber: #b87913;
+      --amber-soft: #fff5df;
+      --red: #c34d4d;
+      --red-soft: #fff0ef;
+      --sidebar: 250px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); font-size: 14px; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; }
+    .sidebar {
+      background: #fff; border-right: 1px solid var(--line); bottom: 0; display: flex;
+      flex-direction: column; left: 0; padding: 23px 15px 16px; position: fixed; top: 0;
+      width: var(--sidebar); z-index: 20;
+    }
+    .brand { align-items: center; display: flex; gap: 11px; margin: 0 8px 28px; }
+    .brand-mark { align-items: center; background: transparent; border-radius: 0; color: #4b4d51; display: flex; height: 38px; justify-content: center; width: 38px; }
+    .brand-mark svg { height: 27px; width: 27px; }
+    .brand-name { color: #4b4d51; font-size: 16px; font-weight: 750; letter-spacing: -.5px; }
+    .brand-name span { color: #fcc118; }
+    .workspace-switch {
+      align-items: center; background: #fafbfd; border: 1px solid var(--line); border-radius: 10px;
+      display: flex; gap: 10px; margin-bottom: 25px; padding: 10px;
+    }
+    .workspace-avatar { align-items: center; background: #f0e9ff; border-radius: 8px; color: #7551b8; display: flex; font-size: 11px; font-weight: 750; height: 31px; justify-content: center; width: 31px; }
+    .workspace-meta { flex: 1; min-width: 0; }
+    .workspace-meta strong { display: block; font-size: 12px; font-weight: 650; }
+    .workspace-meta small { color: var(--muted); display: block; font-size: 10px; margin-top: 2px; }
+    .nav-label { color: #a0a9b6; font-size: 10px; font-weight: 700; letter-spacing: .09em; margin: 0 10px 9px; text-transform: uppercase; }
+    .nav-group { margin-bottom: 23px; }
+    .nav-item {
+      align-items: center; background: transparent; border: 0; border-radius: 8px; color: #667283;
+      display: flex; font-size: 12px; font-weight: 550; gap: 12px; margin: 2px 0; padding: 10px 11px;
+      text-align: left; transition: .15s; width: 100%;
+    }
+    .nav-item:hover { background: #f7f8fa; color: var(--ink); }
+    .nav-item.active { background: var(--blue-soft); color: var(--blue); font-weight: 650; }
+    .nav-item svg { height: 17px; opacity: .9; width: 17px; }
+    .nav-item .nav-count { background: #f0f2f5; border-radius: 20px; color: #7f8a98; font-size: 10px; margin-left: auto; padding: 2px 7px; }
+    .nav-item.active .nav-count { background: #fff; color: var(--blue); }
+    .sidebar-bottom { margin-top: auto; }
+    .help-card { background: #f6f8ff; border: 1px solid #e9edff; border-radius: 10px; margin: 0 2px 14px; padding: 13px; }
+    .help-card strong { font-size: 11px; }
+    .help-card p { color: var(--muted); font-size: 10px; line-height: 1.55; margin: 5px 0 10px; }
+    .help-card button { background: #fff; border: 1px solid #e1e7fb; border-radius: 6px; color: var(--blue); font-size: 10px; font-weight: 650; padding: 7px 9px; }
+    .user-profile { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 10px; padding: 15px 5px 0; }
+    .profile-avatar { align-items: center; background: #dce8fa; border-radius: 50%; color: #385c9d; display: flex; font-size: 10px; font-weight: 700; height: 31px; justify-content: center; width: 31px; }
+    .profile-meta { flex: 1; }
+    .profile-meta strong { display: block; font-size: 11px; }
+    .profile-meta small { color: var(--muted); font-size: 10px; }
+    .main { margin-left: var(--sidebar); min-height: 100vh; }
+    .topbar {
+      align-items: center; background: rgba(255,255,255,.92); border-bottom: 1px solid var(--line);
+      display: flex; height: 66px; justify-content: space-between; padding: 0 34px; position: sticky; top: 0; z-index: 10;
+    }
+    .breadcrumb { color: #98a2af; font-size: 11px; }
+    .breadcrumb strong { color: #475466; font-weight: 600; }
+    .top-actions { align-items: center; display: flex; gap: 11px; }
+    .search-wrap { position: relative; }
+    .search-wrap svg { color: #96a0ae; height: 15px; left: 11px; position: absolute; top: 10px; width: 15px; }
+    .top-search { background: #fafbfd; border: 1px solid var(--line); border-radius: 7px; font-size: 11px; outline: 0; padding: 8px 12px 8px 33px; width: 210px; }
+    .top-search:focus { border-color: #b8c8ff; }
+    .icon-button { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 7px; color: #768293; display: flex; height: 34px; justify-content: center; position: relative; width: 34px; }
+    .icon-button svg { height: 16px; width: 16px; }
+    .notification-dot { background: #ec6b63; border: 2px solid #fff; border-radius: 50%; height: 8px; position: absolute; right: 6px; top: 6px; width: 8px; }
+    .main-content { margin: 0 auto; max-width: 1500px; padding: 30px 34px 48px; }
+    .page-heading { align-items: flex-start; display: flex; justify-content: space-between; margin-bottom: 23px; }
+    .eyebrow { color: #8b96a4; font-size: 10px; font-weight: 650; letter-spacing: .08em; margin: 0 0 7px; text-transform: uppercase; }
+    h1 { font-size: 22px; letter-spacing: -.7px; margin: 0; }
+    .subtitle { color: var(--muted); font-size: 11px; margin: 7px 0 0; }
+    .heading-actions { align-items: center; display: flex; gap: 9px; }
+    .button { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 7px; color: #586577; display: inline-flex; font-size: 11px; font-weight: 600; gap: 7px; justify-content: center; padding: 9px 12px; transition: .15s; }
+    .button:hover { border-color: #cbd5e2; background: #fbfcfe; }
+    .button svg { height: 14px; width: 14px; }
+    .button-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .button-primary:hover { background: #2e58cf; border-color: #2e58cf; }
+    .button-sm { font-size: 10px; padding: 7px 9px; }
+    .date-button { color: #556274; }
+    .metrics { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0,1fr)); margin-bottom: 15px; }
+    .metric, .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .metric { min-height: 117px; padding: 16px 17px; }
+    .metric-head { align-items: center; color: #748092; display: flex; font-size: 10px; justify-content: space-between; }
+    .metric-icon { align-items: center; background: #f2f5fb; border-radius: 7px; color: #6078ac; display: flex; height: 27px; justify-content: center; width: 27px; }
+    .metric-icon svg { height: 15px; width: 15px; }
+    .metric-value { font-size: 23px; font-weight: 690; letter-spacing: -.7px; margin-top: 9px; }
+    .metric-foot { align-items: center; color: #96a0ad; display: flex; font-size: 9px; gap: 5px; margin-top: 5px; }
+    .trend { color: var(--green); font-weight: 650; }
+    .dashboard-grid { display: grid; gap: 15px; grid-template-columns: minmax(0,1.7fr) minmax(270px,1fr); margin-bottom: 15px; }
+    .panel { padding: 17px 18px; }
+    .panel-heading { align-items: flex-start; display: flex; justify-content: space-between; }
+    .panel-title { font-size: 12px; font-weight: 680; margin: 0; }
+    .panel-subtitle { color: #96a0ad; font-size: 10px; margin: 5px 0 0; }
+    .select-small { background: #fff; border: 1px solid var(--line); border-radius: 6px; color: #667283; font-size: 10px; outline: none; padding: 6px 8px; }
+    .chart-legend { align-items: center; color: #8b95a2; display: flex; font-size: 9px; gap: 14px; margin-top: 15px; }
+    .legend-item { align-items: center; display: inline-flex; gap: 5px; }
+    .legend-dot { background: var(--blue); border-radius: 50%; height: 6px; width: 6px; }
+    .legend-dot.gray { background: #cbd4e4; }
+    .chart { height: 190px; margin-top: 2px; width: 100%; }
+    .chart-grid line { stroke: #edf0f4; stroke-width: 1; }
+    .chart-labels { fill: #a0a9b5; font-size: 9px; }
+    .chart-area { fill: url(#areaFill); }
+    .chart-line { fill: none; stroke: var(--blue); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; }
+    .chart-line-secondary { fill: none; stroke: #c7d0df; stroke-dasharray: 4 5; stroke-linecap: round; stroke-width: 1.7; }
+    .chart-point { fill: #fff; stroke: var(--blue); stroke-width: 2.5; }
+    .dispatch-summary { display: flex; justify-content: space-between; margin: 18px 0 13px; }
+    .dispatch-summary div { min-width: 0; }
+    .dispatch-summary strong { display: block; font-size: 18px; font-weight: 680; }
+    .dispatch-summary span { color: #939dab; display: block; font-size: 9px; margin-top: 4px; }
+    .dispatch-summary .divider { background: var(--line); flex: 0 0 1px; margin: 1px 8px; }
+    .progress-label { color: #758193; display: flex; font-size: 9px; justify-content: space-between; margin-bottom: 7px; }
+    .progress-track { background: #eef1f5; border-radius: 6px; height: 6px; overflow: hidden; }
+    .progress-fill { background: var(--blue); border-radius: 6px; height: 100%; width: 76%; }
+    .dispatch-list { border-top: 1px solid var(--line); margin-top: 17px; padding-top: 7px; }
+    .dispatch-row { align-items: center; display: flex; justify-content: space-between; padding: 9px 0; }
+    .dispatch-label { align-items: center; color: #667283; display: flex; font-size: 10px; gap: 8px; }
+    .dispatch-label i { border-radius: 50%; height: 7px; width: 7px; }
+    .dispatch-row strong { font-size: 10px; font-weight: 650; }
+    .table-panel { padding: 0; overflow: hidden; }
+    .table-panel .panel-heading { align-items: center; padding: 17px 18px; }
+    .table-tools { align-items: center; display: flex; gap: 8px; }
+    .table-search { border: 1px solid var(--line); border-radius: 6px; font-size: 10px; outline: none; padding: 7px 9px; width: 150px; }
+    .table-search:focus { border-color: #b8c8ff; }
+    table { border-collapse: collapse; text-align: left; width: 100%; }
+    th { background: #fafbfd; border-bottom: 1px solid var(--line); color: #94a0ae; font-size: 9px; font-weight: 600; letter-spacing: .025em; padding: 10px 17px; white-space: nowrap; }
+    td { border-bottom: 1px solid #f0f2f5; color: #596678; font-size: 10px; padding: 12px 17px; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .order-id { color: #354255; font-weight: 650; }
+    .customer-cell { align-items: center; display: flex; gap: 8px; }
+    .customer-mini { align-items: center; background: #eef2f9; border-radius: 50%; color: #697995; display: inline-flex; flex: 0 0 25px; font-size: 8px; font-weight: 700; height: 25px; justify-content: center; width: 25px; }
+    .customer-name { color: #445165; font-size: 10px; font-weight: 600; }
+    .customer-phone { color: #9aa3af; font-size: 9px; margin-top: 3px; }
+    .status { border-radius: 20px; display: inline-block; font-size: 9px; font-weight: 600; padding: 4px 8px; }
+    .status-delivered, .status-paid, .status-active, .status-picked { background: var(--green-soft); color: var(--green); }
+    .status-transit, .status-processing, .status-out { background: var(--blue-soft); color: #4266ce; }
+    .status-pending, .status-pickup { background: var(--amber-soft); color: var(--amber); }
+    .status-cancelled, .status-failed, .status-inactive { background: var(--red-soft); color: var(--red); }
+    .row-menu { background: transparent; border: 0; color: #9aa3af; font-size: 16px; }
+    .table-footer { align-items: center; border-top: 1px solid var(--line); color: #98a2ae; display: flex; font-size: 9px; justify-content: space-between; padding: 12px 18px; }
+    .pagination { display: flex; gap: 5px; }
+    .page-btn { background: #fff; border: 1px solid var(--line); border-radius: 5px; color: #768293; font-size: 9px; padding: 5px 8px; }
+    .page-btn.current { background: var(--blue-soft); border-color: #dce5ff; color: var(--blue); }
+    .content-grid { display: grid; gap: 15px; grid-template-columns: minmax(0,1.7fr) minmax(260px,1fr); }
+    .activity-list { margin-top: 15px; }
+    .activity-item { display: flex; gap: 10px; padding: 10px 0; }
+    .activity-icon { align-items: center; background: #f0f4ff; border-radius: 7px; color: var(--blue); display: flex; flex: 0 0 27px; height: 27px; justify-content: center; }
+    .activity-icon svg { height: 14px; width: 14px; }
+    .activity-copy { color: #667283; font-size: 10px; line-height: 1.45; }
+    .activity-copy strong { color: #354255; font-weight: 650; }
+    .activity-copy small { color: #a0a9b5; display: block; font-size: 9px; margin-top: 3px; }
+    .page-table-panel { margin-top: 3px; }
+    .empty-state { color: #929eac; padding: 28px; text-align: center; }
+    .toast { background: #1f2b3a; border-radius: 8px; bottom: 22px; box-shadow: 0 12px 35px #17203330; color: #fff; font-size: 11px; opacity: 0; padding: 12px 16px; pointer-events: none; position: fixed; right: 25px; transform: translateY(8px); transition: .2s; z-index: 60; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .modal-backdrop { align-items: center; background: #17203366; display: none; inset: 0; justify-content: center; padding: 20px; position: fixed; z-index: 50; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: #fff; border-radius: 12px; box-shadow: 0 24px 70px #10182840; max-width: 460px; padding: 23px; width: 100%; }
+    .modal-head { align-items: flex-start; display: flex; justify-content: space-between; margin-bottom: 18px; }
+    .modal-head h2 { font-size: 17px; letter-spacing: -.3px; margin: 0; }
+    .modal-head p { color: var(--muted); font-size: 10px; margin: 6px 0 0; }
+    .modal-close { background: none; border: 0; color: #929dac; font-size: 20px; line-height: 1; }
+    .form-grid { display: grid; gap: 13px; grid-template-columns: 1fr 1fr; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-field label { color: #637083; font-size: 10px; font-weight: 600; }
+    .form-field input, .form-field select { background: #fff; border: 1px solid #e4e8ee; border-radius: 6px; color: #3c4859; font-size: 11px; outline: none; padding: 9px 10px; }
+    .form-field input:focus, .form-field select:focus { border-color: #aebfff; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .mobile-menu { display: none; }
+    @media (max-width: 1100px) {
+      :root { --sidebar: 220px; }
+      .main-content { padding-left: 23px; padding-right: 23px; }
+      .topbar { padding: 0 23px; }
+      .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .dashboard-grid, .content-grid { grid-template-columns: minmax(0,1.5fr) minmax(250px,1fr); }
+    }
+    @media (max-width: 780px) {
+      .sidebar { box-shadow: 12px 0 30px #17203312; transform: translateX(-105%); transition: transform .2s; width: 250px; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .mobile-menu { align-items: center; background: white; border: 1px solid var(--line); border-radius: 7px; color: #677487; display: flex; height: 32px; justify-content: center; margin-right: 10px; width: 32px; }
+      .mobile-menu svg { height: 16px; width: 16px; }
+      .topbar { justify-content: flex-start; padding: 0 16px; }
+      .top-actions { margin-left: auto; }
+      .top-search { width: 155px; }
+      .main-content { padding: 23px 16px 35px; }
+      .dashboard-grid, .content-grid { grid-template-columns: 1fr; }
+      .page-heading { gap: 12px; }
+      .heading-actions { flex-wrap: wrap; justify-content: flex-end; }
+    }
+    @media (max-width: 520px) {
+      .top-search { width: 36px; padding-right: 0; }
+      .top-search:focus { position: absolute; right: 0; top: 42px; width: min(250px,75vw); }
+      .breadcrumb { font-size: 10px; }
+      .topbar { height: 58px; }
+      .main-content { padding-top: 19px; }
+      .page-heading { align-items: flex-start; flex-direction: column; }
+      .heading-actions { justify-content: flex-start; }
+      .metrics { gap: 9px; }
+      .metric { min-height: 106px; padding: 12px; }
+      .metric-value { font-size: 20px; }
+      .panel { padding: 14px; }
+      .table-panel { padding: 0; }
+      .table-panel .panel-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .table-tools { width: 100%; }
+      .table-search { flex: 1; }
+      .table-scroll { overflow-x: auto; }
+      th, td { padding-left: 12px; padding-right: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" style="height:0;position:absolute;width:0" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-orders" viewBox="0 0 24 24"><path d="M7 3h10l4 4v14H3V3h4Z"/><path d="M7 3v5h10V3M7 13h10M7 17h7"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v12H3zM14 10h4l3 3v5h-7z"/><circle cx="7.5" cy="19" r="2"/><circle cx="17.5" cy="19" r="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 3.2a4 4 0 0 1 0 7.6M21 21v-2a4 4 0 0 0-3-3.87"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="m20.6 13.4-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1 0-2.8l7.2-7.2A2 2 0 0 1 12 2.8H20a1 1 0 0 1 1 1v8a2 2 0 0 1-0.4 1.6Z"/><circle cx="16.5" cy="7.5" r="1"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 5h15a2 2 0 0 1 2 2v12H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h13"/><path d="M21 10h-5a2 2 0 0 0 0 4h5"/><circle cx="16" cy="12" r=".5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-5 5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.6.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.6-.9l-1.7.6-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.9L6.1 12l1.4-2.4 1.7.6a8 8 0 0 1 1.6-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.6.9l1.7-.6 1.4 2.4-1.4 1.1a7 7 0 0 1-.1 1.9Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  </svg>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m12 3 4-2 4 2v5l-4 2-4-2V3Z" stroke="#fcc118" stroke-width="1.8"/><path d="m12 3 4 2 4-2m-4 2v5" stroke="#fcc118" stroke-width="1.4"/><path d="M16 10v2"/><rect x="5" y="12" width="22" height="13" rx="4"/><path d="M9 17h14" stroke="#fcc118" stroke-width="1.5"/><circle cx="12" cy="20" r="1.2" fill="#fcc118" stroke="none"/><circle cx="20" cy="20" r="1.2" fill="#fcc118" stroke="none"/><path d="M11 25v2m10-2v2"/><circle cx="10" cy="28" r="2" fill="currentColor" stroke="none"/><circle cx="22" cy="28" r="2" fill="currentColor" stroke="none"/></svg></div>
+        <div class="brand-name">delivery <span>fast</span></div>
+      </div>
+      <div class="workspace-switch">
+        <div class="workspace-avatar">NS</div>
+        <div class="workspace-meta"><strong>Northstar Store</strong><small>Merchant workspace</small></div>
+        <span style="color:#99a3af;font-size:12px">⌄</span>
+      </div>
+      <nav id="navigation">
+        <div class="nav-group">
+          <div class="nav-label">Workspace</div>
+          <button class="nav-item active" data-page="Overview"><svg fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-grid"/></svg>Overview</button>
+          <button class="nav-item" data-page="Orders"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-orders"/></svg>Orders<span class="nav-count">24</span></button>
+          <button class="nav-item" data-page="Shipments"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-truck"/></svg>Shipments<span class="nav-count">18</span></button>
+          <button class="nav-item" data-page="Pickup requests"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-pin"/></svg>Pickup requests<span class="nav-count">6</span></button>
+          <button class="nav-item" data-page="Customers"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-users"/></svg>Customers</button>
+          <button class="nav-item" data-page="Products"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-tag"/></svg>Products</button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Manage</div>
+          <button class="nav-item" data-page="Payments"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-wallet"/></svg>Payments</button>
+          <button class="nav-item" data-page="Reports"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-chart"/></svg>Reports</button>
+          <button class="nav-item" data-page="Settings"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-settings"/></svg>Settings</button>
+        </div>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="help-card"><strong>Need a hand?</strong><p>Our merchant success team is here to help you grow.</p><button data-toast="Support center is ready in the full product.">Visit help center ↗</button></div>
+        <div class="user-profile"><div class="profile-avatar">AM</div><div class="profile-meta"><strong>Alex Morgan</strong><small>Store administrator</small></div><span style="color:#98a2ae">···</span></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"><use href="#i-menu"/></svg></button>
+        <div class="breadcrumb">Northstar Store <span style="padding:0 7px;color:#c0c7d0">/</span> <strong id="breadcrumbPage">Overview</strong></div>
+        <div class="top-actions">
+          <div class="search-wrap"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"><use href="#i-search"/></svg><input class="top-search" id="globalSearch" placeholder="Search anything..." aria-label="Search anything"></div>
+          <button class="icon-button" id="notificationButton" aria-label="Notifications"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-bell"/></svg><i class="notification-dot"></i></button>
+          <div class="profile-avatar" title="Alex Morgan">AM</div>
+        </div>
+      </header>
+      <section class="main-content" id="mainContent"></section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="modal-backdrop" id="orderModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <div class="modal-head"><div><h2 id="modalTitle">Create a new order</h2><p>Add an order and prepare it for domestic delivery.</p></div><button class="modal-close" id="closeModal" aria-label="Close">×</button></div>
+      <form id="orderForm">
+        <div class="form-grid">
+          <div class="form-field"><label for="customerName">Customer name</label><input id="customerName" name="customerName" required placeholder="e.g. Jamie Lee"></div>
+          <div class="form-field"><label for="customerPhone">Phone number</label><input id="customerPhone" name="customerPhone" required placeholder="+880 1XXX-XXXXXX"></div>
+          <div class="form-field full"><label for="deliveryAddress">Delivery address</label><input id="deliveryAddress" name="deliveryAddress" required placeholder="Street, area, city"></div>
+          <div class="form-field"><label for="orderType">Shipment type</label><select id="orderType"><option>E-commerce parcel</option><option>Document delivery</option><option>Domestic parcel</option></select></div>
+          <div class="form-field"><label for="orderAmount">Order value</label><input id="orderAmount" type="number" min="0" required placeholder="0.00"></div>
+        </div>
+        <div class="modal-actions"><button type="button" class="button" id="cancelModal">Cancel</button><button class="button button-primary" type="submit">Create order</button></div>
+      </form>
+    </div>
+  </div>
+  <script>
+    const icon = (name) => `<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-${name}"/></svg>`;
+    const sampleOrders = [
+      {id:"PP-28491",name:"Sophie Williams",initials:"SW",phone:"+880 1712-•••-481",item:"Everyday Tote Bag",type:"E-commerce parcel",date:"Today, 10:42 AM",amount:"৳ 2,450",status:"In transit"},
+      {id:"PP-28490",name:"Daniel Kim",initials:"DK",phone:"+880 1819-•••-205",item:"Signed contract",type:"Document delivery",date:"Today, 10:18 AM",amount:"৳ 180",status:"Picked up"},
+      {id:"PP-28489",name:"Amina Rahman",initials:"AR",phone:"+880 1610-•••-932",item:"Ceramic mug set",type:"E-commerce parcel",date:"Today, 9:56 AM",amount:"৳ 1,850",status:"Delivered"},
+      {id:"PP-28488",name:"Oliver Chen",initials:"OC",phone:"+880 1911-•••-744",item:"Return — linen shirt",type:"Return pickup",date:"Today, 9:31 AM",amount:"৳ 0",status:"Pickup scheduled"},
+      {id:"PP-28487",name:"Fatima Noor",initials:"FN",phone:"+880 1555-•••-610",item:"Wireless earbuds",type:"E-commerce parcel",date:"Today, 9:12 AM",amount:"৳ 3,200",status:"Processing"}
+    ];
+    const pageData = {
+      "Orders": {description:"Manage ecommerce orders and domestic deliveries from one place.",columns:["Order ID","Customer","Item / service","Created","Amount","Status"],rows:sampleOrders},
+      "Shipments": {description:"Track every parcel and document moving through your delivery network.",columns:["Tracking ID","Recipient","Shipment","Destination","Last update","Status"],rows:[
+        ["PP-28491","Sophie Williams","E-commerce parcel","Chattogram","Out for delivery · 10:42 AM","In transit"],["PP-28490","Daniel Kim","Document delivery","Dhaka","Picked up · 10:18 AM","Picked up"],["PP-28489","Amina Rahman","E-commerce parcel","Sylhet","Delivered · 9:56 AM","Delivered"],["PP-28486","Noah Patel","Domestic parcel","Rajshahi","At sorting hub · 9:24 AM","In transit"],["PP-28484","Maya Islam","Document delivery","Khulna","Delivery attempt · 8:45 AM","Pickup scheduled"]],
+        stats:[["In transit","18"],["Delivered today","42"],["Needs attention","3"]]},
+      "Pickup requests": {description:"Schedule, review, and manage parcel and document collections.",columns:["Request ID","Merchant contact","Pickup location","Packages","Requested","Status"],rows:[
+        ["PU-1042","Sophie Williams","Gulshan 2, Dhaka","4 parcels","Today, 11:30 AM","Pickup scheduled"],["PU-1041","Daniel Kim","Banani, Dhaka","2 documents","Today, 10:30 AM","Picked up"],["PU-1040","Amina Rahman","Dhanmondi, Dhaka","8 parcels","Today, 9:45 AM","Picked up"],["PU-1039","Oliver Chen","Uttara, Dhaka","1 return","Today, 1:00 PM","Processing"],["PU-1038","Fatima Noor","Mirpur 10, Dhaka","3 parcels","Yesterday","Delivered"]],
+        stats:[["Awaiting pickup","6"],["Scheduled today","12"],["Collected today","28"]]},
+      "Customers": {description:"Your customer directory, delivery history, and contact details.",columns:["Customer","Phone","Orders","Lifetime value","Last order","Status"],rows:[
+        ["Sophie Williams","+880 1712-•••-481","12","৳ 18,450","Today, 10:42 AM","Active"],["Amina Rahman","+880 1610-•••-932","8","৳ 12,300","Today, 9:56 AM","Active"],["Daniel Kim","+880 1819-•••-205","6","৳ 9,180","Today, 10:18 AM","Active"],["Oliver Chen","+880 1911-•••-744","4","৳ 5,600","Yesterday","Active"],["Fatima Noor","+880 1555-•••-610","3","৳ 4,250","Yesterday","Active"]],
+        stats:[["Total customers","1,284"],["New this month","86"],["Repeat customers","64%"]]},
+      "Products": {description:"Keep your catalogue and shipping-ready inventory up to date.",columns:["Product","SKU","Category","Price","Stock","Status"],rows:[
+        ["Everyday Tote Bag","NS-TOT-01","Accessories","৳ 2,450","38","Active"],["Ceramic Mug Set","NS-HOM-12","Home & living","৳ 1,850","12","Active"],["Wireless Earbuds","NS-TEC-08","Electronics","৳ 3,200","4","Active"],["Linen Shirt — Sand","NS-APP-04","Apparel","৳ 2,900","0","Inactive"],["Gift Box — Small","NS-GFT-02","Packaging","৳ 350","120","Active"]],
+        stats:[["Active products","48"],["Low stock","4"],["Out of stock","2"]]},
+      "Payments": {description:"Review cash on delivery collections, fees, and merchant payouts.",columns:["Transaction","Order","Method","Date","Amount","Status"],rows:[
+        ["TX-99284","PP-28489","Cash on delivery","Today, 9:56 AM","৳ 1,850","Paid"],["TX-99283","PP-28491","Cash on delivery","Today, 9:30 AM","৳ 2,450","Processing"],["TX-99282","PP-28487","Cash on delivery","Today, 9:12 AM","৳ 3,200","Pending"],["TX-99276","PP-28480","Merchant payout","Yesterday","৳ 24,680","Paid"],["TX-99265","PP-28464","Cash on delivery","Yesterday","৳ 980","Paid"]],
+        stats:[["Available balance","৳ 42,850"],["Pending COD","৳ 18,420"],["Next payout","Oct 16"]]},
+      "Reports": {description:"A snapshot of store sales, delivery performance, and customer trends.",columns:["Report","Period","Generated","Format","Owner","Status"],rows:[
+        ["Weekly sales summary","Oct 7 – Oct 13","Today, 9:00 AM","CSV · PDF","Alex Morgan","Delivered"],["Delivery performance","Oct 1 – Oct 13","Yesterday, 4:30 PM","CSV","Alex Morgan","Delivered"],["COD reconciliation","Oct 1 – Oct 13","Yesterday, 2:15 PM","CSV · PDF","Alex Morgan","Processing"],["Top products","September 2026","Oct 1, 10:00 AM","CSV","Alex Morgan","Delivered"]],
+        stats:[["Gross sales","৳ 3,84,250"],["Orders this month","842"],["Delivery success","96.8%"]]},
+      "Settings": {description:"Configure your store, delivery preferences, team, and notifications.",columns:["Setting","Details","Updated",""],rows:[
+        ["Store profile","Northstar Store · Dhaka, Bangladesh","Oct 10, 2026","Manage"],["Delivery preferences","Same-day & next-day delivery enabled","Oct 9, 2026","Manage"],["Notification settings","Email and SMS alerts enabled","Oct 8, 2026","Manage"],["Team & permissions","3 team members · 2 roles","Oct 2, 2026","Manage"],["API & integrations","Shopify connected","Sep 28, 2026","Manage"]],
+        stats:[["Store status","Active"],["Team members","3"],["Connected apps","2"]]}
+    };
+    const statusClass = (status) => {
+      const normalized = String(status).toLowerCase();
+      if (normalized.includes("deliver") || normalized === "paid" || normalized === "active" || normalized.includes("picked")) return "status-delivered";
+      if (normalized.includes("transit") || normalized.includes("process")) return "status-transit";
+      if (normalized.includes("pending") || normalized.includes("scheduled")) return "status-pending";
+      if (normalized.includes("cancel") || normalized.includes("fail") || normalized.includes("inactive")) return "status-cancelled";
+      return "status-pending";
+    };
+    const statusPill = (text) => `<span class="status ${statusClass(text)}">${text}</span>`;
+    const metricCard = (label,value,iconName,foot,trend) => `<article class="metric"><div class="metric-head"><span>${label}</span><span class="metric-icon">${icon(iconName)}</span></div><div class="metric-value">${value}</div><div class="metric-foot"><span class="trend">${trend}</span><span>${foot}</span></div></article>`;
+    const renderDashboard = () => `
+      <div class="page-heading">
+        <div><p class="eyebrow">Wednesday, October 14, 2026</p><h1>Good morning, Alex <span style="font-size:20px">☀️</span></h1><p class="subtitle">Here's what's happening with your store and deliveries today.</p></div>
+        <div class="heading-actions"><button class="button date-button" data-toast="Date range: October 14, 2026">${icon("calendar")} Today, Oct 14 <span style="color:#a0a9b5">⌄</span></button><button class="button button-primary" id="createOrder">${icon("plus")} Create order</button></div>
+      </div>
+      <div class="metrics">
+        ${metricCard("Total orders","284","orders","vs. last month","↑ 12.8%")}
+        ${metricCard("In transit","18","truck","on the way to customers","")}
+        ${metricCard("Gross sales","৳ 84,250","wallet","vs. last month","↑ 8.2%")}
+        ${metricCard("Delivery success","96.8%","chart","vs. last month","↑ 2.4%")}
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Orders & sales</h2><p class="panel-subtitle">Track your store performance over time</p></div><select class="select-small" id="chartPeriod" aria-label="Chart period"><option>Last 7 days</option><option>Last 30 days</option><option>This year</option></select></div>
+          <div class="chart-legend"><span class="legend-item"><i class="legend-dot"></i> Orders</span><span class="legend-item"><i class="legend-dot gray"></i> Previous period</span></div>
+          <svg class="chart" viewBox="0 0 700 190" preserveAspectRatio="none" role="img" aria-label="Orders trend chart for the last seven days">
+            <defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#3766e8" stop-opacity=".14"/><stop offset="100%" stop-color="#3766e8" stop-opacity="0"/></linearGradient></defs>
+            <g class="chart-grid"><line x1="45" y1="20" x2="690" y2="20"/><line x1="45" y1="60" x2="690" y2="60"/><line x1="45" y1="100" x2="690" y2="100"/><line x1="45" y1="140" x2="690" y2="140"/><line x1="45" y1="170" x2="690" y2="170"/></g>
+            <g class="chart-labels"><text x="5" y="23">100</text><text x="12" y="63">75</text><text x="12" y="103">50</text><text x="12" y="143">25</text><text x="18" y="173">0</text><text x="45" y="187">Oct 08</text><text x="145" y="187">Oct 09</text><text x="245" y="187">Oct 10</text><text x="345" y="187">Oct 11</text><text x="445" y="187">Oct 12</text><text x="545" y="187">Oct 13</text><text x="645" y="187">Oct 14</text></g>
+            <path class="chart-line-secondary" d="M45 115 C85 108 103 123 145 109 S210 102 245 116 S310 130 345 106 S410 120 445 98 S510 108 545 91 S610 105 645 83 S670 90 690 78"/>
+            <path class="chart-area" d="M45 94 C85 85 100 112 145 91 S210 52 245 73 S310 110 345 69 S410 81 445 54 S510 91 545 54 S610 45 645 27 S670 42 690 18 L690 170 L45 170Z"/>
+            <path class="chart-line" d="M45 94 C85 85 100 112 145 91 S210 52 245 73 S310 110 345 69 S410 81 445 54 S510 91 545 54 S610 45 645 27 S670 42 690 18"/>
+            <circle class="chart-point" cx="645" cy="27" r="4"/>
+          </svg>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Delivery overview</h2><p class="panel-subtitle">Today's shipment status</p></div><button class="button button-sm" data-page-link="Shipments">View all</button></div>
+          <div class="dispatch-summary"><div><strong>68</strong><span>Total shipments</span></div><i class="divider"></i><div><strong>52</strong><span>Completed today</span></div><i class="divider"></i><div><strong>4</strong><span>Need attention</span></div></div>
+          <div class="progress-label"><span>Delivery completion</span><strong>76%</strong></div><div class="progress-track"><div class="progress-fill"></div></div>
+          <div class="dispatch-list"><div class="dispatch-row"><span class="dispatch-label"><i style="background:#3766e8"></i>In transit</span><strong>18</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#16845b"></i>Delivered</span><strong>42</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#d4a13b"></i>Pickup scheduled</span><strong>6</strong></div><div class="dispatch-row"><span class="dispatch-label"><i style="background:#c34d4d"></i>Delivery issue</span><strong>2</strong></div></div>
+        </section>
+      </div>
+      <div class="content-grid">
+        <section class="panel table-panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Recent orders</h2><p class="panel-subtitle">Your latest orders and delivery updates</p></div><button class="button button-sm" data-page-link="Orders">View all orders</button></div>
+          <div class="table-scroll"><table><thead><tr><th>ORDER</th><th>CUSTOMER</th><th>ITEM / SERVICE</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>${sampleOrders.slice(0,4).map(order=>`<tr><td class="order-id">${order.id}</td><td><div class="customer-cell"><span class="customer-mini">${order.initials}</span><span class="customer-name">${order.name}</span></div></td><td>${order.item}</td><td>${order.amount}</td><td>${statusPill(order.status)}</td><td><button class="row-menu" aria-label="More actions">···</button></td></tr>`).join("")}</tbody></table></div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><h2 class="panel-title">Recent activity</h2><p class="panel-subtitle">Latest updates from your workspace</p></div><button class="button button-sm" data-toast="You're all caught up.">See all</button></div>
+          <div class="activity-list">
+            <div class="activity-item"><span class="activity-icon">${icon("truck")}</span><div class="activity-copy"><strong>PP-28489</strong> was delivered to Amina Rahman<small>12 minutes ago · Sylhet</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("box")}</span><div class="activity-copy"><strong>New order</strong> from Sophie Williams<small>34 minutes ago · ৳ 2,450</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("wallet")}</span><div class="activity-copy"><strong>Payout completed</strong> — ৳ 24,680<small>Yesterday at 4:30 PM</small></div></div>
+            <div class="activity-item"><span class="activity-icon">${icon("pin")}</span><div class="activity-copy"><strong>Pickup scheduled</strong> for Oliver Chen<small>Yesterday at 3:12 PM · Uttara</small></div></div>
+          </div>
+        </section>
+      </div>`;
+    const makeRow = (row, page) => {
+      if (page === "Orders") return `<tr><td class="order-id">${row.id}</td><td><div class="customer-cell"><span class="customer-mini">${row.initials}</span><span><span class="customer-name">${row.name}</span><span class="customer-phone" style="display:block">${row.phone}</span></span></div></td><td>${row.item}<div style="color:#9aa3af;font-size:9px;margin-top:3px">${row.type}</div></td><td>${row.date}</td><td>${row.amount}</td><td>${statusPill(row.status)}</td></tr>`;
+      return `<tr>${row.map((cell,i)=>`<td>${page === "Settings" && i===3 ? `<button class="button button-sm" data-toast="${row[0]} settings opened.">Manage</button>` : (i === row.length-1 && ["Shipments","Pickup requests","Payments","Reports"].includes(page) ? statusPill(cell) : cell)}</td>`).join("")}</tr>`;
+    };
+    const renderListPage = (page) => {
+      const data = pageData[page];
+      const stats = data.stats ? `<div class="metrics">${data.stats.map((item,i)=>metricCard(item[0],item[1],["chart","box","truck"][i],"updated just now","")).join("")}</div>` : "";
+      return `<div class="page-heading"><div><p class="eyebrow">Merchant workspace</p><h1>${page}</h1><p class="subtitle">${data.description}</p></div><div class="heading-actions">${page==="Orders" ? `<button class="button button-primary" id="createOrder">${icon("plus")} Create order</button>` : `<button class="button" id="exportButton">${icon("download")} Export</button>`}</div></div>
+        ${stats}<section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">${page} list</h2><p class="panel-subtitle">Sample records · refreshed just now</p></div><div class="table-tools"><input class="table-search" id="tableSearch" placeholder="Search ${page.toLowerCase()}..." aria-label="Search ${page}"><button class="button button-sm" data-toast="Filters are ready in the full product.">Filter</button></div></div>
+        <div class="table-scroll"><table><thead><tr>${data.columns.map(column=>`<th>${column.toUpperCase()}</th>`).join("")}</tr></thead><tbody id="tableBody">${data.rows.map(row=>makeRow(row,page)).join("")}</tbody></table></div><div class="table-footer"><span>Showing ${data.rows.length} sample records</span><div class="pagination"><button class="page-btn">‹</button><button class="page-btn current">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button></div></div></section>`;
+    };
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(()=>toast.classList.remove("show"),2600);
+    }
+    function openOrderModal() { document.getElementById("orderModal").classList.add("open"); document.getElementById("customerName").focus(); }
+    function closeOrderModal() { document.getElementById("orderModal").classList.remove("open"); }
+    function renderPage(page) {
+      document.getElementById("breadcrumbPage").textContent = page;
+      document.getElementById("mainContent").innerHTML = page === "Overview" ? renderDashboard() : renderListPage(page);
+      document.querySelectorAll(".nav-item").forEach(item=>item.classList.toggle("active",item.dataset.page===page));
+      document.getElementById("sidebar").classList.remove("open");
+      const createButton = document.getElementById("createOrder");
+      if (createButton) createButton.addEventListener("click",openOrderModal);
+      const tableSearch = document.getElementById("tableSearch");
+      if (tableSearch) tableSearch.addEventListener("input",()=> {
+        const term = tableSearch.value.toLowerCase();
+        document.querySelectorAll("#tableBody tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(term));
+      });
+      const exportButton = document.getElementById("exportButton");
+      if (exportButton) exportButton.addEventListener("click",()=>exportPage(page));
+    }
+    function exportPage(page) {
+      const rows = pageData[page].rows;
+      const csv = [pageData[page].columns, ...rows.map(row=>Array.isArray(row)?row:Object.values(row))].map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\r\n");
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+      link.download = `${page.toLowerCase().replaceAll(" ","-")}-sample.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showToast(`${page} sample data exported.`);
+    }
+    document.getElementById("navigation").addEventListener("click",event=>{
+      const button = event.target.closest("[data-page]");
+      if (button) renderPage(button.dataset.page);
+    });
+    document.getElementById("mainContent").addEventListener("click",event=>{
+      const link = event.target.closest("[data-page-link]");
+      if (link) renderPage(link.dataset.pageLink);
+      const toastButton = event.target.closest("[data-toast]");
+      if (toastButton) showToast(toastButton.dataset.toast);
+    });
+    document.getElementById("notificationButton").addEventListener("click",()=>showToast("You're all caught up on notifications."));
+    document.getElementById("globalSearch").addEventListener("keydown",event=>{
+      if (event.key === "Enter") {
+        const query = event.currentTarget.value.trim();
+        if (!query) return;
+        const match = Object.keys(pageData).find(page=>page.toLowerCase().includes(query.toLowerCase()));
+        if (match) renderPage(match);
+        else showToast(`No matching records for “${query}”.`);
+      }
+    });
+    document.getElementById("mobileMenu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
+    document.getElementById("closeModal").addEventListener("click",closeOrderModal);
+    document.getElementById("cancelModal").addEventListener("click",closeOrderModal);
+    document.getElementById("orderModal").addEventListener("click",event=>{if(event.target.id==="orderModal") closeOrderModal();});
+    document.addEventListener("keydown",event=>{if(event.key==="Escape") closeOrderModal();});
+    document.getElementById("orderForm").addEventListener("submit",event=>{
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const name = form.get("customerName").trim();
+      const id = `PP-${28500 + sampleOrders.length}`;
+      const initials = name.split(/\s+/).map(part=>part[0]).slice(0,2).join("").toUpperCase();
+      sampleOrders.unshift({id,name,initials,phone:form.get("customerPhone"),item:document.getElementById("orderType").value,type:"Domestic delivery",date:"Just now",amount:`৳ ${Number(document.getElementById("orderAmount").value).toLocaleString("en-BD")}`,status:"Processing"});
+      pageData.Orders.rows = sampleOrders;
+      event.currentTarget.reset();
+      closeOrderModal();
+      renderPage(document.getElementById("breadcrumbPage").textContent);
+      showToast(`Order ${id} created successfully.`);
+    });
+    document.querySelector(".help-card button").addEventListener("click",event=>showToast(event.currentTarget.dataset.toast));
+    document.querySelector(".workspace-switch").addEventListener("click",()=>showToast("You're viewing the Northstar Store workspace."));
+    document.querySelector(".user-profile").addEventListener("click",()=>showToast("Profile and account settings opened."));
+    renderPage("Overview");
+  </script>
+</body>
+</html>

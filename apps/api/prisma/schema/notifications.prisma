@@ -1,0 +1,50 @@
+// ───────────────────────────── Notifications ─────────────────────────────
+// Templates, toggles, user preferences and gateway settings (modules/notifications).
+
+/// Super-admin overrides of an event's template text and on/off switch. Defaults live in code
+/// (modules/notifications/catalog.ts); a missing row or null field means "use the default".
+model NotificationTemplate {
+  event       String
+  channel     OutboxChannel
+  enabled     Boolean?
+  subject     String?
+  body        String?
+  html        String?
+  updatedById String?       @db.Uuid
+  updatedAt   DateTime      @updatedAt
+
+  @@id([event, channel])
+  @@map("notification_templates")
+}
+
+/// A user's opt-out (or opt-in) for one event on one channel.
+model NotificationPreference {
+  userId    String        @db.Uuid
+  event     String
+  channel   OutboxChannel
+  enabled   Boolean
+  updatedAt DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, event, channel])
+  @@map("notification_preferences")
+}
+
+/// SMS / email gateway settings. Secrets (API keys) are AES-256-GCM encrypted (common/crypto).
+model NotificationGateway {
+  channel          OutboxChannel @id
+  provider         String
+  enabled          Boolean       @default(false)
+  /// Non-secret settings: sender id, base URL, from address…
+  config           Json          @default("{}")
+  /// encrypt(JSON.stringify({ apiKey, apiSecret? }))
+  secretsEncrypted String?
+  lastSuccessAt    DateTime?
+  lastErrorAt      DateTime?
+  lastError        String?
+  updatedById      String?       @db.Uuid
+  updatedAt        DateTime      @updatedAt
+
+  @@map("notification_gateways")
+}

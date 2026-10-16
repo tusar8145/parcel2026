@@ -1,0 +1,105 @@
+// ───────────────────────────── Spreadsheet imports (modules/imports) ─────────────────────────────
+// One import engine for merchants (both panels and API keys) and operations. A file is parsed and
+// validated into an ImportJob with one ImportRow per spreadsheet row (dry run); committing books
+// the valid rows in a background job, in chunks, each chunk in its own transaction.
+
+enum ImportKind {
+  ECOMMERCE
+  DOCUMENT
+}
+
+enum ImportStatus {
+  /// Parsed and validated; nothing booked yet (the preview).
+  VALIDATED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  /// Never submitted (or replaced by a new upload); its rows are purged.
+  DISCARDED
+}
+
+enum ImportRowStatus {
+  /// Every value valid and every delivery detail present: will be booked.
+  VALID
+  /// Valid but some delivery details are missing: will be booked as "needs info".
+  INCOMPLETE
+  /// At least one invalid value: never booked.
+  ERROR
+  /// Booked (trackingId set).
+  CREATED
+  /// Valid at the preview but refused when booking (e.g. booked meanwhile by another upload).
+  FAILED
+}
+
+model ImportJob {
+  id               String        @id @default(uuid(7)) @db.Uuid
+  /// IMP-YYMMDD-NNN, shared with the booking batch it creates.
+  number           String        @unique
+  kind             ImportKind
+  status           ImportStatus  @default(VALIDATED)
+  /// MERCHANT_PORTAL, MERCHANT_API or OPERATIONS.
+  source           ParcelChannel
+  /// The merchant of every row (merchant uploads; operations when chosen for the whole file).
+  merchantId       String?       @db.Uuid
+  intake           ParcelIntake  @default(PICKUP)
+  dropOffHubId     String?       @db.Uuid
+  bookingBatchId   String?       @unique @db.Uuid
+  fileName         String?
+  fileSha256       String?
+  fileBytes        Int           @default(0)
+  totalRows        Int           @default(0)
+  validRows        Int           @default(0)
+  incompleteRows   Int           @default(0)
+  errorRows        Int           @default(0)
+  /// Rows handled by the booking job so far (progress).
+  processedRows    Int           @default(0)
+  createdCount     Int           @default(0)
+  createdIncomplete Int          @default(0)
+  /// Valid rows refused while booking.
+  failedCount      Int           @default(0)
+  /// Required columns, defaults and limits in force when the file was validated.
+  settings         Json
+  /// Who uploaded it, to act as them in the background: { kind, userId?, apiKeyId?, name }.
+  actor            Json
+  createdById      String?       @db.Uuid
+  error            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  queuedAt         DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  rowsPurgedAt     DateTime?
+  rows             ImportRow[]
+  bookingBatch     BookingBatch? @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
+
+  @@index([merchantId, createdAt])
+  @@index([createdById, createdAt])
+  @@index([status, updatedAt])
+  @@map("import_jobs")
+}
+
+model ImportRow {
+  id         String          @id @default(uuid(7)) @db.Uuid
+  jobId      String          @db.Uuid
+  /// Spreadsheet row number (the header is row 1).
+  rowNumber  Int
+  status     ImportRowStatus
+  /// The row as uploaded: { columnKey: text }.
+  cells      Json
+  /// [{ column, message }] for ERROR / FAILED rows.
+  errors     Json?
+  /// Delivery details still missing (INCOMPLETE rows).
+  missing    String[]        @default([])
+  merchantId String?         @db.Uuid
+  /// Merchant order ref, or a hash of the row when there is none (idempotency).
+  dedupeKey  String?
+  /// Delivery charge preview at validation; the booked charge once created.
+  charge     Decimal?        @db.Decimal(12, 2)
+  trackingId String?
+  job        ImportJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, rowNumber])
+  @@index([jobId, status, rowNumber])
+  @@map("import_rows")
+}

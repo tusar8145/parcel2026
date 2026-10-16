@@ -1,0 +1,34 @@
+// ───────────────────────────── Support: canned responses, CSAT ─────────────────────────────
+// Owned by src/modules/support. SLA deadlines are columns on support_tickets (core.prisma).
+
+model CannedResponse {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  title       String
+  body        String
+  category    String?
+  /// Optional short code agents type, e.g. "refund-eta".
+  shortcut    String?  @unique
+  active      Boolean  @default(true)
+  createdById String?  @db.Uuid
+  updatedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("canned_responses")
+}
+
+/// Customer satisfaction survey, requested when a ticket is resolved.
+model TicketSurvey {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  ticketId    String        @unique @db.Uuid
+  /// The agent who resolved it, for per-agent reporting.
+  agentId     String?       @db.Uuid
+  rating      Int? // 1–5
+  comment     String?
+  requestedAt DateTime      @default(now())
+  respondedAt DateTime?
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([respondedAt])
+  @@map("ticket_surveys")
+}

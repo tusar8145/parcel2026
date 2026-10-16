@@ -1,0 +1,288 @@
+// ───────────────────────────── Finance: ledger, reconciliation, schedules, disputes ─────────────────────────────
+// Owned by src/modules/finance. Ledger amounts are Decimal(14,2) BDT.
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+/// Chart of accounts. System accounts are created by the ledger (systemKey) and can't be removed.
+model LedgerAccount {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  code      String            @unique // "1010"
+  name      String
+  type      LedgerAccountType
+  /// Stable key the ledger posts to, e.g. CASH_WITH_RIDERS. Null for accounts finance adds by hand.
+  systemKey String?           @unique
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  lines     JournalLine[]
+
+  @@map("ledger_accounts")
+}
+
+/// An immutable, balanced journal entry (debits = credits). Corrections are new entries;
+/// rows are never updated or deleted (database triggers enforce both rules).
+model JournalEntry {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  number         String        @unique // JE-2610-0001
+  eventType      String // LedgerEventType
+  reference      String
+  /// De-duplicates repeated postings of one business event, e.g. "COD_COLLECTED:PP-261016-1001".
+  idempotencyKey String?       @unique
+  memo           String?
+  occurredAt     DateTime
+  /// Accounting period "YYYY-MM" (Bangladesh time).
+  period         String
+  merchantId     String?       @db.Uuid
+  riderId        String?       @db.Uuid
+  hubId          String?       @db.Uuid
+  createdById    String?       @db.Uuid
+  createdAt      DateTime      @default(now())
+  lines          JournalLine[]
+
+  @@index([period])
+  @@index([eventType, occurredAt])
+  @@index([reference])
+  @@index([merchantId, occurredAt])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  entryId    String        @db.Uuid
+  accountId  String        @db.Uuid
+  debit      Decimal       @default(0) @db.Decimal(14, 2)
+  credit     Decimal       @default(0) @db.Decimal(14, 2)
+  /// Sub-ledger dimensions (merchant balances, rider cash, hub cash).
+  merchantId String?       @db.Uuid
+  riderId    String?       @db.Uuid
+  hubId      String?       @db.Uuid
+  memo       String?
+  entry      JournalEntry  @relation(fields: [entryId], references: [id])
+  account    LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId, entryId])
+  @@index([merchantId, accountId])
+  @@index([riderId, accountId])
+  @@index([hubId, accountId])
+  @@map("journal_lines")
+}
+
+/// A closed month accepts no postings.
+model LedgerPeriod {
+  period     String   @id // "2026-10"
+  closedAt   DateTime @default(now())
+  closedById String?  @db.Uuid
+  /// Trial balance at close.
+  snapshot   Json
+  note       String?
+
+  @@map("ledger_periods")
+}
+
+// ─── Merchant balance adjustments (carry-forward, refunds, claims, weight re-pricing) ───
+
+enum MerchantAdjustmentKind {
+  CARRY_FORWARD
+  WEIGHT_ADJUSTMENT
+  REFUND
+  CLAIM
+  MANUAL
+  /// Return (RTO) charge booked by the returns module; billed once (settlement or invoice).
+  RETURN_CHARGE
+}
+
+/// Signed amount applied to the merchant's next settlement: positive = the merchant owes us
+/// (deducted), negative = we owe the merchant (added to the payout).
+model MerchantAdjustment {
+  id                 String                 @id @default(uuid(7)) @db.Uuid
+  merchantId         String                 @db.Uuid
+  kind               MerchantAdjustmentKind
+  amount             Decimal                @db.Decimal(12, 2)
+  description        String
+  reference          String?
+  disputeId          String?                @db.Uuid
+  /// For CARRY_FORWARD: the settlement whose shortfall this carries.
+  sourceSettlementId String?                @db.Uuid
+  /// The settlement that applied it (null = still open).
+  settlementId       String?                @db.Uuid
+  /// The invoice that billed it instead (null = not invoiced).
+  invoiceId          String?                @db.Uuid
+  createdById        String?                @db.Uuid
+  createdAt          DateTime               @default(now())
+  merchant           Merchant               @relation(fields: [merchantId], references: [id])
+  settlement         MerchantSettlement?    @relation("AdjustmentAppliedIn", fields: [settlementId], references: [id])
+
+  @@index([merchantId, settlementId])
+  @@index([invoiceId])
+  @@map("merchant_adjustments")
+}
+
+// ─── Automatic settlement schedule ───
+
+enum SettlementCycle {
+  MANUAL
+  DAILY
+  WEEKLY
+  BIWEEKLY
+}
+
+model SettlementSchedule {
+  merchantId    String          @id @db.Uuid
+  cycle         SettlementCycle @default(MANUAL)
+  /// 0 = Sunday … 6 = Saturday, for weekly / biweekly cycles.
+  weekday       Int?
+  /// Net payable below this isn't drafted automatically.
+  minimumAmount Decimal         @default(0) @db.Decimal(12, 2)
+  nextRunAt     DateTime?
+  lastRunAt     DateTime?
+  lastResult    String?
+  updatedById   String?         @db.Uuid
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  merchant      Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([cycle, nextRunAt])
+  @@map("settlement_schedules")
+}
+
+// ─── Bank / bKash reconciliation ───
+
+enum StatementSource {
+  BANK
+  BKASH
+}
+
+enum StatementLineStatus {
+  UNMATCHED
+  MATCHED
+  IGNORED
+}
+
+model BankStatement {
+  id           String              @id @default(uuid(7)) @db.Uuid
+  source       StatementSource
+  accountLabel String
+  filename     String
+  uploadedById String?             @db.Uuid
+  lineCount    Int
+  duplicates   Int                 @default(0)
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  createdAt    DateTime            @default(now())
+  lines        BankStatementLine[]
+
+  @@map("bank_statements")
+}
+
+model BankStatementLine {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  statementId   String              @db.Uuid
+  lineNo        Int
+  postedAt      DateTime
+  description   String
+  reference     String?
+  /// Signed: money in (+), money out (−).
+  amount        Decimal             @db.Decimal(14, 2)
+  /// The same bank line is never imported twice.
+  fingerprint   String              @unique
+  status        StatementLineStatus @default(UNMATCHED)
+  matchMethod   String? // AUTO | MANUAL
+  settlementId  String?             @db.Uuid
+  invoiceId     String?             @db.Uuid
+  /// Rider payout (rider_payouts) this line paid; plain column so rider.prisma stays untouched.
+  riderPayoutId String?             @db.Uuid
+  matchedById   String?             @db.Uuid
+  matchedAt     DateTime?
+  note          String?
+  createdAt     DateTime            @default(now())
+  statement     BankStatement       @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  settlement    MerchantSettlement? @relation(fields: [settlementId], references: [id])
+  invoice       Invoice?            @relation(fields: [invoiceId], references: [id])
+
+  @@unique([statementId, lineNo])
+  @@index([status, postedAt])
+  @@index([settlementId])
+  @@index([invoiceId])
+  @@index([riderPayoutId])
+  @@map("bank_statement_lines")
+}
+
+// ─── Disputes: refunds, claims, weight discrepancies ───
+
+enum DisputeKind {
+  DAMAGED
+  LOST
+  OVERCHARGE
+  WEIGHT_DISCREPANCY
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum DisputePayout {
+  MERCHANT_BALANCE
+  BANK
+  BKASH
+  CASH
+}
+
+model Dispute {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  number          String         @unique // DSP-261016-0001
+  kind            DisputeKind
+  status          DisputeStatus  @default(OPEN)
+  parcelId        String         @db.Uuid
+  merchantId      String?        @db.Uuid
+  raisedById      String         @db.Uuid
+  description     String
+  claimedAmount   Decimal?       @db.Decimal(12, 2)
+  approvedAmount  Decimal?       @db.Decimal(12, 2)
+  /// Weight discrepancy: booked vs measured weight and the re-priced charge.
+  bookedWeightKg  Decimal?       @db.Decimal(8, 2)
+  actualWeightKg  Decimal?       @db.Decimal(8, 2)
+  originalCharge  Decimal?       @db.Decimal(12, 2)
+  repricedCharge  Decimal?       @db.Decimal(12, 2)
+  payout          DisputePayout?
+  payoutReference String?
+  resolution      String?
+  reviewerId      String?        @db.Uuid
+  resolvedById    String?        @db.Uuid
+  resolvedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  parcel          Parcel         @relation(fields: [parcelId], references: [id])
+  merchant        Merchant?      @relation(fields: [merchantId], references: [id])
+  notes           DisputeNote[]
+  evidence        StoredFile[]
+
+  @@index([status, createdAt])
+  @@index([merchantId, createdAt])
+  @@index([raisedById, createdAt])
+  @@index([parcelId])
+  @@map("disputes")
+}
+
+model DisputeNote {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  disputeId   String   @db.Uuid
+  authorId    String?  @db.Uuid
+  authorLabel String
+  body        String
+  internal    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  dispute     Dispute  @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, createdAt])
+  @@map("dispute_notes")
+}

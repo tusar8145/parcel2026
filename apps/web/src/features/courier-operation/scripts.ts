@@ -1,0 +1,28 @@
+// Load order: the API client (restores the session and data), the original page scripts,
+// then bridge.js (shipments and parcel actions) and bridge-pages.js (the other pages), which connect them to the API. See public/legacy/README.md.
+export const scripts = [
+  "/legacy/shared/api.js",
+  "/legacy/courier-operation/01.js",
+  "/legacy/courier-operation/02.js",
+  "/legacy/courier-operation/03.js",
+  "/legacy/courier-operation/04.js",
+  "/legacy/shared/support.js",
+  "/legacy/shared/scanner.js",
+  "/legacy/shared/mfa.js",
+  "/legacy/courier-operation/bridge.js",
+  "/legacy/courier-operation/bridge-pages.js",
+  "/legacy/courier-operation/bridge-network.js",
+  "/legacy/courier-operation/bridge-maps.js",
+  "/legacy/courier-operation/bridge-sla.js",
+  "/legacy/courier-operation/bridge-linehaul.js",
+  "/legacy/courier-operation/bridge-cn.js",
+  "/legacy/courier-operation/bridge-shifts.js",
+  "/legacy/courier-operation/bridge-reports.js",
+  "/legacy/courier-operation/bridge-rider-kyc.js",
+  "/legacy/courier-operation/bridge-rider-pay.js",
+  "/legacy/courier-operation/bridge-returns.js",
+  "/legacy/courier-operation/bridge-finance.js",
+  "/legacy/courier-operation/bridge-intake.js",
+  "/legacy/shared/importer.js",
+  "/legacy/courier-operation/bridge-imports.js"
+];

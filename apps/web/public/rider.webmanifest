@@ -1,0 +1,23 @@
+{
+  "id": "/rider",
+  "name": "Delivery Fast Rider",
+  "short_name": "DF Rider",
+  "description": "Pickups, deliveries, proof of delivery, COD and earnings for Delivery Fast riders. Works offline.",
+  "start_url": "/rider?source=pwa",
+  "scope": "/rider",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1f2937",
+  "lang": "en",
+  "categories": ["business", "productivity", "navigation"],
+  "icons": [
+    { "src": "/pwa/rider-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/rider-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/rider-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Scan parcel", "url": "/rider?page=Scan%20parcel", "icons": [{ "src": "/pwa/rider-192.png", "sizes": "192x192" }] },
+    { "name": "Deliveries", "url": "/rider?page=Deliveries", "icons": [{ "src": "/pwa/rider-192.png", "sizes": "192x192" }] }
+  ]
+}

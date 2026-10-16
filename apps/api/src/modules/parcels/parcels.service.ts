@@ -1,0 +1,654 @@
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import type { z } from "zod";
+import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
+import { TERMINAL_STATUSES, type assignRiderSchema, type cancelParcelSchema, type listParcelsQuerySchema, type updateStatusSchema } from "@delivery-fast/shared";
+import { PrismaService, type Db } from "../../common/prisma.service";
+import { AuditService } from "../../common/audit.service";
+import { OutboxService } from "../notifications/outbox.service";
+import { WebhooksService } from "../notifications/webhooks.service";
+import { NotifyService } from "../notifications/notify.service";
+import { PricingService } from "../pricing/pricing.service";
+import { actorLabel, hasRole, merchantIdsOf, type Actor } from "../../common/auth/actor";
+import type { RequestMeta } from "../../common/auth/decorators";
+import { AppError, forbidden, notFound } from "../../common/errors";
+import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
+import { parcelInclude, parcelView, publicTrackingView } from "./parcel.views";
+import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
+import { opsHubScope } from "./ops-scope";
+import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
+import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
+import { PickupSlotsService } from "./pickup-slots.service";
+import { signParcelAccess, trackingUrl } from "./parcel-access";
+import { returnChargeFor } from "../returns/return-charge";
+import { claimCn, linkCn } from "../cn-stock/cn-consume";
+import { slaDueDates } from "../sla/sla-policy";
+import { missingFieldsOf } from "./incomplete";
+
+const isStaff = (actor: Actor) => actor.permissions.has("parcel:read:any");
+
+/** Who a booking is for and how it is priced. */
+export interface BookingContext {
+  channel: ParcelChannel;
+  customerId: string | null;
+  merchantId: string | null;
+  segment: Segment;
+  discountPercent: number;
+  actorLabel: string;
+}
+
+/** Booked for hub drop-off (operations bookings): the hub the sender brings the parcel to. */
+export interface DropOffBooking {
+  hub: { id: string; name: string; address: string };
+}
+
+/** Optional facts about an operations booking. */
+export interface BookingOptions {
+  merchantId?: string;
+  dropOff?: DropOffBooking;
+  /** The spreadsheet import (BookingBatch) the parcel belongs to. */
+  batchId?: string;
+  /** Run inside the caller's transaction (imports book a chunk of rows per transaction); the caller flushes `after`. */
+  tx?: Db;
+  after?: AfterCommit;
+  /** false: no booking SMS/email to the sender (imports send one summary instead). */
+  notify?: boolean;
+  /** Booked from a spreadsheet import (modules/imports): row key, and the delivery details still missing. */
+  import?: { jobId: string; key?: string; missingFields: string[]; destination?: { district: string; zone: string } };
+}
+
+/** A booking whose delivery details may be missing (imports book incomplete orders; see parcels/incomplete.ts). */
+export type BookingInput = Omit<CreateParcelInput, "recipient" | "delivery"> & {
+  recipient: { name: string | null; phone: string | null };
+  delivery: Omit<CreateParcelInput["delivery"], "street" | "zone" | "district"> & { street: string | null; zone: string | null; district: string | null };
+};
+
+/** Rough promise shown to customers; operations can refine it later. */
+function estimateDelivery(serviceLevel: string, sameDistrict: boolean) {
+  const now = new Date();
+  const hours = serviceLevel === "SAME_DAY" ? 10 : serviceLevel === "EXPRESS" ? 24 : sameDistrict ? 48 : 72;
+  return new Date(now.getTime() + hours * 3600_000);
+}
+
+@Injectable()
+export class ParcelsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricing: PricingService,
+    private readonly workflow: ParcelWorkflowService,
+    private readonly outbox: OutboxService,
+    private readonly webhooks: WebhooksService,
+    private readonly audit: AuditService,
+    private readonly pickupSlots: PickupSlotsService,
+  ) {}
+
+  /** Booking notices (property injection keeps the constructor stable for parallel edits). */
+  @Inject(NotifyService) private readonly notifications!: NotifyService;
+
+  /** Parcels this actor may see. */
+  scope(actor: Actor): Prisma.ParcelWhereInput {
+    if (isStaff(actor)) return {};
+    const or: Prisma.ParcelWhereInput[] = [];
+    const merchants = merchantIdsOf(actor);
+    if (merchants.length) or.push({ merchantId: { in: merchants } });
+    if (actor.kind === "user") {
+      if (hasRole(actor, "CUSTOMER")) or.push({ customerId: actor.userId });
+      if (actor.riderId) or.push({ pickupRiderId: actor.riderId }, { deliveryRiderId: actor.riderId });
+    }
+    return or.length ? { OR: or } : { id: "00000000-0000-0000-0000-000000000000" };
+  }
+
+  // ───────────── booking ─────────────
+
+  async create(actor: Actor, input: CreateParcelInput, meta: RequestMeta, opts: BookingOptions = {}) {
+    const ctx = await this.bookingContext(actor, opts.merchantId);
+    const parcel = await this.book(actor, ctx, input, meta, undefined, opts);
+    return this.detail(actor, parcel.trackingId);
+  }
+
+  /**
+   * Website booking without an account; the sender's phone was verified by SMS
+   * (GuestBookingService). `inTransaction` runs before commit (e.g. to use up the verification).
+   */
+  createForGuest(input: CreateParcelInput, meta: RequestMeta, inTransaction?: (tx: Db, parcel: Parcel) => Promise<void>) {
+    const ctx: BookingContext = { channel: "WEBSITE", customerId: null, merchantId: null, segment: "CUSTOMER", discountPercent: 0, actorLabel: "Guest sender (phone verified)" };
+    return this.book("guest", ctx, input, meta, inTransaction);
+  }
+
+  private async book(
+    actor: Actor | "guest",
+    ctx: BookingContext,
+    input: BookingInput,
+    meta: RequestMeta,
+    inTransaction?: (tx: Db, parcel: Parcel) => Promise<void>,
+    opts: BookingOptions = {},
+  ) {
+    const after = opts.after ?? this.workflow.newAfterCommit();
+    const dropOff = opts.dropOff;
+    // Priced (and SLA'd) to the destination; an incomplete import row uses the import's default until completed.
+    const dest = {
+      district: input.delivery.district ?? opts.import?.destination?.district ?? input.pickup.district,
+      zone: input.delivery.zone ?? opts.import?.destination?.zone ?? input.pickup.zone,
+    };
+    const run = async (tx: Db) => {
+      // Website bookings must use one of the offered pickup slots (capacity is checked under a lock).
+      if (input.pickupWindow) await this.pickupSlots.assertBookable(tx, input.pickupWindow, { strict: ctx.channel === "WEBSITE", district: input.pickup.district });
+      if (ctx.merchantId && input.merchantOrderRef) {
+        const dup = await tx.parcel.findUnique({ where: { merchantId_merchantOrderRef: { merchantId: ctx.merchantId, merchantOrderRef: input.merchantOrderRef } } });
+        if (dup) throw new AppError("DUPLICATE_ORDER_REF", `Order ${input.merchantOrderRef} was already booked as ${dup.trackingId}`, HttpStatus.CONFLICT, { trackingId: dup.trackingId });
+      }
+      const quote = await this.pricing.quote(
+        ctx.segment,
+        {
+          pickupDistrict: input.pickup.district,
+          pickupZone: input.pickup.zone,
+          deliveryDistrict: dest.district,
+          deliveryZone: dest.zone,
+          weightKg: input.weightKg,
+          serviceLevel: input.serviceLevel,
+          codAmount: input.codAmount,
+          discountPercent: ctx.discountPercent,
+          parcelType: input.type,
+          documentType: input.documentType,
+          // Drop-offs are priced from the drop-off hub, not the pickup address.
+          dropOffHubId: dropOff?.hub.id,
+        },
+        tx,
+        { merchantId: ctx.merchantId },
+      );
+      // A pre-printed CN label (CN stock) becomes the tracking ID; otherwise a new one is issued.
+      const cn = input.cn ? await claimCn(tx, input.cn, { merchantId: ctx.merchantId, channel: ctx.channel }) : null;
+      const trackingId = cn?.cn ?? (await nextTrackingId(tx));
+      const due = await slaDueDates(tx, {
+        serviceLevel: input.serviceLevel,
+        pickupDistrict: input.pickup.district,
+        pickupZone: input.pickup.zone,
+        deliveryDistrict: dest.district,
+        deliveryZone: dest.zone,
+        pickupWindowEnd: input.pickupWindow?.end,
+      });
+      const created = await tx.parcel.create({
+        data: {
+          trackingId,
+          channel: ctx.channel,
+          customerId: ctx.customerId,
+          merchantId: ctx.merchantId,
+          merchantOrderRef: input.merchantOrderRef,
+          senderName: input.sender.name,
+          senderPhone: input.sender.phone,
+          pickupCategory: input.pickup.category,
+          pickupStreet: input.pickup.street,
+          pickupArea: input.pickup.area,
+          pickupZone: input.pickup.zone,
+          pickupDistrict: input.pickup.district,
+          recipientName: input.recipient.name,
+          recipientPhone: input.recipient.phone,
+          deliveryCategory: input.delivery.category,
+          deliveryStreet: input.delivery.street,
+          deliveryArea: input.delivery.area,
+          deliveryZone: input.delivery.zone,
+          deliveryDistrict: input.delivery.district,
+          type: input.type,
+          serviceLevel: input.serviceLevel,
+          weightKg: input.weightKg,
+          packaging: input.packaging,
+          contents: input.contents,
+          documentType: input.type === "DOCUMENT" ? (quote.documentType ?? input.documentType ?? null) : null,
+          declaredValue: input.declaredValue,
+          instructions: input.instructions,
+          receiverRelation: input.receiverRelation,
+          originBranchCode: input.originBranchCode,
+          codAmount: input.codAmount,
+          baseCharge: quote.baseCharge,
+          weightCharge: quote.weightCharge,
+          serviceCharge: quote.serviceCharge,
+          codFee: quote.codFee,
+          discount: quote.discount,
+          totalCharge: quote.totalCharge,
+          pricingSnapshot: { rateCardId: quote.rateCardId, segment: ctx.segment, config: quote.rateCard, discountPercent: ctx.discountPercent, ...(quote.origin ? { origin: { ...quote.origin } } : {}), ...(opts.import?.missingFields.length ? { destination: dest } : {}) },
+          estimatedDeliveryAt: estimateDelivery(input.serviceLevel, input.pickup.district === dest.district),
+          pickupWindowStart: input.pickupWindow?.start,
+          pickupWindowEnd: input.pickupWindow?.end,
+          // Drop-offs have no pickup leg; their delivery SLA starts when the hub receives them.
+          pickupDueAt: dropOff ? null : due.pickupDueAt,
+          deliveryDueAt: dropOff ? null : due.deliveryDueAt,
+          intake: dropOff ? "DROP_OFF" : "PICKUP",
+          dropOffHubId: dropOff?.hub.id,
+          bookingBatchId: opts.batchId,
+          incomplete: !!opts.import?.missingFields.length,
+          missingFields: opts.import?.missingFields ?? [],
+          importJobId: opts.import?.jobId,
+          importKey: opts.import?.key,
+          pickupLat: input.pickup.lat,
+          pickupLng: input.pickup.lng,
+          deliveryLat: input.delivery.lat,
+          deliveryLng: input.delivery.lng,
+          events: {
+            create: {
+              status: "PENDING_CONFIRMATION",
+              ...(dropOff
+                ? {
+                    title: `Booked for drop-off at ${dropOff.hub.name}`,
+                    description: `Awaiting drop-off at ${dropOff.hub.name} (${dropOff.hub.address}). The parcel is on its way once the hub receives it.`,
+                    location: dropOff.hub.name,
+                    metadata: { hubId: dropOff.hub.id, kind: "drop_off_booked" },
+                  }
+                : { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Delivery Fast" }),
+              actorUserId: actor !== "guest" && actor.kind === "user" ? actor.userId : null,
+              actorLabel: ctx.actorLabel,
+            },
+          },
+        },
+      });
+      if (opts.notify !== false)
+        after.outbox.push(
+        ...(await this.notifications.notify(tx, {
+          event: dropOff ? "parcel.drop_off_booked" : "parcel.booked",
+          to: { phone: input.sender.phone, userId: ctx.customerId, name: input.sender.name },
+          vars: {
+            trackingId,
+            charge: quote.totalCharge,
+            trackingUrl: trackingUrl(trackingId, actor === "guest" ? signParcelAccess(trackingId, "owner") : undefined),
+            ...(dropOff ? { hub: dropOff.hub.name, hubAddress: dropOff.hub.address } : {}),
+          },
+        })),
+      );
+      after.webhooks.push(
+        ...(await this.webhooks.emit(tx, ctx.merchantId, "pickup.requested", {
+          trackingId,
+          merchantOrderRef: input.merchantOrderRef ?? null,
+          totalCharge: quote.totalCharge,
+          intake: dropOff ? "DROP_OFF" : "PICKUP",
+          ...(dropOff ? { dropOffHub: { id: dropOff.hub.id, name: dropOff.hub.name } } : {}),
+        })),
+      );
+      if (ctx.customerId && input.saveAddresses) await this.saveToAddressBook(tx, ctx.customerId, input as CreateParcelInput);
+      await this.audit.record(
+        actor === "guest" ? "system" : actor,
+        {
+          action: "parcel.create",
+          entityType: "parcel",
+          entityId: created.id,
+          data: actor === "guest" ? { trackingId, guest: true } : { trackingId, ...(dropOff ? { intake: "DROP_OFF", dropOffHubId: dropOff.hub.id } : {}), ...(opts.batchId ? { batchId: opts.batchId } : {}), ...(opts.import ? { importJobId: opts.import.jobId, missingFields: opts.import.missingFields } : {}) },
+        },
+        meta,
+        tx,
+      );
+      if (cn) await linkCn(tx, cn.stockId, created.id);
+      if (inTransaction) await inTransaction(tx, created);
+      after.realtime.push(parcelEvent(created, "parcel.created"));
+      return created;
+    };
+    const parcel = opts.tx ? await run(opts.tx) : await this.prisma.$transaction(run);
+    if (!opts.after) await this.workflow.flush(after);
+    return parcel;
+  }
+
+  /** Imports (modules/imports): who books for this merchant and how it is priced, resolved once per file. */
+  importContext(actor: Actor, merchantId: string) {
+    return this.bookingContext(actor, merchantId);
+  }
+
+  /** Imports: books one row with a context from importContext(), usually inside the chunk's transaction (opts.tx/after). */
+  bookImported(actor: Actor, ctx: BookingContext, input: BookingInput, meta: RequestMeta, opts: BookingOptions) {
+    return this.book(actor, ctx, input, meta, undefined, opts);
+  }
+
+  private async bookingContext(actor: Actor, requestedMerchantId?: string): Promise<BookingContext> {
+    if (actor.kind === "api_key") return this.merchantContext(actor.apiKeyId, actor.merchantId, "MERCHANT_API", actor.name);
+    const merchants = merchantIdsOf(actor);
+    const merchantId = requestedMerchantId ?? (merchants.length === 1 && !hasRole(actor, "CUSTOMER") ? merchants[0] : undefined);
+    if (merchantId) {
+      if (!merchants.includes(merchantId) && !isStaff(actor)) throw forbidden("You can't book for this merchant");
+      return this.merchantContext(actor.userId, merchantId, isStaff(actor) && !merchants.includes(merchantId) ? "OPERATIONS" : "MERCHANT_PORTAL", actor.name);
+    }
+    if (!hasRole(actor, "CUSTOMER") && !isStaff(actor)) throw forbidden("Only customers and merchants can book parcels");
+    return {
+      channel: isStaff(actor) && !hasRole(actor, "CUSTOMER") ? ("OPERATIONS" as const) : ("WEBSITE" as const),
+      customerId: hasRole(actor, "CUSTOMER") ? actor.userId : null,
+      merchantId: null,
+      segment: "CUSTOMER" as Segment,
+      discountPercent: 0,
+      actorLabel: "Customer",
+    };
+  }
+
+  private async merchantContext(_by: string, merchantId: string, channel: "MERCHANT_API" | "MERCHANT_PORTAL" | "OPERATIONS", label: string) {
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, include: { plan: true } });
+    if (!merchant) throw notFound("Merchant");
+    if (merchant.status !== "ACTIVE") throw forbidden("This merchant account is not active yet");
+    return {
+      channel,
+      customerId: null,
+      merchantId,
+      segment: (merchant.type === "CORPORATE_DOCUMENT" ? "CORPORATE_DOCUMENT" : "ECOMMERCE") as Segment,
+      discountPercent: merchant.plan ? Number(merchant.plan.discountPct) : 0,
+      actorLabel: `${merchant.name} (${label})`,
+    };
+  }
+
+  private async saveToAddressBook(tx: Db, userId: string, input: CreateParcelInput) {
+    const entries = [
+      { role: "PICKUP" as const, contactName: input.sender.name, phone: input.sender.phone, ...input.pickup },
+      { role: "RECEIVER" as const, contactName: input.recipient.name, phone: input.recipient.phone, ...input.delivery },
+    ];
+    for (const e of entries) {
+      const existing = await tx.address.findFirst({
+        where: { userId, role: e.role, phone: e.phone, street: e.street, zone: e.zone, district: e.district, area: e.area ?? null, category: e.category },
+      });
+      if (existing) await tx.address.update({ where: { id: existing.id }, data: { contactName: e.contactName } });
+      else if ((await tx.address.count({ where: { userId } })) < 50)
+        // Same cap as the address book API; bookings still succeed once it's full.
+        await tx.address.create({
+          data: { userId, role: e.role, category: e.category, contactName: e.contactName, phone: e.phone, street: e.street, area: e.area, zone: e.zone, district: e.district },
+        });
+    }
+  }
+
+  // ───────────── reading ─────────────
+
+  async list(actor: Actor, query: z.infer<typeof listParcelsQuerySchema>) {
+    const q = query.q?.trim();
+    const where: Prisma.ParcelWhereInput = {
+      AND: [
+        this.scope(actor),
+        {
+          status: query.status?.length ? { in: query.status } : undefined,
+          channel: query.channel,
+          merchantId: query.merchantId,
+          currentHubId: query.hubId,
+          intake: query.intake,
+          dropOffHubId: query.dropOffHubId,
+          bookingBatchId: query.batchId,
+          incomplete: query.incomplete,
+          createdAt: query.from || query.to ? { gte: query.from, lte: query.to } : undefined,
+          ...(query.riderId ? { OR: [{ pickupRiderId: query.riderId }, { deliveryRiderId: query.riderId }] } : {}),
+        },
+        q
+          ? {
+              OR: [
+                { trackingId: { contains: q, mode: "insensitive" } },
+                { merchantOrderRef: { contains: q, mode: "insensitive" } },
+                { recipientName: { contains: q, mode: "insensitive" } },
+                { senderName: { contains: q, mode: "insensitive" } },
+                { recipientPhone: { contains: q.replace(/\D/g, "").slice(-10) || q } },
+              ],
+            }
+          : {},
+      ],
+    };
+    const rows = await this.prisma.parcel.findMany({
+      where,
+      include: { ...parcelInclude, events: { orderBy: { createdAt: "asc" } } },
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      orderBy: { id: "desc" },
+    });
+    const hasMore = rows.length > query.limit;
+    const items = (hasMore ? rows.slice(0, query.limit) : rows).map(p => parcelView(p, { internal: isStaff(actor) }));
+    return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
+  }
+
+  /** Detail by tracking ID, within the actor's scope (404 otherwise, so IDs don't leak). */
+  async detail(actor: Actor, trackingId: string) {
+    const parcel = await this.prisma.parcel.findFirst({ where: { AND: [{ trackingId: trackingId.toUpperCase() }, this.scope(actor)] }, include: parcelInclude });
+    if (!parcel) throw notFound("Parcel");
+    const view = parcelView(parcel, { internal: isStaff(actor) });
+    const isAssignedRider = actor.kind === "user" && !!actor.riderId && parcel.deliveryRiderId === actor.riderId;
+    return isAssignedRider ? { ...view, devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;
+  }
+
+  async publicTrack(trackingId: string) {
+    return publicTrackingView(await this.findByTrackingId(trackingId));
+  }
+
+  /** By tracking ID as typed (case, spaces and Crockford look-alikes such as O/0 forgiven). */
+  async findByTrackingId(input: string, db: Db = this.prisma) {
+    const typed = input.trim().toUpperCase();
+    for (const trackingId of new Set([typed, normalizeTrackingId(typed)])) {
+      const parcel = await db.parcel.findUnique({ where: { trackingId }, include: parcelInclude });
+      if (parcel) return parcel;
+    }
+    throw notFound("Parcel");
+  }
+
+  /** Loads within scope, for mutations. */
+  async loadForUpdate(actor: Actor, trackingId: string, db: Db = this.prisma): Promise<Parcel> {
+    const parcel = await db.parcel.findFirst({ where: { AND: [{ trackingId: trackingId.toUpperCase() }, this.scope(actor)] } });
+    if (!parcel) throw notFound("Parcel");
+    return parcel;
+  }
+
+  // ───────────── owner actions ─────────────
+
+  async cancel(actor: Actor, trackingId: string, input: z.infer<typeof cancelParcelSchema>, meta: RequestMeta) {
+    const after = this.workflow.newAfterCommit();
+    await this.prisma.$transaction(async tx => {
+      const parcel = await this.loadForUpdate(actor, trackingId, tx);
+      const isOwner =
+        (actor.kind === "user" && parcel.customerId === actor.userId) || (!!parcel.merchantId && merchantIdsOf(actor).includes(parcel.merchantId));
+      const asOps = !isOwner && actor.permissions.has("parcel:dispatch");
+      if (!isOwner && !asOps) throw forbidden("Only the sender or operations can cancel this parcel");
+      if (isOwner && !isCustomerCancellable(parcel.status as ParcelStatus))
+        throw new AppError("NOT_CANCELLABLE", "This request can no longer be cancelled online because operations already confirmed it. Contact support.", HttpStatus.CONFLICT);
+      await this.workflow.transition(
+        tx,
+        parcel,
+        {
+          to: "PICKUP_CANCELLED",
+          actorRole: asOps ? "ops" : "owner",
+          data: { cancelledAt: new Date(), cancelReason: input.reason },
+          title: asOps ? "Pickup cancelled by operations" : "Pickup request cancelled",
+          description: input.reason ?? (asOps ? "Operations cancelled the request." : "The sender cancelled the request before confirmation."),
+          location: asOps ? "Courier operations" : "Customer",
+        },
+        actor,
+        meta,
+        after,
+      );
+    });
+    await this.workflow.flush(after);
+    return this.detail(actor, trackingId);
+  }
+
+  // ───────────── operations ─────────────
+
+  async assignPickup(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta) {
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
+      const rider = await this.activeRider(tx, input.riderId);
+      await this.workflow.transition(
+        tx,
+        parcel,
+        {
+          to: "PICKUP_ASSIGNED",
+          actorRole: "ops",
+          data: { pickupRiderId: rider.id },
+          description: `Operations accepted the request and assigned ${rider.label} to collect the parcel.`,
+          internalNote: input.note,
+        },
+        actor,
+        meta,
+        after,
+      );
+    });
+  }
+
+  async assignDelivery(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta) {
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
+      await this.assertHubAccess(tx, actor, parcel);
+      const rider = await this.activeRider(tx, input.riderId);
+      const hub = parcel.currentHubId ? await tx.hub.findUnique({ where: { id: parcel.currentHubId } }) : null;
+      await this.workflow.transition(
+        tx,
+        parcel,
+        {
+          to: "ASSIGNED",
+          actorRole: "ops",
+          data: { deliveryRiderId: rider.id, deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) },
+          description: `Operations assigned the parcel${hub ? ` from ${hub.name}` : ""} to ${rider.label} for delivery.`,
+          internalNote: input.note,
+        },
+        actor,
+        meta,
+        after,
+      );
+    });
+  }
+
+  /** Generic status change by operations (hub moves, exceptions, returns). */
+  async setStatus(actor: Actor, trackingId: string, input: z.infer<typeof updateStatusSchema>, meta: RequestMeta, scan?: { code: string; source: ScanSource }) {
+    const to = input.status as ParcelStatus;
+    if (to === "PICKUP_ASSIGNED" || to === "ASSIGNED") throw new AppError("USE_ASSIGN", "Assign a rider to change to this status", 422);
+    if (to === "PICKUP_CANCELLED") return this.cancel(actor, trackingId, { reason: input.note }, meta);
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
+      const data: Prisma.ParcelUncheckedUpdateInput = {};
+      let location: string | undefined;
+      let title: string | undefined;
+      let description: string | undefined;
+      let metadata: Prisma.InputJsonValue | undefined;
+      // Hub operators receive parcels at their own hub and act only on parcels held there.
+      const hubScope = opsHubScope(actor);
+      if (to === "AT_HUB" && input.hubId) {
+        if (hubScope && !hubScope.includes(input.hubId)) throw forbidden("You can only receive parcels at your own hub");
+      } else await this.assertHubAccess(tx, actor, parcel);
+      // A drop-off arriving at its hub: no pickup leg, the delivery SLA starts now (ParcelWorkflowService).
+      if (to === "AT_HUB" && parcel.status === "PENDING_CONFIRMATION" && parcel.intake === "DROP_OFF") {
+        if (!input.hubId) throw new AppError("HUB_REQUIRED", "Choose the hub the parcel is at", 422);
+        const hub = await tx.hub.findUnique({ where: { id: input.hubId } });
+        if (!hub) throw notFound("Hub");
+        if (!hub.active) throw new AppError("HUB_INACTIVE", `${hub.name} isn't operating`, 422);
+        await this.workflow.receiveDropOff(tx, parcel, { hub, code: scan?.code, source: scan?.source, note: input.note, expectedVersion: input.expectedVersion }, actor, meta, after);
+        return;
+      }
+      if (to === "AT_HUB" || to === "IN_TRANSIT") {
+        const hubId = input.hubId ?? parcel.currentHubId;
+        if (to === "AT_HUB" && !hubId) throw new AppError("HUB_REQUIRED", "Choose the hub the parcel is at", 422);
+        if (hubId) {
+          const hub = await tx.hub.findUnique({ where: { id: hubId } });
+          if (!hub) throw notFound("Hub");
+          if (!hub.active && hub.id !== parcel.currentHubId) throw new AppError("HUB_INACTIVE", `${hub.name} isn't operating`, 422);
+          data.currentHubId = hub.id;
+          location = hub.name;
+          metadata = { hubId: hub.id };
+          // A move to another hub is a transfer; the transfer register reads this metadata.
+          if (to === "IN_TRANSIT" && parcel.currentHubId && parcel.currentHubId !== hub.id) {
+            const from = await tx.hub.findUnique({ where: { id: parcel.currentHubId } });
+            title = `In transit to ${hub.name}`;
+            description = `On the way from ${from?.name ?? "the previous hub"} to ${hub.name}.`;
+            metadata = { kind: "hub_transfer", hubId: hub.id, fromHubId: parcel.currentHubId, fromHub: from?.name ?? null, toHubId: hub.id, toHub: hub.name };
+          }
+        }
+        if (to === "AT_HUB") data.deliveryRiderId = null;
+      }
+      if (to === "PICKED_UP") data.pickedUpAt = new Date();
+      if (to === "OUT_FOR_DELIVERY") {
+        if (!parcel.deliveryRiderId && !parcel.pickupRiderId) throw new AppError("RIDER_REQUIRED", "Assign a delivery rider first", 422);
+        data.deliveryRiderId = parcel.deliveryRiderId ?? parcel.pickupRiderId;
+        if (!parcel.deliveryOtpEncrypted) data.deliveryOtpEncrypted = await this.workflow.issueDeliveryCode(tx, parcel, after);
+      }
+      if (to === "RETURNED") data.deliveredAt = null;
+      // Returns scheduled directly (not via a return run) still carry the reason and RTO charge.
+      if (to === "RETURN_SCHEDULED") {
+        if (parcel.returnCharge == null) data.returnCharge = returnChargeFor(parcel);
+        if (!parcel.returnRequestedAt) Object.assign(data, { returnRequestedAt: new Date(), returnRequestedBy: actorLabel(actor), returnReason: parcel.returnReason ?? input.note ?? null });
+      }
+      await this.workflow.transition(
+        tx,
+        parcel,
+        { to, actorRole: "ops", data, location, title, description, metadata, internalNote: input.note, expectedVersion: input.expectedVersion },
+        actor,
+        meta,
+        after,
+      );
+    });
+  }
+
+  /** Price-neutral corrections by operations (recipient contact, street, instructions). */
+  async updateDetails(actor: Actor, trackingId: string, input: z.infer<typeof updateParcelDetailsSchema>, meta: RequestMeta) {
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
+      await this.assertHubAccess(tx, actor, parcel);
+      if (TERMINAL_STATUSES.includes(parcel.status as ParcelStatus))
+        throw new AppError("PARCEL_CLOSED", "This parcel is closed; its details can no longer change", HttpStatus.CONFLICT);
+      if (input.expectedVersion !== undefined && input.expectedVersion !== parcel.version) throw this.changedError();
+
+      const data: Prisma.ParcelUncheckedUpdateManyInput = {};
+      const changed: string[] = [];
+      const set = (field: "recipientName" | "recipientPhone" | "deliveryStreet" | "deliveryArea" | "instructions", value: string | null | undefined, label: string) => {
+        if (value === undefined || value === parcel[field]) return;
+        (data as Record<string, string | null>)[field] = value;
+        changed.push(label);
+      };
+      set("recipientName", input.recipient?.name, "recipient name");
+      set("recipientPhone", input.recipient?.phone, "recipient phone");
+      set("deliveryStreet", input.delivery?.street, "street address");
+      if (input.delivery?.area !== undefined) set("deliveryArea", input.delivery.area || null, "area");
+      if (input.instructions !== undefined) set("instructions", input.instructions || null, "delivery instructions");
+      if (!changed.length) return;
+      // An incomplete order (import) may have just received what it was missing.
+      if (parcel.incomplete) {
+        const missing = missingFieldsOf({ ...parcel, ...(data as Partial<Pick<Parcel, "recipientName" | "recipientPhone" | "deliveryStreet">>) });
+        Object.assign(data, { incomplete: missing.length > 0, missingFields: missing });
+      }
+      // The delivery code goes to the recipient's phone, so a new number gets a fresh code.
+      if (typeof data.recipientPhone === "string" && parcel.deliveryOtpEncrypted)
+        data.deliveryOtpEncrypted = await this.workflow.issueDeliveryCode(tx, { ...parcel, recipientPhone: data.recipientPhone }, after);
+
+      const { count } = await tx.parcel.updateMany({ where: { id: parcel.id, version: parcel.version }, data: { ...data, version: { increment: 1 } } });
+      if (!count) throw this.changedError();
+      await tx.trackingEvent.create({
+        data: {
+          parcelId: parcel.id,
+          status: parcel.status,
+          title: "Details updated",
+          description: `Operations updated the ${changed.join(", ")}.${input.note ? ` ${input.note}` : ""}`,
+          visibility: "INTERNAL",
+          actorUserId: actor.kind === "user" ? actor.userId : null,
+          actorLabel: actorLabel(actor),
+        },
+      });
+      await this.audit.record(actor, { action: "parcel.update_details", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, changed } }, meta, tx);
+    });
+  }
+
+  /** Internal note on the parcel's timeline, visible to staff only. */
+  async addNote(actor: Actor, trackingId: string, input: z.infer<typeof parcelNoteSchema>, meta: RequestMeta) {
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel) => {
+      await tx.trackingEvent.create({
+        data: {
+          parcelId: parcel.id,
+          status: parcel.status,
+          title: "Note",
+          description: input.note,
+          visibility: "INTERNAL",
+          actorUserId: actor.kind === "user" ? actor.userId : null,
+          actorLabel: actorLabel(actor),
+        },
+      });
+      await this.audit.record(actor, { action: "parcel.note", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId } }, meta, tx);
+    });
+  }
+
+  /** Hub operators may act only on parcels held at (or heading to) their own hub. */
+  private async assertHubAccess(db: Db, actor: Actor, parcel: Parcel) {
+    const scope = opsHubScope(actor);
+    if (!scope || !parcel.currentHubId || scope.includes(parcel.currentHubId)) return;
+    const hub = await db.hub.findUnique({ where: { id: parcel.currentHubId }, select: { name: true } });
+    throw forbidden(`${parcel.trackingId} is at ${hub?.name ?? "another hub"}. Only that hub or an operations manager can update it`);
+  }
+
+  private changedError() {
+    return new AppError("PARCEL_CHANGED", "This parcel was just updated by someone else. Refresh and try again.", HttpStatus.CONFLICT);
+  }
+
+  private async opsChange(actor: Actor, trackingId: string, meta: RequestMeta, change: (tx: Db, parcel: Parcel, after: ReturnType<ParcelWorkflowService["newAfterCommit"]>) => Promise<void>) {
+    const after = this.workflow.newAfterCommit();
+    await this.prisma.$transaction(async tx => change(tx, await this.loadForUpdate(actor, trackingId, tx), after));
+    await this.workflow.flush(after);
+    return this.detail(actor, trackingId);
+  }
+
+  private async activeRider(db: Db, riderId: string) {
+    const rider = await db.rider.findUnique({ where: { id: riderId }, include: { user: { select: { name: true, status: true } } } });
+    if (!rider || !rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", 422);
+    return { id: rider.id, label: `${rider.code} · ${rider.user.name}` };
+  }
+}

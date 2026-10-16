@@ -1,0 +1,342 @@
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { canTransition, PARCEL_STATUS_LABEL, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
+import { PrismaService, type Db } from "../../common/prisma.service";
+import { AuditService } from "../../common/audit.service";
+import { OutboxService } from "../notifications/outbox.service";
+import { WebhooksService, type WebhookEvent } from "../notifications/webhooks.service";
+import { actorLabel, type Actor } from "../../common/auth/actor";
+import type { RequestMeta } from "../../common/auth/decorators";
+import { AppError } from "../../common/errors";
+import { decrypt, encrypt, randomDigits } from "../../common/crypto";
+import { env } from "../../config/env";
+import type { Parcel, Prisma, ScanSource } from "../../generated/prisma/client";
+import { slaTargets } from "../sla/sla-policy";
+import { RealtimeService, type RealtimeEvent } from "../../common/realtime.service";
+import { NotifyService, type NotifyInput } from "../notifications/notify.service";
+import type { NotificationEvent } from "../notifications/events";
+import { signParcelAccess, trackingUrl } from "./parcel-access";
+import { assertDetailsFor, pricedDestination } from "./incomplete";
+
+/** Default customer-facing text for each status. */
+const EVENT_TEXT: Record<ParcelStatus, { title: string; description: string; location?: string }> = {
+  PENDING_CONFIRMATION: { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Delivery Fast" },
+  PICKUP_ASSIGNED: { title: "Pickup accepted and rider assigned", description: "A rider will collect the parcel.", location: "Courier operations" },
+  PICKUP_CONFIRMED: { title: "Pickup confirmed", description: "The pickup time has been confirmed.", location: "Courier operations" },
+  PICKED_UP: { title: "Picked up", description: "The rider collected the parcel.", location: "Rider" },
+  PICKUP_CANCELLED: { title: "Pickup cancelled", description: "The pickup request was cancelled." },
+  AT_HUB: { title: "At hub", description: "The parcel arrived at a Delivery Fast hub." },
+  ASSIGNED: { title: "Assigned to delivery rider", description: "A rider has been assigned to deliver the parcel.", location: "Courier operations" },
+  IN_TRANSIT: { title: "In transit", description: "The parcel is on its way to the destination area." },
+  OUT_FOR_DELIVERY: { title: "Out for delivery", description: "The rider is on the way to the recipient.", location: "Rider" },
+  DELIVERED: { title: "Delivered", description: "The parcel was delivered.", location: "Rider" },
+  RETRY_SCHEDULED: { title: "Delivery attempt failed", description: "We'll try to deliver again.", location: "Rider" },
+  RETURN_SCHEDULED: { title: "Return scheduled", description: "The parcel will be returned to the sender.", location: "Courier operations" },
+  RETURNED: { title: "Returned to sender", description: "The parcel was returned to the sender." },
+  EXCEPTION: { title: "Needs attention", description: "Operations is reviewing an issue with this parcel.", location: "Courier operations" },
+};
+
+const WEBHOOK_FOR: Partial<Record<ParcelStatus, WebhookEvent>> = {
+  PICKUP_ASSIGNED: "pickup.scheduled",
+  PICKED_UP: "pickup.completed",
+  DELIVERED: "shipment.delivered",
+  PICKUP_CANCELLED: "shipment.cancelled",
+  OUT_FOR_DELIVERY: "shipment.out_for_delivery",
+  RETRY_SCHEDULED: "shipment.delivery_failed",
+  RETURN_SCHEDULED: "shipment.return_scheduled",
+  RETURNED: "shipment.returned",
+};
+/** Further events for the same change (sent after the specific one). */
+const EXTRA_WEBHOOKS: Partial<Record<ParcelStatus, WebhookEvent[]>> = {
+  PICKUP_CANCELLED: ["pickup.cancelled"],
+};
+
+export interface TransitionInput {
+  to: ParcelStatus;
+  actorRole: TransitionActor;
+  /** Fields to set alongside the status (rider ids, hub, timestamps…). */
+  data?: Prisma.ParcelUncheckedUpdateInput;
+  title?: string;
+  description?: string;
+  location?: string;
+  /** Staff-only detail, recorded as a separate INTERNAL event. */
+  internalNote?: string;
+  expectedVersion?: number;
+  metadata?: Prisma.InputJsonValue;
+  /** Extra lifecycle facts, e.g. { intakeChange: true } when operations switch a pickup to drop-off. */
+  context?: Pick<TransitionContext, "intakeChange">;
+}
+
+/** Side effects to run after the transaction commits. */
+export interface AfterCommit {
+  outbox: string[];
+  webhooks: string[];
+  realtime: RealtimeEvent[];
+}
+
+/** Who should see a parcel change live (see RealtimeService.canSee). */
+export function parcelEvent(
+  p: Pick<Parcel, "trackingId" | "status" | "merchantId" | "customerId" | "pickupRiderId" | "deliveryRiderId" | "currentHubId"> & Partial<Pick<Parcel, "dropOffHubId">>,
+  type = "parcel.updated",
+): RealtimeEvent {
+  return {
+    type,
+    id: p.trackingId,
+    merchantId: p.merchantId,
+    customerId: p.customerId,
+    riderIds: [p.pickupRiderId, p.deliveryRiderId],
+    // The drop-off hub follows parcels it is waiting for.
+    hubIds: [p.currentHubId, ...(p.dropOffHubId ? [p.dropOffHubId] : [])],
+    data: { status: p.status },
+  };
+}
+
+@Injectable()
+export class ParcelWorkflowService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
+    private readonly webhooks: WebhooksService,
+    private readonly realtime: RealtimeService,
+  ) {}
+
+  /** Return-to-merchant notices (property injection keeps the constructor stable for parallel edits). */
+  @Inject(NotifyService) private readonly returnNotices!: NotifyService;
+
+  /**
+   * The only way a parcel's status changes. Checks the lifecycle rules, applies
+   * optimistic locking, writes tracking events, SMS and webhooks in one transaction.
+   */
+  async transition(db: Db, parcel: Parcel, input: TransitionInput, actor: Actor | "system", meta: Partial<RequestMeta> | undefined, after: AfterCommit) {
+    const from = parcel.status as ParcelStatus;
+    if (input.expectedVersion !== undefined && input.expectedVersion !== parcel.version) throw this.changedError();
+    if (!canTransition(from, input.to, input.actorRole, { intake: parcel.intake, ...input.context })) {
+      if (parcel.intake === "DROP_OFF" && from === "PENDING_CONFIRMATION" && input.to === "PICKUP_ASSIGNED")
+        throw new AppError(
+          "DROP_OFF_PARCEL",
+          `${parcel.trackingId} is booked for drop-off at a hub, not rider pickup. Receive it at the hub when the sender brings it.`,
+          HttpStatus.CONFLICT,
+          { from, to: input.to },
+        );
+      if (from === "PENDING_CONFIRMATION" && input.to === "AT_HUB")
+        throw new AppError(
+          "NOT_DROP_OFF",
+          `${parcel.trackingId} is booked for rider pickup. Assign a pickup rider; only drop-off parcels can be received at a hub before pickup.`,
+          HttpStatus.CONFLICT,
+          { from, to: input.to },
+        );
+      throw new AppError(
+        "INVALID_STATUS_CHANGE",
+        `A parcel that is "${PARCEL_STATUS_LABEL[from]}" can't be changed to "${PARCEL_STATUS_LABEL[input.to]}"`,
+        HttpStatus.CONFLICT,
+        { from, to: input.to },
+      );
+    }
+    // Incomplete orders (imports) can't go out for delivery or between hubs until the details are known.
+    assertDetailsFor(parcel, input.to);
+    // A drop-off is received only at the hub the sender was asked to bring it to.
+    if (from === "PENDING_CONFIRMATION" && input.to === "AT_HUB") {
+      const hubId = input.data?.currentHubId;
+      if (!parcel.dropOffHubId || hubId !== parcel.dropOffHubId) throw await this.wrongDropOffHub(db, parcel);
+    }
+
+    const { count } = await db.parcel.updateMany({
+      where: { id: parcel.id, version: parcel.version },
+      data: { ...(input.data as Prisma.ParcelUncheckedUpdateManyInput), status: input.to, version: { increment: 1 } },
+    });
+    if (!count) throw this.changedError();
+
+    const text = EVENT_TEXT[input.to];
+    const label = actor === "system" ? "System" : actorLabel(actor);
+    const actorUserId = actor !== "system" && actor.kind === "user" ? actor.userId : null;
+    await db.trackingEvent.create({
+      data: {
+        parcelId: parcel.id,
+        status: input.to,
+        title: input.title ?? text.title,
+        description: input.description ?? text.description,
+        location: input.location ?? text.location,
+        actorUserId,
+        actorLabel: label,
+        metadata: input.metadata,
+      },
+    });
+    if (input.internalNote) {
+      await db.trackingEvent.create({
+        data: { parcelId: parcel.id, status: input.to, title: "Note", description: input.internalNote, visibility: "INTERNAL", actorUserId, actorLabel: label },
+      });
+    }
+
+    const updated = await db.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
+    // The previous holders (e.g. the rider handing over) must also see it leave their list.
+    const event = parcelEvent(updated);
+    event.riderIds?.push(parcel.pickupRiderId, parcel.deliveryRiderId);
+    event.hubIds?.push(parcel.currentHubId);
+    after.realtime.push(event);
+    await this.notify(db, updated, from, after);
+    await this.audit.record(
+      actor,
+      { action: "parcel.status_change", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, from, to: input.to } },
+      meta,
+      db,
+    );
+    return updated;
+  }
+
+  /** Queue SMS and webhooks written in a committed transaction. */
+  async flush(after: AfterCommit) {
+    await Promise.all([this.outbox.flush(after.outbox), this.webhooks.flush(after.webhooks)]);
+    this.realtime.publish(...after.realtime);
+  }
+
+  newAfterCommit = (): AfterCommit => ({ outbox: [], webhooks: [], realtime: [] });
+
+  /** A fresh delivery code for the recipient, sent by SMS. Returns the encrypted value to store. */
+  async issueDeliveryCode(db: Db, parcel: Pick<Parcel, "trackingId" | "recipientPhone" | "codAmount">, after: AfterCommit) {
+    const code = randomDigits(4);
+    const cod = Number(parcel.codAmount) > 0 ? Number(parcel.codAmount).toLocaleString("en-BD") : "";
+    // A security message: always sent (can't be switched off), skips per-recipient SMS spacing.
+    after.outbox.push(
+      ...(await this.returnNotices.notify(db, {
+        event: "parcel.delivery_code",
+        to: { phone: parcel.recipientPhone },
+        vars: { trackingId: parcel.trackingId, code, codAmount: cod },
+        channels: ["sms"],
+      })),
+    );
+    return encrypt(code);
+  }
+
+  /** Development only: lets testers see the code without a phone. */
+  devDeliveryCode(parcel: Pick<Parcel, "deliveryOtpEncrypted">) {
+    return env().EXPOSE_DEV_OTP && parcel.deliveryOtpEncrypted ? decrypt(parcel.deliveryOtpEncrypted) : undefined;
+  }
+
+  private async notify(db: Db, parcel: Parcel, from: ParcelStatus, after: AfterCommit) {
+    const to = parcel.status as ParcelStatus;
+    const track = trackingUrl(parcel.trackingId);
+    // Status notices through NotifyService (templates, admin toggles, preferences, rate limits).
+    const sender = { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName };
+    const STATUS_EVENTS: Partial<Record<ParcelStatus, { event: NotificationEvent; to: NotifyInput["to"] }>> = {
+      DELIVERED: { event: "parcel.delivered", to: sender },
+      PICKUP_CANCELLED: { event: "parcel.cancelled", to: sender },
+      PICKUP_ASSIGNED: { event: "parcel.pickup_assigned", to: sender },
+      PICKED_UP: { event: "parcel.picked_up", to: sender },
+      OUT_FOR_DELIVERY: { event: "parcel.out_for_delivery", to: { phone: parcel.recipientPhone, name: parcel.recipientName } },
+      RETRY_SCHEDULED: { event: "parcel.delivery_failed", to: sender },
+      // RETURN_SCHEDULED / RETURNED: sent below with the return details.
+    };
+    // Merchants ship in bulk and follow progress in their panel / webhooks: only the final outcome reaches them.
+    const merchantQuiet: ParcelStatus[] = ["PICKUP_ASSIGNED", "PICKED_UP", "RETRY_SCHEDULED"];
+    const notice = from !== to && !(parcel.merchantId && merchantQuiet.includes(to)) ? STATUS_EVENTS[to] : undefined;
+    if (notice) after.outbox.push(...(await this.returnNotices.notify(db, { ...notice, vars: { trackingId: parcel.trackingId, trackingUrl: track } })));
+    if (to === "DELIVERED") {
+      // Ask customers (not merchants, who ship in bulk) to rate the delivery; the signed link works without signing in.
+      if (!parcel.merchantId) after.outbox.push(
+        ...(await this.returnNotices.notify(db, {
+          event: "parcel.feedback_request",
+          to: { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName },
+          vars: { trackingId: parcel.trackingId, link: trackingUrl(parcel.trackingId, signParcelAccess(parcel.trackingId, "feedback"), "feedback") },
+        })),
+      );
+    }
+    if (parcel.merchantId) {
+      const data = { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, from, status: to, statusLabel: PARCEL_STATUS_LABEL[to], at: new Date().toISOString() };
+      after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, "shipment.status_updated", data)));
+      const specific = WEBHOOK_FOR[to];
+      if (specific) after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, specific, data)));
+      for (const extra of EXTRA_WEBHOOKS[to] ?? []) after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, extra, data)));
+    }
+    if (to === "RETURN_SCHEDULED" || to === "RETURNED") {
+      const charge = parcel.returnCharge == null ? null : Number(parcel.returnCharge);
+      after.outbox.push(
+        ...(await this.returnNotices.notify(db, {
+          event: to === "RETURNED" ? "parcel.returned" : "parcel.return_scheduled",
+          to: { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName },
+          vars: { trackingId: parcel.trackingId, reason: parcel.returnReason, returnCharge: charge, trackingUrl: track },
+        })),
+      );
+    }
+  }
+
+  /**
+   * A drop-off parcel arrives at its declared hub (hub console scan or typed ID): AT_HUB with the
+   * "Received at <hub> (drop-off)" event, a HUB_RECEIVE scan and the delivery SLA counted from now.
+   * The caller checks that the actor works at `hub`; transition() checks it is the declared hub.
+   */
+  async receiveDropOff(
+    db: Db,
+    parcel: Parcel,
+    input: { hub: { id: string; name: string }; code?: string; source?: ScanSource; note?: string; expectedVersion?: number },
+    actor: Actor,
+    meta: Partial<RequestMeta> | undefined,
+    after: AfterCommit,
+  ) {
+    const now = new Date();
+    // The journey starts at the drop-off hub (the origin it was priced from).
+    const origin = (parcel.pricingSnapshot as { origin?: { district?: string; zone?: string } } | null)?.origin;
+    const targets = await slaTargets(db, {
+      serviceLevel: parcel.serviceLevel,
+      pickupDistrict: origin?.district ?? parcel.pickupDistrict,
+      pickupZone: origin?.zone ?? parcel.pickupZone,
+      // Incomplete orders: the destination they were priced to until it is completed.
+      deliveryDistrict: pricedDestination(parcel).district,
+      deliveryZone: pricedDestination(parcel).zone,
+    });
+    const deliveryDueAt = new Date(now.getTime() + targets.deliveryMinutes * 60_000);
+    const updated = await this.transition(
+      db,
+      parcel,
+      {
+        to: "AT_HUB",
+        actorRole: "ops",
+        data: {
+          currentHubId: input.hub.id,
+          deliveryRiderId: null,
+          droppedOffAt: now,
+          deliveryDueAt,
+          slaState: "ON_TRACK",
+          // The customer promise counts from the hand-over too, never earlier than booked.
+          estimatedDeliveryAt: parcel.estimatedDeliveryAt && parcel.estimatedDeliveryAt > deliveryDueAt ? parcel.estimatedDeliveryAt : deliveryDueAt,
+        },
+        title: `Received at ${input.hub.name} (drop-off)`,
+        description: `The sender handed the parcel over at ${input.hub.name}. It is now in the Delivery Fast network.`,
+        location: input.hub.name,
+        metadata: { hubId: input.hub.id, kind: "drop_off_received" },
+        internalNote: input.note,
+        expectedVersion: input.expectedVersion,
+      },
+      actor,
+      meta,
+      after,
+    );
+    await db.scanEvent.create({
+      data: {
+        code: (input.code?.trim().toUpperCase() || parcel.trackingId).slice(0, 64),
+        trackingId: parcel.trackingId,
+        parcelId: parcel.id,
+        kind: "HUB_RECEIVE",
+        hubId: input.hub.id,
+        userId: actor.kind === "user" ? actor.userId : null,
+        source: input.source ?? "MANUAL",
+        ok: true,
+        message: "Drop-off received",
+      },
+    });
+    return updated;
+  }
+
+  private async wrongDropOffHub(db: Db, parcel: Parcel) {
+    const declared = parcel.dropOffHubId ? await db.hub.findUnique({ where: { id: parcel.dropOffHubId }, select: { id: true, name: true } }) : null;
+    return new AppError(
+      "DROP_OFF_WRONG_HUB",
+      declared ? `${parcel.trackingId} is booked for drop-off at ${declared.name}. Receive it there.` : `${parcel.trackingId} has no drop-off hub. Contact operations.`,
+      HttpStatus.CONFLICT,
+      { dropOffHub: declared },
+    );
+  }
+
+  private changedError() {
+    return new AppError("PARCEL_CHANGED", "This parcel was just updated by someone else. Refresh and try again.", HttpStatus.CONFLICT);
+  }
+}

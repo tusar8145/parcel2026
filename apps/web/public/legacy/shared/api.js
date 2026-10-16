@@ -1,0 +1,878 @@
+/*
+ * Delivery Fast web client: API access, sign-in state and the bridge that lets the
+ * original page scripts run on real data.
+ *
+ * - DF.api(path, options) calls /api/v1 (proxied by Next.js, so it's same-origin). The
+ *   access token lives in memory only; the refresh token is an httpOnly cookie.
+ * - DF.boot(app) runs before the page scripts: restores the session, enforces which
+ *   roles may open the panel and preloads the data the page reads.
+ * - API-backed localStorage keys are served from memory (see VIRTUAL_KEYS), so the
+ *   page scripts keep their synchronous reads but nothing personal is left in the
+ *   browser after sign-out.
+ */
+(() => {
+  const BASE = "/api/v1";
+  const PARCELS_KEY = "deliveryfast-customer-parcels";
+  const SESSION_KEY = "deliveryfast-customer-session";
+  const ADDRESS_KEY = "deliveryfast-customer-address-book";
+  const CONFIG_KEY = "deliveryfast-demo-config";
+  const RETURN_KEY = "deliveryfast-after-login";
+
+  /** Which roles may open each panel. */
+  const PANEL_ROLES = {
+    "courier-operation": ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"],
+    rider: ["RIDER"],
+    "ecommerce-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
+    "document-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
+    "super-admin": ["SUPER_ADMIN"],
+  };
+
+  let accessToken = null;
+  let accessExpiresAt = 0;
+  let refreshing = null;
+
+  // Support access ("view as", started from super admin): this tab runs on a short-lived,
+  // non-refreshable token kept for this tab only. It never touches the admin's own session.
+  const SUPPORT_KEY = "df-support-access";
+  let supportAccess = null;
+  try {
+    if (new URLSearchParams(location.search).has("support-access")) {
+      const handed = window.opener?.DF?.takeSupportAccess?.();
+      if (handed) sessionStorage.setItem(SUPPORT_KEY, JSON.stringify(handed));
+      history.replaceState(null, "", location.pathname + location.hash);
+    }
+    const stored = JSON.parse(sessionStorage.getItem(SUPPORT_KEY) || "null");
+    if (stored?.accessToken && stored.expiresAt > Date.now()) supportAccess = stored;
+    else sessionStorage.removeItem(SUPPORT_KEY);
+  } catch {}
+  const state = { user: null, app: document.body.dataset.app || "website", catalog: null, platformConfig: null, hubs: [], riders: [] };
+
+  class ApiError extends Error {
+    constructor(status, error) {
+      super(error?.message || `Request failed (${status})`);
+      this.status = status;
+      this.code = error?.code || "ERROR";
+      this.details = error?.details;
+      this.requestId = error?.requestId;
+    }
+  }
+
+  async function rawFetch(path, { method = "GET", body, headers = {}, auth = true } = {}) {
+    const response = await fetch(BASE + path, {
+      method,
+      credentials: "same-origin",
+      headers: {
+        "x-df-client": "web",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(auth && accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : undefined;
+    if (!response.ok) throw new ApiError(response.status, data?.error);
+    return data;
+  }
+
+  function acceptSession(result) {
+    accessToken = result.accessToken;
+    accessExpiresAt = Date.now() + (result.expiresIn - 30) * 1000;
+    state.user = result.user;
+    return result.user;
+  }
+
+  /** One refresh at a time; resolves to the user or null. */
+  function refresh() {
+    if (supportAccess) {
+      // Support access can't be refreshed: it ends when its token expires.
+      if (Date.now() >= supportAccess.expiresAt) return Promise.resolve(endSupportAccess("expired"));
+      accessToken = supportAccess.accessToken;
+      accessExpiresAt = supportAccess.expiresAt;
+      refreshing ??= rawFetch("/auth/me")
+        .then(user => (state.user = user))
+        .catch(() => endSupportAccess("ended"))
+        .finally(() => (refreshing = null));
+      return refreshing;
+    }
+    refreshing ??= rawFetch("/auth/refresh", { method: "POST", auth: false })
+      .then(user => {
+        state.networkDown = false;
+        return acceptSession(user);
+      })
+      .catch(error => {
+        accessToken = null;
+        // No answer at all (offline, server unreachable) is not the same as a signed-out session.
+        state.networkDown = !(error instanceof ApiError);
+        // A rider working offline keeps going; queued actions wait for a fresh sign-in.
+        if (!state.offlineSession) state.user = null;
+        return null;
+      })
+      .finally(() => (refreshing = null));
+    return refreshing;
+  }
+
+  /** Authenticated call; refreshes the access token when it expires. */
+  async function api(path, options = {}) {
+    // A session restored offline (rider app) gets its token once the connection is back.
+    if ((accessToken && Date.now() > accessExpiresAt) || (!accessToken && state.offlineSession)) await refresh();
+    try {
+      return await rawFetch(path, options);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401 && ["TOKEN_EXPIRED", "SESSION_REVOKED"].includes(error.code) && (await refresh())) {
+        return rawFetch(path, options);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Authenticated request that isn't JSON: `body` may be FormData (file uploads); resolves to the
+   * Response (e.g. `.blob()` for downloads). Errors throw ApiError like DF.api.
+   */
+  async function apiRaw(path, { method = "GET", body, headers = {} } = {}) {
+    if ((accessToken && Date.now() > accessExpiresAt) || (!accessToken && state.offlineSession)) await refresh();
+    const send = () =>
+      fetch(BASE + path, { method, credentials: "same-origin", headers: { "x-df-client": "web", ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...headers }, body });
+    let response = await send();
+    if (response.status === 401) {
+      const data = await response.clone().json().catch(() => null);
+      if (["TOKEN_EXPIRED", "SESSION_REVOKED"].includes(data?.error?.code) && (await refresh())) response = await send();
+    }
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new ApiError(response.status, data?.error);
+    }
+    return response;
+  }
+
+  /** Downloads a file from the API with the session (the token isn't a cookie) and saves it. */
+  async function download(path, fallbackName = "download") {
+    const response = await apiRaw(path);
+    const disposition = response.headers.get("content-disposition") || "";
+    const name = disposition.match(/filename="?([^";]+)"?/)?.[1] || fallbackName;
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return name;
+  }
+
+  /**
+   * A sign-in response is either a session (→ the user) or a second-step challenge:
+   * { mfaRequired, mfaToken, methods } or { mfaSetupRequired, mfaToken } (no session yet).
+   * Callers check `result.mfaRequired || result.mfaSetupRequired`.
+   */
+  const sessionOrChallenge = result => (result && result.accessToken ? acceptSession(result) : result);
+
+  function endSupportAccess(reason) {
+    try {
+      sessionStorage.removeItem(SUPPORT_KEY);
+    } catch {}
+    supportAccess = null;
+    accessToken = null;
+    state.user = null;
+    if (reason) document.title = `Support access ${reason} · Delivery Fast`;
+    return null;
+  }
+
+  const auth = {
+    get user() {
+      return state.user;
+    },
+    hasRole: (...roles) => !!state.user && state.user.roles.some(r => roles.includes(r)),
+    requestOtp: (phone, purpose) => rawFetch("/auth/otp", { method: "POST", body: { phone, purpose }, auth: false }),
+    login: async (identifier, password) => sessionOrChallenge(await rawFetch("/auth/login", { method: "POST", body: { identifier, password }, auth: false })),
+    loginWithOtp: async (phone, otp) => sessionOrChallenge(await rawFetch("/auth/login/otp", { method: "POST", body: { phone, otp }, auth: false })),
+    /** Second step: an authenticator code or a recovery code. */
+    loginMfa: async (mfaToken, code) => acceptSession(await rawFetch("/auth/login/mfa", { method: "POST", body: { mfaToken, code }, auth: false })),
+    /** Enrolment during sign-in (roles that must use two-step verification): { otpauthUrl, qrDataUrl, secret }. */
+    mfaSetup: mfaToken => rawFetch("/auth/mfa/setup", { method: "POST", body: { mfaToken }, auth: false }),
+    /** Confirms enrolment; signs in and returns { user, recoveryCodes }. */
+    async mfaEnable(mfaToken, code) {
+      const result = await rawFetch("/auth/mfa/enable", { method: "POST", body: { mfaToken, code }, auth: false });
+      return { user: acceptSession(result), recoveryCodes: result.recoveryCodes || [] };
+    },
+    signup: async input => acceptSession(await rawFetch("/auth/signup", { method: "POST", body: input, auth: false })),
+    resetPassword: input => rawFetch("/auth/password/reset", { method: "POST", body: input, auth: false }),
+    /** Guest booking: SMS code to the sender's phone, then a one-booking verification token. */
+    guestVerification: phone => rawFetch("/guest/verification", { method: "POST", body: { phone }, auth: false }),
+    guestConfirm: (phone, code) => rawFetch("/guest/verification/confirm", { method: "POST", body: { phone, code }, auth: false }),
+    /** Email verification for the signed-in user: status, send (link + code), confirm ({ token } or { code }). */
+    emailVerification: {
+      status: () => api("/auth/email-verification"),
+      send: () => api("/auth/email-verification", { method: "POST" }),
+      confirm: body => api("/auth/email-verification/confirm", { method: "POST", body }),
+    },
+    async logout() {
+      if (supportAccess) {
+        // Ends support access only; the administrator's own session is untouched.
+        await rawFetch(`/admin/impersonations/${supportAccess.id}/end`, { method: "POST" }).catch(() => undefined);
+        endSupportAccess();
+        memory.clear();
+        return;
+      }
+      await rawFetch("/auth/logout", { method: "POST", auth: false }).catch(() => undefined);
+      accessToken = null;
+      state.user = null;
+      state.offlineSession = false;
+      memory.clear();
+      await window.DFOffline?.clear?.(); // rider app: saved tasks and queued actions on this device
+    },
+    /** Where to go after signing in: a remembered panel the user may open, else their own panel. */
+    destination() {
+      let next = null;
+      try {
+        next = sessionStorage.getItem(RETURN_KEY);
+        sessionStorage.removeItem(RETURN_KEY);
+      } catch {}
+      const app = next && next.replace(/^\//, "").split(/[/?#]/)[0];
+      if (next && app && PANEL_ROLES[app] && auth.hasRole(...PANEL_ROLES[app])) return next;
+      return state.user?.panel || "/account";
+    },
+  };
+
+  // ───────────── website routes (real URLs, History API) ─────────────
+  //
+  // The website's page scripts were written for hash routes ("#/tracking/PP-…"). The site now
+  // uses real paths ("/track/PP-…"); DF.route translates between them. Navigation pushes a
+  // history entry and fires a synthetic "hashchange", so the page scripts' existing listeners
+  // re-render as before. The path table comes from the server (src/features/website/routes.ts,
+  // serialized into #dfRoutes).
+
+  const routeTable = (() => {
+    try {
+      return JSON.parse(document.getElementById("dfRoutes")?.textContent || "null");
+    } catch {
+      return null;
+    }
+  })() || { routes: [] };
+  const LEGACY_TO_PATH = Object.fromEntries(routeTable.routes.map(r => [r.legacy, r.path]));
+  const PATH_TO_LEGACY = Object.fromEntries(routeTable.routes.map(r => [r.path, r.legacy]));
+
+  /** "/track/PP-1" -> "tracking/PP-1"; "/" -> "" (home). */
+  function routeFromPathname(pathname) {
+    const clean = decodeURIComponent(pathname).replace(/^\/+|\/+$/g, "");
+    if (!clean) return "";
+    if (clean in PATH_TO_LEGACY) return PATH_TO_LEGACY[clean] === "home" ? "" : PATH_TO_LEGACY[clean];
+    const [first, ...rest] = clean.split("/");
+    if (first in PATH_TO_LEGACY && rest.length) return [PATH_TO_LEGACY[first], ...rest.map(encodeURIComponent)].join("/");
+    return clean;
+  }
+
+  /** "tracking/PP-1?x=1" -> "/track/PP-1?x=1"; "home" / "" -> "/". */
+  function urlForRoute(route) {
+    const [pathPart, query] = String(route || "").replace(/^#?\/?/, "").split("?");
+    const [name, ...rest] = pathPart.split("/");
+    if (!name || name === "home") return `/${query ? `?${query}` : ""}`;
+    const base = name in LEGACY_TO_PATH ? LEGACY_TO_PATH[name] : name;
+    return `/${[base, ...rest].filter(Boolean).join("/")}${query ? `?${query}` : ""}`;
+  }
+
+  const isStaticPage = () => !!document.querySelector("main[data-static-page]");
+  let lastLocation = location.pathname + location.search;
+
+  function announceRoute(oldURL) {
+    lastLocation = location.pathname + location.search;
+    try {
+      window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
+    } catch {
+      window.dispatchEvent(new Event("hashchange"));
+    }
+    window.dispatchEvent(new CustomEvent("df:route", { detail: { route: DF.route.path() } }));
+  }
+
+  const route = {
+    /** The current route in the page scripts' terms ("tracking/PP-1"), "" for home. */
+    path: () => routeFromPathname(location.pathname),
+    /** The same as the old location.hash ("#/tracking/PP-1"), "" for home. */
+    hash: () => {
+      const path = routeFromPathname(location.pathname);
+      return path ? `#/${path}` : "";
+    },
+    url: urlForRoute,
+    /** Title of a route, as rendered by the server. */
+    title(name) {
+      const found = routeTable.routes.find(r => r.legacy === (name || "home"));
+      if (isStaticPage() && (!name || name === "home")) return routeTable.initialTitle || document.title;
+      return found?.title || routeTable.routes.find(r => r.legacy === "home")?.title || document.title;
+    },
+    /** Navigates (pushState) and lets the page re-render. Server-only pages (legal) do a full load. */
+    go(target, { replace = false } = {}) {
+      const url = urlForRoute(target);
+      if (isStaticPage()) return void location.assign(url);
+      const oldURL = location.href;
+      if (url !== location.pathname + location.search || location.hash) history[replace ? "replaceState" : "pushState"](null, "", url);
+      announceRoute(oldURL);
+    },
+    /** Changes the address without re-rendering (e.g. a new ticket number). */
+    replace(target) {
+      history.replaceState(null, "", urlForRoute(target));
+      lastLocation = location.pathname + location.search;
+    },
+  };
+
+  if (state.app === "website") {
+    routeTable.initialTitle = document.title;
+    // Old links (/#/tracking/PP-…, /#/signup?invite=…) keep working.
+    if (location.hash.startsWith("#/")) history.replaceState(null, "", urlForRoute(location.hash.slice(2)));
+    lastLocation = location.pathname + location.search;
+    // Links the page scripts still write as "#/route": turn them into paths before the page's
+    // own hashchange listeners (registered later) read the route.
+    window.addEventListener("hashchange", event => {
+      if (!location.hash.startsWith("#/")) return;
+      if (isStaticPage()) return void location.assign(urlForRoute(location.hash.slice(2)));
+      history.replaceState(null, "", urlForRoute(location.hash.slice(2)));
+      lastLocation = location.pathname + location.search;
+      window.dispatchEvent(new CustomEvent("df:route", { detail: { route: route.path() } }));
+    });
+    // Back / forward between paths. (Fragment-only changes fire their own hashchange.)
+    window.addEventListener("popstate", () => {
+      if (location.pathname + location.search === lastLocation) return;
+      announceRoute(location.href);
+    });
+  }
+
+  // ───────────── data shown by the page scripts ─────────────
+
+  const memory = new Map();
+  const VIRTUAL_KEYS = new Set([PARCELS_KEY, SESSION_KEY, ADDRESS_KEY]);
+  const nativeGet = Storage.prototype.getItem;
+  const nativeSet = Storage.prototype.setItem;
+  const nativeRemove = Storage.prototype.removeItem;
+  const isLocal = store => {
+    try {
+      return store === window.localStorage;
+    } catch {
+      return false;
+    }
+  };
+
+  Storage.prototype.getItem = function (key) {
+    if (isLocal(this)) {
+      if (VIRTUAL_KEYS.has(key)) return memory.has(key) ? memory.get(key) : null;
+      if (key === CONFIG_KEY && (state.platformConfig || state.catalog)) {
+        // Server settings (edited in super admin) win over anything left in this browser.
+        const config = { ...safeParse(nativeGet.call(this, key)), ...(state.platformConfig || {}) };
+        return JSON.stringify(state.catalog ? withServerPricing(config) : config);
+      }
+    }
+    return nativeGet.call(this, key);
+  };
+  Storage.prototype.setItem = function (key, value) {
+    if (isLocal(this) && VIRTUAL_KEYS.has(key)) return void memory.set(key, String(value));
+    return nativeSet.call(this, key, value);
+  };
+  Storage.prototype.removeItem = function (key) {
+    if (isLocal(this) && VIRTUAL_KEYS.has(key)) return void memory.delete(key);
+    return nativeRemove.call(this, key);
+  };
+  // Clear anything the demo used to persist for these keys.
+  for (const key of VIRTUAL_KEYS) {
+    try {
+      nativeRemove.call(window.localStorage, key);
+    } catch {}
+  }
+
+  const safeParse = value => {
+    try {
+      return JSON.parse(value || "{}") || {};
+    } catch {
+      return {};
+    }
+  };
+
+  /** The website's price preview uses the server's active rate card and catalog. */
+  function withServerPricing(config) {
+    const c = state.catalog;
+    const card = c.customerRateCard;
+    const serviceFees = { Regular: card.serviceFees.REGULAR, "Same day": card.serviceFees.SAME_DAY, Express: card.serviceFees.EXPRESS };
+    return {
+      ...config,
+      customerParcelPricing: { sameZone: card.sameZone, crossZone: card.crossZone, extraWeight: card.extraWeight, codFeePercent: card.codFeePercent, serviceFees },
+      serviceLevelFees: serviceFees,
+      deliveryServices: Object.values(c.serviceLevels),
+      geoCatalog: { district: c.districts, zone: [...new Set(Object.values(c.zonesByDistrict).flat())], area: [...new Set(Object.values(c.areasByZone).flat())] },
+      geoHierarchy: { zonesByDistrict: c.zonesByDistrict, areasByZone: c.areasByZone },
+    };
+  }
+
+  const localPhone = phone => (phone || "").replace(/^\+88/, "");
+  const when = iso => (iso ? new Date(iso).toLocaleString() : undefined);
+  const CATEGORY = { HOME: "Home", OFFICE: "Office", OTHER: "Other" };
+  const PROOF = { SIGNATURE: "Signature", OTP: "OTP", PHOTO: "Photo" };
+
+  /** The rider the page should show as "assigned" for this status ("Unassigned" while at a hub). */
+  function currentRider(p) {
+    if (["PICKUP_ASSIGNED", "PICKUP_CONFIRMED", "PICKED_UP"].includes(p.status)) return p.pickupRider?.label;
+    if (["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "DELIVERED"].includes(p.status)) return p.deliveryRider?.label;
+    if (["AT_HUB", "IN_TRANSIT", "RETURN_SCHEDULED", "RETURNED"].includes(p.status)) return "Unassigned";
+    if (p.status === "EXCEPTION") return p.deliveryRider?.label || p.pickupRider?.label || "Unassigned";
+    return undefined;
+  }
+
+  /** API parcel -> the record shape the original pages read from storage. */
+  function toLegacyRecord(p) {
+    return {
+      trackingId: p.trackingId,
+      sender: p.sender.name,
+      senderPhone: localPhone(p.sender.phone),
+      pickupAddress: p.pickup.label,
+      pickupCategory: CATEGORY[p.pickup.category],
+      pickupStreet: p.pickup.street,
+      pickupDistrict: p.pickup.district,
+      pickupZone: p.pickup.zone,
+      // Imported orders may still miss recipient details ("Needs info": p.incomplete, p.missingLabels).
+      recipient: p.recipient.name || "Recipient not set",
+      recipientPhone: localPhone(p.recipient.phone),
+      destination: p.delivery.label,
+      deliveryCategory: CATEGORY[p.delivery.category],
+      deliveryStreet: p.delivery.street || "",
+      incomplete: !!p.incomplete,
+      deliveryDistrict: p.delivery.district,
+      deliveryZone: p.delivery.zone,
+      deliveryArea: p.delivery.area || "",
+      service: p.merchant ? "Merchant parcel" : "Customer parcel",
+      serviceLevel: p.serviceLevelLabel,
+      weight: String(p.weightKg),
+      packaging: p.packaging || "",
+      product: p.contents || "",
+      baseDeliveryFee: p.charges.base,
+      weightFee: p.charges.weight,
+      serviceFee: p.charges.service,
+      codAmount: p.codAmount,
+      codFee: p.charges.codFee,
+      codFeePercent: p.codAmount ? Math.round((p.charges.codFee / p.codAmount) * 1000) / 10 : 1,
+      deliveryFee: p.charges.total,
+      status: p.statusLabel,
+      customerCanCancel: p.canCancel,
+      createdAt: when(p.createdAt),
+      createdAtISO: p.createdAt,
+      updatedAt: when(p.updatedAt),
+      statusUpdatedAt: p.updatedAt,
+      rider: currentRider(p),
+      pickupRider: p.pickupRider?.label,
+      hub: p.currentHub?.name,
+      location: p.currentHub?.name,
+      pickedUpAt: p.pickedUpAt || undefined,
+      proof: p.proof ? `${PROOF[p.proof.method]} proof recorded` : undefined,
+      deliveredAt: when(p.deliveredAt),
+      events: p.events.filter(e => !e.internal).map(e => ({ time: when(e.at), title: e.title, place: e.location || "", detail: e.description || "" })),
+      _api: p,
+    };
+  }
+
+  const parcels = {
+    cache: [],
+    byTrackingId: id => parcels.cache.find(p => p.trackingId === id),
+    /** Reloads the visible parcels; tells the page (via a storage event) only if something changed. */
+    async reload(query = "") {
+      const all = [];
+      let cursor = null;
+      do {
+        const page = await api(`/parcels?limit=200${query}${cursor ? `&cursor=${cursor}` : ""}`);
+        all.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor && all.length < 2000);
+      return parcels.set(all);
+    },
+    set(items) {
+      parcels.cache = items;
+      const json = JSON.stringify(items.map(toLegacyRecord));
+      const changed = memory.get(PARCELS_KEY) !== json;
+      memory.set(PARCELS_KEY, json);
+      if (changed) emitStorage(PARCELS_KEY);
+      return changed;
+    },
+  };
+
+  function emitStorage(key) {
+    try {
+      window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+    } catch {}
+  }
+
+  function setCustomerSession(user) {
+    if (!user) return void memory.delete(SESSION_KEY);
+    const session = { name: user.name, phone: localPhone(user.phone), email: user.email || "", updatedAt: new Date().toLocaleString() };
+    memory.set(SESSION_KEY, JSON.stringify(session));
+    window.deliveryFastCustomerSession = session;
+  }
+
+  function setAddressBook(addresses) {
+    const rows = addresses.map(a => ({
+      name: a.contactName,
+      phone: localPhone(a.phone),
+      category: CATEGORY[a.category] || "Home",
+      address: a.street,
+      district: a.district,
+      zone: a.zone,
+      area: a.area || "",
+      role: a.role === "RECEIVER" ? "receiver" : "pickup",
+      savedAt: a.createdAt,
+      _id: a.id,
+    }));
+    memory.set(ADDRESS_KEY, JSON.stringify(rows));
+  }
+
+  /** Readable message for a failed call. */
+  function describe(error) {
+    if (error instanceof ApiError) {
+      if (error.code === "VALIDATION_FAILED" && Array.isArray(error.details) && error.details.length) return error.details.map(d => d.message).join(" · ");
+      if (error.status === 0 || error.status >= 500) return "We couldn't reach Delivery Fast. Please try again.";
+      return error.message;
+    }
+    return "We couldn't reach Delivery Fast. Check your connection and try again.";
+  }
+
+  function toast(message) {
+    if (typeof window.showToast === "function") window.showToast(message);
+    else console.warn(message);
+  }
+
+  function goToLogin() {
+    try {
+      sessionStorage.setItem(RETURN_KEY, location.pathname + location.hash);
+    } catch {}
+    location.replace("/login");
+  }
+
+  /** A bar across the page while support access is on: who, how, until when, and a way out. */
+  function supportBanner(user) {
+    const imp = user.impersonation || {};
+    const bar = document.createElement("div");
+    bar.setAttribute("role", "status");
+    bar.style.cssText =
+      "position:fixed;left:0;right:0;bottom:0;z-index:2147483000;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#7c2d12;color:#fff;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.25)";
+    const until = new Date(supportAccess.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const text = document.createElement("span");
+    text.textContent = `Support access: viewing as ${user.name} (${imp.readOnly === false ? "full access" : "read-only"}) by ${imp.adminName || "an administrator"} · ends ${until} · every action is recorded`;
+    const end = document.createElement("button");
+    end.type = "button";
+    end.textContent = "End support access";
+    end.style.cssText = "border:1px solid #fff;background:transparent;color:#fff;border-radius:6px;padding:4px 10px;font:inherit;cursor:pointer";
+    end.addEventListener("click", async () => {
+      await auth.logout();
+      bar.firstChild.textContent = "Support access ended. You can close this tab.";
+      end.remove();
+      setTimeout(() => window.close(), 600);
+    });
+    bar.append(text, end);
+    const add = () => document.body.append(bar);
+    document.body ? add() : document.addEventListener("DOMContentLoaded", add);
+    setTimeout(() => {
+      endSupportAccess("expired");
+      text.textContent = "Support access expired. You can close this tab.";
+      end.remove();
+    }, Math.max(0, supportAccess.expiresAt - Date.now()));
+  }
+
+  /** Runs before the page scripts. Resolves once the page may start. */
+  async function boot() {
+    const app = state.app;
+    let user = await refresh();
+    if (supportAccess && user) supportBanner(user);
+    // Rider app without a connection: open with the last signed-in rider (legacy/rider/offline.js).
+    if (!user && state.networkDown && app === "rider" && window.DFOffline) {
+      user = await window.DFOffline.restoreSession().catch(() => null);
+      if (user) {
+        state.user = user;
+        state.offlineSession = true;
+      }
+    } else if (user && app === "rider") void window.DFOffline?.saveSession(user);
+    const required = PANEL_ROLES[app];
+    if (required && !auth.hasRole(...required)) {
+      goToLogin();
+      return new Promise(() => {}); // navigating away; never start the page
+    }
+    // Platform settings managed in super admin (GET /settings/platform-config, 404 until saved).
+    const jobs = [rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined)];
+    if (app === "website") {
+      jobs.push(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
+      setCustomerSession(auth.hasRole("CUSTOMER") ? user : null);
+      memory.set(PARCELS_KEY, "[]");
+      memory.set(ADDRESS_KEY, "[]");
+      if (auth.hasRole("CUSTOMER")) {
+        jobs.push(parcels.reload().catch(() => undefined));
+        jobs.push(api("/me/addresses").then(setAddressBook).catch(() => undefined));
+      }
+    }
+    if (app === "courier-operation") {
+      jobs.push(parcels.reload());
+      // Not every operations role may list riders (e.g. finance); the page copes without them.
+      if (auth.hasRole("SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "SUPPORT_AGENT"))
+        jobs.push(api("/riders?active=true").then(r => (state.riders = r)).catch(() => (state.riders = [])));
+      jobs.push(api("/hubs").then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
+    }
+    if (app === "rider") {
+      jobs.push(DF.rider.reload());
+      const hubs = () => api("/hubs");
+      jobs.push((window.DFOffline ? window.DFOffline.cached("hubs", hubs) : hubs()).then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
+    }
+    await Promise.all(jobs);
+  }
+
+  const DF = {
+    api,
+    apiRaw,
+    download,
+    ApiError,
+    auth,
+    get supportAccess() {
+      return supportAccess ? { ...supportAccess, accessToken: undefined } : null;
+    },
+    route,
+    state,
+    parcels,
+    toLegacyRecord,
+    describe,
+    toast,
+    emitStorage,
+    goToLogin,
+    setCustomerSession,
+    setAddressBook,
+    localPhone,
+    rider: {
+      tasks: { pickups: [], deliveries: [] },
+      /** The rider's own pickups and deliveries, exposed to the page as the parcel list. */
+      async reload() {
+        const load = () => api("/rider/tasks");
+        // Offline: the saved task list, with actions still waiting to sync applied.
+        const tasks = window.DFOffline ? await window.DFOffline.tasks(load) : await load();
+        DF.rider.tasks = tasks;
+        return parcels.set([...tasks.pickups, ...tasks.deliveries]);
+      },
+    },
+    /** Shows the signed-in person in the panel sidebar; clicking their profile signs out. */
+    showSignedInUser(roleLabel) {
+      const user = state.user;
+      if (!user) return;
+      const initials = user.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
+      for (const profile of document.querySelectorAll(".user-profile, .admin-profile")) {
+        const name = profile.querySelector("strong");
+        const role = profile.querySelector("small");
+        const avatar = profile.querySelector(".avatar");
+        if (name) name.textContent = user.name;
+        if (role && roleLabel) role.textContent = roleLabel;
+        if (avatar) avatar.textContent = initials;
+        profile.style.cursor = "pointer";
+        profile.title = "Sign out";
+        profile.addEventListener("click", async () => {
+          if (!confirm(`Sign out ${user.name}?`)) return;
+          await auth.logout();
+          location.href = "/login";
+        });
+      }
+      const topAvatar = document.querySelector(".topbar .avatar");
+      if (topAvatar) topAvatar.textContent = initials;
+    },
+    /** Polls while the tab is visible, so panels pick up other people's changes. */
+    poll(fn, ms = 20000) {
+      setInterval(() => {
+        if (document.visibilityState === "visible") fn().catch(() => undefined);
+      }, ms);
+    },
+  };
+
+  // ───────────── live updates (GET /events, Server-Sent Events) ─────────────
+
+  const listeners = new Map(); // type -> Set<handler>; "*" gets everything, "reconnect" after a gap
+  let streaming = false;
+
+  async function streamEvents() {
+    if (streaming) return;
+    streaming = true;
+    let failures = 0;
+    while (state.user) {
+      try {
+        if (!accessToken || Date.now() > accessExpiresAt) await refresh();
+        if (!accessToken) break;
+        const response = await fetch(`${BASE}/events`, { headers: { authorization: `Bearer ${accessToken}`, accept: "text/event-stream" } });
+        if (!response.ok || !response.body) throw new Error(`events ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let first = true;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let index;
+          while ((index = buffer.indexOf("\n\n")) >= 0) {
+            const block = buffer.slice(0, index);
+            buffer = buffer.slice(index + 2);
+            const type = block.match(/^event: (.*)$/m)?.[1] ?? "message";
+            const raw = block.match(/^data: (.*)$/m)?.[1];
+            const data = raw ? JSON.parse(raw) : {};
+            if (type === "ready") {
+              failures = 0;
+              // Anything may have changed while we weren't connected.
+              if (!first) emit("reconnect", data);
+              first = false;
+              continue;
+            }
+            if (type !== "ping") emit(type, data);
+          }
+        }
+        emit("reconnect", {}); // the server closes the stream when the token expires
+      } catch {
+        failures++;
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(30_000, 1000 * 2 ** Math.min(failures, 5))));
+    }
+    streaming = false;
+  }
+
+  function emit(type, data) {
+    for (const key of [type, "*"]) for (const handler of listeners.get(key) ?? []) {
+      try {
+        handler(data, type);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  }
+
+  DF.events = {
+    /** Calls handler(data, type) for each matching event; returns an unsubscribe function. */
+    on(type, handler) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(handler);
+      if (state.user) void streamEvents();
+      return () => listeners.get(type)?.delete(handler);
+    },
+    /** Reconnects the stream (e.g. when the device comes back online). */
+    restart() {
+      if (state.user) void streamEvents();
+    },
+  };
+
+  /**
+   * Keeps a view fresh: reloads (debounced) when one of `types` arrives or after a
+   * reconnect, plus a slow safety poll in case events were missed.
+   */
+  DF.live = (types, reload, { debounceMs = 400, fallbackMs = 120_000 } = {}) => {
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (document.visibilityState === "visible") Promise.resolve(reload()).catch(() => undefined);
+        else pendingWhileHidden = true;
+      }, debounceMs);
+    };
+    let pendingWhileHidden = false;
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && pendingWhileHidden) {
+        pendingWhileHidden = false;
+        schedule();
+      }
+    });
+    for (const type of [...types, "reconnect"]) DF.events.on(type, schedule);
+    DF.poll(() => Promise.resolve(reload()), fallbackMs);
+  };
+
+  // ───────────── forms: +880 phone fields and inline validation ─────────────
+
+  const PHONE = /^(?:\+?880|0)?(1[3-9]\d{8})$/;
+  /** Same rules as the API (packages/shared phone.ts). Returns a message or "" when valid. */
+  DF.phoneProblem = value => {
+    const digits = String(value || "").replace(/[\s\-().]/g, "").replace(/^\+?880|^0/, "");
+    if (!digits) return "Enter a mobile number";
+    if (!/^\d+$/.test(digits)) return "Use digits only";
+    if (!digits.startsWith("1")) return "Bangladeshi mobile numbers start with 1 (e.g. 17XXXXXXXX)";
+    if (digits.length !== 10) return "Enter the 10 digits after +880 (e.g. 1712345678)";
+    if (!/^1[3-9]/.test(digits)) return "This isn't a valid Bangladeshi operator prefix";
+    return "";
+  };
+  DF.normalizePhone = value => {
+    const match = String(value || "").replace(/[\s\-().]/g, "").match(PHONE);
+    return match ? `+880${match[1]}` : null;
+  };
+
+  /**
+   * Turns an <input> into a phone field with a fixed "+880" prefix. People may type
+   * 17XXXXXXXX or 017XXXXXXXX; the value submitted is the 10 digits after +880.
+   */
+  DF.phoneInput = input => {
+    if (!input || input.dataset.dfPhone) return input;
+    input.dataset.dfPhone = "1";
+    const wrapper = document.createElement("div");
+    wrapper.className = "df-phone";
+    wrapper.style.cssText = "display:flex;align-items:stretch;width:100%";
+    const prefix = document.createElement("span");
+    prefix.textContent = "+880";
+    prefix.setAttribute("aria-hidden", "true");
+    prefix.style.cssText = "display:inline-flex;align-items:center;padding:0 10px;border:1px solid #d9e2dc;border-right:0;border-radius:9px 0 0 9px;background:#f4f7f5;color:#5d6f6a;font-weight:600;font-size:14px";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.append(prefix, input);
+    input.style.borderTopLeftRadius = input.style.borderBottomLeftRadius = "0";
+    input.style.flex = "1";
+    input.type = "tel";
+    input.inputMode = "numeric";
+    input.autocomplete = "tel-national";
+    input.placeholder = "17XXXXXXXX";
+    input.maxLength = 14;
+    const tidy = () => {
+      const digits = input.value.replace(/\D/g, "").replace(/^880/, "").replace(/^0(?=1)/, "");
+      if (digits !== input.value) input.value = digits;
+    };
+    input.addEventListener("input", tidy);
+    tidy();
+    DF.validate.field(input, () => DF.phoneProblem(input.value));
+    return input;
+  };
+
+  /**
+   * Inline validation for the panels' plain forms. rules: { fieldId: value => message|"" }.
+   * Messages appear under each field as people type (after the first blur) and on submit;
+   * submit is blocked while anything is invalid.
+   */
+  DF.validate = (form, rules = {}) => {
+    if (!form) return () => true;
+    const checks = [];
+    for (const [id, rule] of Object.entries(rules)) {
+      const field = form.querySelector(`#${CSS.escape(id)}`);
+      if (field) checks.push(DF.validate.field(field, () => rule(field.value, field)));
+    }
+    const all = () => checks.map(check => check(true)).every(Boolean);
+    form.addEventListener("submit", event => {
+      if (!all()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        form.querySelector("[aria-invalid=true]")?.focus();
+      }
+    }, true);
+    return all;
+  };
+  /** Attaches one rule to one field; returns check(force) -> valid. */
+  DF.validate.field = (field, rule) => {
+    let touched = false;
+    const message = document.createElement("small");
+    message.className = "df-field-error";
+    message.setAttribute("role", "alert");
+    message.style.cssText = "display:block;margin-top:4px;color:#c2410c;font-size:12px;min-height:0";
+    const anchor = field.closest(".df-phone") || field;
+    anchor.after(message);
+    const check = force => {
+      if (force) touched = true;
+      const problem = (rule() || (field.required && !String(field.value).trim() ? "This field is required" : "")) || "";
+      const show = touched && problem;
+      message.textContent = show ? problem : "";
+      field.setAttribute("aria-invalid", show ? "true" : "false");
+      field.style.borderColor = show ? "#c2410c" : "";
+      return !problem;
+    };
+    field.addEventListener("blur", () => check(true));
+    field.addEventListener("input", () => touched && check(false));
+    return check;
+  };
+
+  DF.ready = boot().catch(error => {
+    console.error("Delivery Fast could not start", error);
+  });
+  window.DF = DF;
+})();

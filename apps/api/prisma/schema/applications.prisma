@@ -1,0 +1,42 @@
+// ───────────────────────────── Partner applications ─────────────────────────────
+// Owned by src/modules/applications. The conversation with the applicant runs on the linked
+// support ticket, so applicants follow up from their support page.
+
+enum ApplicationKind {
+  RIDER
+  FRANCHISE
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model PartnerApplication {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  /// Same number as its conversation ticket (DF-SUP-…), so existing links keep working.
+  number       String            @unique
+  kind         ApplicationKind
+  status       ApplicationStatus @default(SUBMITTED)
+  applicantId  String            @db.Uuid
+  ticketId     String            @unique @db.Uuid
+  /// The submitted form (name, phone, email, area/vehicle or location/territory/experience).
+  details      Json
+  reviewerId   String?           @db.Uuid
+  decisionNote String?
+  decidedById  String?           @db.Uuid
+  decidedAt    DateTime?
+  /// Set when an approved rider application created the rider.
+  riderId      String?           @db.Uuid
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  ticket       SupportTicket     @relation(fields: [ticketId], references: [id])
+
+  @@index([kind, status, createdAt])
+  @@index([applicantId, kind, status])
+  @@map("partner_applications")
+}

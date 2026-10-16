@@ -1,0 +1,106 @@
+# Full Delivery Fast stack: PostgreSQL, Redis, migrations, API, background worker and web.
+#
+#   cp .env.docker.example .env.docker      # then set the secrets in it
+#   docker compose --env-file .env.docker up -d --build
+#   docker compose --env-file .env.docker run --rm seed     # optional demo data
+#   open http://localhost:8080
+#
+# SMS codes are written to the API log:  docker compose logs -f api worker
+
+name: deliveryfast
+
+x-api-env: &api-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-deliveryfast}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-deliveryfast}
+  REDIS_URL: redis://redis:6379
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  CORS_ORIGINS: ${APP_URL:-http://localhost:8080}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+  SMS_PROVIDER: log
+  EXPOSE_DEV_OTP: "false"
+  # The web container proxies the browser's requests; trust its X-Forwarded-For.
+  TRUST_PROXY: "true"
+  FILE_STORAGE_DIR: /repo/apps/api/.data/files
+  LOG_LEVEL: info
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deliveryfast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-deliveryfast}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: build }
+    working_dir: /repo/apps/api
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment: { DATABASE_URL: "postgresql://${POSTGRES_USER:-deliveryfast}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-deliveryfast}" }
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: runtime }
+    image: deliveryfast/api:latest
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+      RUN_WORKERS: "false"
+    volumes: [files:/repo/apps/api/.data/files]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    image: deliveryfast/api:latest
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      <<: *api-env
+      RUN_WORKERS: "true"
+    volumes: [files:/repo/apps/api/.data/files]
+    healthcheck: { disable: true }
+    depends_on: { api: { condition: service_healthy } }
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args: { API_ORIGIN: "http://api:4000" }
+    image: deliveryfast/web:latest
+    restart: unless-stopped
+    ports: ["${WEB_PORT:-8080}:3000"]
+    depends_on: { api: { condition: service_healthy } }
+
+  # Demo data (one account per role). Run on demand: docker compose run --rm seed
+  seed:
+    image: deliveryfast/api:latest
+    profiles: [tools]
+    command: ["node", "dist/seed/demo.js"]
+    environment:
+      <<: *api-env
+      ALLOW_DEMO_SEED: "true"
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+volumes:
+  postgres-data:
+  redis-data:
+  files:

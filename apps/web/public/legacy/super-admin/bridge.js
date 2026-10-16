@@ -1,0 +1,1089 @@
+/*
+ * Connects the super admin panel to the API.
+ *
+ * - Platform settings: every write the page makes to the "deliveryfast-demo-config" key
+ *   (notifications, service plans, rider plans, catalogs…) is saved with
+ *   PUT /settings/platform-config, so every page sees it. Nothing is kept in this browser.
+ * - Server-owned data replaces the samples: merchants and registrations (/merchants), service
+ *   plans (/plans), rate cards (/rate-cards), the booking catalog (/catalog), administrators
+ *   (/users), riders (/riders), hubs (/hubs), the audit log (/audit-logs), recent parcels
+ *   (/parcels) and platform counts (/admin/overview).
+ * - Actions with a backend go through it first (approve/reject/suspend merchants, assign plans,
+ *   save plans and tariffs as new rate card versions, edit the catalog, invite administrators);
+ *   then the page's own handler runs to update its screen, as before.
+ * - Rate cards, per-document-type rates and merchant (Enterprise) tariffs need a second super
+ *   admin's approval when there is one (maker-checker): the API answers 202 and the change waits
+ *   in the queue on Admin users & roles (bridge-security.js), which also owns MFA, roles, support
+ *   access and the real traffic chart.
+ * Purely illustrative widgets (integrations health, growth trend) are unchanged.
+ */
+(() => {
+  const DF = window.DF;
+  const CONFIG_KEY = "deliveryfast-demo-config";
+  const plansUI = window.DFServicePlans; // exposed by 03.js
+  const STAFF_ROLES = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
+  const ROLE_LABEL = {
+    SUPER_ADMIN: "Super Administrator",
+    OPS_MANAGER: "Operations Administrator",
+    FINANCE: "Finance Administrator",
+    SUPPORT_AGENT: "Merchant Support",
+    HUB_OPERATOR: "Hub Manager",
+  };
+  const ROLE_SCOPE = { SUPER_ADMIN: "Platform-wide", OPS_MANAGER: "Courier operations", FINANCE: "COD & billing", SUPPORT_AGENT: "Merchant accounts" };
+  const INVITE_ROLE = {
+    "Operations Administrator": "OPS_MANAGER",
+    "Finance Administrator": "FINANCE",
+    "Merchant Support": "SUPPORT_AGENT",
+    "Hub Manager": "HUB_OPERATOR",
+  };
+  const SEGMENT = { ecommerce: "ECOMMERCE", document: "CORPORATE_DOCUMENT" };
+  const KIND = { ECOMMERCE: "ecommerce", CORPORATE_DOCUMENT: "document" };
+  const LEVELS = [
+    ["REGULAR", "Regular"],
+    ["SAME_DAY", "Same day"],
+    ["EXPRESS", "Express"],
+  ];
+  const LIVE_PAGES = new Set([
+    "Overview",
+    "Registrations",
+    "Approvals",
+    "Merchants",
+    "E-commerce merchants",
+    "Document merchants",
+    "Platform activity",
+    "Audit log",
+    "Admin users",
+  ]);
+  const RETIRED = new Set([
+    "Plans & billing",
+    "Customer parcels",
+    "Customer parcel pricing",
+    "E-commerce settings",
+    "Document settings",
+    "E-commerce pricing",
+    "Document pricing",
+  ]);
+
+  const S = { merchants: [], plans: [], cards: null, catalog: null, overview: null, staff: [], riders: [], hubs: [], audit: [], parcels: [] };
+  /** Registration decisions made in this session, so the queue shows them like the original did. */
+  const decided = new Map();
+  let currentPage = "Overview";
+  let savedServices = JSON.stringify(serviceRows);
+
+  DF.showSignedInUser("Super admin");
+
+  // ───────────── formatting ─────────────
+  const DHAKA = "Asia/Dhaka";
+  const dayKey = d => d.toLocaleDateString("en-CA", { timeZone: DHAKA });
+  const time = d => d.toLocaleTimeString("en-US", { timeZone: DHAKA, hour: "numeric", minute: "2-digit" });
+  function when(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const today = dayKey(new Date());
+    const yesterday = dayKey(new Date(Date.now() - 864e5));
+    if (dayKey(d) === today) return `Today, ${time(d)}`;
+    if (dayKey(d) === yesterday) return `Yesterday, ${time(d)}`;
+    return `${d.toLocaleDateString("en-US", { timeZone: DHAKA, month: "short", day: "numeric" })}, ${time(d)}`;
+  }
+  const date = iso => new Date(iso).toLocaleDateString("en-US", { timeZone: DHAKA, month: "short", day: "numeric", year: "numeric" });
+  const num = n => Number(n || 0).toLocaleString("en-US");
+  function taka(n) {
+    n = Number(n || 0);
+    if (n >= 1e6) return `৳ ${(n / 1e6).toFixed(2)}M`;
+    if (n >= 1e4) return `৳ ${(n / 1e3).toFixed(1)}K`;
+    return `৳ ${num(n)}`;
+  }
+  const phone = p => DF.localPhone(p || "").replace(/^(\d{5})(\d{6})$/, "$1-$2");
+  const round2 = n => Math.round(Number(n) * 100) / 100;
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const replaceAll = (list, items) => list.splice(0, list.length, ...items);
+  const replaceKeys = (object, entries) => {
+    for (const key of Object.keys(object)) delete object[key];
+    Object.assign(object, entries);
+  };
+
+  // ───────────── platform settings (PUT /settings/platform-config) ─────────────
+  const config = (() => {
+    let pending = null;
+    let timer = null;
+    let chain = Promise.resolve();
+    function flush() {
+      timer = null;
+      chain = chain.then(async () => {
+        const body = pending;
+        pending = null;
+        if (!body) return;
+        try {
+          const saved = await DF.api("/settings/platform-config", { method: "PUT", body });
+          if (!pending) DF.state.platformConfig = saved;
+        } catch (error) {
+          showToast(`Settings were not saved: ${DF.describe(error)}`);
+        }
+      });
+    }
+    return {
+      current: () => {
+        try {
+          return JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}") || {};
+        } catch {
+          return {};
+        }
+      },
+      /** Takes the whole config; several writes in one handler are sent as one request. */
+      save(next) {
+        DF.state.platformConfig = next;
+        pending = next;
+        timer ??= setTimeout(flush, 0);
+      },
+    };
+  })();
+
+  // The page scripts write the shared config to localStorage; send it to the server instead.
+  const pageSetItem = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (key, value) {
+    let local = false;
+    try {
+      local = this === window.localStorage;
+    } catch {}
+    if (local && key === CONFIG_KEY) {
+      try {
+        config.save(JSON.parse(value));
+      } catch (error) {
+        console.error("Platform settings could not be read", error);
+      }
+      return;
+    }
+    return pageSetItem.call(this, key, value);
+  };
+  const patchConfig = patch => config.save({ ...config.current(), ...patch });
+
+  // ───────────── loading ─────────────
+  async function all(path) {
+    const items = [];
+    let cursor = null;
+    do {
+      const page = await DF.api(`${path}${path.includes("?") ? "&" : "?"}limit=200${cursor ? `&cursor=${cursor}` : ""}`);
+      items.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor && items.length < 2000);
+    return items;
+  }
+
+  const loaders = {
+    merchants: async () => (S.merchants = await all("/merchants")),
+    plans: async () => (S.plans = await DF.api("/plans?includeInactive=true")),
+    cards: async () => (S.cards = await DF.api("/rate-cards/current")),
+    catalog: async () => (S.catalog = await DF.api("/catalog")),
+    overview: async () => (S.overview = await DF.api("/admin/overview")),
+    staff: async () => (S.staff = await all(`/users?roles=${STAFF_ROLES.join(",")}`)),
+    riders: async () => (S.riders = await DF.api("/riders")),
+    hubs: async () => (S.hubs = await DF.api("/hubs?includeInactive=true")),
+    audit: async () => (S.audit = (await DF.api("/audit-logs?limit=100")).items),
+    parcels: async () => DF.parcels.set((S.parcels = (await DF.api("/parcels?limit=50")).items)),
+  };
+  /** Loads the given data sets, then rebuilds the page's arrays. Returns whether anything changed. */
+  async function load(...names) {
+    const before = JSON.stringify(names.map(n => S[n]));
+    const results = await Promise.allSettled(names.map(n => loaders[n]()));
+    apply();
+    const failed = results.find(r => r.status === "rejected");
+    if (failed) throw failed.reason;
+    return before !== JSON.stringify(names.map(n => S[n]));
+  }
+
+  // ───────────── server data → the page's arrays ─────────────
+  const merchantCode = m => m.code;
+  const kindOf = m => KIND[m.type];
+  const activity = id => S.overview?.merchantActivity.find(a => a.merchantId === id);
+  const plansFor = segment => S.plans.filter(p => p.segment === segment);
+  const planNamed = (segment, name) => plansFor(segment).find(p => p.name.toLowerCase() === String(name).toLowerCase());
+
+  function legacyMerchant(m) {
+    const docs = m.type === "CORPORATE_DOCUMENT";
+    return {
+      id: merchantCode(m),
+      name: m.name,
+      owner: m.contactName,
+      email: m.contactEmail || phone(m.contactPhone),
+      plan: m.plan?.name || "No plan",
+      type: docs ? "Document merchant" : "E-commerce merchant",
+      services: docs ? "Secure documents · OTP" : "E-commerce · COD",
+      joined: date(m.createdAt),
+      shipments: num(activity(m.id)?.parcelsThisMonth),
+      discount: m.plan?.discountPct || 0,
+      status: { ACTIVE: "Active", SUSPENDED: "Suspended", PENDING_REVIEW: "Under review", INFO_REQUESTED: "Under review", REJECTED: "Rejected" }[m.status],
+      _api: m,
+    };
+  }
+
+  function legacyRegistration(m, status = "Pending review") {
+    return {
+      id: merchantCode(m),
+      business: m.name,
+      owner: m.contactName,
+      email: m.contactEmail || "—",
+      phone: phone(m.contactPhone),
+      type: m.type === "CORPORATE_DOCUMENT" ? "Document merchant" : "E-commerce",
+      city: m.pickupDistrict,
+      plan: m.plan?.name,
+      submitted: when(m.createdAt),
+      status,
+      _api: m,
+    };
+  }
+
+  const AUDIT_TITLE = {
+    "auth.login": "Signed in",
+    "auth.signup": "Account created",
+    "auth.locked": "Account locked after failed sign-ins",
+    "auth.password_changed": "Password changed",
+    "auth.password_reset": "Password reset",
+    "merchant.apply": "Merchant application submitted",
+    "merchant.approve": "Merchant account approved",
+    "merchant.suspend": "Merchant account suspended",
+    "merchant.update": "Merchant account updated",
+    "merchant.self_update": "Merchant profile updated",
+    "plan.create": "Service plan created",
+    "plan.update": "Service plan updated",
+    "rate_card.create": "Rate card published",
+    "rate_card.deactivate": "Rate card withdrawn",
+    "catalog.update": "Booking catalog updated",
+    "platform_config.update": "Platform settings updated",
+    "user.create": "Administrator account created",
+    "user.status_change": "Account status changed",
+    "user.role_add": "Role granted",
+    "user.role_remove": "Role removed",
+    "auth.mfa_enabled": "Two-step verification turned on",
+    "auth.mfa_disabled": "Two-step verification turned off",
+    "auth.mfa_reset": "Two-step verification reset",
+    "auth.mfa_challenge": "Two-step verification requested",
+    "auth.mfa_setup_required": "Two-step verification setup requested",
+    "auth.mfa_failed": "Wrong two-step code",
+    "auth.mfa_locked": "Two-step verification locked after wrong codes",
+    "auth.mfa_recovery_code_used": "Recovery code used",
+    "change.request": "Change sent for approval",
+    "change.approve": "Change approved",
+    "change.reject": "Change rejected",
+    "change.cancel": "Change withdrawn",
+    "change.applied": "Change applied",
+    "change.failed": "Approved change could not be applied",
+    "role.permissions_update": "Role permissions changed",
+    "custom_role.create": "Custom role created",
+    "custom_role.update": "Custom role changed",
+    "custom_role.delete": "Custom role deleted",
+    "merchant_rate.set": "Merchant tariff set",
+    "merchant_rate.remove": "Merchant tariff removed",
+    "impersonation.start": "Support access started",
+    "impersonation.end": "Support access ended",
+    "impersonation.request": "Request during support access",
+    "parcel.create": "Parcel booked",
+    "parcel.status_change": "Parcel status changed",
+    "settlement.approve": "Settlement approved",
+    "settlement.pay": "Settlement paid",
+    "api_key.create": "API key created",
+    "api_key.revoke": "API key revoked",
+  };
+  const auditTitle = a => AUDIT_TITLE[a.action] || a.action.replace(/[._]/g, " ").replace(/^./, c => c.toUpperCase());
+  const SETTING_LABEL = { "platform-config": "Platform settings", catalog: "Booking catalog" };
+  function auditScope(a) {
+    if (a.action.startsWith("auth.")) return "Platform access";
+    if (a.data?.trackingId) return a.data.trackingId;
+    const merchant = a.entityType === "merchant" && S.merchants.find(m => m.id === a.entityId);
+    if (merchant) return `${merchant.name} · ${merchant.code}`;
+    const user = a.entityType === "user" && S.staff.find(u => u.id === a.entityId);
+    if (user) return user.name;
+    const plan = a.entityType === "service_plan" && S.plans.find(p => p.id === a.entityId);
+    if (plan) return `${plan.name} plan · ${plan.segment === "CORPORATE_DOCUMENT" ? "documents" : plan.segment.toLowerCase()}`;
+    if (a.entityType === "setting") return SETTING_LABEL[a.entityId] || a.entityId;
+    if (a.data?.name) return a.data.name;
+    if (a.data?.code) return a.data.code;
+    return a.entityType && a.entityId ? `${a.entityType.replace(/_/g, " ")} ${a.entityId.length > 20 ? a.entityId.slice(-6) : a.entityId}` : "Platform";
+  }
+  const auditSource = a => (a.actorType === "API_KEY" ? "Merchant API" : a.actorType === "SYSTEM" ? "Automation" : a.ip ? `Web · ${a.ip}` : "Web");
+  function auditKind(a) {
+    if (
+      a.actorType === "API_KEY" ||
+      a.entityType === "merchant" ||
+      a.action.startsWith("merchant.") ||
+      a.action.startsWith("api_key.") ||
+      a.action.startsWith("webhook.")
+    )
+      return "merchant";
+    if (a.entityType === "rider" || a.action.startsWith("cod.")) return "rider";
+    if (a.action === "parcel.status_change") return "tracking";
+    if (a.action.startsWith("parcel.") || a.action.startsWith("auth.") || a.action.startsWith("address.") || a.action.startsWith("profile.")) return "website";
+    return "admin";
+  }
+  const KIND_ICON = { merchant: "building", rider: "truck", tracking: "search", website: "users", admin: "settings" };
+  const AUDIT_ICON = { merchant: "check", rider: "truck", tracking: "search", website: "users", admin: "settings" };
+
+  function apply() {
+    // Open applications (incl. information requested) are registrations; rejected ones stay listed there (bridge-merchants.js).
+    const open = ["PENDING_REVIEW", "INFO_REQUESTED"];
+    const pending = S.merchants.filter(m => open.includes(m.status));
+    const accounts = S.merchants.filter(m => !open.includes(m.status) && m.status !== "REJECTED");
+    replaceAll(merchants, accounts.map(legacyMerchant));
+    replaceAll(registrations, [
+      ...pending.map(m => legacyRegistration(m, m.status === "INFO_REQUESTED" ? "More information requested" : "Pending review")),
+      ...S.merchants.filter(m => m.status === "REJECTED").map(m => legacyRegistration(m, "Rejected")),
+      ...[...decided]
+        .filter(([id]) => S.merchants.find(m => m.id === id)?.status !== "REJECTED")
+        .map(
+          ([id, status]) =>
+            S.merchants.find(m => m.id === id) &&
+            legacyRegistration(
+              S.merchants.find(m => m.id === id),
+              status,
+            ),
+        )
+        .filter(Boolean),
+    ]);
+
+    // Per-merchant settings kept in the platform config, keyed by merchant code.
+    const saved = config.current();
+    replaceAll(
+      serviceEntitlements,
+      merchants.map(m => {
+        const docs = m.type === "Document merchant";
+        const base = { id: m.id, name: m.name, ecommerce: !docs, document: docs, domestic: docs, cod: !docs };
+        const stored = Array.isArray(saved.entitlements) ? saved.entitlements.find(e => e.id === m.id) : null;
+        for (const key of ["ecommerce", "domestic", "document", "cod"]) if (typeof stored?.[key] === "boolean") base[key] = stored[key];
+        return base;
+      }),
+    );
+    replaceKeys(merchantDiscounts, Object.fromEntries(merchants.map(m => [m.id, Number(saved.merchantDiscounts?.[m.id]) || 0])));
+    replaceKeys(
+      activityMerchantDetails,
+      Object.fromEntries(
+        merchants.map(m => {
+          const a = activity(m._api.id);
+          return [m.id, [a?.lastParcelAt ? when(a.lastParcelAt) : "No parcels yet", `${num(a?.parcelsThisMonth)} shipments this month`, m.owner]];
+        }),
+      ),
+    );
+
+    // Administrators.
+    replaceAll(
+      adminUsers,
+      S.staff.map(u => {
+        const roles = u.roles.filter(r => STAFF_ROLES.includes(r.role)).sort((a, b) => STAFF_ROLES.indexOf(a.role) - STAFF_ROLES.indexOf(b.role));
+        const scope = roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role]));
+        const status = u.status === "ACTIVE" ? (u.lastLoginAt ? "Active" : "Invited") : u.status === "SUSPENDED" ? "Suspended" : "Disabled";
+        return [
+          u.name,
+          u.email || phone(u.phone),
+          roles.map(r => ROLE_LABEL[r.role]).join(" · "),
+          [...new Set(scope)].join(" · "),
+          status,
+          u.lastLoginAt ? when(u.lastLoginAt) : "Not signed in yet",
+        ];
+      }),
+    );
+
+    // Audit log, overview feed and activity events.
+    generic["Audit log"].rows = S.audit.map(a => [auditTitle(a), a.actorLabel || "System", auditScope(a), when(a.createdAt), auditSource(a), "Success"]);
+    replaceAll(
+      auditEntries,
+      S.audit.slice(0, 4).map(a => [AUDIT_ICON[auditKind(a)], auditTitle(a), auditScope(a), `${when(a.createdAt)} · ${a.actorLabel || "System"}`]),
+    );
+    replaceAll(
+      platformActivityEvents,
+      S.audit.slice(0, 12).map(a => {
+        const kind = auditKind(a);
+        return {
+          kind,
+          ico: KIND_ICON[kind],
+          actor: a.actorLabel || "System",
+          action: `${auditTitle(a).replace(/^./, c => c.toLowerCase())} · ${auditScope(a)}`,
+          time: when(a.createdAt),
+          source: auditSource(a),
+        };
+      }),
+    );
+
+    // Riders.
+    const today = id => S.overview?.riderActivity.find(r => r.riderId === id);
+    const SHIFT = { ONLINE: "Online", ON_BREAK: "On break", OFFLINE: "Offline" };
+    replaceAll(
+      activityRiders,
+      S.riders
+        .filter(r => r.active)
+        .map(r => {
+          const t = today(r.id);
+          return [
+            r.code,
+            r.name,
+            SHIFT[r.status] || r.status,
+            [r.hub?.name, r.zone].filter(Boolean).join(" · ") || "No hub",
+            `${num(r.openTasks)} open tasks`,
+            `${num(t?.deliveredToday)} deliveries · ${num(t?.pickedUpToday)} pickups`,
+          ];
+        }),
+    );
+    if (plansUI) plansUI.riderRows = S.riders.filter(r => r.active).map(r => [r.code, r.name, r.hub?.name || r.zone || "No hub"]);
+    replaceAll(activityTrackingSamples, []); // tracking history comes from the parcels below
+
+    applyCatalog();
+    applyPricing();
+    applyPlans();
+    const services = config.current().serviceCatalog;
+    if (Array.isArray(services) && services.every(r => Array.isArray(r) && r.length === 5)) replaceAll(serviceRows, services);
+    savedServices = JSON.stringify(serviceRows);
+    updateApprovalCount();
+  }
+
+  function applyCatalog() {
+    const c = S.catalog;
+    if (!c) return;
+    const zones = [...new Set(c.districts.flatMap(d => c.zonesByDistrict[d] || []))];
+    replaceAll(geoCatalog.district, c.districts);
+    replaceAll(geoCatalog.zone, zones);
+    replaceAll(geoCatalog.area, [...new Set(zones.flatMap(z => c.areasByZone[z] || []))]);
+    geoHierarchy.zonesByDistrict = structuredClone(c.zonesByDistrict);
+    geoHierarchy.areasByZone = structuredClone(c.areasByZone);
+    replaceAll(ecommercePackaging, c.packaging);
+    replaceAll(ecommerceProducts, c.products);
+    replaceAll(
+      deliveryServices,
+      LEVELS.map(([, label]) => label),
+    );
+  }
+
+  const feesByLabel = card => Object.fromEntries(LEVELS.map(([level, label]) => [label, card.serviceFees[level]]));
+
+  function applyPricing() {
+    if (!S.cards) return;
+    const customer = S.cards.CUSTOMER.config;
+    const ecommerce = S.cards.ECOMMERCE.config;
+    const documents = S.cards.CORPORATE_DOCUMENT.config;
+    const publicRates = {
+      sameZone: customer.sameZone,
+      crossZone: customer.crossZone,
+      extraWeight: customer.extraWeight,
+      codFeePercent: customer.codFeePercent,
+      serviceFees: feesByLabel(customer),
+    };
+    Object.assign(customerParcelPricing, structuredClone(publicRates)); // 02.js
+    if (plansUI) Object.assign(plansUI.customerParcelPricing, structuredClone(publicRates)); // 03.js
+    Object.assign(merchantPricing.ecommerce, {
+      sameZone: ecommerce.sameZone,
+      crossZone: ecommerce.crossZone,
+      extraWeight: ecommerce.extraWeight,
+      returnPercent: ecommerce.returnPercent,
+      serviceFees: feesByLabel(ecommerce),
+    });
+    Object.assign(merchantPricing.document, { sameZone: documents.sameZone, crossZone: documents.crossZone, returnPercent: documents.returnPercent });
+    Object.assign(deliveryRates, {
+      sameZone: ecommerce.sameZone,
+      crossZone: ecommerce.crossZone,
+      extraWeight: ecommerce.extraWeight,
+      returnPercent: ecommerce.returnPercent,
+    });
+    Object.assign(serviceLevelFees, feesByLabel(ecommerce));
+  }
+
+  /** Server plans and tariffs into the plan editor (03.js). Per-type document rates and product lists stay in the platform config. */
+  function applyPlans() {
+    if (!plansUI || !S.cards) return;
+    const { servicePlans, planNames, serviceLabels, merchantPlanAssignments } = plansUI;
+    const labelToKey = Object.fromEntries(Object.entries(serviceLabels).map(([key, label]) => [label, key]));
+    for (const plan of S.plans) if (plan.active && KIND[plan.segment] && !planNames.includes(plan.name)) planNames.push(plan.name);
+    for (const kind of ["ecommerce", "document"]) {
+      const card = S.cards[SEGMENT[kind]].config;
+      for (const tier of planNames) {
+        const entry = (servicePlans[kind][tier] ||= structuredClone(servicePlans[kind].Starter));
+        const server = planNamed(SEGMENT[kind], tier);
+        entry._id = server?.id;
+        entry.discountPct = server ? server.discountPct : 0;
+        if (server) {
+          entry.monthlyFee = tier === "Enterprise" && server.monthlyFee === 0 && entry.monthlyFee == null ? null : server.monthlyFee;
+          if (server.features.length)
+            entry.services = Object.fromEntries(Object.keys(serviceLabels).map(key => [key, server.features.some(f => labelToKey[f] === key)]));
+        }
+        const p = (entry.pricing ||= {});
+        Object.assign(p, { sameZone: card.sameZone, crossZone: card.crossZone, returnPercent: card.returnPercent });
+        if (kind === "document" && Object.keys(card.documentTypeRates || {}).length) p.documentRates = { ...(p.documentRates || {}), ...card.documentTypeRates };
+        if (kind === "ecommerce")
+          Object.assign(p, {
+            extraWeight: card.extraWeight,
+            codFeePercent: card.codFeePercent,
+            regularFee: card.serviceFees.REGULAR,
+            sameDayFee: card.serviceFees.SAME_DAY,
+            expressFee: card.serviceFees.EXPRESS,
+          });
+      }
+    }
+    replaceKeys(
+      merchantPlanAssignments,
+      Object.fromEntries(S.merchants.filter(m => m.plan && KIND[m.type]).map(m => [merchantCode(m), { type: kindOf(m), plan: m.plan.name }])),
+    );
+  }
+
+  // ───────────── page decorations (live figures in the original markup) ─────────────
+  function setMetric(index, value, trend, note) {
+    const metric = document.querySelectorAll("#mainContent .metrics .metric")[index];
+    if (!metric) return;
+    metric.querySelector(".metric-value").textContent = value;
+    const foot = metric.querySelectorAll(".metric-foot span");
+    if (trend !== undefined && foot[0]) foot[0].textContent = trend;
+    if (note !== undefined && foot[1]) foot[1].textContent = note;
+  }
+  const setText = (selector, text, index = 0) => {
+    const node = document.querySelectorAll(`#mainContent ${selector}`)[index];
+    if (node) node.textContent = text;
+  };
+
+  function decorate(page) {
+    const o = S.overview;
+    if (page === "Overview" && o) {
+      setMetric(0, num(o.merchants.active + o.merchants.suspended), `${num(o.merchants.newThisMonth)} new`, "this month");
+      const groups = Object.values(o.staff.byRole).filter(Boolean).length;
+      setMetric(2, num(o.staff.active), `${groups} role group${groups === 1 ? "" : "s"}`, "staff accounts");
+      setMetric(3, taka(o.parcels.codThisMonth + o.parcels.chargesThisMonth), `${num(o.parcels.thisMonth)} parcels`, "COD + charges this month");
+    }
+    if ((page === "Registrations" || page === "Approvals") && o) {
+      setMetric(1, num(o.merchants.approvedThisMonth), "approved", "this month");
+      setText(".table-footer > span", `Showing ${registrations.length} application records`);
+    }
+    if (page === "Merchants") setText(".metrics .metric:first-child .metric-foot span:last-child", "merchant accounts");
+    if (page === "E-commerce merchants" || page === "Document merchants") {
+      const docs = page === "Document merchants";
+      setText(
+        ".table-footer > span",
+        `Showing ${merchants.filter(m => merchantKind(m) === (docs ? "document" : "ecommerce")).length} ${docs ? "document" : "e-commerce"} accounts`,
+      );
+    }
+    if (page === "Platform activity" && o) {
+      const today = new Date(o.periodStarts.today);
+      const activeToday = o.merchantActivity.filter(a => a.lastParcelAt && new Date(a.lastParcelAt) >= today).length;
+      setMetric(2, num(o.merchants.active), `${num(activeToday)} active today`, "merchant workspaces");
+      setMetric(3, num(o.riders.online + o.riders.onBreak), `${num(o.riders.online)} currently online`, "rider activity");
+      const tag = document.querySelector("#mainContent .page-heading .activity-tag");
+      if (tag) tag.lastChild.textContent = `Live counts · updated ${time(new Date(o.generatedAt))}`;
+      const tags = document.querySelectorAll("#mainContent section .panel-heading .activity-tag");
+      if (tags[1]) tags[1].textContent = `${merchants.length} merchant accounts`;
+      if (tags[3]) tags[3].textContent = `${num(o.riders.active)} riders active`;
+      setText("#platformActivityEvents + .table-footer span", `Showing ${platformActivityEvents.length} recent events`);
+      setText("p.table-footer", "Merchant, rider, tracking and user activity are live.");
+    }
+    if (page === "Audit log" && o) {
+      setMetric(0, num(o.auditEventsThisMonth), "this month", "recorded user actions");
+      setText(".panel-subtitle", "Platform administration · most recent events");
+      setText(".table-footer > span", `Showing ${generic["Audit log"].rows.length} most recent events`);
+    }
+    if (page === "Admin users") {
+      const count = role => S.staff.filter(u => u.status === "ACTIVE" && u.roles.some(r => r.role === role)).length;
+      const pills = document.querySelectorAll("#mainContent .setting-card .status");
+      ["SUPER_ADMIN", "OPS_MANAGER", "FINANCE", "SUPPORT_AGENT"].forEach((role, i) => {
+        if (pills[i]) pills[i].textContent = `${role === "SUPER_ADMIN" ? "Privileged" : "Scoped"} role · ${count(role)} user${count(role) === 1 ? "" : "s"}`;
+      });
+    }
+    if (page === "Service plans") decoratePlanEditor();
+  }
+
+  function decoratePlanEditor() {
+    const form = document.getElementById("servicePlanEditor");
+    if (!form || !S.cards) return;
+    const { type, tier, merchantId } = plansUI.editor;
+    const segment = SEGMENT[type];
+    const heading = [...form.querySelectorAll("h3")].find(h => h.textContent === "Pricing rules");
+    const card = S.cards[segment];
+    const note = document.createElement("p");
+    note.className = "panel-subtitle";
+    note.textContent = merchantId
+      ? "Saving makes these prices this merchant's own tariff (after a second super admin approves, when there is one). Its quotes and bookings use them, less the plan discount; services and catalog stay in the platform settings."
+      : `Route, weight, COD and speed charges${type === "document" ? " and the per-document-type rates" : ""} are the ${type === "document" ? "document" : "e-commerce"} rate card${card.name ? ` (${card.name})` : ""}, shared by every plan of this service line. The plan discount comes off each delivery charge. Price changes need a second super admin's approval.`;
+    heading?.after(note);
+    if (!merchantId) {
+      const server = planNamed(segment, tier);
+      const grid = form.querySelector(".plan-price-fields");
+      const label = document.createElement("label");
+      label.innerHTML = `Plan discount (% of delivery charge)<input type="number" min="0" max="100" step="0.01" name="planDiscount" value="${server ? server.discountPct : 0}" required>`;
+      grid?.prepend(label);
+    }
+    const publicForm = document.getElementById("publicCustomerParcelForm");
+    if (publicForm && !publicForm.querySelector("[data-df-note]")) {
+      const hint = document.createElement("p");
+      hint.className = "panel-subtitle";
+      hint.dataset.dfNote = "";
+      hint.textContent = `Saving publishes a new customer rate card version${S.cards.CUSTOMER.name ? ` (now: ${S.cards.CUSTOMER.name})` : ""}; the website quotes and bookings use it right away.`;
+      publicForm.querySelector(".modal-actions")?.before(hint);
+    }
+  }
+
+  // Track the page and add live figures after every render.
+  const baseShowPage = window.showPage;
+  window.showPage = showPage = function (page) {
+    baseShowPage(page);
+    if (RETIRED.has(page)) return;
+    currentPage = page;
+    decorate(page);
+  };
+
+  // ───────────── actions ─────────────
+  const passThrough = new WeakSet();
+  /** Lets the page's own handler run for an event we already handled through the API. */
+  function replay(target, type) {
+    passThrough.add(target);
+    try {
+      target.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+    } finally {
+      passThrough.delete(target);
+    }
+  }
+  const stop = event => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  async function busy(button, work) {
+    if (button) button.disabled = true;
+    try {
+      return await work();
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  const fail = error => showToast(DF.describe(error));
+  const byCode = code => S.merchants.find(m => m.code === code);
+  const nowLabel = () =>
+    new Date().toLocaleString("en-GB", { timeZone: DHAKA, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  /**
+   * Publishes a new rate card version for the segment if any value changed. Returns false (no
+   * change), "applied", or "pending" (waiting for another super admin's approval).
+   */
+  async function publishCard(segment, changes, label) {
+    const current = S.cards[segment].config;
+    const next = {
+      ...structuredClone(current),
+      ...changes,
+      serviceFees: { ...current.serviceFees, ...(changes.serviceFees || {}) },
+      documentTypeRates: { ...(current.documentTypeRates || {}), ...(changes.documentTypeRates || {}) },
+    };
+    if (same(next, current)) return false;
+    const result = await DF.api("/rate-cards", { method: "POST", body: { segment, name: `${label} · ${nowLabel()}`, config: next } });
+    return result?.status === "PENDING" ? "pending" : "applied";
+  }
+  const PENDING_TEXT = "Price change sent for approval: another super admin has to approve it (Admin users & roles). Prices stay as they are until then.";
+  /** A change waits for approval: show the current (unchanged) data instead of the page's optimistic update. */
+  function showPending(text = PENDING_TEXT) {
+    if (document.getElementById("modalBackdrop")?.classList.contains("open")) closeModal();
+    showPage(currentPage);
+    showToast(text);
+  }
+
+  /** The server plan for a tier, created from the editor's settings the first time it's used. */
+  async function ensurePlan(kind, tier) {
+    const segment = SEGMENT[kind];
+    const existing = planNamed(segment, tier);
+    if (existing) return existing;
+    const entry = plansUI.servicePlans[kind][tier] || {};
+    const created = await DF.api("/plans", {
+      method: "POST",
+      body: { segment, name: tier, monthlyFee: round2(entry.monthlyFee || 0), discountPct: 0, features: features(entry.services) },
+    });
+    S.plans.push(created);
+    return created;
+  }
+  const features = services =>
+    Object.entries(services || {})
+      .filter(([, on]) => on)
+      .map(([key]) => plansUI.serviceLabels[key])
+      .filter(Boolean)
+      .slice(0, 30);
+
+  window.addEventListener(
+    "submit",
+    event => {
+      const form = event.target;
+      if (passThrough.has(form)) return;
+
+      // Public customer parcel rates → a new CUSTOMER rate card.
+      if (form.id === "publicCustomerParcelForm" || form.id === "customerParcelPricingForm") {
+        stop(event);
+        const data = new FormData(form);
+        const fee = label => Number(data.get(`serviceFee:${label}`) || 0);
+        const changes = {
+          sameZone: Number(data.get("sameZone")),
+          crossZone: Number(data.get("crossZone")),
+          extraWeight: Number(data.get("extraWeight")),
+          codFeePercent: Number(data.get("codFeePercent")),
+          serviceFees: Object.fromEntries(LEVELS.map(([level, label]) => [level, fee(label)])),
+        };
+        void busy(form.querySelector('[type="submit"]'), async () => {
+          try {
+            const outcome = await publishCard("CUSTOMER", changes, "Customer parcels");
+            await load("cards", "audit");
+            if (outcome === "pending") return showPending();
+            replay(form, "submit");
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      // Plan editor → /plans (fee, discount, services) and the segment's rate card.
+      if (form.id === "servicePlanEditor") {
+        const { type, tier, merchantId } = plansUI.editor;
+        const data = new FormData(form);
+        const documentRates = Object.fromEntries(
+          [...data.keys()].filter(key => key.startsWith("price:document:")).map(key => [key.slice("price:document:".length), Number(data.get(key))]),
+        );
+        // A merchant's custom Enterprise configuration → its own tariff (PUT /merchants/:id/tariff), priced in bookings.
+        if (merchantId) {
+          const m = byCode(merchantId);
+          if (!m) return; // the page keeps it in the platform settings
+          stop(event);
+          const price = key => Number(data.get(`price:${key}`));
+          const config = { sameZone: price("sameZone"), crossZone: price("crossZone"), returnPercent: price("returnPercent") };
+          if (type === "document") config.documentTypeRates = documentRates;
+          else
+            Object.assign(config, {
+              extraWeight: price("extraWeight"),
+              codFeePercent: price("codFeePercent"),
+              serviceFees: { REGULAR: price("regularFee"), SAME_DAY: price("sameDayFee"), EXPRESS: price("expressFee") },
+            });
+          void busy(form.querySelector('[type="submit"]'), async () => {
+            try {
+              const result = await DF.api(`/merchants/${m.id}/tariff`, { method: "PUT", body: { config, note: `${tier} configuration` } });
+              await load("audit");
+              if (result?.status === "PENDING") return showPending(`${m.name}: custom tariff sent for approval to another super admin. Bookings keep the current prices until then.`);
+              replay(form, "submit");
+            } catch (error) {
+              fail(error);
+            }
+          });
+          return;
+        }
+        if (data.has("documentProducts")) {
+          const types = String(data.get("documentTypes") || "")
+            .split(",")
+            .map(v => v.trim())
+            .filter(Boolean);
+          const unknown = String(data.get("documentProducts"))
+            .split(/\r?\n/)
+            .map(line => line.split("="))
+            .filter(parts => parts.length >= 2 && parts[0].trim())
+            .some(parts => !types.includes(parts.slice(1).join("=").trim()));
+          if (unknown) return; // the page explains the problem
+        }
+        stop(event);
+        const segment = SEGMENT[type];
+        const price = key => Number(data.get(`price:${key}`));
+        const changes = { sameZone: price("sameZone"), crossZone: price("crossZone"), returnPercent: price("returnPercent") };
+        if (type === "document" && Object.keys(documentRates).length) changes.documentTypeRates = documentRates;
+        if (type === "ecommerce")
+          Object.assign(changes, {
+            extraWeight: price("extraWeight"),
+            codFeePercent: price("codFeePercent"),
+            serviceFees: { REGULAR: price("regularFee"), SAME_DAY: price("sameDayFee"), EXPRESS: price("expressFee") },
+          });
+        const services = Object.fromEntries(Object.keys(plansUI.serviceLabels).map(key => [key, !!form.elements[`service:${key}`]?.checked]));
+        const body = {
+          monthlyFee: round2(data.get("monthlyFee") === "" ? 0 : Number(data.get("monthlyFee"))),
+          discountPct: round2(data.get("planDiscount") ?? 0),
+          features: features(services),
+        };
+        void busy(form.querySelector('[type="submit"]'), async () => {
+          try {
+            const existing = planNamed(segment, tier);
+            if (existing) await DF.api(`/plans/${existing.id}`, { method: "PATCH", body: existing.active ? body : { ...body, active: true } });
+            else await DF.api("/plans", { method: "POST", body: { segment, name: tier, ...body } });
+            const outcome = await publishCard(segment, changes, type === "document" ? "Corporate documents" : "E-commerce");
+            await load("plans", "cards", "merchants", "audit");
+            if (outcome === "pending") return showPending("Plan saved. Its price changes were sent for approval to another super admin; current prices apply until then.");
+            replay(form, "submit");
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      // Catalog lists that bookings use → PUT /catalog (the platform settings mirror it).
+      if (form.matches?.(".catalog-form")) {
+        const list = form.dataset.catalogForm;
+        const value = String(new FormData(form).get("item") || "").trim();
+        const parent = String(new FormData(form).get("parent") || "").trim();
+        if (list === "deliveryServices") {
+          stop(event);
+          showToast("Delivery service levels are fixed: Regular, Same day and Express. Set their fees in Service plans & pricing.");
+          return;
+        }
+        if (!["district", "zone", "area", "ecommercePackaging", "ecommerceProducts"].includes(list) || !S.catalog || !value) return;
+        const c = structuredClone(S.catalog);
+        const next = {
+          districts: c.districts,
+          zonesByDistrict: c.zonesByDistrict,
+          areasByZone: c.areasByZone,
+          packaging: c.packaging,
+          products: c.products,
+          weightsKg: c.weightsKg,
+        };
+        const has = (items, v) => items.some(item => item.toLowerCase() === v.toLowerCase());
+        if (list === "district") {
+          if (has(next.districts, value)) return;
+          next.districts.push(value);
+          next.zonesByDistrict[value] = [];
+        } else if (list === "zone") {
+          if (!next.districts.includes(parent) || has(next.zonesByDistrict[parent] || [], value)) return;
+          (next.zonesByDistrict[parent] ||= []).push(value);
+        } else if (list === "area") {
+          const zones = Object.values(next.zonesByDistrict).flat();
+          if (!zones.includes(parent) || has(next.areasByZone[parent] || [], value)) return;
+          (next.areasByZone[parent] ||= []).push(value);
+        } else {
+          const items = list === "ecommercePackaging" ? next.packaging : next.products;
+          if (has(items, value)) return;
+          items.push(value);
+        }
+        stop(event);
+        void busy(form.querySelector('[type="submit"]'), async () => {
+          try {
+            await DF.api("/catalog", { method: "PUT", body: next });
+            await load("catalog", "audit");
+            // The page adds the item to its own lists and saves the platform settings.
+            if (list === "district" || list === "ecommercePackaging" || list === "ecommerceProducts") {
+              const own = list === "district" ? geoCatalog.district : list === "ecommercePackaging" ? ecommercePackaging : ecommerceProducts;
+              if (own.includes(value)) own.splice(own.indexOf(value), 1);
+            }
+            if (list === "zone") geoHierarchy.zonesByDistrict[parent] = geoHierarchy.zonesByDistrict[parent].filter(z => z !== value);
+            if (list === "area") geoHierarchy.areasByZone[parent] = geoHierarchy.areasByZone[parent].filter(a => a !== value);
+            replay(form, "submit");
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      if (form.id !== "modalForm") return;
+      const type = modalState.type;
+
+      // Approve a merchant application.
+      if (type === "registration") {
+        stop(event);
+        const m = byCode(modalState.id);
+        if (!m) return;
+        const planId = document.getElementById("approvalPlan")?.value || null;
+        void busy(document.getElementById("modalSubmit"), async () => {
+          try {
+            await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { status: "ACTIVE", ...(planId ? { planId } : {}) } });
+            decided.set(m.id, "Approved");
+            await load("merchants", "overview", "audit");
+            closeModal();
+            showPage("Registrations");
+            showToast(`${m.name}: approved · merchant account activated.`);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      // Merchant status and plan.
+      if (type === "merchant") {
+        stop(event);
+        const m = byCode(modalState.id);
+        if (!m) return;
+        const status = { Active: "ACTIVE", "Under review": "PENDING_REVIEW", Suspended: "SUSPENDED" }[document.getElementById("merchantStatus").value];
+        const planId = document.getElementById("merchantPlan").value || null;
+        const body = {};
+        if (status !== m.status) body.status = status;
+        if (planId !== (m.plan?.id || null)) body.planId = planId;
+        if (!Object.keys(body).length) {
+          closeModal();
+          showToast(`No changes to ${m.name}.`);
+          return;
+        }
+        if (body.status === "SUSPENDED" && !confirm(`Suspend ${m.name}? Its team can't book pickups until the account is reactivated.`)) return;
+        void busy(document.getElementById("modalSubmit"), async () => {
+          try {
+            await DF.api(`/merchants/${m.id}`, { method: "PATCH", body });
+            await load("merchants", "overview", "audit");
+            closeModal();
+            showPage(currentPage);
+            showToast(`${m.name} account changes saved.`);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      // Invite an administrator: creates the account; they sign in with an SMS code.
+      if (type === "inviteAdmin") {
+        stop(event);
+        const name = document.getElementById("adminName").value.trim();
+        const email = document.getElementById("adminEmail").value.trim();
+        const mobile = document.getElementById("adminPhone").value.trim();
+        const role = INVITE_ROLE[document.getElementById("adminRole").value];
+        const hubId = document.getElementById("adminScope").value;
+        if (role === "HUB_OPERATOR" && !hubId) return showToast("Choose the hub this Hub Manager runs.");
+        const grant = role === "HUB_OPERATOR" ? { role, hubId } : { role };
+        void busy(document.getElementById("modalSubmit"), async () => {
+          try {
+            await DF.api("/users", { method: "POST", body: { name, phone: mobile, email, roles: [grant] } });
+            await load("staff", "overview", "audit");
+            closeModal();
+            showPage("Admin users");
+            showToast(`${name} can now sign in with an SMS code sent to ${mobile}.`);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+
+      // Real invitations live in bridge-merchants.js.
+      if (type === "inviteMerchant" && !window.DFMerchantAdmin) {
+        stop(event);
+        showToast(
+          "Email invitations aren't available yet. Ask the business to apply from its Delivery Fast account; the application then appears here for review.",
+        );
+      }
+    },
+    true,
+  );
+
+  window.addEventListener(
+    "click",
+    event => {
+      if (passThrough.has(event.target)) return;
+      // Reject an application: the account stays without access (suspended).
+      const reject = event.target.closest?.("[data-modal-reject]");
+      // With bridge-merchants.js loaded, rejecting asks for a reason (POST /merchants/:id/reject).
+      if (reject && !window.DFMerchantAdmin) {
+        stop(event);
+        const m = byCode(reject.dataset.modalReject);
+        if (!m || !confirm(`Reject ${m.name}'s application? The account will be suspended.`)) return;
+        void busy(reject, async () => {
+          try {
+            await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { status: "SUSPENDED" } });
+            decided.set(m.id, "Rejected");
+            await load("merchants", "overview", "audit");
+            closeModal();
+            showPage("Registrations");
+            showToast(`${m.name}: rejected · account access stays disabled.`);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        return;
+      }
+      if (event.target.closest?.('[data-toast="Platform dashboard refreshed."]')) {
+        stop(event);
+        void refresh(true).then(() => showToast("Platform dashboard refreshed."), fail);
+        return;
+      }
+      if (event.target.closest?.("[data-customer-parcel-refresh]")) {
+        stop(event);
+        void load("parcels").then(() => {
+          showPage(currentPage);
+          showToast("Customer parcel requests refreshed.");
+        }, fail);
+      }
+    },
+    true,
+  );
+
+  // Service catalog rows (01.js) aren't part of the page's saved config; keep them in the platform settings.
+  const saveServicesIfChanged = () => {
+    const now = JSON.stringify(serviceRows);
+    if (now === savedServices) return;
+    savedServices = now;
+    patchConfig({ serviceCatalog: serviceRows });
+  };
+  document.addEventListener("click", saveServicesIfChanged);
+  document.addEventListener("submit", saveServicesIfChanged);
+
+  window.addEventListener(
+    "change",
+    event => {
+      if (passThrough.has(event.target)) return;
+      // Assign a merchant to a plan.
+      const select = event.target.closest?.("[data-merchant-plan]");
+      if (!select) return;
+      event.stopImmediatePropagation();
+      const m = byCode(select.dataset.merchantPlan);
+      if (!m) return;
+      void busy(select, async () => {
+        try {
+          const plan = await ensurePlan(select.dataset.merchantKind, select.value);
+          await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { planId: plan.id } });
+          await load("merchants", "plans", "audit");
+          select.disabled = false;
+          replay(select, "change");
+        } catch (error) {
+          fail(error);
+          showPage(currentPage);
+        }
+      });
+    },
+    true,
+  );
+
+  // Real plans in the approval and account dialogs; a phone number and hubs when inviting an administrator.
+  const baseOpenModal = window.openModal;
+  window.openModal = openModal = function (type, id) {
+    baseOpenModal(type, id);
+    const m = (type === "registration" || type === "merchant") && byCode(id);
+    if (m) {
+      const select = document.getElementById(type === "registration" ? "approvalPlan" : "merchantPlan");
+      const options = plansFor(m.type).filter(p => p.active || p.id === m.plan?.id);
+      select.innerHTML = [
+        type === "merchant" || !options.length ? `<option value="">No plan</option>` : "",
+        ...options.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.discountPct ? ` · ${p.discountPct}% off` : ""}</option>`),
+      ].join("");
+      select.value = m.plan?.id || (type === "registration" ? options[0]?.id || "" : "");
+    }
+    if (type === "inviteAdmin") {
+      const email = document.getElementById("adminEmail").closest(".field");
+      email.insertAdjacentHTML(
+        "afterend",
+        `<div class="field full"><label for="adminPhone">Mobile number</label><input id="adminPhone" type="tel" required placeholder="01XXXXXXXXX" autocomplete="tel"></div>`,
+      );
+      const scope = document.getElementById("adminScope");
+      scope.innerHTML = `<option value="">Not hub-specific</option>${S.hubs
+        .filter(h => h.active)
+        .map(h => `<option value="${h.id}">${escapeHtml(h.name)}</option>`)
+        .join("")}`;
+    }
+  };
+
+  // ───────────── start and keep up to date ─────────────
+  async function refresh(force = false) {
+    const changed = await load("merchants", "overview", "audit", "staff", "riders", "parcels");
+    const modalOpen = document.getElementById("modalBackdrop").classList.contains("open");
+    const editing =
+      document.activeElement &&
+      document.getElementById("mainContent").contains(document.activeElement) &&
+      document.activeElement.matches("input, select, textarea");
+    if ((changed || force) && LIVE_PAGES.has(currentPage) && !modalOpen && !editing) showPage(currentPage);
+  }
+
+  // No sample records while the real ones load.
+  for (const list of [registrations, merchants, adminUsers, auditEntries, activityRiders, platformActivityEvents, activityTrackingSamples])
+    replaceAll(list, []);
+  generic["Audit log"].rows = [];
+
+  DF.bridgeReady = (async () => {
+    try {
+      await load(...Object.keys(loaders));
+    } catch (error) {
+      console.error("Super admin data could not be loaded", error);
+      showToast(DF.describe(error));
+    }
+    showPage("Overview");
+  })();
+  DF.poll(() => refresh(), 30000);
+  /** For companion bridges (bridge-merchants.js): reload data sets and redraw the current page. */
+  window.DFSuperAdminBridge = {
+    reload: async (...names) => {
+      await load(...names);
+      showPage(currentPage);
+    },
+    page: () => currentPage,
+  };
+})();

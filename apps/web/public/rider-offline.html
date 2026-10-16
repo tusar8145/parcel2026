@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f2937">
+<title>Offline · Delivery Fast Rider</title>
+<link rel="icon" href="/pwa/rider-192.png">
+<style>
+  :root{color-scheme:light}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:#f5f7fa;color:#1f2937;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:420px;width:100%;background:#fff;border:1px solid #e4e8ee;border-radius:12px;padding:28px 24px;text-align:center}
+  img{width:64px;height:64px;border-radius:14px}
+  h1{font-size:20px;margin:16px 0 6px}
+  p{margin:0 0 12px;color:#5b6676}
+  button{margin-top:8px;width:100%;padding:11px 14px;border:0;border-radius:8px;background:#1f2937;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  small{display:block;margin-top:14px;color:#8a94a3}
+</style>
+</head>
+<body>
+<main>
+  <img src="/pwa/rider-192.png" alt="">
+  <h1>You're offline</h1>
+  <p>The rider app hasn't been saved on this phone yet, so it can't open without a connection.</p>
+  <p>Connect once and open the rider app: after that it opens offline, shows your saved task list and syncs your updates when you're back online.</p>
+  <button type="button" onclick="location.href='/rider'">Try again</button>
+  <small>Delivery Fast Rider</small>
+</main>
+<script>addEventListener("online", () => location.replace("/rider"));</script>
+</body>
+</html>

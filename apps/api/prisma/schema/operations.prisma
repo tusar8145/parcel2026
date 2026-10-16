@@ -1,0 +1,497 @@
+// ───────────────────────────── Courier operations (modules/network, routing, linehaul, cn-stock, sla, scans, shifts, reports) ─────────────────────────────
+// Network configuration (zones, routes), route plans, linehaul between hubs, pre-printed
+// consignment-number stock, the SLA engine, scan events, rider shifts and scheduled reports.
+
+// ── network configuration ──
+
+/// A delivery zone: catalog areas grouped under one zone and served by one hub (areas → zone → hub).
+model DeliveryZone {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  code      String         @unique // DHN-GUL
+  /// Catalog zone name, e.g. "Gulshan" (matches Parcel.deliveryZone / pickupZone).
+  name      String
+  district  String
+  /// Catalog areas in this zone; empty = every area of the zone.
+  areas     String[]
+  hubId     String?        @db.Uuid
+  routeId   String?        @db.Uuid
+  /// Planning centre of the zone (used when an address can't be geocoded).
+  lat       Float?
+  lng       Float?
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  hub       Hub?           @relation(fields: [hubId], references: [id])
+  route     DeliveryRoute? @relation(fields: [routeId], references: [id], onDelete: SetNull)
+
+  @@unique([district, name])
+  @@index([hubId])
+  @@map("delivery_zones")
+}
+
+/// An operating route: zones a hub serves together, optionally with a default rider.
+model DeliveryRoute {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  code           String         @unique // GUL-R1
+  name           String
+  hubId          String         @db.Uuid
+  defaultRiderId String?        @db.Uuid
+  active         Boolean        @default(true)
+  note           String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  hub            Hub            @relation(fields: [hubId], references: [id])
+  defaultRider   Rider?         @relation(fields: [defaultRiderId], references: [id], onDelete: SetNull)
+  zones          DeliveryZone[]
+
+  @@index([hubId])
+  @@map("delivery_routes")
+}
+
+enum RouteEngine {
+  OSRM
+  NEAREST_NEIGHBOUR
+}
+
+/// An optimised stop order for one rider (the latest plan per rider and day is current).
+model RoutePlan {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  riderId         String      @db.Uuid
+  hubId           String?     @db.Uuid
+  workDate        DateTime    @db.Date
+  engine          RouteEngine
+  /// [{ seq, trackingId, kind, lat, lng, label, etaSeconds }]
+  stops           Json
+  /// [[lat, lng], …] along the roads (OSRM) or straight segments.
+  geometry        Json?
+  distanceMeters  Int
+  durationSeconds Int
+  createdById     String?     @db.Uuid
+  createdAt       DateTime    @default(now())
+  rider           Rider       @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId, createdAt])
+  @@map("route_plans")
+}
+
+// ── linehaul between hubs ──
+
+model LinehaulVehicle {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  regNo      String         @unique // DHAKA METRO-TA 11-2345
+  kind       String // Covered van, Truck, Pickup
+  capacityKg Int?
+  ownerName  String?
+  active     Boolean        @default(true)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  trips      LinehaulTrip[]
+
+  @@map("linehaul_vehicles")
+}
+
+enum LinehaulTripStatus {
+  PLANNED
+  DEPARTED
+  ARRIVED
+  CLOSED
+  CANCELLED
+}
+
+/// A truck run between two hubs; its manifest lists the bags (and parcels) it carries.
+model LinehaulTrip {
+  id                 String                @id @default(uuid(7)) @db.Uuid
+  number             String                @unique // MF-261015-0001 (manifest number)
+  originHubId        String                @db.Uuid
+  destHubId          String                @db.Uuid
+  vehicleId          String?               @db.Uuid
+  vehicleRegNo       String
+  driverName         String
+  driverPhone        String
+  status             LinehaulTripStatus    @default(PLANNED)
+  plannedDepartureAt DateTime?
+  departedAt         DateTime?
+  arrivedAt          DateTime?
+  closedAt           DateTime?
+  note               String?
+  createdById        String?               @db.Uuid
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  originHub          Hub                   @relation("TripOrigin", fields: [originHubId], references: [id])
+  destHub            Hub                   @relation("TripDestination", fields: [destHubId], references: [id])
+  vehicle            LinehaulVehicle?      @relation(fields: [vehicleId], references: [id])
+  bags               LinehaulBag[]
+  discrepancies      LinehaulDiscrepancy[]
+
+  @@index([originHubId, status])
+  @@index([destHubId, status])
+  @@map("linehaul_trips")
+}
+
+enum LinehaulBagStatus {
+  OPEN
+  SEALED
+  IN_TRANSIT
+  RECEIVED
+}
+
+/// A sealed bag of parcels moving from one hub to another.
+model LinehaulBag {
+  id            String                @id @default(uuid(7)) @db.Uuid
+  number        String                @unique // BG-261015-0001
+  originHubId   String                @db.Uuid
+  destHubId     String                @db.Uuid
+  tripId        String?               @db.Uuid
+  status        LinehaulBagStatus     @default(OPEN)
+  sealNo        String?
+  sealedAt      DateTime?
+  sealedById    String?               @db.Uuid
+  receivedAt    DateTime?
+  receivedById  String?               @db.Uuid
+  createdById   String?               @db.Uuid
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  originHub     Hub                   @relation("BagOrigin", fields: [originHubId], references: [id])
+  destHub       Hub                   @relation("BagDestination", fields: [destHubId], references: [id])
+  trip          LinehaulTrip?         @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  items         LinehaulBagItem[]
+  discrepancies LinehaulDiscrepancy[]
+
+  @@index([originHubId, status])
+  @@index([destHubId, status])
+  @@index([tripId])
+  @@map("linehaul_bags")
+}
+
+enum LinehaulItemState {
+  LOADED
+  RECEIVED
+  MISSING
+}
+
+model LinehaulBagItem {
+  id         String            @id @default(uuid(7)) @db.Uuid
+  bagId      String            @db.Uuid
+  parcelId   String            @db.Uuid
+  state      LinehaulItemState @default(LOADED)
+  addedById  String?           @db.Uuid
+  addedAt    DateTime          @default(now())
+  receivedAt DateTime?
+  bag        LinehaulBag       @relation(fields: [bagId], references: [id], onDelete: Cascade)
+  parcel     Parcel            @relation(fields: [parcelId], references: [id])
+
+  @@unique([bagId, parcelId])
+  @@index([parcelId])
+  @@map("linehaul_bag_items")
+}
+
+enum LinehaulDiscrepancyKind {
+  MISSING // manifested but not received
+  EXTRA // received but not manifested in the bag
+  SEAL_MISMATCH
+  DAMAGED
+}
+
+model LinehaulDiscrepancy {
+  id           String                  @id @default(uuid(7)) @db.Uuid
+  tripId       String?                 @db.Uuid
+  bagId        String?                 @db.Uuid
+  parcelId     String?                 @db.Uuid
+  trackingId   String?
+  hubId        String                  @db.Uuid // where it was found
+  kind         LinehaulDiscrepancyKind
+  note         String?
+  resolvedAt   DateTime?
+  resolvedById String?                 @db.Uuid
+  resolution   String?
+  createdById  String?                 @db.Uuid
+  createdAt    DateTime                @default(now())
+  trip         LinehaulTrip?           @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  bag          LinehaulBag?            @relation(fields: [bagId], references: [id], onDelete: SetNull)
+
+  @@index([tripId])
+  @@index([hubId, resolvedAt])
+  @@map("linehaul_discrepancies")
+}
+
+// ── consignment-number stock ──
+
+/// Pre-allocated consignment numbers, printed on labels before booking.
+model CnBatch {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  number      String    @unique // CNB-261015-0001
+  count       Int
+  hubId       String?   @db.Uuid
+  merchantId  String?   @db.Uuid
+  note        String?
+  createdById String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  hub         Hub?      @relation(fields: [hubId], references: [id])
+  merchant    Merchant? @relation(fields: [merchantId], references: [id])
+  items       CnStock[]
+
+  @@index([hubId])
+  @@index([merchantId])
+  @@map("cn_batches")
+}
+
+enum CnStatus {
+  AVAILABLE
+  USED
+  VOID
+}
+
+model CnStock {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  cn          String    @unique // a tracking ID from nextTrackingId
+  batchId     String    @db.Uuid
+  status      CnStatus  @default(AVAILABLE)
+  parcelId    String?   @unique @db.Uuid
+  usedAt      DateTime?
+  voidedAt    DateTime?
+  voidedById  String?   @db.Uuid
+  voidReason  String?
+  printCount  Int       @default(0)
+  lastPrintAt DateTime?
+  createdAt   DateTime  @default(now())
+  batch       CnBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  parcel      Parcel?   @relation(fields: [parcelId], references: [id])
+
+  @@index([batchId, status])
+  @@index([status])
+  @@map("cn_stock")
+}
+
+// ── SLA engine ──
+
+/// Pickup and delivery targets per service level and (optional) origin/destination zone.
+/// The most specific active policy wins; built-in defaults apply when none matches.
+model SlaPolicy {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  name            String
+  serviceLevel    ServiceLevel
+  originDistrict  String?
+  originZone      String?
+  destDistrict    String?
+  destZone        String?
+  pickupMinutes   Int
+  deliveryMinutes Int
+  /// A leg is "at risk" this many minutes before it is due.
+  atRiskMinutes   Int          @default(120)
+  active          Boolean      @default(true)
+  createdById     String?      @db.Uuid
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([serviceLevel, active])
+  @@map("sla_policies")
+}
+
+enum SlaState {
+  ON_TRACK
+  AT_RISK
+  BREACHED
+}
+
+enum SlaLeg {
+  PICKUP
+  DELIVERY
+}
+
+enum SlaLevel {
+  AT_RISK
+  BREACHED
+}
+
+model SlaAlert {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  parcelId         String    @db.Uuid
+  leg              SlaLeg
+  level            SlaLevel
+  dueAt            DateTime
+  hubId            String?   @db.Uuid
+  raisedAt         DateTime  @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?   @db.Uuid
+  acknowledgedBy   String?
+  note             String?
+  /// Set when the leg completes (picked up / delivered / closed).
+  resolvedAt       DateTime?
+  parcel           Parcel    @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@unique([parcelId, leg, level])
+  @@index([resolvedAt, raisedAt])
+  @@index([hubId, resolvedAt])
+  @@map("sla_alerts")
+}
+
+// ── scans ──
+
+enum ScanSource {
+  CAMERA
+  KEYBOARD
+  MANUAL
+  SYSTEM
+}
+
+/// Every barcode scan at a hub, in a linehaul flow or by a rider (expected vs actual → scan compliance).
+model ScanEvent {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  code       String // what was scanned
+  trackingId String?
+  parcelId   String?    @db.Uuid
+  /// HUB_RECEIVE, HUB_SORT, HUB_DISPATCH, HUB_LOOKUP, BAG_LOAD, BAG_RECEIVE, RIDER_PICKUP, RIDER_OUT_FOR_DELIVERY, RIDER_DELIVERY, CN_CHECK…
+  kind       String
+  hubId      String?    @db.Uuid
+  riderId    String?    @db.Uuid
+  userId     String?    @db.Uuid
+  source     ScanSource
+  ok         Boolean    @default(true)
+  message    String?
+  createdAt  DateTime   @default(now())
+
+  @@index([parcelId, createdAt])
+  @@index([hubId, createdAt])
+  @@index([riderId, createdAt])
+  @@index([createdAt])
+  @@map("scan_events")
+}
+
+// ── rider shifts and attendance ──
+
+/// A recurring shift: weekdays (0 = Sunday … 6 = Saturday) and Dhaka times.
+model RiderShiftSchedule {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  riderId     String            @db.Uuid
+  hubId       String?           @db.Uuid
+  weekdays    Int[]
+  startTime   String // "08:00"
+  endTime     String // "17:00"
+  validFrom   DateTime          @db.Date
+  validTo     DateTime?         @db.Date
+  active      Boolean           @default(true)
+  note        String?
+  createdById String?           @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  rider       Rider             @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  attendance  RiderAttendance[]
+
+  @@index([riderId, active])
+  @@map("rider_shift_schedules")
+}
+
+/// One check-in / check-out by a rider (workDate is the Dhaka calendar day of the check-in).
+model RiderAttendance {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  riderId     String              @db.Uuid
+  scheduleId  String?             @db.Uuid
+  hubId       String?             @db.Uuid
+  workDate    DateTime            @db.Date
+  checkInAt   DateTime
+  checkOutAt  DateTime?
+  checkInLat  Float?
+  checkInLng  Float?
+  checkOutLat Float?
+  checkOutLng Float?
+  /// RIDER_APP or OPERATIONS (corrected by staff).
+  source      String              @default("RIDER_APP")
+  note        String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  rider       Rider               @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  schedule    RiderShiftSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([riderId, checkInAt])
+  @@index([workDate])
+  @@map("rider_attendance")
+}
+
+// ── scheduled reports ──
+
+enum ReportKind {
+  DELIVERIES
+  SLA
+  COD
+  RIDERS
+}
+
+enum ReportFrequency {
+  DAILY
+  WEEKLY
+}
+
+model ReportSchedule {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  name        String
+  kind        ReportKind
+  frequency   ReportFrequency
+  /// WEEKLY: 0 = Sunday … 6 = Saturday.
+  weekday     Int?
+  /// Dhaka hour (0–23) the report is sent, covering the previous day / week.
+  hour        Int             @default(8)
+  recipients  String[] // email addresses
+  hubId       String?         @db.Uuid
+  active      Boolean         @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime
+  createdById String?         @db.Uuid
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  runs        ReportRun[]
+
+  @@index([active, nextRunAt])
+  @@map("report_schedules")
+}
+
+model ReportRun {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  scheduleId  String?         @db.Uuid
+  kind        ReportKind
+  periodStart DateTime
+  periodEnd   DateTime
+  hubId       String?         @db.Uuid
+  rowCount    Int             @default(0)
+  /// Excel-compatible CSV (UTF-8).
+  csv         String
+  status      String          @default("OK") // OK | FAILED
+  error       String?
+  createdById String?         @db.Uuid
+  createdAt   DateTime        @default(now())
+  schedule    ReportSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([scheduleId, createdAt])
+  @@index([createdAt])
+  @@map("report_runs")
+}
+
+// ── booking batches (spreadsheet imports) ──
+
+/**
+ * The booking batch of one spreadsheet import (ImportJob, same number). Drop-off batches name the hub
+ * the sender brings the parcels to; the hub console compares expected and received parcels.
+ */
+model BookingBatch {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  number      String       @unique // IMP-261016-001
+  intake      ParcelIntake
+  hubId       String?      @db.Uuid
+  merchantId  String?      @db.Uuid
+  fileName    String?
+  /// Rows sent, booked and refused, across all requests of the import.
+  rowCount    Int          @default(0)
+  bookedCount Int          @default(0)
+  failedCount Int          @default(0)
+  createdById String?      @db.Uuid
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  hub         Hub?         @relation(fields: [hubId], references: [id])
+  parcels     Parcel[]
+  /// The import (modules/imports) that created this batch, if any.
+  importJob   ImportJob?
+
+  @@index([hubId, createdAt])
+  @@index([createdAt])
+  @@map("booking_batches")
+}

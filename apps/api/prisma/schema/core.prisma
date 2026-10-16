@@ -1,0 +1,973 @@
+// Delivery Fast — database schema.
+// Money is stored as Decimal(12,2) in BDT. All timestamps are UTC.
+// Change this file, then run `npm run db:migrate -- --name <change>` to create a migration.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Identity & access ─────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum Role {
+  CUSTOMER
+  MERCHANT_OWNER
+  MERCHANT_STAFF
+  RIDER
+  HUB_OPERATOR
+  OPS_MANAGER
+  FINANCE
+  SUPPORT_AGENT
+  SUPER_ADMIN
+}
+
+model User {
+  id               String     @id @default(uuid(7)) @db.Uuid
+  name             String
+  phone            String     @unique // E.164, e.g. +8801712345678
+  email            String?    @unique
+  passwordHash     String?
+  status           UserStatus @default(ACTIVE)
+  phoneVerifiedAt  DateTime?
+  failedLoginCount Int        @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  roles                   UserRole[]
+  sessions                Session[]
+  addresses               Address[]
+  rider                   Rider?
+  parcels                 Parcel[]                 @relation("ParcelCustomer")
+  ticketsOpened           SupportTicket[]          @relation("TicketRequester")
+  ticketsHandled          SupportTicket[]          @relation("TicketAssignee")
+  mfa                     UserMfa?
+  mfaRecoveryCodes        MfaRecoveryCode[]
+  emailVerifications      EmailVerification[]
+  notificationPreferences NotificationPreference[]
+
+  @@map("users")
+}
+
+/// A role, optionally scoped to one merchant (merchant roles) or hub (hub roles).
+model UserRole {
+  id           String      @id @default(uuid(7)) @db.Uuid
+  userId       String      @db.Uuid
+  role         Role
+  merchantId   String?     @db.Uuid
+  hubId        String?     @db.Uuid
+  createdAt    DateTime    @default(now())
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant     Merchant?   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  hub          Hub?        @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  /// Set when this grant is a custom role (permissions from CustomRole; role = its base role).
+  customRoleId String?     @db.Uuid
+  customRole   CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role, merchantId, hubId, customRoleId])
+  @@index([merchantId])
+  @@map("user_roles")
+}
+
+/// One signed-in device. The refresh token rotates on every use; reusing an old one
+/// revokes the whole family (token theft detection).
+model Session {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  userId           String    @db.Uuid
+  familyId         String    @db.Uuid
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ip               String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+  /// When this session family passed two-step verification (null: password/SMS only).
+  mfaVerifiedAt    DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+enum OtpPurpose {
+  SIGNUP
+  LOGIN
+  PASSWORD_RESET
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  phone      String
+  purpose    OtpPurpose
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  ip         String?
+  createdAt  DateTime   @default(now())
+
+  @@index([phone, purpose, createdAt])
+  @@map("otp_challenges")
+}
+
+enum AddressRole {
+  PICKUP
+  RECEIVER
+}
+
+/// Customer address book (saved pickup and receiver addresses).
+model Address {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  userId      String          @db.Uuid
+  role        AddressRole
+  category    AddressCategory @default(HOME)
+  contactName String
+  phone       String
+  street      String
+  area        String?
+  zone        String
+  district    String
+  isDefault   Boolean         @default(false)
+  /// Map pin (WGS84), optional.
+  lat         Float?
+  lng         Float?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ───────────────────────────── Merchants ─────────────────────────────
+
+enum MerchantType {
+  ECOMMERCE
+  CORPORATE_DOCUMENT
+}
+
+enum MerchantStatus {
+  PENDING_REVIEW
+  ACTIVE
+  SUSPENDED
+  INFO_REQUESTED // the applicant was asked for more information
+  REJECTED // application declined (see rejectionReason)
+}
+
+model Merchant {
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  code               String            @unique // MR-1001
+  type               MerchantType
+  name               String
+  status             MerchantStatus    @default(PENDING_REVIEW)
+  contactName        String
+  contactPhone       String
+  contactEmail       String?
+  pickupAddress      String
+  pickupArea         String
+  pickupDistrict     String
+  planId             String?           @db.Uuid
+  /// Payout destination, e.g. {"method":"BKASH","account":"01712345678"}
+  payoutAccount      Json?
+  /// Why the application was rejected (status REJECTED).
+  rejectionReason    String?
+  kycStatus          MerchantKycStatus @default(NOT_SUBMITTED)
+  kycSubmittedAt     DateTime?
+  kycReviewedAt      DateTime?
+  kycReviewedById    String?           @db.Uuid
+  kycRejectionReason String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  plan               ServicePlan?          @relation(fields: [planId], references: [id])
+  members            UserRole[]
+  parcels            Parcel[]
+  apiKeys            ApiKey[]
+  webhooks           WebhookEndpoint[]
+  settlements        MerchantSettlement[]
+  invoices           Invoice[]
+  tickets            SupportTicket[]
+  kycDocuments       MerchantKycDocument[]
+  notes              MerchantNote[]
+  products           Product[]
+  bulkBookings       BulkBooking[]
+  pickupSchedules    PickupSchedule[]
+  pickupRequests     PickupRequest[]
+  returnRuns         ReturnRun[]
+  rateOverride       MerchantRateOverride?
+  cnBatches          CnBatch[]
+  adjustments        MerchantAdjustment[]
+  settlementSchedule SettlementSchedule?
+  disputes           Dispute[]
+
+  @@map("merchants")
+}
+
+/// Server-to-server credentials. Only a hash is stored; the secret is shown once.
+model ApiKey {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  merchantId  String    @db.Uuid
+  name        String
+  prefix      String    @unique // first characters, shown in the UI to identify the key
+  keyHash     String    @unique
+  createdById String?   @db.Uuid
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  /// Permission scopes (parcels:read, parcels:write, parcels:cancel, webhooks:manage…). Empty = full merchant API access (keys created before scopes).
+  scopes      String[]  @default([])
+  createdAt   DateTime  @default(now())
+  merchant    Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  merchantId      String            @db.Uuid
+  url             String
+  /// AES-256-GCM encrypted signing secret (needed in clear to sign payloads).
+  secretEncrypted String
+  events          String[]
+  active          Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  merchant        Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  deliveries      WebhookDelivery[]
+
+  @@index([merchantId])
+  @@map("webhook_endpoints")
+}
+
+enum DeliveryState {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model WebhookDelivery {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  endpointId   String          @db.Uuid
+  event        String
+  payload      Json
+  state        DeliveryState   @default(PENDING)
+  attempts     Int             @default(0)
+  responseCode Int?
+  lastError    String?
+  createdAt    DateTime        @default(now())
+  deliveredAt  DateTime?
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ───────────────────────────── Network ─────────────────────────────
+
+model Hub {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  code             String                @unique // DHK-TEJ
+  name             String
+  district         String
+  address          String
+  active           Boolean               @default(true)
+  /// Most parcels the hub can hold at once (null = not set); planning location (WGS84).
+  capacity         Int?
+  lat              Float?
+  lng              Float?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  riders           Rider[]
+  staff            UserRole[]
+  parcels          Parcel[]              @relation("ParcelCurrentHub")
+  handovers        CashHandover[]
+  handoverRequests CashHandoverRequest[]
+  // courier operations (operations.prisma)
+  zones            DeliveryZone[]
+  routes           DeliveryRoute[]
+  tripsFrom        LinehaulTrip[]        @relation("TripOrigin")
+  tripsTo          LinehaulTrip[]        @relation("TripDestination")
+  bagsFrom         LinehaulBag[]         @relation("BagOrigin")
+  bagsTo           LinehaulBag[]         @relation("BagDestination")
+  cnBatches        CnBatch[]
+  // hub drop-off bookings (operations.prisma: BookingBatch)
+  dropOffParcels   Parcel[]              @relation("ParcelDropOffHub")
+  bookingBatches   BookingBatch[]
+
+  @@map("hubs")
+}
+
+enum RiderStatus {
+  OFFLINE
+  ONLINE
+  ON_BREAK
+}
+
+enum VehicleType {
+  BICYCLE
+  MOTORBIKE
+  VAN
+  ON_FOOT
+}
+
+model Rider {
+  id               String                @id @default(uuid(7)) @db.Uuid
+  userId           String                @unique @db.Uuid
+  code             String                @unique // RD-1024
+  hubId            String?               @db.Uuid
+  vehicle          VehicleType           @default(MOTORBIKE)
+  zone             String?
+  status           RiderStatus           @default(OFFLINE)
+  active           Boolean               @default(true)
+  /// Most stops a rider should take in a day (assignment suggestions); null = network default.
+  dailyCapacity    Int?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hub              Hub?                  @relation(fields: [hubId], references: [id])
+  pickups          Parcel[]              @relation("PickupRider")
+  deliveries       Parcel[]              @relation("DeliveryRider")
+  attempts         DeliveryAttempt[]
+  collections      CodCollection[]
+  handovers        CashHandover[]
+  // rider app (rider.prisma)
+  location         RiderLocation?
+  locationPoints   RiderLocationPoint[]
+  payPlans         RiderPayPlan[]
+  earnings         RiderEarning[]
+  payouts          RiderPayout[]
+  handoverRequests CashHandoverRequest[]
+  onboarding       RiderOnboarding?
+  kycDocuments     RiderKycDocument[]
+  // courier operations (operations.prisma)
+  defaultRoutes    DeliveryRoute[]
+  routePlans       RoutePlan[]
+  shiftSchedules   RiderShiftSchedule[]
+  attendance       RiderAttendance[]
+
+  @@map("riders")
+}
+
+// ───────────────────────────── Parcels ─────────────────────────────
+
+/// Labels shown in the UI live in @delivery-fast/shared (PARCEL_STATUS_LABEL), with the
+/// allowed transitions between them.
+enum ParcelStatus {
+  PENDING_CONFIRMATION
+  PICKUP_ASSIGNED
+  PICKUP_CONFIRMED
+  PICKED_UP
+  PICKUP_CANCELLED
+  AT_HUB
+  ASSIGNED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETRY_SCHEDULED
+  RETURN_SCHEDULED
+  RETURNED
+  EXCEPTION
+}
+
+/// How a parcel enters the network (packages/shared PARCEL_INTAKES).
+enum ParcelIntake {
+  PICKUP
+  DROP_OFF
+}
+
+enum ParcelChannel {
+  WEBSITE
+  MERCHANT_PORTAL
+  MERCHANT_API
+  OPERATIONS
+}
+
+enum ParcelType {
+  PARCEL
+  DOCUMENT
+  FRAGILE
+  ECOMMERCE
+}
+
+enum ServiceLevel {
+  REGULAR
+  SAME_DAY
+  EXPRESS
+}
+
+enum AddressCategory {
+  HOME
+  OFFICE
+  OTHER
+}
+
+model Parcel {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  trackingId String        @unique // PP-260915-1042
+  channel    ParcelChannel
+  status     ParcelStatus  @default(PENDING_CONFIRMATION)
+  /// Optimistic-locking counter, bumped on every status change.
+  version    Int           @default(0)
+
+  customerId       String? @db.Uuid
+  merchantId       String? @db.Uuid
+  merchantOrderRef String?
+
+  senderName     String
+  senderPhone    String
+  pickupCategory AddressCategory @default(HOME)
+  pickupStreet   String
+  pickupArea     String?
+  pickupZone     String
+  pickupDistrict String
+
+  /// Null only for imported orders that still need the detail (incomplete).
+  recipientName    String?
+  recipientPhone   String?
+  deliveryCategory AddressCategory @default(HOME)
+  deliveryStreet   String?
+  deliveryArea     String?
+  deliveryZone     String?
+  deliveryDistrict String?
+
+  type             ParcelType   @default(PARCEL)
+  serviceLevel     ServiceLevel @default(REGULAR)
+  weightKg         Decimal      @db.Decimal(8, 2)
+  packaging        String?
+  contents         String? // product category, e.g. "Clothing"
+  /// DOCUMENT parcels: the document type that priced it (rate card documentTypeRates).
+  documentType     String?
+  declaredValue    Decimal?     @db.Decimal(12, 2)
+  instructions     String?
+  /// Who may receive it for the recipient (Self, Family member, Reception…).
+  receiverRelation String?
+  /// Corporate merchants: the branch the consignment originates from.
+  originBranchCode String?
+
+  codAmount       Decimal @default(0) @db.Decimal(12, 2)
+  baseCharge      Decimal @db.Decimal(12, 2)
+  weightCharge    Decimal @db.Decimal(12, 2)
+  serviceCharge   Decimal @db.Decimal(12, 2)
+  codFee          Decimal @db.Decimal(12, 2)
+  discount        Decimal @default(0) @db.Decimal(12, 2)
+  totalCharge     Decimal @db.Decimal(12, 2)
+  /// The rate card values used, frozen at booking time.
+  pricingSnapshot Json
+
+  pickupRiderId        String?   @db.Uuid
+  deliveryRiderId      String?   @db.Uuid
+  currentHubId         String?   @db.Uuid
+  attemptCount         Int       @default(0)
+  /// Encrypted delivery code sent to the recipient by SMS (re-sendable, checked at handover).
+  deliveryOtpEncrypted String?
+  estimatedDeliveryAt  DateTime?
+  /// Pickup time window chosen at booking (website slots, merchant schedules).
+  pickupWindowStart    DateTime?
+  pickupWindowEnd      DateTime?
+  /// Map pins (WGS84) for the pickup and delivery addresses, optional.
+  pickupLat            Float?
+  pickupLng            Float?
+  deliveryLat          Float?
+  deliveryLng          Float?
+  /// When the pins were filled in by geocoding (null = given by the sender or not geocoded); OK | FAILED.
+  geocodedAt           DateTime?
+  geocodeStatus        String?
+  /// SLA engine (operations.prisma): due times from the matching SlaPolicy and the current state.
+  pickupDueAt          DateTime?
+  deliveryDueAt        DateTime?
+  slaState             SlaState  @default(ON_TRACK)
+  pickedUpAt           DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  cancelReason         String?
+
+  /// Return to merchant (RTO): requested by the merchant or operations, run by operations, confirmed by the merchant.
+  returnReason      String?
+  returnRequestedAt DateTime?
+  returnRequestedBy String?
+  /// Charged when returned: totalCharge × the rate card returnPercent.
+  returnCharge      Decimal?  @db.Decimal(12, 2)
+  returnRunId       String?   @db.Uuid
+  returnReceivedAt  DateTime?
+
+  /// How the parcel reaches the network: PICKUP (a pickup rider collects it) or DROP_OFF (the sender brings it to dropOffHubId).
+  intake           ParcelIntake @default(PICKUP)
+  /// DROP_OFF: the only hub that may receive it before pickup (PENDING_CONFIRMATION -> AT_HUB).
+  dropOffHubId     String?      @db.Uuid
+  /// When the drop-off hub received it (the delivery SLA starts then).
+  droppedOffAt     DateTime?
+  /// The spreadsheet import (BookingBatch) it was booked in, if any.
+  bookingBatchId   String?      @db.Uuid
+
+  /// Booked with delivery details missing (spreadsheet import): the steps that need them are blocked
+  /// until they are completed (see docs/architecture-contracts.md, "Incomplete orders").
+  incomplete       Boolean      @default(false)
+  /// What is missing: recipientName, recipientPhone, address, district, zone.
+  missingFields    String[]     @default([])
+  /// The import (ImportJob) that booked it, and the row key that keeps re-uploads idempotent.
+  importJobId      String?      @db.Uuid
+  importKey        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer      User?             @relation("ParcelCustomer", fields: [customerId], references: [id])
+  merchant      Merchant?         @relation(fields: [merchantId], references: [id])
+  pickupRider   Rider?            @relation("PickupRider", fields: [pickupRiderId], references: [id])
+  deliveryRider Rider?            @relation("DeliveryRider", fields: [deliveryRiderId], references: [id])
+  currentHub    Hub?              @relation("ParcelCurrentHub", fields: [currentHubId], references: [id])
+  events        TrackingEvent[]
+  attempts      DeliveryAttempt[]
+  proof         DeliveryProof?
+  codCollection CodCollection?
+  tickets       SupportTicket[]
+  returnRun     ReturnRun?        @relation(fields: [returnRunId], references: [id], onDelete: SetNull)
+  feedback      ParcelFeedback?
+  bagItems      LinehaulBagItem[]
+  disputes      Dispute[]
+  slaAlerts     SlaAlert[]
+  cnStock       CnStock?
+  dropOffHub    Hub?              @relation("ParcelDropOffHub", fields: [dropOffHubId], references: [id])
+  bookingBatch  BookingBatch?     @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([merchantId, merchantOrderRef])
+  @@unique([merchantId, importKey])
+  @@index([merchantId, incomplete])
+  @@index([importJobId])
+  @@index([currentHubId, status])
+  @@index([status, deliveryDueAt])
+  @@index([status, pickupDueAt])
+  @@index([updatedAt])
+  @@index([returnRunId])
+  @@index([merchantId, returnRequestedAt])
+  @@index([status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([merchantId, createdAt])
+  @@index([pickupRiderId, status])
+  @@index([deliveryRiderId, status])
+  @@index([recipientPhone])
+  @@index([pickupWindowStart])
+  @@index([dropOffHubId, status])
+  @@index([bookingBatchId])
+  @@map("parcels")
+}
+
+enum EventVisibility {
+  PUBLIC // shown on public tracking
+  INTERNAL // operations only
+}
+
+model TrackingEvent {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  parcelId    String          @db.Uuid
+  status      ParcelStatus
+  title       String
+  description String?
+  location    String?
+  visibility  EventVisibility @default(PUBLIC)
+  actorUserId String?         @db.Uuid
+  actorLabel  String? // "Rider Karim (RD-1024)", "Operations", "Customer"
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  parcel      Parcel          @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@index([parcelId, createdAt])
+  @@map("tracking_events")
+}
+
+enum AttemptOutcome {
+  DELIVERED
+  FAILED
+}
+
+model DeliveryAttempt {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  parcelId   String         @db.Uuid
+  riderId    String         @db.Uuid
+  outcome    AttemptOutcome
+  reason     String?
+  nextAction String?
+  note       String?
+  createdAt  DateTime       @default(now())
+  parcel     Parcel         @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  rider      Rider          @relation(fields: [riderId], references: [id])
+
+  @@index([parcelId])
+  @@map("delivery_attempts")
+}
+
+enum ProofMethod {
+  SIGNATURE
+  OTP
+  PHOTO
+}
+
+model DeliveryProof {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  parcelId    String      @unique @db.Uuid
+  method      ProofMethod
+  receivedBy  String
+  fileId      String?     @db.Uuid // signature image or photo
+  otpVerified Boolean     @default(false)
+  note        String?
+  /// Where and when the proof was captured on the rider's device (may predate createdAt when synced offline).
+  capturedAt  DateTime?
+  lat         Float?
+  lng         Float?
+  accuracy    Float? // metres
+  createdAt   DateTime    @default(now())
+  parcel      Parcel      @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  file        StoredFile? @relation(fields: [fileId], references: [id])
+
+  @@map("delivery_proofs")
+}
+
+// ───────────────────────────── Money ─────────────────────────────
+
+enum CodState {
+  WITH_RIDER // collected from the recipient
+  AT_HUB // handed over by the rider
+  SETTLED // paid out to the merchant / sender
+}
+
+model CodCollection {
+  id           String              @id @default(uuid(7)) @db.Uuid
+  parcelId     String              @unique @db.Uuid
+  riderId      String              @db.Uuid
+  amount       Decimal             @db.Decimal(12, 2)
+  state        CodState            @default(WITH_RIDER)
+  collectedAt  DateTime            @default(now())
+  handoverId   String?             @db.Uuid
+  settlementId String?             @db.Uuid
+  parcel       Parcel              @relation(fields: [parcelId], references: [id])
+  rider        Rider               @relation(fields: [riderId], references: [id])
+  handover     CashHandover?       @relation(fields: [handoverId], references: [id])
+  settlement   MerchantSettlement? @relation(fields: [settlementId], references: [id])
+
+  @@index([riderId, state])
+  @@index([state])
+  @@map("cod_collections")
+}
+
+/// A rider handing collected COD cash to a hub.
+model CashHandover {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  riderId      String               @db.Uuid
+  hubId        String               @db.Uuid
+  amount       Decimal              @db.Decimal(12, 2)
+  receivedById String               @db.Uuid
+  note         String?
+  createdAt    DateTime             @default(now())
+  rider        Rider                @relation(fields: [riderId], references: [id])
+  hub          Hub                  @relation(fields: [hubId], references: [id])
+  collections  CodCollection[]
+  request      CashHandoverRequest?
+
+  @@map("cash_handovers")
+}
+
+enum SettlementStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+model MerchantSettlement {
+  id               String               @id @default(uuid(7)) @db.Uuid
+  number           String               @unique // ST-2610-0001
+  merchantId       String               @db.Uuid
+  codTotal         Decimal              @db.Decimal(12, 2)
+  chargesTotal     Decimal              @db.Decimal(12, 2)
+  netPayable       Decimal              @db.Decimal(12, 2)
+  status           SettlementStatus     @default(DRAFT)
+  approvedById     String?              @db.Uuid
+  paidAt           DateTime?
+  reference        String? // bank / bKash transaction reference
+  createdAt        DateTime             @default(now())
+  /// Maker (null with autoDrafted = drafted by the settlement schedule).
+  createdById      String?              @db.Uuid
+  autoDrafted      Boolean              @default(false)
+  paidById         String?              @db.Uuid
+  /// Open merchant adjustments applied (positive = deducted), and the shortfall carried to the next settlement.
+  adjustmentsTotal Decimal              @default(0) @db.Decimal(12, 2)
+  carriedForward   Decimal              @default(0) @db.Decimal(12, 2)
+  merchant         Merchant             @relation(fields: [merchantId], references: [id])
+  collections      CodCollection[]
+  adjustments      MerchantAdjustment[] @relation("AdjustmentAppliedIn")
+  statementLines   BankStatementLine[]
+
+  @@index([merchantId, createdAt])
+  @@map("merchant_settlements")
+}
+
+enum InvoiceStatus {
+  ISSUED
+  PAID
+  VOID
+}
+
+model Invoice {
+  id               String              @id @default(uuid(7)) @db.Uuid
+  number           String              @unique // INV-2610-0001
+  merchantId       String              @db.Uuid
+  periodStart      DateTime
+  periodEnd        DateTime
+  subtotal         Decimal             @db.Decimal(12, 2)
+  status           InvoiceStatus       @default(ISSUED)
+  lines            Json // [{trackingId, description, amount, taxableValue, vat}]
+  issuedAt         DateTime            @default(now())
+  dueAt            DateTime
+  paidAt           DateTime?
+  /// VAT (NBR): rate applied, VAT contained in subtotal (prices are VAT-inclusive), amount due.
+  vatRate          Decimal             @default(0) @db.Decimal(5, 2)
+  vatAmount        Decimal             @default(0) @db.Decimal(12, 2)
+  total            Decimal             @default(0) @db.Decimal(12, 2)
+  /// Seller identity printed on the invoice at issue time {name, bin, address}.
+  seller           Json?
+  createdById      String?             @db.Uuid
+  paymentReference String?
+  paidById         String?             @db.Uuid
+  merchant         Merchant            @relation(fields: [merchantId], references: [id])
+  statementLines   BankStatementLine[]
+
+  @@index([merchantId, issuedAt])
+  @@map("invoices")
+}
+
+// ───────────────────────────── Configuration ─────────────────────────────
+
+enum Segment {
+  CUSTOMER
+  ECOMMERCE
+  CORPORATE_DOCUMENT
+}
+
+/// Versioned pricing. The active card with the latest effectiveFrom wins.
+model RateCard {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  segment       Segment
+  name          String
+  /// Validated by rateCardConfigSchema in @delivery-fast/shared.
+  config        Json
+  active        Boolean  @default(true)
+  effectiveFrom DateTime @default(now())
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now())
+
+  @@index([segment, active, effectiveFrom])
+  @@map("rate_cards")
+}
+
+model ServicePlan {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  segment     Segment
+  name        String
+  monthlyFee  Decimal    @db.Decimal(12, 2)
+  discountPct Decimal    @default(0) @db.Decimal(5, 2)
+  features    String[]
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  merchants   Merchant[]
+
+  @@map("service_plans")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// ───────────────────────────── Support ─────────────────────────────
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_REQUESTER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model SupportTicket {
+  id                      String              @id @default(uuid(7)) @db.Uuid
+  number                  String              @unique // TK-260915-0007
+  requesterId             String              @db.Uuid
+  merchantId              String?             @db.Uuid
+  parcelId                String?             @db.Uuid
+  assigneeId              String?             @db.Uuid
+  category                String
+  subject                 String
+  status                  TicketStatus        @default(OPEN)
+  priority                TicketPriority      @default(NORMAL)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  resolvedAt              DateTime?
+  /// SLA (support settings): targets by priority; the resolution clock pauses while waiting for the requester.
+  firstResponseAt         DateTime?
+  firstResponseDueAt      DateTime?
+  resolutionDueAt         DateTime?
+  slaPausedAt             DateTime?
+  firstResponseBreachedAt DateTime?
+  resolutionBreachedAt    DateTime?
+  escalationLevel         Int                 @default(0)
+  requester               User                @relation("TicketRequester", fields: [requesterId], references: [id])
+  assignee                User?               @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  merchant                Merchant?           @relation(fields: [merchantId], references: [id])
+  parcel                  Parcel?             @relation(fields: [parcelId], references: [id])
+  messages                TicketMessage[]
+  survey                  TicketSurvey?
+  application             PartnerApplication?
+
+  @@index([requesterId, updatedAt])
+  @@index([status, updatedAt])
+  @@index([status, resolutionDueAt])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  ticketId    String        @db.Uuid
+  authorId    String?       @db.Uuid
+  authorLabel String
+  body        String
+  internal    Boolean       @default(false) // staff-only note
+  createdAt   DateTime      @default(now())
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  attachments StoredFile[]
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+// ───────────────────────────── Platform ─────────────────────────────
+
+model StoredFile {
+  id                   String                @id @default(uuid(7)) @db.Uuid
+  storageKey           String                @unique
+  filename             String
+  mimeType             String
+  sizeBytes            Int
+  sha256               String
+  uploadedById         String?               @db.Uuid
+  messageId            String?               @db.Uuid
+  /// Evidence attached to a finance dispute.
+  disputeId            String?               @db.Uuid
+  createdAt            DateTime              @default(now())
+  message              TicketMessage?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  dispute              Dispute?              @relation(fields: [disputeId], references: [id], onDelete: SetNull)
+  proofs               DeliveryProof[]
+  kycDocuments         RiderKycDocument[]
+  merchantKycDocuments MerchantKycDocument[]
+
+  @@map("stored_files")
+}
+
+enum OutboxChannel {
+  SMS
+  EMAIL
+}
+
+enum OutboxState {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// Outgoing SMS/email, written in the same transaction as the change that caused it.
+model OutboxMessage {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  channel           OutboxChannel
+  to                String
+  template          String
+  body              String
+  state             OutboxState   @default(PENDING)
+  attempts          Int           @default(0)
+  lastError         String?
+  sentAt            DateTime?
+  createdAt         DateTime      @default(now())
+  /// Email subject / HTML part (EMAIL channel)
+  subject           String?
+  html              String?
+  /// The user it was addressed to, when known
+  userId            String?       @db.Uuid
+  /// Rate limiting: not to be sent before this time
+  notBefore         DateTime?
+  provider          String?
+  providerMessageId String?
+  providerResponse  String?
+
+  @@index([state, createdAt])
+  @@map("outbox_messages")
+}
+
+enum ActorType {
+  USER
+  API_KEY
+  SYSTEM
+}
+
+model AuditLog {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  actorType  ActorType
+  actorId    String?
+  actorLabel String?
+  action     String // parcel.assign_rider, auth.login, api_key.create…
+  entityType String?
+  entityId   String?
+  data       Json?
+  ip         String?
+  requestId  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model IdempotencyRecord {
+  key          String
+  scope        String // merchant or user id
+  requestHash  String
+  statusCode   Int
+  responseBody Json
+  createdAt    DateTime @default(now())
+
+  @@id([scope, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}
+
+/// Atomic counters for human-readable numbers (tracking IDs, tickets, invoices).
+model Counter {
+  scope String @id // e.g. "PP-260915"
+  value Int    @default(0)
+
+  @@map("counters")
+}

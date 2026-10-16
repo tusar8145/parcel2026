@@ -1,0 +1,61 @@
+// Public website: guest bookings, delivery feedback and email verification.
+// Owned by the website area (modules/feedback, modules/geo, modules/parcels guest booking,
+// modules/auth/email-verification.*).
+
+/// SMS verification of a guest sender's phone before a booking without an account.
+model GuestVerification {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  phone      String // E.164
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  /// Set when the verification has been used for a booking (one booking per verification).
+  usedAt     DateTime?
+  parcelId   String?   @db.Uuid
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+  @@map("guest_verifications")
+}
+
+enum FeedbackSource {
+  TRACKING // signed-in owner on the tracking page
+  GUEST_LINK // guest booking link
+  SMS_LINK // feedback request SMS after delivery
+}
+
+/// The sender's rating of a delivered parcel (one per parcel).
+model ParcelFeedback {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  parcelId  String         @unique @db.Uuid
+  rating    Int // 1–5
+  comment   String?
+  source    FeedbackSource
+  userId    String?        @db.Uuid
+  createdAt DateTime       @default(now())
+  parcel    Parcel         @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([rating, createdAt])
+  @@map("parcel_feedback")
+}
+
+/// A verification link/code sent to a user's email address. The address counts as verified
+/// while the user's current email equals a verified row's email (changing it un-verifies).
+model EmailVerification {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @db.Uuid
+  email      String
+  tokenHash  String    @unique
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("email_verifications")
+}

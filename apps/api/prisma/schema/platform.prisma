@@ -1,0 +1,155 @@
+// ───────────────────────────── Platform administration and security ─────────────────────────────
+// Owned by the platform administration area (modules/auth MFA, modules/admin, modules/approvals,
+// modules/analytics, modules/pricing overrides).
+
+/// TOTP two-step verification (RFC 6238). Secrets are AES-256-GCM encrypted.
+model UserMfa {
+  userId                 String    @id @db.Uuid
+  /// Active secret (set once enrolment is confirmed).
+  secretEncrypted        String?
+  /// Secret being enrolled, until the first code confirms it.
+  pendingSecretEncrypted String?
+  pendingCreatedAt       DateTime?
+  enabledAt              DateTime?
+  /// Time step of the last accepted code: a code can't be replayed.
+  lastUsedStep           Int?
+  /// Wrong codes in a row; reaching the limit locks MFA sign-in for a while.
+  failedCount            Int       @default(0)
+  lockedUntil            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_mfa")
+}
+
+/// Single-use recovery codes (stored hashed).
+model MfaRecoveryCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @db.Uuid
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+/// A role defined by super admins: a base built-in role (panel access and merchant/hub scoping)
+/// with its own permission set. Granted through UserRole.customRoleId.
+model CustomRole {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  name        String     @unique
+  description String     @default("")
+  baseRole    Role
+  /// Permission keys from @delivery-fast/shared PERMISSIONS.
+  permissions String[]
+  active      Boolean    @default(true)
+  createdById String?    @db.Uuid
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  grants      UserRole[]
+
+  @@map("custom_roles")
+}
+
+/// Changes to a built-in role's permissions (base set + granted − revoked).
+model RolePermissionOverride {
+  role        Role     @id
+  granted     String[]
+  revoked     String[]
+  updatedById String?  @db.Uuid
+  updatedAt   DateTime @updatedAt
+
+  @@map("role_permission_overrides")
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+/// Maker-checker: a sensitive change waiting for a second super admin.
+model ChangeRequest {
+  id              String              @id @default(uuid(7)) @db.Uuid
+  /// rate_card.create, rate_card.deactivate, merchant_rate.set, role.permissions, custom_role.create…
+  kind            String
+  summary         String
+  payload         Json
+  status          ChangeRequestStatus @default(PENDING)
+  requestedById   String              @db.Uuid
+  requestedByName String
+  reviewedById    String?             @db.Uuid
+  reviewedByName  String?
+  reviewNote      String?
+  result          Json?
+  error           String?
+  expiresAt       DateTime
+  decidedAt       DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@index([status, createdAt])
+  @@map("change_requests")
+}
+
+/// Support access: a super admin viewing the platform as another user.
+model ImpersonationSession {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  adminUserId  String    @db.Uuid
+  adminName    String
+  targetUserId String    @db.Uuid
+  targetName   String
+  reason       String
+  readOnly     Boolean   @default(true)
+  notifiedUser Boolean   @default(false)
+  expiresAt    DateTime
+  endedAt      DateTime?
+  endedReason  String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  @@index([adminUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@map("impersonation_sessions")
+}
+
+/// A merchant's own tariff on top of its segment's rate card (partial rate card config).
+model MerchantRateOverride {
+  merchantId  String   @id @db.Uuid
+  /// Validated by rateCardOverrideSchema in @delivery-fast/shared.
+  config      Json
+  note        String?
+  updatedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_rate_overrides")
+}
+
+/// First-party analytics: counts per Dhaka day (no personal data).
+/// metric: pageview | visit | tracking_lookup; dimension: "" (total), "path:/x", "source:search".
+model AnalyticsDaily {
+  day       DateTime @db.Date
+  metric    String
+  dimension String   @default("")
+  count     Int      @default(0)
+
+  @@id([day, metric, dimension])
+  @@map("analytics_daily")
+}
+
+/// Hourly totals for the last-24-hours traffic chart (UTC hour start).
+model AnalyticsHourly {
+  hour   DateTime
+  metric String
+  count  Int      @default(0)
+
+  @@id([hour, metric])
+  @@map("analytics_hourly")
+}

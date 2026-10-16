@@ -1,0 +1,230 @@
+// ───────────────────────────── Merchant administration, KYC and merchant tools ─────────────────────────────
+// Owned by the merchants area (modules/merchants, modules/returns, modules/pickups).
+
+enum MerchantKycStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MerchantKycDocumentType {
+  TRADE_LICENSE
+  NID_FRONT
+  NID_BACK
+  TIN_BIN
+  PAYOUT_PROOF
+}
+
+/// One uploaded KYC document. A re-upload of the same type supersedes the previous one (kept for history).
+model MerchantKycDocument {
+  id           String                  @id @default(uuid(7)) @db.Uuid
+  merchantId   String                  @db.Uuid
+  type         MerchantKycDocumentType
+  fileId       String                  @db.Uuid
+  uploadedById String?                 @db.Uuid
+  supersededAt DateTime?
+  createdAt    DateTime                @default(now())
+  merchant     Merchant                @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  file         StoredFile              @relation(fields: [fileId], references: [id])
+
+  @@index([merchantId, type, createdAt])
+  @@map("merchant_kyc_documents")
+}
+
+enum MerchantNoteKind {
+  NOTE // internal account note by staff
+  INFO_REQUEST // staff asked the applicant for more information (visible to the merchant)
+  APPLICANT_RESPONSE // the applicant's answer (visible to staff and the merchant)
+  STATUS_CHANGE // approval, rejection, suspension… with the reason
+  KYC // KYC review decision
+}
+
+/// Account history: internal notes and the conversation with the applicant, with author and time.
+model MerchantNote {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  merchantId String           @db.Uuid
+  kind       MerchantNoteKind @default(NOTE)
+  body       String
+  /// Staff-only (internal notes); info requests and responses are shared with the merchant.
+  internal   Boolean          @default(true)
+  authorId   String?          @db.Uuid
+  authorName String
+  createdAt  DateTime         @default(now())
+  merchant   Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@map("merchant_notes")
+}
+
+/// An invitation for a business to sign up and apply as a merchant. Only a hash of the link token is stored.
+model MerchantInvite {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  name          String
+  businessName  String?
+  phone         String?
+  email         String?
+  type          MerchantType?
+  message       String?
+  tokenHash     String        @unique
+  invitedById   String?       @db.Uuid
+  invitedByName String
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  merchantId    String?       @db.Uuid
+  revokedAt     DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([createdAt])
+  @@map("merchant_invites")
+}
+
+/// Merchant product / document catalogue, used to prefill bookings.
+model Product {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  merchantId String   @db.Uuid
+  sku        String
+  name       String
+  category   String?
+  weightKg   Decimal? @db.Decimal(8, 2)
+  packaging  String?
+  price      Decimal  @default(0) @db.Decimal(12, 2)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, sku])
+  @@index([merchantId, name])
+  @@map("products")
+}
+
+enum BulkBookingStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// LEGACY, read-only: a bulk booking from the removed POST /parcels/bulk API (replaced by the import
+/// engine, ImportJob). Nothing reads or writes it any more; the table and its rows are kept until the
+/// owner decides on a cleanup (docs/architecture-contracts.md, "Spreadsheet imports").
+model BulkBooking {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  merchantId  String            @db.Uuid
+  status      BulkBookingStatus @default(QUEUED)
+  total       Int
+  created     Int               @default(0)
+  existing    Int               @default(0)
+  failed      Int               @default(0)
+  /// The submitted rows (input), kept until processed.
+  rows        Json
+  /// [{ index, status: "created"|"exists"|"failed", trackingId?, merchantOrderRef?, error? }]
+  results     Json?
+  /// Who submitted it, to act as them in the background: { kind, userId?, apiKeyId?, name }.
+  actor       Json
+  error       String?
+  createdAt   DateTime          @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  merchant    Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@map("bulk_bookings")
+}
+
+/// A recurring daily pickup: on the chosen weekdays a pickup request is generated for operations.
+model PickupSchedule {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  merchantId      String          @db.Uuid
+  name            String
+  /// Weekdays, 0 = Sunday … 6 = Saturday (Dhaka time).
+  days            Int[]
+  /// "HH:MM" (Dhaka time).
+  windowStart     String
+  windowEnd       String
+  street          String
+  area            String?
+  zone            String
+  district        String
+  contactName     String
+  contactPhone    String
+  expectedParcels Int             @default(1)
+  note            String?
+  active          Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  merchant        Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  requests        PickupRequest[]
+
+  @@index([merchantId])
+  @@map("pickup_schedules")
+}
+
+enum PickupRequestStatus {
+  REQUESTED
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+  MISSED
+}
+
+/// A pickup visit for operations (generated from a schedule, or requested once).
+model PickupRequest {
+  id              String              @id @default(uuid(7)) @db.Uuid
+  number          String              @unique // PR-261016-0001
+  merchantId      String              @db.Uuid
+  scheduleId      String?             @db.Uuid
+  /// Dhaka calendar day of the visit.
+  date            DateTime            @db.Date
+  windowStart     DateTime
+  windowEnd       DateTime
+  street          String
+  area            String?
+  zone            String
+  district        String
+  contactName     String
+  contactPhone    String
+  expectedParcels Int                 @default(1)
+  note            String?
+  status          PickupRequestStatus @default(REQUESTED)
+  riderId         String?             @db.Uuid
+  completedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  merchant        Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  schedule        PickupSchedule?     @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@unique([scheduleId, date])
+  @@index([date, status])
+  @@index([merchantId, date])
+  @@map("pickup_requests")
+}
+
+enum ReturnRunStatus {
+  PLANNED
+  OUT_FOR_RETURN
+  COMPLETED
+  CANCELLED
+}
+
+/// A return-to-merchant run: undeliverable parcels taken back to one merchant together.
+model ReturnRun {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  number       String          @unique // RR-261016-0001
+  merchantId   String          @db.Uuid
+  hubId        String?         @db.Uuid
+  riderId      String?         @db.Uuid
+  status       ReturnRunStatus @default(PLANNED)
+  note         String?
+  createdById  String?         @db.Uuid
+  createdAt    DateTime        @default(now())
+  dispatchedAt DateTime?
+  completedAt  DateTime?
+  merchant     Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  parcels      Parcel[]
+
+  @@index([merchantId, createdAt])
+  @@index([status, createdAt])
+  @@map("return_runs")
+}

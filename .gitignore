@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+apps/web/tests/visual/__diff__/
+.env
+.env.test
+.data/
+apps/api/src/generated/
+dist/
+.env.docker
+apps/api/prisma/.schema-lock/
+apps/web/public/vendor/

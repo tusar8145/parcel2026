@@ -48,6 +48,8 @@ import { RoutingModule } from "./modules/routing/routing.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { BulkUpdatesModule } from "./modules/bulk-updates/bulk-updates.module";
 import { PackagesModule } from "./modules/packages/packages.module";
+import { DocumentsModule } from "./modules/documents/documents.module";
+import { HubReconciliationModule } from "./modules/hub-reconciliation/hub-reconciliation.module";
 
 @Module({
   imports: [
@@ -106,6 +108,8 @@ import { PackagesModule } from "./modules/packages/packages.module";
     PickupsModule,
     ApprovalsModule,
     AnalyticsModule,
+    DocumentsModule,
+    HubReconciliationModule,
   ],
   controllers: [HealthController, EventsController],
   providers: [

@@ -194,7 +194,7 @@
   async function decideKyc(merchantId, decision) {
     const reason = $("dfmKycReason")?.value.trim() || "";
     if (decision === "REJECT" && reason.length < 5) return toast("Give the merchant a reason (at least 5 characters).");
-    if (decision === "APPROVE" && !confirm("Approve these business documents?")) return;
+    if (decision === "APPROVE" && !(await DF.confirm({ title: "Approve these business documents?", message: "The merchant is notified.", confirm: "Approve documents" }))) return;
     try {
       await DF.api(`/merchants/${merchantId}/kyc/review`, { method: "POST", body: decision === "APPROVE" ? { decision } : { decision, reason } });
       await openKyc(merchantId);
@@ -313,8 +313,8 @@
       }
       if ((el = hit("[data-dfm-revoke-invite]"))) {
         stop(event);
-        if (!confirm("Revoke this invitation? The link stops working.")) return;
-        return void DF.api(`/merchants/invites/${el.dataset.dfmRevokeInvite}`, { method: "DELETE" }).then(openInvites, fail);
+        const inviteId = el.dataset.dfmRevokeInvite;
+        return void DF.confirm({ title: "Revoke this invitation?", message: "The link stops working.", confirm: "Revoke", danger: true }).then(ok => ok && DF.api(`/merchants/invites/${inviteId}`, { method: "DELETE" }).then(openInvites, fail));
       }
       if ((el = hit("[data-dfm-copy]"))) {
         stop(event);

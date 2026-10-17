@@ -162,10 +162,12 @@
       if (edit) return scheduleDialog(edit.dataset.shiftEdit);
       if (fix) return correctDialog(fix.dataset.attendanceFix);
       if (end) {
-        if (!confirm("End this shift schedule from today? Past attendance is kept.")) return;
-        return void DF.api(`/shifts/schedules/${end.dataset.shiftEnd}`, { method: "PATCH", body: { active: false } })
-          .then(() => (closeModal(), invalidate(), showToast("Shift schedule ended.")))
-          .catch(error => showToast(DF.describe(error)));
+        return void Ops.confirm({ title: "End this shift schedule?", message: "It ends from today. Past attendance is kept.", confirm: "End schedule", danger: true }).then(ok => {
+          if (!ok) return;
+          DF.api(`/shifts/schedules/${end.dataset.shiftEnd}`, { method: "PATCH", body: { active: false } })
+            .then(() => (closeModal(), invalidate(), showToast("Shift schedule ended.")))
+            .catch(error => showToast(DF.describe(error)));
+        });
       }
       const r = Ops.cache[reportKey()]?.value;
       if (!r) return void showToast("The report is still loading.");

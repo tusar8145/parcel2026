@@ -17,6 +17,8 @@ export interface OutboxInput {
   subject?: string | null;
   html?: string | null;
   userId?: string | null;
+  /** The parcel the message is about (the parcel's message log: GET /parcels/:trackingId/messages). */
+  trackingId?: string | null;
 }
 
 const LOCK_MS = 90_000;
@@ -42,7 +44,7 @@ export class OutboxService {
   /** Used by NotifyService only: other modules send through NotifyService (templates, switches, preferences). */
   async queue(db: Db, input: OutboxInput): Promise<string> {
     const message = await db.outboxMessage.create({
-      data: { channel: input.channel, to: input.to, template: input.template, body: input.body, subject: input.subject ?? null, html: input.html ?? null, userId: input.userId ?? null },
+      data: { channel: input.channel, to: input.to, template: input.template, body: input.body, subject: input.subject ?? null, html: input.html ?? null, userId: input.userId ?? null, trackingId: input.trackingId ?? null },
     });
     return message.id;
   }

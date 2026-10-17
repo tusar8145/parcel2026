@@ -3,10 +3,13 @@
  *
  * Each page keeps its original markup; Ops.prepare[page] puts real rows into the page's
  * data before it renders and Ops.enhance[page] replaces sample figures afterwards.
- *   Overview, Shipments, Exceptions, service lines  GET /ops/overview + the shipment register
- *   Dispatch & routes                               GET /ops/dispatch
+ *   Overview, Shipments, Exceptions, service lines  GET /ops/overview, GET /ops/stage-counts (the tables: bridge-lists.js)
+ *   Dispatch & routes                               GET /ops/dispatch + stage counts (Pickup / Delivery metrics)
  *   Riders & fleet (report, run sheets)             GET /ops/rider-report
- *   Hubs & zones (scan, receive, transfer, setup)   POST /parcels/:id/status, /hubs, GET /ops/transfers
+ *   Hubs & zones                                    only the parts of the tab on screen (Ops.hubPart): receive
+ *                                                   desk (bridge-intake.js), At my hub (bridge-nav.js), counter
+ *                                                   (bridge-collect.js), register / zones / routes (bridge-hubs.js,
+ *                                                   bridge-network.js)
  *   Merchant accounts                               GET /ops/merchants
  *   COD & finance                                   bridge-finance.js
  *   Analytics & SLA                                 GET /ops/analytics
@@ -22,7 +25,6 @@
   const esc = Ops.esc;
   const setText = (el, text) => el && (el.textContent = text);
   const pct = v => (v == null ? "—" : `${v}%`);
-  const CLOSED = ["Delivered", "Pickup cancelled", "Returned"];
   const longDate = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const panelTitled = title => qa("#mainContent .panel").find(p => q(".panel-title", p)?.textContent === title);
   const setMetrics = items => {
@@ -67,24 +69,6 @@
       ["Active riders", Ops.num(o.riders.online), "users", `of ${Ops.num(o.riders.total)} riders`, "on shift now"],
       ["Open exceptions", Ops.num(s.exceptions), "alert", `${Ops.num(s.atRisk)} SLA at risk`, "needs attention"],
     ]);
-    const lines = [
-      ["ecommerce", "active shipments"],
-      ["documents", "active shipments"],
-      ["customer", "active customer requests"],
-    ];
-    qa("#mainContent .service-card").forEach((card, i) => {
-      const [key, label] = lines[i] || [];
-      if (!key) return;
-      setText(q(".service-card-bottom strong", card), Ops.num(o.serviceLines[key]));
-      setText(q(".service-card-bottom div span", card), label);
-    });
-    const summary = qa("#mainContent .network-summary strong");
-    [s.createdToday, s.deliveredToday, s.exceptions].forEach((v, i) => setText(summary[i], Ops.num(v)));
-    setText(q("#mainContent .progress-label strong"), pct(o.onTime.monthRate));
-    const fill = q("#mainContent .progress-fill");
-    if (fill) fill.style.width = `${o.onTime.monthRate ?? 0}%`;
-    const rows = qa("#mainContent .dispatch-row strong");
-    [s.atHub + s.inTransit, s.deliveredToday, s.outForDelivery, s.exceptions].forEach((v, i) => setText(rows[i], Ops.num(v)));
     mapTag();
 
     const list = q("#mainContent .alert-list");
@@ -108,73 +92,69 @@
   Ops.enhance.Shipments = () => {
     const s = Ops.overview?.shipments;
     if (s) qa("#mainContent .stats-mini .mini-card strong").forEach((el, i) => setText(el, Ops.num([s.inTransit + s.outForDelivery, s.atHub, s.exceptions][i])));
-    setText(q("#mainContent .table-panel .panel-subtitle"), "Live register · newest active parcels and the last 7 days · search and filters reach every parcel");
-    setText(q("#mainContent .shipment-count"), `Showing ${Ops.num(shipments.length)} shipments · updates live`);
-    Ops.pagingFooter?.();
+    setText(q("#mainContent .table-panel .panel-subtitle"), "Every parcel, newest first · 100 a page · search and filters run on the server");
   };
 
+  // Problems: the stage's own numbers (GET /ops/stage-counts), the same on every tab.
   Ops.enhance.Exceptions = () => {
-    const s = Ops.overview?.shipments;
-    if (s) qa("#mainContent .stats-mini .mini-card strong").forEach((el, i) => setText(el, Ops.num([s.exceptions, s.atRisk, s.unassigned][i])));
+    const cards = qa("#mainContent .stats-mini .mini-card");
+    [
+      ["Open exceptions", "detail.exceptions"],
+      ["SLA at risk", "detail.slaRisk"],
+      ["Awaiting action", "stages.problems"],
+    ].forEach(([label, key], i) => {
+      if (!cards[i]) return;
+      setText(q("span", cards[i]), label);
+      const strong = q("strong", cards[i]);
+      if (strong) strong.innerHTML = Ops.countSpan(key);
+    });
+    if (cards[2]) cards[2].title = "Exceptions, failed deliveries and orders with details missing";
   };
 
+  // Service-line tabs of All parcels: the table is the register; the active count is the line's.
   function enhanceServiceLine(page) {
-    const category = page === "Customer parcels" ? "Customer parcels" : page === "E-commerce operations" ? "E-commerce" : "Documents";
-    const data = shipments.filter(s => serviceCategory(s) === category);
-    const open = data.filter(s => !CLOSED.includes(s.status));
-    setMetrics([
-      ["Active shipments", Ops.num(open.length), "box", "this service line", "open now"],
-      ["In progress", Ops.num(open.filter(s => s.status !== "Exception").length), "truck", "pending confirmation or delivery", "active"],
-      ["Delivered", Ops.num(data.filter(s => s.status === "Delivered").length), "check", "completed stops", "last 7 days"],
-      ["Needs attention", Ops.num(open.filter(s => s.status === "Exception" || s.sla === "At risk" || s.rider === "Unassigned").length), "alert", "unassigned, SLA, or exception", "operations queue"],
-    ]);
-    setText(q("#mainContent .table-panel .panel-subtitle"), "Dedicated queue · live data from the shared fleet, hubs and tracking platform");
-    const label = category === "Customer parcels" ? "customer parcels" : `${category.toLowerCase()} shipments`;
-    setText(q("#mainContent .shipment-count"), `Showing ${Ops.num(data.length)} ${label} · newest active and the last 7 days`);
-    Ops.pagingFooter?.();
+    const key = page === "Customer parcels" ? "customer" : page === "E-commerce operations" ? "ecommerce" : "documents";
+    q("#mainContent .metrics")?.remove();
+    const active = Ops.overview?.serviceLines?.[key];
+    setText(q("#mainContent .table-panel .panel-subtitle"), `${active == null ? "" : `${Ops.num(active)} active · `}newest first · 100 a page · search and filters run on the server`);
   }
   for (const page of ["Customer parcels", "E-commerce operations", "Banking & Financial operations"]) Ops.enhance[page] = enhanceServiceLine;
 
   // ───────────── dispatch & routes ─────────────
 
   const loadDispatch = () => (Ops.can("readRiders") ? Ops.lazy("dispatch", () => DF.api("/ops/dispatch"), 20000) : null);
-  const RANK = { "At risk": 0, "Assign now": 1, "Awaiting review": 2 };
 
+  // Pickup and Delivery (bridge-nav.js tabs): the stage's own numbers first, then rider capacity.
   Ops.enhance.Dispatch = () => {
     mapTag();
     const d = loadDispatch();
-    if (d) {
-      setMetrics([
-        ["Unassigned shipments", Ops.num(d.unassigned.total), "box", `${Ops.num(d.unassigned.urgent)} urgent`, d.unassigned.readyAtHub ? `${Ops.num(d.unassigned.readyAtHub)} ready at hub` : "pickup requests"],
-        ["Riders available", Ops.num(d.riders.available), "users", `${Ops.num(d.riders.onShift)} on shift`, `of ${Ops.num(d.riders.total)} riders`],
-        ["Routes active", Ops.num(d.routesActive), "route", `${Ops.num(d.routesNeedReview)} need review`, Ops.me?.hubIds ? "your hub" : "network wide"],
-        ["Avg. stops / rider", String(d.avgStopsPerRoute), "truck", "assigned today", "per active route"],
-      ]);
-    } else setMetrics([["Unassigned shipments", Ops.num(Ops.overview?.shipments.unassigned), "box", "waiting for a rider", "network wide"]]);
+    const pickup = Ops.tabMode === "pickup";
+    const stage = pickup
+      ? [
+          ["Waiting for a pickup rider", "detail.pickupWaiting", "box", "accepted orders", "need a rider"],
+          ["Being picked up", "detail.pickingUp", "truck", "with pickup riders", "on the way to the hub"],
+        ]
+      : [
+          ["Waiting for a delivery rider", "detail.deliveryWaiting", "box", "at the hub", Ops.scope?.hubIds() ? "your hub" : "network wide"],
+          ["Out with delivery riders", "detail.delivery", "truck", "assigned or out", "for delivery"],
+        ];
+    setMetrics([
+      ...stage.map(([label, key, ico, trend, note]) => [label, Ops.countSpan(key), ico, trend, note]),
+      ...(d
+        ? [
+            ["Riders available", Ops.num(d.riders.available), "users", `${Ops.num(d.riders.onShift)} on shift`, `of ${Ops.num(d.riders.total)} riders`],
+            pickup
+              ? ["Avg. stops / rider", String(d.avgStopsPerRoute), "route", "assigned today", "per active route"]
+              : ["Routes active", Ops.num(d.routesActive), "route", `${Ops.num(d.routesNeedReview)} need review`, Ops.me?.hubIds ? "your hub" : "network wide"],
+          ]
+        : []),
+    ]);
 
-    const queue = panelTitled("Assignment queue");
-    if (queue) {
-      const waiting = shipments
-        .filter(s => s.rider === "Unassigned" && !CLOSED.includes(s.status) && (!s._api.currentHub || Ops.inMyHubs(s._api.currentHub.id)))
-        // Pickup and Delivery (bridge-nav.js) each show their half of the queue.
-        .filter(s => !Ops.dispatchQueueFilter || Ops.dispatchQueueFilter(s._api))
-        .sort((a, b) => (RANK[a.sla] ?? 3) - (RANK[b.sla] ?? 3) || String(a._api.createdAt).localeCompare(String(b._api.createdAt)));
-      const shown = waiting.slice(0, 8);
-      const list = q(".alert-list", queue);
-      if (list)
-        list.innerHTML =
-          shown
-            .map(
-              s =>
-                `<div class="alert-item"><span class="alert-icon">${icon("box")}</span><div class="alert-copy"><strong>${esc(s.id)} · ${esc(s.service)}</strong>${esc(s.destination)}<small>${esc(`${s.merchant} · ${s.status}${s.hub ? ` · ${s.hub}` : ""} · ${s.created}`)}</small></div><button class="button button-sm alert-action" data-assign-shipment="${esc(s.id)}">Assign</button></div>`,
-            )
-            .join("") +
-            (waiting.length > shown.length
-              ? `<div class="alert-item"><span class="alert-icon">${icon("box")}</span><div class="alert-copy"><strong>${waiting.length - shown.length} additional shipments</strong>Awaiting rider allocation.<small>Oldest and most urgent are listed first</small></div><button class="button button-sm alert-action" data-action="assign">Assign</button></div>`
-              : "") || `<div class="empty-state">Every shipment has a rider.</div>`;
-      setText(q(".panel-heading .status", queue), `${Ops.num(waiting.length)} unassigned`);
-    }
-
+    // "Rebalance routes" only reloaded the figures: it is "Refresh".
+    const refresh = q('#mainContent [data-toast="Route plan refreshed."]');
+    if (refresh) refresh.textContent = "↻ Refresh";
+    // The route roster (rider workloads) belongs to Delivery; Pickup shows the pickup tables only.
+    if (pickup) panelTitled("Active route roster")?.remove();
     const roster = q("tbody", panelTitled("Active route roster") || document.createElement("div"));
     if (roster) {
       const error = Ops.lazyError("dispatch");
@@ -190,7 +170,7 @@
               .join("") || `<tr><td colspan="6" class="empty-state">No riders at your hub yet.</td></tr>`;
     }
   };
-  refreshButton("Route plan refreshed.", "Dispatch data refreshed. Rebalance by reassigning shipments to available riders.");
+  refreshButton("Route plan refreshed.", "Rider workloads and stage figures refreshed.");
 
   // ───────────── riders & fleet ─────────────
 
@@ -230,27 +210,19 @@
     return riderReportState.rider ? rows.filter(r => r.id === riderReportState.rider) : rows;
   };
 
+  // Run sheet: a PDF of the rider's assigned work for the day (GET /documents/run-sheet/:rider), keyed on
+  // today's assignments rather than the report's pickup dates, in route order with COD and signatures.
   printRiderRunSheet = function (riderId) {
-    const rider = riderReportData().find(r => r.id === riderId);
-    if (!rider) return void showToast("This rider is not available in the report.");
-    if (!rider.records.length) return void showToast("No assigned shipments are available for this rider and date range.");
-    const popup = window.open("", "_blank");
-    if (!popup) return void showToast("Allow pop-ups to open the rider run sheet.");
-    const cod = rider.records.reduce((n, p) => n + (p.status === "Delivered" ? 0 : Number(p.codAmount) || 0), 0);
-    const rows = rider.records
-      .map(
-        s =>
-          `<tr><td>${esc(s.id)}</td><td>${esc(s.merchant || "—")}</td><td>${esc(s.recipient || "—")}</td><td>${esc(s.destination || "—")}</td><td>${esc(s.service || "—")}</td><td>${Number(s.codAmount) ? `৳ ${Number(s.codAmount).toLocaleString("en-BD")}` : "Prepaid"}</td><td>${esc(s.status)}</td></tr>`,
-      )
-      .join("");
-    const range = `${riderReportState.from}${riderReportState.to !== riderReportState.from ? ` to ${riderReportState.to}` : ""}`;
-    popup.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>Run sheet · ${esc(riderId)}</title><style>@page{size:A4 landscape;margin:12mm}body{font:12px Arial,sans-serif;color:#182230}h1{margin:0 0 6px}p{color:#647184;margin:4px 0 16px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #dfe4eb;padding:8px;text-align:left}th{background:#f5f7fa;font-size:10px}.sign{display:flex;justify-content:space-between;margin-top:38px}.sign span{border-top:1px solid #687384;padding-top:6px;width:40%}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body><h1>Delivery Fast · Rider run sheet</h1><p>Rider: ${esc(riderId)} · ${esc(rider.name)} &nbsp; | &nbsp; Zone: ${esc(rider.zone)} &nbsp; | &nbsp; Date: ${esc(range)} &nbsp; | &nbsp; Shipments: ${rider.records.length} &nbsp; | &nbsp; COD to collect: ৳ ${cod.toLocaleString("en-BD")}</p><table><thead><tr><th>PARCEL / ORDER / SHIPMENT</th><th>SENDER / MERCHANT</th><th>RECIPIENT</th><th>DESTINATION</th><th>SERVICE</th><th>COD</th><th>STATUS</th></tr></thead><tbody>${rows}</tbody></table><div class="sign"><span>Rider signature</span><span>Dispatch handover</span></div><script>window.onload=()=>window.print();window.onafterprint=()=>window.close()<\/script></body></html>`,
-    );
-    popup.document.close();
+    const day = riderReportState.to && riderReportState.to <= Ops.dayKey(new Date()) ? riderReportState.to : Ops.dayKey(new Date());
+    return Ops.printPdf(`/documents/run-sheet/${encodeURIComponent(riderId)}?date=${day}`, { title: "Preparing the run sheet…" });
   };
 
   Ops.enhance.Riders = () => {
+    for (const button of document.querySelectorAll("#mainContent [data-run-sheet]")) {
+      button.disabled = false;
+      button.textContent = "Run sheet (PDF)";
+      button.title = "Today's assigned deliveries and pickups for this rider, in route order, with COD and signature lines";
+    }
     const error = Ops.lazyError(reportKey());
     if (!Ops.can("readRiders") || error) {
       const body = q("#mainContent tbody");
@@ -259,237 +231,40 @@
   };
 
   // ───────────── hubs & zones ─────────────
+  // The page is one heading; each tab adds only its own part (Ops.hubPart, set by bridge-nav.js):
+  // the receive desk, the counter, "At my hub", or the register, zones and routes. The old scan form,
+  // manual receive form, hub-to-hub transfer form, transfer report and network setup are gone: the
+  // receive desk handles every arrival and transfers go through bags and manifests (Transfers).
 
-  const transfersRange = () => `from=${Ops.dayKey(new Date(Date.now() - 89 * 86400000))}&to=${Ops.dayKey()}`;
-  /** API instant → local "YYYY-MM-DDTHH:mm:ss" so the page's date filter compares local days. */
-  const localStamp = iso => {
-    const d = new Date(iso);
-    return `${Ops.dayKey(iso)}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
-  };
-  let hubFeedback = null;
-  let refocusScan = false;
-
-  Ops.prepare.Hubs = () => {
-    hubList.splice(0, hubList.length, ...DF.state.hubs.map(h => h.name));
-    const catalog = Ops.catalog;
-    if (catalog) zoneList.splice(0, zoneList.length, ...catalog.districts.map(d => `${d}${catalog.zonesByDistrict[d]?.length ? ` (${catalog.zonesByDistrict[d].join(", ")})` : ""}`));
-    routeList.splice(0, routeList.length, "Planned per rider in Dispatch & routes");
-    const transfers = Ops.lazy("transfers", () => DF.api(`/ops/transfers?${transfersRange()}`), 30000) || [];
-    hubTransferEvents.splice(
-      0,
-      hubTransferEvents.length,
-      ...transfers.map(t => ({ trackingId: t.trackingId, fromHub: t.fromHub, toHub: t.toHub, date: localStamp(t.at), rider: t.rider || t.by || "—", status: t.status })),
-    );
-  };
-
-  // Hub operators see the parcels held at (or heading to) their own hub.
-  const baseHubPage = hubOperationsPage;
+  Ops.hubPart = Ops.hubPart || null;
   hubOperationsPage = function () {
-    const hubs = Ops.me?.hubIds;
-    if (!hubs) return baseHubPage();
-    const all = shipments.splice(0, shipments.length);
-    shipments.push(...all.filter(s => s._api && s._api.currentHub && hubs.includes(s._api.currentHub.id)));
-    try {
-      return baseHubPage();
-    } finally {
-      shipments.splice(0, shipments.length, ...all);
-    }
+    const manage = Ops.hubPart === "manage";
+    return `<div class="page-heading"><div><p class="eyebrow">${manage ? "Network setup · hubs, zones and routes" : "Hub operations · parcels at the hub"}</p><h1>Hub operations</h1><p class="subtitle">${manage ? "Hub register (with capacity), delivery zones and routes." : "Receive arrivals, work the parcels at your hub and hand parcels to receivers."}</p></div><div class="heading-actions"></div></div>`;
   };
-
-  Ops.enhance.Hubs = () => {
-    const mine = Ops.myHubs();
-    if (mine?.length) {
-      const options = mine.map(h => `<option>${esc(h.name)}</option>`).join("");
-      for (const select of [$("hubScanLocation"), q('#hubReceiveForm select[name="hub"]')]) if (select) select.innerHTML = options;
-    }
-    if (hubFeedback) setText($("hubScanFeedback"), hubFeedback);
-    if (refocusScan) {
-      refocusScan = false;
-      $("hubScanId")?.focus();
-    }
-  };
-
-  /** A parcel by tracking ID: from the register, else from the API (staff see every parcel). */
-  async function findParcel(id) {
-    if (!id) return null;
-    const known = Ops.apiParcel(id);
-    if (known) return known;
-    try {
-      const parcel = await DF.api(`/parcels/${encodeURIComponent(id)}`);
-      Ops.extra.set(parcel.trackingId, parcel);
-      return parcel;
-    } catch (error) {
-      if (error.status === 404) return null;
-      throw error;
-    }
-  }
-  const lineOf = p => (!p.merchant ? "Customer parcels" : p.merchant.type === "BANKING_FINANCIAL" ? "Documents" : "E-commerce");
-  const onHubsPage = () => !!q('[data-page="Hubs"].active');
-
-  async function hubScan() {
-    const id = $("hubScanId").value.trim().toUpperCase();
-    const eventName = $("hubScanEvent").value;
-    const hub = Ops.hubByName($("hubScanLocation").value);
-    const feedback = text => {
-      hubFeedback = text;
-      setText($("hubScanFeedback"), text);
-    };
-    const parcel = await findParcel(id);
-    if (!parcel) return feedback(`No shipment found for ${id || "that barcode"}.`);
-    if (!Ops.require("dispatch", "record hub scans")) return;
-    if (!hub) return feedback("Choose the hub where you are scanning.");
-    // Every scan is recorded for scan compliance (camera or keyboard / USB scanner).
-    const SCAN_KIND = { "Received at hub": "HUB_RECEIVE", "Returned to hub": "HUB_RETURN", "Ready for dispatch": "HUB_SORT", "Out for delivery": "HUB_DISPATCH" };
-    // Drop-off receipts record their scan with the status change (POST /ops/hub-receive).
-    if (SCAN_KIND[eventName] && !(Ops.awaitingDropOff?.(parcel) && SCAN_KIND[eventName] !== "HUB_DISPATCH")) Ops.recordScan?.(parcel.trackingId, SCAN_KIND[eventName], hub.id, Ops.scanSource || "KEYBOARD");
-    const scanSource = Ops.scanSource;
-    Ops.scanSource = "KEYBOARD";
-    const atThisHub = parcel.status === "AT_HUB" && parcel.currentHub?.id === hub.id;
-    if (Ops.awaitingDropOff?.(parcel) && /^(Received at hub|Ready for dispatch)$/.test(eventName)) {
-      refocusScan = true;
-      return receiveDropOff(parcel, hub, scanSource || "KEYBOARD").then(feedback);
-    }
-    const done = text => () => {
-      feedback(text);
-      refocusScan = true;
-      return text;
-    };
-    switch (eventName) {
-      case "Received at hub":
-      case "Returned to hub":
-        if (atThisHub) return feedback(`${id} is already at ${hub.name}.`);
-        return Ops.setStatus(id, { status: "AT_HUB", hubId: hub.id, note: eventName === "Returned to hub" ? "Returned to hub (hub scan)" : undefined }, done(`${id}: ${eventName.toLowerCase()} at ${hub.name}.`));
-      case "Ready for dispatch":
-        if (atThisHub) return Ops.act(DF.api(`/parcels/${encodeURIComponent(id)}/notes`, { method: "POST", body: { note: `Sorted and ready for dispatch at ${hub.name}` } }), done(`${id}: ready for dispatch at ${hub.name}.`));
-        return Ops.setStatus(id, { status: "AT_HUB", hubId: hub.id, note: "Sorted and ready for dispatch" }, done(`${id}: received and ready for dispatch at ${hub.name}.`));
-      case "Out for delivery":
-        return Ops.setStatus(id, { status: "OUT_FOR_DELIVERY" }, done(`${id}: out for delivery with ${parcel.deliveryRider?.label || "its rider"}.`));
-      case "Failed delivery":
-        return Ops.setStatus(id, { status: "EXCEPTION", note: `Failed delivery reported at ${hub.name}` }, done(`${id}: failed delivery sent to the exception queue.`));
-      case "Delivered":
-        return feedback("Only the delivering rider can confirm delivery, with the recipient's code, signature or photo.");
-    }
-  }
-
-  /** Receives a drop-off at its declared hub; returns the text to show. */
-  async function receiveDropOff(parcel, hub, source = "KEYBOARD") {
-    const result = await DF.api("/ops/hub-receive", { method: "POST", body: { code: parcel.trackingId, hubId: hub.id, source } });
-    await Ops.refresh().catch(() => undefined);
-    return result.message;
-  }
-
-  async function hubReceive(form) {
-    const f = new FormData(form);
-    const id = String(f.get("tracking")).trim().toUpperCase();
-    const hub = Ops.hubByName(f.get("hub"));
-    const line = String(f.get("line"));
-    const parcel = await findParcel(id);
-    if (!parcel) return showToast(`${id} isn't booked yet. Book it under ${line === "Customer parcels" ? "the website" : `${line} operations`} first, then receive it here.`);
-    if (!Ops.require("dispatch", "receive parcels")) return;
-    if (!hub) return showToast("Choose the receiving hub.");
-    const mismatches = [];
-    if (lineOf(parcel) !== line) mismatches.push(`service line is ${lineOf(parcel)}`);
-    const sender = String(f.get("sender")).trim().toLowerCase();
-    if (sender && ![parcel.merchant?.name, parcel.sender.name].some(n => n && n.toLowerCase().includes(sender))) mismatches.push(`sender is ${parcel.merchant?.name || parcel.sender.name}`);
-    const recipient = String(f.get("recipient")).trim().toLowerCase();
-    if (recipient && !(parcel.recipient.name || "").toLowerCase().includes(recipient)) mismatches.push(`recipient is ${parcel.recipient.name}`);
-    if (mismatches.length && !confirm(`Check the label of ${id}: its ${mismatches.join(" and ")}. Receive it anyway?`)) return;
-    if (Ops.awaitingDropOff?.(parcel)) return showToast(await receiveDropOff(parcel, hub, "MANUAL"));
-    Ops.recordScan?.(parcel.trackingId, "HUB_RECEIVE", hub.id);
-    if (parcel.status === "AT_HUB" && parcel.currentHub?.id === hub.id) return showToast(`${id} is already at ${hub.name}.`);
-    await Ops.setStatus(id, { status: "AT_HUB", hubId: hub.id }, `${id} received at ${hub.name}.`);
-  }
-
-  async function hubTransfer(form) {
-    const f = new FormData(form);
-    const id = String(f.get("tracking")).trim().toUpperCase();
-    const to = Ops.hubByName(f.get("hub"));
-    const parcel = await findParcel(id);
-    if (!parcel) return showToast(`No shipment found for ${id}.`);
-    if (!Ops.require("dispatch", "transfer parcels")) return;
-    if (!to) return showToast("Choose the destination hub.");
-    if (parcel.currentHub?.id === to.id) return showToast("Choose a different destination hub to record a transfer.");
-    const from = parcel.currentHub?.name || "Origin hub not recorded";
-    Ops.recordScan?.(parcel.trackingId, "HUB_DISPATCH", parcel.currentHub?.id);
-    Ops.invalidate("transfers");
-    await Ops.setStatus(id, { status: "IN_TRANSIT", hubId: to.id }, `${id} transfer from ${from} to ${to.name} recorded.`);
-  }
-
-  async function addToNetwork(form) {
-    const f = new FormData(form);
-    const kind = String(f.get("kind"));
-    const name = String(f.get("name")).trim();
-    // Zones and routes are real configuration (bridge-network.js dialogs, /zones and /routes).
-    if (kind === "zone" || kind === "route") return void openModal(kind === "zone" ? "zoneConfig" : "routeConfig", name);
-    // Hubs: the dialog in bridge-network.js (district → zone, address).
-    openModal("hubCreate", name);
-  }
-
-  window.addEventListener(
-    "submit",
-    event => {
-      const form = event.target;
-      const handlers = { hubScanForm: hubScan, hubReceiveForm: hubReceive, hubTransferForm: hubTransfer, hubConfigForm: addToNetwork };
-      if (!onHubsPage() || !handlers[form.id]) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      Promise.resolve(handlers[form.id](form)).catch(error => showToast(DF.describe(error)));
-    },
-    true,
-  );
-
-  window.addEventListener(
-    "click",
-    event => {
-      if (!onHubsPage()) return;
-      const lookup = event.target.closest("[data-hub-lookup]");
-      if (lookup) {
-        event.stopImmediatePropagation();
-        const id = $("hubScanId").value.trim().toUpperCase();
-        findParcel(id)
-          .then(p => {
-            if (p) Ops.recordScan?.(p.trackingId, "HUB_LOOKUP", Ops.hubByName($("hubScanLocation")?.value)?.id, Ops.scanSource || "KEYBOARD");
-            hubFeedback = p
-              ? `${p.trackingId} · ${p.statusLabel} · ${p.currentHub?.name || "Not at a hub"} · Rider: ${p.deliveryRider?.label || p.pickupRider?.label || "Unassigned"} · ${p.recipient.name}, ${p.delivery.zone}`
-              : `No shipment found for ${id || "that barcode"}.`;
-            setText($("hubScanFeedback"), hubFeedback);
-          })
-          .catch(error => showToast(DF.describe(error)));
-        return;
-      }
-      const assign = event.target.closest("[data-hub-assign]");
-      if (assign) {
-        event.stopImmediatePropagation();
-        openModal("assign", assign.dataset.hubAssign);
-      }
-    },
-    true,
-  );
-
-  window.addEventListener(
-    "change",
-    event => {
-      const select = event.target.closest?.("[data-hub-status]");
-      if (!select || !Ops.apiParcel(select.dataset.hubStatus)) return;
-      event.stopImmediatePropagation();
-      Ops.changeStatus(select.dataset.hubStatus, select.value, select);
-    },
-    true,
-  );
 
   // ───────────── merchant accounts ─────────────
 
   const MERCHANT_STATUS = { ACTIVE: "Active", PENDING_REVIEW: "Review", SUSPENDED: "Suspended" };
   const loadMerchants = () => Ops.lazy("merchants", () => DF.api("/ops/merchants"), 60000);
+  // The COD cycle is the merchant's real settlement schedule (finance); other roles don't see the column.
+  const CYCLE = { MANUAL: "Manual", DAILY: "Daily", WEEKLY: "Weekly", BIWEEKLY: "Every two weeks" };
+  const loadSchedules = () => (Ops.can("financeStaff") ? Ops.lazy("fin-schedules", () => DF.api("/finance/settlement-schedules"), 60000) : null);
   Ops.prepare.Merchants = () => {
+    const schedules = loadSchedules();
+    const showCycle = Ops.can("financeStaff");
     // Service packages replaced service plans: the column shows the package each merchant books with.
-    genericPages.Merchants.cols[2] = "PACKAGE";
+    genericPages.Merchants.cols = ["MERCHANT", "ACCOUNT ID", "PACKAGE", "SHIPMENTS MTD", ...(showCycle ? ["COD CYCLE"] : []), "ACCOUNT OWNER", "STATUS"];
+    const cycleOf = m => {
+      if (!schedules) return Ops.lazyError("fin-schedules") ? "—" : "…";
+      const s = schedules.find(x => x.merchant.id === m.id);
+      return s ? `${CYCLE[s.cycle] || s.cycle}${s.weekdayLabel ? ` · ${s.weekdayLabel}` : ""}` : "Manual";
+    };
     genericPages.Merchants.rows = (loadMerchants() || []).map(m => [
       `${m.name} · ${m.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`,
       m.code,
       m.package ? `${m.package.name}${m.package.isDefault ? " (default)" : ""}` : "Default package",
       Ops.num(m.parcelsThisMonth),
-      "On approved settlement",
+      ...(showCycle ? [cycleOf(m)] : []),
       m.contactName,
       MERCHANT_STATUS[m.status] || m.status,
     ]);
@@ -525,29 +300,44 @@
 
   // ───────────── admin settings ─────────────
 
-  Ops.prepare.Settings = () => {
+  // Settings: a short list of where each setting really lives (the read-only table overflowed and its
+  // "Manage" buttons only jumped away). Two-step verification is the one personal setting here.
+  Ops.prepare.Settings = () => void (genericPages.Settings.rows = []);
+  function settingsCards() {
+    const superAdmin = DF.auth.hasRole?.("SUPER_ADMIN");
+    const allowed = Ops.allowedViews?.() || new Set();
     const c = Ops.catalog;
-    if (!c) return void (genericPages.Settings.rows = []);
-    const zones = Object.values(c.zonesByDistrict).flat().length;
-    const card = c.customerRateCard || {};
-    genericPages.Settings.rows = [
-      ["Delivery service levels", Object.values(c.serviceLevels || {}).join(" · "), "Network wide", "—", "Operations", "Manage"],
-      ["Service zones", c.districts.join(" · "), `${c.districts.length} districts · ${zones} zones`, "—", "Network admin", "Manage"],
-      ["COD settlement policy", `COD fee ${card.codFeePercent ?? "—"}% · payout on approved settlement`, "Service packages", "—", "Finance", "Manage"],
-      ["Hubs", `${DF.state.hubs.length} active hubs`, DF.state.hubs.map(h => h.district).filter((d, i, all) => all.indexOf(d) === i).join(" · "), "—", "Operations", "Manage"],
-      ["Admin roles", "Super admin · Operations manager · Hub operator · Finance · Support", "Role-based access", "—", "IT admin", "Manage"],
-      ["Notifications & webhooks", "SMS · Signed merchant webhooks", "All services", "—", "IT admin", "Manage"],
+    const zones = c ? Object.values(c.zonesByDistrict).flat().length : null;
+    const admin = (page, label) => (superAdmin ? `<a class="button button-sm" href="/super-admin?page=${encodeURIComponent(page)}">${esc(label)}</a>` : `<span class="subcell">Managed by super admins</span>`);
+    const cards = [
+      ["Two-step verification", "Protect your own sign-in with an authenticator app code.", DF.mfa?.manage ? `<button class="button button-sm button-primary" type="button" data-action="mfa">Two-step verification</button>` : ""],
+      ["Hubs & zones", `${DF.state.hubs.length} active hubs${zones ? ` · ${zones} catalog zones` : ""}. Hub register, capacity, delivery zones and routes.`, allowed.has("Hubs & zones") ? `<button class="button button-sm" type="button" data-settings-open="Hubs & zones">Open Hubs & zones</button>` : ""],
+      ["SLA policies", "Pickup and delivery due times per service level and route.", allowed.has("Reports") ? `<button class="button button-sm" type="button" data-settings-open="Reports" data-settings-tab="Analytics & SLA">Open SLA policies</button>` : ""],
+      ["Service plans & pricing", "Service packages, district prices, COD fee and booking rules.", admin("Service plans", "Open in super admin")],
+      ["Notifications", "SMS and email texts, switches and gateways.", admin("Platform settings", "Open in super admin")],
+      ["Roles & access", "Staff accounts, roles and permissions.", admin("Admin users", "Open in super admin")],
     ];
+    return `<section class="panel" id="settingsCards"><div class="panel-heading"><div><h2 class="panel-title">Where to change things</h2><p class="panel-subtitle">Network settings live where they are used; platform settings are in the super admin console.</p></div></div><div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));padding:0 16px 16px">${cards
+      .map(([title, text, action]) => `<article class="mini-card" style="display:grid;gap:8px;align-content:start;padding:14px;border:1px solid var(--line);border-radius:10px" data-settings-card="${esc(title)}"><strong style="font-size:14px">${esc(title)}</strong><span style="color:#647184;font-size:13px">${esc(text)}</span><div>${action}</div></article>`)
+      .join("")}</div></section>`;
+  }
+  Ops.enhance.Settings = () => {
+    // The card list replaces the register table (and its heading Export).
+    q("#mainContent .table-panel")?.remove();
+    qa('#mainContent .page-heading [data-action="export"]').forEach(b => b.remove());
+    $("settingsCards")?.remove();
+    const heading = q("#mainContent .page-heading");
+    if (heading) heading.insertAdjacentHTML("afterend", settingsCards());
+    else $("mainContent").insertAdjacentHTML("beforeend", settingsCards());
   };
-  Ops.enhance.Settings = () => registerText("Current configuration · managed by super admins", `Showing ${genericPages.Settings.rows.length} configuration areas`);
   window.addEventListener(
     "click",
     event => {
-      const manage = event.target.closest("#genericBody [data-toast]");
-      if (!manage || Ops.page() !== "Settings") return;
+      const open = event.target.closest?.("[data-settings-open]");
+      if (!open) return;
       event.stopImmediatePropagation();
-      if (DF.auth.hasRole("SUPER_ADMIN")) location.href = "/super-admin";
-      else showToast("These settings are managed by super admins in the admin console.");
+      Ops.navigate(open.dataset.settingsOpen, open.dataset.settingsTab || 0);
+      if (open.dataset.settingsTab === "Analytics & SLA") setTimeout(() => $("slaPolicies")?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
     },
     true,
   );

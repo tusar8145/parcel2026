@@ -72,7 +72,7 @@
             : run.status === "OUT_FOR_RETURN"
               ? `<button class="button button-sm button-primary" data-rto-complete="${esc(run.id)}">Complete</button>`
               : "";
-        return `<tr><td><strong>${esc(run.number)}</strong></td><td>${esc(run.merchant.name)}<div style="color:#8a94a3;font-size:12px">${esc(run.merchant.pickupAddress || "")}</div></td><td>${run.parcelCount}</td><td>${esc(riderName(run.riderId))}</td><td>${pill(RUN_STATUS[run.status] || run.status)}</td><td>${esc(Ops.when(run.createdAt))}</td><td style="white-space:nowrap"><button class="button button-sm" data-rto-view="${esc(run.id)}">View</button> ${actions}</td></tr>`;
+        return `<tr><td><strong>${esc(run.number)}</strong></td><td>${esc(run.merchant.name)}<div style="color:#8a94a3;font-size:12px">${esc(run.merchant.pickupAddress || "")}</div></td><td>${run.parcelCount}</td><td>${esc(riderName(run.riderId))}</td><td>${pill(RUN_STATUS[run.status] || run.status)}</td><td>${esc(Ops.when(run.createdAt))}</td><td style="white-space:nowrap"><button class="button button-sm" data-rto-view="${esc(run.id)}">View</button> <button class="button button-sm" data-rto-print="${esc(run.id)}" title="Return run sheet (PDF): parcels, reasons, return charges and signatures">Print</button> ${actions}</td></tr>`;
       })
       .join("");
     const returned = (R.returned || [])
@@ -86,105 +86,119 @@
       <section class="panel table-panel"><div class="panel-heading"><div><h2 class="panel-title">Returned · awaiting merchant confirmation</h2></div></div><div class="table-scroll"><table><thead><tr><th>TRACKING</th><th>MERCHANT</th><th>RUN</th><th>RETURN CHARGE</th><th>RETURNED</th></tr></thead><tbody>${returned || `<tr><td colspan="5" class="empty-state">Nothing awaiting confirmation.</td></tr>`}</tbody></table></div></section>`;
   }
 
-  function dialog(title, subtitle, body, width = 620) {
-    $("rtoDialog")?.remove();
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      `<div id="rtoDialog" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:120;background:#14203380;display:grid;place-items:center;padding:18px"><section style="width:min(${width}px,100%);max-height:85vh;overflow:auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 24px 70px #10182840"><header style="display:flex;justify-content:space-between;gap:12px"><div><h2 style="margin:0;font-size:18px">${esc(title)}</h2><p style="margin:6px 0;color:#778293">${subtitle}</p></div><button type="button" class="button" data-rto-close aria-label="Close">×</button></header>${body}</section></div>`,
-    );
-    const el = $("rtoDialog");
-    el.addEventListener("click", e => e.target === el && el.remove());
-    return el;
-  }
-  const close = () => $("rtoDialog")?.remove();
+  // Dialogs: the console's standard Ops.form (bridge-network.js); errors stay inside the dialog.
+  const riderChoices = () => (DF.state.riders || []).map(r => ({ value: r.id, label: `${r.code} · ${r.name || r.user?.name || ""}` }));
+  const problemsError = error => (error?.details?.problems ? new Error(error.details.problems.map(p => `${p.trackingId}: ${p.message}`).join(" · ")) : error);
 
   function planRun(merchantId) {
     const picked = [...document.querySelectorAll(`[data-rto-pick="${CSS.escape(merchantId)}"]:checked`)].map(b => b.value);
     if (!picked.length) return toast("Choose at least one parcel.");
-    const merchant = R.requested.find(r => r.merchant.id === merchantId)?.merchant;
-    dialog(
-      `Return run · ${merchant?.name || ""}`,
-      `${picked.length} parcel(s) go to RETURN_SCHEDULED and the merchant is notified.`,
-      `<form id="rtoPlanForm" data-merchant="${esc(merchantId)}" data-ids="${esc(picked.join(","))}"><div class="field"><label for="rtoRider">Rider (optional now, needed to dispatch)</label><select id="rtoRider">${riderOptions()}</select></div><div class="field"><label for="rtoNote">Note (optional)</label><input id="rtoNote" maxlength="500"></div><div class="modal-actions"><button type="button" class="button" data-rto-close>Cancel</button><button type="submit" class="button button-primary">Plan return run</button></div></form>`,
-    );
-  }
-
-  async function savePlan(form) {
     if (!Ops.require("dispatch", "plan return runs")) return;
-    try {
-      const run = await DF.api("/returns/runs", {
-        method: "POST",
-        body: { merchantId: form.dataset.merchant, trackingIds: form.dataset.ids.split(","), riderId: $("rtoRider").value || undefined, note: $("rtoNote").value.trim() || undefined },
-      });
-      close();
-      await reloadReturns();
-      toast(`${run.number} planned with ${run.parcelCount} parcel(s).`);
-    } catch (error) {
-      if (error.details?.problems) return toast(error.details.problems.map(p => `${p.trackingId}: ${p.message}`).join(" · "));
-      fail(error);
-    }
+    const merchant = R.requested.find(r => r.merchant.id === merchantId)?.merchant;
+    Ops.form({
+      title: `Return run · ${merchant?.name || ""}`,
+      description: `${picked.length} parcel(s) go to RETURN_SCHEDULED and the merchant is notified.`,
+      submit: "Plan return run",
+      fields: [
+        { id: "parcels", label: "Parcels", type: "static", value: picked.join(", ") },
+        { id: "riderId", domId: "rtoRider", label: "Rider (needed to dispatch)", type: "select", options: [{ value: "", label: "Choose a rider…" }, ...riderChoices()] },
+        { id: "note", domId: "rtoNote", label: "Note", maxLength: 500 },
+      ],
+      onSubmit: async v => {
+        const run = await DF.api("/returns/runs", { method: "POST", body: { merchantId, trackingIds: picked, riderId: v.riderId || undefined, note: v.note || undefined } }).catch(error => {
+          throw problemsError(error);
+        });
+        await reloadReturns();
+        return `${run.number} planned with ${run.parcelCount} parcel(s).`;
+      },
+    });
   }
 
   function addParcel() {
-    dialog(
-      "Return a parcel",
-      "For parcels operations decide to return (e.g. delivery attempts exhausted). The merchant is notified.",
-      `<form id="rtoAddForm"><div class="field"><label for="rtoAddId">Tracking ID</label><input id="rtoAddId" required placeholder="PP-261016-XXXXX"></div><div class="field"><label for="rtoAddReason">Reason</label><input id="rtoAddReason" required minlength="3" maxlength="300" value="Delivery attempts exhausted"></div><div class="modal-actions"><button type="button" class="button" data-rto-close>Cancel</button><button type="submit" class="button button-primary">Plan return run</button></div></form>`,
-      520,
-    );
-  }
-
-  async function saveAdd() {
     if (!Ops.require("dispatch", "plan return runs")) return;
-    const id = $("rtoAddId").value.trim().toUpperCase();
-    try {
-      const parcel = await DF.api(`/parcels/${encodeURIComponent(id)}`);
-      if (!parcel.merchant?.id) return toast("Only merchant parcels are returned in runs. Use the parcel's status for customer parcels.");
-      const run = await DF.api("/returns/runs", { method: "POST", body: { merchantId: parcel.merchant.id, trackingIds: [parcel.trackingId], reason: $("rtoAddReason").value.trim() } });
-      close();
-      await reloadReturns();
-      toast(`${run.number} planned for ${parcel.trackingId}.`);
-    } catch (error) {
-      if (error.details?.problems) return toast(error.details.problems.map(p => `${p.trackingId}: ${p.message}`).join(" · "));
-      fail(error);
-    }
+    Ops.form({
+      title: "Return a parcel",
+      description: "For parcels operations decide to return (e.g. delivery attempts exhausted). The merchant is notified.",
+      submit: "Plan return run",
+      fields: [
+        { id: "trackingId", domId: "rtoAddId", label: "Tracking ID", required: true, placeholder: "PP-261016-XXXXX", maxLength: 40 },
+        { id: "reason", domId: "rtoAddReason", label: "Reason", required: true, maxLength: 300, value: "Delivery attempts exhausted" },
+      ],
+      validate: { reason: v => (v.length < 3 ? "At least 3 characters" : "") },
+      onSubmit: async v => {
+        const id = v.trackingId.toUpperCase();
+        const parcel = await DF.api(`/parcels/${encodeURIComponent(id)}`);
+        if (!parcel.merchant?.id) throw new Error("Only merchant parcels are returned in runs. Use the parcel's status for customer parcels.");
+        const run = await DF.api("/returns/runs", { method: "POST", body: { merchantId: parcel.merchant.id, trackingIds: [parcel.trackingId], reason: v.reason } }).catch(error => {
+          throw problemsError(error);
+        });
+        await reloadReturns();
+        return `${run.number} planned for ${parcel.trackingId}.`;
+      },
+    });
   }
 
   async function viewRun(id) {
     try {
       const run = await DF.api(`/returns/runs/${id}`);
-      dialog(
-        `${run.number} · ${run.merchant.name}`,
-        `${esc(RUN_STATUS[run.status])} · ${run.parcelCount} parcel(s) · return charges ${esc(Ops.money(run.returnCharges))} · ${esc(run.merchant.pickupAddress)}, ${esc(run.merchant.pickupArea)}`,
-        `<div class="table-scroll"><table><thead><tr><th>TRACKING</th><th>RECIPIENT</th><th>REASON</th><th>STATUS</th><th>CHARGE</th></tr></thead><tbody>${run.parcels.map(p => `<tr><td>${esc(p.trackingId)}</td><td>${esc(p.recipientName)}</td><td>${esc(p.reason || "")}</td><td>${pill(p.status.replaceAll("_", " ").toLowerCase())}</td><td>${p.returnCharge != null ? Ops.money(p.returnCharge) : "—"}</td></tr>`).join("")}</tbody></table></div>`,
-        760,
-      );
+      Ops.form({
+        title: `${run.number} · ${run.merchant.name}`,
+        description: `${RUN_STATUS[run.status] || run.status} · ${run.parcelCount} parcel(s) · return charges ${Ops.money(run.returnCharges)} · ${run.merchant.pickupAddress}, ${run.merchant.pickupArea}`,
+        submit: "Close",
+        wide: true,
+        fields: [
+          {
+            id: "parcels",
+            label: "Parcels",
+            type: "static",
+            html: `<div class="table-scroll"><table><thead><tr><th>TRACKING</th><th>RECIPIENT</th><th>REASON</th><th>STATUS</th><th>CHARGE</th></tr></thead><tbody>${run.parcels.map(p => `<tr><td>${esc(p.trackingId)}</td><td>${esc(p.recipientName)}</td><td>${esc(p.reason || "")}</td><td>${pill(p.status.replaceAll("_", " ").toLowerCase())}</td><td>${p.returnCharge != null ? Ops.money(p.returnCharge) : "—"}</td></tr>`).join("")}</tbody></table></div>`,
+          },
+        ],
+        onSubmit: async () => "",
+      });
     } catch (error) {
       fail(error);
     }
   }
 
   function dispatchRun(id) {
+    if (!Ops.require("dispatch", "update return runs")) return;
     const run = R.runs.find(r => r.id === id);
-    dialog(
-      `Dispatch ${run?.number || ""}`,
-      "The rider takes the parcels back to the merchant.",
-      `<form id="rtoDispatchForm" data-id="${esc(id)}"><div class="field"><label for="rtoDispatchRider">Rider</label><select id="rtoDispatchRider" required>${riderOptions(run?.riderId || "")}</select></div><div class="modal-actions"><button type="button" class="button" data-rto-close>Cancel</button><button type="submit" class="button button-primary">Dispatch</button></div></form>`,
-      480,
-    );
+    Ops.form({
+      title: `Dispatch ${run?.number || ""}`,
+      description: "The rider takes the parcels back to the merchant.",
+      submit: "Dispatch",
+      fields: [{ id: "riderId", domId: "rtoDispatchRider", label: "Rider", type: "select", required: true, value: run?.riderId || "", options: [{ value: "", label: "Choose a rider…" }, ...riderChoices()] }],
+      onSubmit: async v => {
+        const done = await DF.api(`/returns/runs/${id}/dispatch`, { method: "POST", body: { riderId: v.riderId } });
+        await reloadReturns();
+        return `${done.number} is out for return.`;
+      },
+    });
   }
 
   function completeRun(id) {
+    if (!Ops.require("dispatch", "update return runs")) return;
     const run = R.runs.find(r => r.id === id);
-    dialog(
-      `Complete ${run?.number || ""}`,
-      "Parcels the merchant took back become RETURNED (the return charge is booked). Tick any that weren't taken back; they go back to the hub.",
-      `<form id="rtoCompleteForm" data-id="${esc(id)}"><div id="rtoCompleteList" class="panel-subtitle">Loading…</div><div class="field"><label for="rtoCompleteNote">Note (optional)</label><input id="rtoCompleteNote" maxlength="500"></div><div class="modal-actions"><button type="button" class="button" data-rto-close>Cancel</button><button type="submit" class="button button-primary">Complete run</button></div></form>`,
-    );
+    Ops.form({
+      title: `Complete ${run?.number || ""}`,
+      description: "Parcels the merchant took back become RETURNED (the return charge is booked). Tick any that weren't taken back; they go back to the hub.",
+      submit: "Complete run",
+      fields: [
+        { id: "list", domId: "rtoCompleteList", label: "Parcels not taken back", type: "static", html: `<span class="panel-subtitle">Loading…</span>` },
+        { id: "note", domId: "rtoCompleteNote", label: "Note", maxLength: 500 },
+      ],
+      onSubmit: async v => {
+        const notReturned = [...document.querySelectorAll('#modalFields input[name="rtoNotReturned"]:checked')].map(b => b.value);
+        const done = await DF.api(`/returns/runs/${id}/complete`, { method: "POST", body: { notReturned, note: v.note || undefined } });
+        await reloadReturns();
+        return `${done.number} completed.`;
+      },
+    });
     DF.api(`/returns/runs/${id}`)
       .then(full => {
         const list = $("rtoCompleteList");
-        if (list) list.innerHTML = full.parcels.map(p => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" name="rtoNotReturned" value="${esc(p.trackingId)}"> ${esc(p.trackingId)} · ${esc(p.recipientName)} <small>(not taken back)</small></label>`).join("");
+        if (list) list.innerHTML = full.parcels.map(p => `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" name="rtoNotReturned" value="${esc(p.trackingId)}"> ${esc(p.trackingId)} · ${esc(p.recipientName)} <small>(not taken back)</small></label>`).join("") || "No parcels.";
       })
       .catch(fail);
   }
@@ -193,7 +207,6 @@
     if (!Ops.require("dispatch", "update return runs")) return;
     try {
       const run = await DF.api(`/returns/runs/${path}`, { method: "POST", body });
-      close();
       await reloadReturns();
       toast(success(run));
     } catch (error) {
@@ -277,17 +290,17 @@
       if (!(t instanceof Element)) return;
       const hit = sel => t.closest(sel);
       let el;
-      if (hit("[data-rto-close]")) return stop(event), close();
       if (hit("[data-rto-refresh]")) return stop(event), void reloadReturns().then(() => toast("Returns refreshed."), fail);
       if (hit("[data-rto-add]")) return stop(event), addParcel();
       if ((el = hit("[data-rto-plan]"))) return stop(event), planRun(el.dataset.rtoPlan);
       if ((el = hit("[data-rto-view]"))) return stop(event), void viewRun(el.dataset.rtoView);
+      if ((el = hit("[data-rto-print]"))) return stop(event), void Ops.printPdf(`/documents/return-run/${el.dataset.rtoPrint}`, { title: "Preparing the return run sheet…" });
       if ((el = hit("[data-rto-dispatch]"))) return stop(event), dispatchRun(el.dataset.rtoDispatch);
       if ((el = hit("[data-rto-complete]"))) return stop(event), completeRun(el.dataset.rtoComplete);
       if ((el = hit("[data-rto-cancel]"))) {
         stop(event);
-        if (!confirm("Cancel this return run? Its parcels go back to the hub and keep their return request.")) return;
-        return void runAction(`${el.dataset.rtoCancel}/cancel`, undefined, run => `${run.number} cancelled.`);
+        const runId = el.dataset.rtoCancel;
+        return void Ops.confirm({ title: "Cancel this return run?", message: "Its parcels go back to the hub and keep their return request.", confirm: "Cancel run", cancel: "Keep it", danger: true }).then(ok => ok && runAction(`${runId}/cancel`, undefined, run => `${run.number} cancelled.`));
       }
       if (hit("[data-pu-generate]")) {
         stop(event);
@@ -301,9 +314,11 @@
       if ((el = hit("[data-pu-complete]"))) return stop(event), void pickupAction(el.dataset.puComplete, "complete", undefined, "Pickup marked as collected.");
       if ((el = hit("[data-pu-missed]"))) {
         stop(event);
-        const note = prompt("Why was the pickup missed? (optional)");
-        if (note === null) return;
-        return void pickupAction(el.dataset.puMissed, "missed", { note: note.trim() || undefined }, "Pickup marked as missed. The merchant was notified.");
+        const pickupId = el.dataset.puMissed;
+        return void Ops.prompt({ title: "Mark the pickup as missed", message: "The merchant is notified.", label: "Why was the pickup missed?", multiline: true, maxLength: 300, confirm: "Mark missed", placeholder: "e.g. Shop closed when the rider arrived" }).then(note => {
+          if (note === null) return;
+          pickupAction(pickupId, "missed", { note: note || undefined }, "Pickup marked as missed. The merchant was notified.");
+        });
       }
     },
     true,
@@ -325,27 +340,6 @@
       if (t.matches?.("[data-pu-rider]") && t.value) {
         event.stopImmediatePropagation();
         return void pickupAction(t.dataset.puRider, "assign", { riderId: t.value }, "Rider assigned to the pickup.");
-      }
-    },
-    true,
-  );
-
-  window.addEventListener(
-    "submit",
-    event => {
-      const form = event.target;
-      if (form.id === "rtoPlanForm") return stop(event), void savePlan(form);
-      if (form.id === "rtoAddForm") return stop(event), void saveAdd();
-      if (form.id === "rtoDispatchForm") {
-        stop(event);
-        const riderId = $("rtoDispatchRider").value;
-        if (!riderId) return toast("Choose a rider.");
-        return void runAction(`${form.dataset.id}/dispatch`, { riderId }, run => `${run.number} is out for return.`);
-      }
-      if (form.id === "rtoCompleteForm") {
-        stop(event);
-        const notReturned = [...form.querySelectorAll('input[name="rtoNotReturned"]:checked')].map(b => b.value);
-        return void runAction(`${form.dataset.id}/complete`, { notReturned, note: $("rtoCompleteNote").value.trim() || undefined }, run => `${run.number} completed.`);
       }
     },
     true,

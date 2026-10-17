@@ -123,7 +123,11 @@
     const type = uploadType;
     if (!file || !type) return;
     let documentNumber;
-    if (NUMBER_PROMPT[type]) documentNumber = (prompt(NUMBER_PROMPT[type], "") || "").trim() || undefined;
+    if (NUMBER_PROMPT[type]) {
+      const answer = await DF.prompt({ title: LABEL[type] || "Document number", message: "Add the number printed on the document, if you have it.", label: NUMBER_PROMPT[type].replace(/ \(optional\)$/, ""), maxLength: 40, confirm: "Upload" });
+      if (answer === null) return;
+      documentNumber = answer || undefined;
+    }
     state.uploading = type;
     renderPanels();
     try {

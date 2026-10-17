@@ -1,4 +1,4 @@
-import { PARCEL_STATUS_LABEL, parseParcelStatus, type ParcelStatus } from "@delivery-fast/shared";
+import { parseParcelStatus, type ParcelStatus } from "@delivery-fast/shared";
 
 /**
  * The bulk update sheet ("Parcels"): read-only data columns (greyed, locked) describing each
@@ -109,7 +109,8 @@ export type BulkColumnKey =
   | "set_area"
   | "set_weight"
   | "set_service"
-  | "version";
+  | "version"
+  | "template";
 
 export type BulkListKey = "actions" | "riders" | "statuses" | "hubs" | "priorities" | "districts" | "zones" | "areas" | "services";
 
@@ -173,6 +174,7 @@ export const BULK_COLUMNS: BulkColumn[] = [
   ed("set_weight", "Set weight (kg)", 13, "Complete details: weight in kg.", { number: { min: 0.01, max: 50 } }),
   ed("set_service", "Set service", 13, "Complete details: service level.", { list: "services", strict: true }),
   ro("version", "version", 8, "Optimistic locking: the parcel's version when downloaded. Don't change it.", { hidden: true }),
+  ro("template", "template", 12, "The page this file was downloaded for (bulk-kinds.ts). Don't change it.", { hidden: true }),
 ];
 
 export const DETAIL_KEYS = ["set_recipient_name", "set_recipient_phone", "set_address", "set_district", "set_zone", "set_area", "set_weight", "set_service"] as const satisfies readonly BulkColumnKey[];
@@ -197,20 +199,11 @@ export function matchBulkHeaders(headers: string[]) {
 
 export const headerOf = (key: string) => BULK_COLUMNS.find(c => c.key === key)?.header ?? (key === "row" ? "Row" : key);
 
-const lower = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-
-/** "Accept & assign pickup rider", "accept_pickup" → ACCEPT_PICKUP. */
-export function parseAction(value: string): BulkAction | undefined {
-  const v = lower(value);
-  return BULK_ACTIONS.find(a => lower(ACTION_LABEL[a]) === v || a.toLowerCase() === v.replace(/[\s-]+/g, "_"));
-}
-
 /** A status label or enum value that operations may set with "Change status". */
 export const parseSettableStatus = (value: string) => {
   const status = parseParcelStatus(value.trim());
   return status && OPS_SETTABLE.includes(status) ? status : undefined;
 };
-export const settableStatusLabels = () => OPS_SETTABLE.map(s => PARCEL_STATUS_LABEL[s]);
 
 /** The rider code in "R-2048 · Jordan Rivera · Gulshan Hub" (or a bare code). */
 export const riderCodeOf = (value: string) => value.split("·")[0].trim().toUpperCase();

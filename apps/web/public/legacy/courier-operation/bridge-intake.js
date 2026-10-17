@@ -2,11 +2,13 @@
  * Courier Operations on the API: hub drop-off intake and shipping labels.
  *
  *   Import Excel                     shared/importer.js (intake choice, preview, result, labels) via bridge-imports.js
- *   Print labels (shipment tables)   POST /ops/labels → A4 sheet (4 per page) or 4×6 in / 100×150 mm
- *                                    thermal labels with a Code 128 barcode of the tracking ID
- *   Hubs → Receive desk              POST /ops/hub-receive per scan (USB scanner in keyboard mode,
- *                                    camera via DF.scanner, or a typed tracking ID / CN), batch
- *                                    expected vs received from GET /ops/booking-batches(/:id)
+ *   Print labels (shipment tables)   GET/POST /documents/labels → PDF in a new tab: A4 sheet (4 per page)
+ *                                    or 100×150 mm thermal labels (Code 128 tracking barcode, QR, COD)
+ *   Hub desk → Receive               the one place to receive parcels: POST /ops/hub-receive per scan
+ *                                    (any arrival: drop-offs, picked-up parcels, transfers; USB scanner
+ *                                    in keyboard mode, camera via DF.scanner, or a typed tracking ID /
+ *                                    CN), batch expected vs received from GET /ops/booking-batches(/:id),
+ *                                    and "Find" (the code → the parcel drawer)
  *
  * Shared on window.DFOps: Ops.barcode128, Ops.labels.open(ids), Ops.intake.{fields, wire, read,
  * receive}.
@@ -18,7 +20,6 @@
   const q = (selector, root = document) => root.querySelector(selector);
   const esc = Ops.esc;
   const ui = Ops.ui;
-  const FORMAT_KEY = "deliveryfast-label-format";
   const DESK_HUB_KEY = "deliveryfast-receive-desk-hub";
 
   // ───────────── Code 128 (set B) ─────────────
@@ -51,100 +52,34 @@
   // ───────────── labels ─────────────
 
   const FORMATS = {
-    a4: { label: "A4 sheet · 4 labels per page", page: "A4", margin: "8mm" },
-    thermal: { label: "Thermal 4 × 6 in (100 × 150 mm) · one per label", page: "100mm 150mm", margin: "0" },
+    a4: { label: "A4 sheet · 4 labels per page (PDF)" },
+    thermal: { label: "Labels · thermal 4 × 6 in (100 × 150 mm) · one per page (PDF)" },
   };
-  const savedFormat = () => {
-    try {
-      return FORMATS[localStorage.getItem(FORMAT_KEY)] ? localStorage.getItem(FORMAT_KEY) : "a4";
-    } catch {
-      return "a4";
-    }
-  };
-  const taka = n => `৳${Number(n || 0).toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
-  const day = iso => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Dhaka" });
+  const savedFormat = () => window.DFPrint.labelFormat();
+  const MAX_LABELS = window.DFPrint.LIMITS.labels;
 
-  function labelMarkup(l) {
-    const cod = l.codAmount > 0 ? `<div class="cod due"><small>COLLECT CASH ON DELIVERY</small><b>${esc(taka(l.codAmount))}</b></div>` : `<div class="cod paid"><b>PAID · No COD</b></div>`;
-    const address = [l.address.street, l.address.area].filter(Boolean).join(", ");
-    const dest = [l.destination.zone, l.destination.district].filter(Boolean).join(", ");
-    const destHub = l.destination.hub ? `${l.destination.hub.name}${l.destination.zoneCode ? ` · ${l.destination.zoneCode}` : ""}` : l.destination.zoneCode || "—";
-    return `<article class="lbl">
-      <header><span class="brand">delivery <i>fast</i></span><span class="svc">${esc(l.serviceLevelLabel.toUpperCase())}${l.type === "DOCUMENT" ? " · DOCUMENT" : ""}${l.intake === "DROP_OFF" ? " · HUB DROP-OFF" : ""}${l.incomplete ? " · DETAILS PENDING" : ""}</span></header>
-      <div class="bc">${Ops.barcode128(l.trackingId)}</div>
-      <div class="tid">${esc(l.trackingId)}</div>${l.cn && l.cn !== l.trackingId ? `<div class="cn">CN ${esc(l.cn)}</div>` : l.cn ? `<div class="cn">Pre-printed CN</div>` : ""}
-      ${cod}
-      <section class="to"><small>DELIVER TO</small><b>${esc(l.recipient.name || (l.incomplete ? "Recipient details pending" : ""))}</b><span>${esc(DF.localPhone ? DF.localPhone(l.recipient.phone) : l.recipient.phone)}</span><span>${esc(address)}</span><span class="dist">${esc(dest)}</span></section>
-      <div class="grid">
-        <div><small>MERCHANT / SENDER</small><b>${esc(l.merchant)}</b>${l.merchantOrderRef ? `<span>Order ${esc(l.merchantOrderRef)}</span>` : ""}</div>
-        <div><small>WEIGHT</small><b>${esc(l.weightKg)} kg</b></div>
-        <div><small>ORIGIN HUB</small><b>${esc(l.originHub?.name || "—")}</b></div>
-        <div><small>DESTINATION</small><b>${esc(destHub)}</b></div>
-        <div><small>BOOKED</small><b>${esc(day(l.bookedAt))}</b></div>
-        <div><small>BATCH</small><b>${esc(l.batch || "—")}</b></div>
-      </div>
-    </article>`;
-  }
-
-  const LABEL_CSS = `*{box-sizing:border-box}body{margin:0;font:11px Arial,Helvetica,sans-serif;color:#000}
-    .lbl{border:1px solid #000;padding:3mm 3.5mm;display:flex;flex-direction:column;gap:1.6mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
-    .lbl header{display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #000;padding-bottom:1.2mm}
-    .brand{font-weight:800;font-size:14px;letter-spacing:-.3px}.brand i{font-style:normal;background:#000;color:#fff;padding:0 3px;border-radius:2px}
-    .svc{font-size:9px;font-weight:700;text-align:right}
-    .bc svg{display:block;width:100%;height:16mm}
-    .tid{font:800 18px "Courier New",monospace;letter-spacing:1.5px;text-align:center}
-    .cn{text-align:center;font-size:9px;margin-top:-1mm}
-    .cod{border:2px solid #000;text-align:center;padding:1mm}.cod small{display:block;font-size:8px;font-weight:700}.cod.due b{font-size:22px}.cod.paid b{font-size:15px}
-    .to{display:flex;flex-direction:column;gap:.4mm;border:1px solid #000;padding:1.5mm 2mm}.to small,.grid small{font-size:7.5px;font-weight:700;color:#333}.to b{font-size:14px}.to span{font-size:11px;line-height:1.25}.to .dist{font-weight:800;font-size:13px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:1mm 3mm}.grid div{display:flex;flex-direction:column;min-width:0}.grid b{font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.grid span{font-size:9px}
-    .sheet{display:grid;grid-template-columns:1fr 1fr;gap:5mm}.a4 .lbl{height:134mm}.a4 .lbl:nth-child(4n):not(:last-child){break-after:page;page-break-after:always}
-    .thermal .lbl{width:100mm;height:150mm;border:0;padding:4mm 5mm;gap:2.4mm;break-after:page;page-break-after:always}.thermal .lbl:last-child{break-after:auto;page-break-after:auto}
-    .thermal .bc svg{height:24mm}.thermal .tid{font-size:22px}.thermal .cod.due b{font-size:28px}.thermal .to b{font-size:16px}.thermal .to span{font-size:13px}.thermal .to .dist{font-size:15px}.thermal .grid b{font-size:12px}
-    @media screen{body{background:#eef1f5;padding:12px}.lbl{background:#fff}.thermal{display:grid;gap:12px;justify-content:center}}
-    @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}`;
-
-  /** Prints label data (from POST /ops/labels) in a window opened while the click still counts as a user action. */
-  function printLabels(popup, labels, format) {
-    const f = FORMATS[format] || FORMATS.a4;
-    const body = labels.map(labelMarkup).join("");
-    popup.document.open();
-    popup.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>Delivery Fast · ${labels.length} label${labels.length === 1 ? "" : "s"}</title><style>@page{size:${f.page};margin:${f.margin}}${LABEL_CSS}</style></head><body><main class="${format === "thermal" ? "thermal" : "sheet a4"}" id="labels" data-format="${format}">${body}</main><script>window.onload=()=>{if(!navigator.webdriver)window.print()}<\/script></body></html>`,
-    );
-    popup.document.close();
-  }
-
-  /** Opens the print dialog for these parcels (format choice, then the label window). */
+  /** Asks for the label format, then opens the labels PDF (GET/POST /documents/labels) in a new tab. */
   function openLabels(trackingIds, { title = "Print labels", description } = {}) {
     const ids = [...new Set(trackingIds.filter(Boolean))];
     if (!ids.length) return void showToast("Select the parcels whose labels you want to print.");
-    if (ids.length > 500) return void showToast("Print at most 500 labels at a time.");
+    if (ids.length > MAX_LABELS) return void showToast(`Print at most ${MAX_LABELS.toLocaleString("en-US")} labels at a time (${ids.length.toLocaleString("en-US")} selected).`);
     Ops.dialog("labels", {
       title,
-      description: description || `${ids.length} parcel${ids.length === 1 ? "" : "s"}. Each label shows the tracking ID as a Code 128 barcode, the COD to collect, the recipient and the hubs.`,
-      submit: "Print labels",
+      description: description || `${ids.length} parcel${ids.length === 1 ? "" : "s"}. Each label shows the tracking ID as a Code 128 barcode, the COD to collect, the recipient, the hubs and a tracking QR code.`,
+      submit: "Open PDF",
       fields: ui.field("labelFormat", "Label format", ui.select("labelFormat", Object.entries(FORMATS).map(([value, f]) => ({ value, label: f.label })), savedFormat()), true),
       context: { trackingIds: ids },
     });
   }
-  Ops.submitters.labels = async () => {
+  Ops.submitters.labels = async button => {
     const format = $("labelFormat").value;
     try {
-      localStorage.setItem(FORMAT_KEY, format);
+      localStorage.setItem(window.DFPrint.LABEL_FORMAT_KEY, format);
     } catch {}
-    const popup = window.open("", "_blank");
-    if (!popup) throw new Error("Allow pop-ups to print labels.");
-    popup.document.write("<p style='font:14px Arial;padding:16px'>Preparing labels…</p>");
-    try {
-      const result = await DF.api("/ops/labels", { method: "POST", body: { trackingIds: modalContext.trackingIds } });
-      if (!result.labels.length) throw new Error("None of these parcels were found.");
-      printLabels(popup, result.labels, format);
-      closeModal();
-      showToast(`${result.labels.length} label${result.labels.length === 1 ? "" : "s"} ready to print${result.missing.length ? ` · not found: ${result.missing.slice(0, 3).join(", ")}` : ""}.`);
-    } catch (error) {
-      popup.close();
-      throw error;
-    }
+    const ids = modalContext.trackingIds;
+    closeModal();
+    const result = await window.DFPrint.labels(ids, format, { button });
+    if (result) showToast(`${result.count ?? ids.length} label${(result.count ?? ids.length) === 1 ? "" : "s"} opened as a PDF${format === "thermal" ? " (100 × 150 mm)" : " (A4, 4 per page)"}.`);
   };
   Ops.labels = { open: openLabels, code128Widths };
 
@@ -160,18 +95,35 @@
       button.title = "Shipping labels with a Code 128 barcode for the ticked rows (or the filtered list)";
     }
   };
+  /**
+   * What the shipment table's print buttons print: the ticked rows, else every row the table shows
+   * (its filters and search; with server-paged lists, the pages loaded so far). Read from the table
+   * itself, so rows loaded from the API that aren't in the page's working set are included.
+   */
+  Ops.printIds = () => {
+    const body = $("shipmentBody");
+    if (!body) return { ids: [], ticked: false };
+    const ticked = [...body.querySelectorAll("[data-shipment-select]:checked")].map(box => box.dataset.shipmentSelect);
+    if (ticked.length) return { ids: [...new Set(ticked)], ticked: true };
+    const shown = [...body.querySelectorAll("tr[data-shipment-id]")].filter(row => !row.hidden && row.offsetParent !== null).map(row => row.dataset.shipmentId);
+    return { ids: [...new Set(shown)], ticked: false };
+  };
+
   window.addEventListener(
     "click",
     event => {
       if (!event.target.closest("#printGeneratedCNs, #printParcelLabels")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      const rows = visibleOrSelectedShipments(Ops.page());
-      const ticked = document.querySelectorAll("#shipmentBody [data-shipment-select]:checked").length;
-      openLabels(
-        rows.map(r => r.id),
-        { description: `${rows.length} ${ticked ? "selected" : "filtered"} parcel${rows.length === 1 ? "" : "s"}. Each label shows the tracking ID as a Code 128 barcode, the COD to collect, the recipient and the hubs.` },
-      );
+      // Server-paged tables (bridge-lists.js): unticked, every parcel the filter matches, up to the PDF limit.
+      const pick = Ops.lists?.printIds ? Ops.lists.printIds(MAX_LABELS) : Promise.resolve({ ...Ops.printIds(), capped: false });
+      pick
+        .then(({ ids, ticked, capped }) =>
+          openLabels(ids, {
+            description: `${ids.length} ${ticked ? "selected" : "matching"} parcel${ids.length === 1 ? "" : "s"}${capped ? ` (the first ${MAX_LABELS.toLocaleString("en-US")}: the most per PDF; narrow the filter for the rest)` : ""}. Each label shows the tracking ID as a Code 128 barcode, the COD to collect, the recipient, the hubs and a tracking QR code.`,
+          }),
+        )
+        .catch(error => showToast(DF.describe(error)));
     },
     true,
   );
@@ -239,18 +191,8 @@
   const pill = outcome => `<span class="status status-${OUTCOME[outcome].tone}">${esc(OUTCOME[outcome].label)}</span>`;
   const deskHubs = () => Ops.myHubs() || DF.state.hubs;
 
-  function beep(ok) {
-    try {
-      const ctx = (beep.ctx ||= new (window.AudioContext || window.webkitAudioContext)());
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.value = ok ? 880 : 220;
-      gain.gain.value = 0.06;
-      osc.connect(gain).connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + (ok ? 0.08 : 0.25));
-    } catch {}
-  }
+  /** The shared scan result (shared/scanner.js): beep, vibration, the scan box flashing green / red. */
+  const beep = ok => DF.scanner?.feedback?.("rdCode", ok);
 
   function summaryMarkup() {
     const b = desk.batch;
@@ -281,12 +223,12 @@
     const batchOptions = [{ value: "", label: "Any parcel (no import)" }, ...desk.batches.map(b => ({ value: b.id, label: `${b.number} · ${b.received}/${b.expected} received${b.fileName ? ` · ${b.fileName}` : ""}` }))];
     const tone = desk.feedback.tone ? ` style="font-weight:600;color:${desk.feedback.tone === "good" ? "var(--green)" : desk.feedback.tone === "bad" ? "var(--red)" : desk.feedback.tone === "warn" ? "var(--amber)" : "#4266ce"}"` : "";
     return `<div class="workflow-grid" id="receiveDesk">
-      <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Receive desk · drop-offs and arrivals</h2><p class="panel-subtitle">Batch scanning: drop-off parcels are received at the hub they were booked for; picked-up parcels are scanned in as usual.</p></div><div class="table-tools"><span class="status status-good" id="rdCount" style="white-space:nowrap">${esc(`${desk.received} received`)}</span></div></div>
+      <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Receive</h2><p class="panel-subtitle">Every arrival: drop-offs (at the hub they were booked for), picked-up parcels and transfers. "Find" shows a parcel without receiving it.</p></div><div class="table-tools"><span class="status status-good" id="rdCount" style="white-space:nowrap">${esc(`${desk.received} received`)}</span></div></div>
         <form class="workflow-form" id="receiveDeskForm" autocomplete="off">
           <label>Hub${ui.select("rdHub", ui.hubOptions(hubs), desk.hubId)}</label>
           <label>Import batch${ui.select("rdBatch", batchOptions, desk.batchId)}</label>
           <label>Tracking ID / CN<input id="rdCode" autocomplete="off" spellcheck="false" placeholder="Scan or type, then Enter" aria-describedby="rdFeedback"></label>
-          <div class="form-actions"><button class="button button-primary" type="submit">Receive</button></div>
+          <div class="form-actions"><button class="button button-primary" type="submit">Receive</button><button class="button" type="button" data-rd="find" title="Show the parcel's details without receiving it">Find</button></div>
         </form>
         <p class="panel-subtitle" id="rdFeedback" aria-live="polite"${tone}>${esc(desk.feedback.text)}</p>
         <div id="rdBatchInfo">${summaryMarkup()}</div>
@@ -372,10 +314,13 @@
   }
   Ops.intake.receive = receive;
 
+  // Only on Hub desk → Receive (Ops.hubPart, bridge-nav.js). The import batches load once when the
+  // tab opens (or the hub changes), then after live parcel changes, never on every redraw.
   const baseHubs = Ops.enhance.Hubs;
   Ops.enhance.Hubs = page => {
     baseHubs?.(page);
     $("receiveDesk")?.remove();
+    if (Ops.hubPart && Ops.hubPart !== "receive") return;
     const hubs = deskHubs();
     if (!desk.hubId || !hubs.some(h => h.id === desk.hubId)) {
       let remembered = null;
@@ -384,9 +329,7 @@
       } catch {}
       desk.hubId = (hubs.some(h => h.id === remembered) && remembered) || hubs[0]?.id || null;
     }
-    const anchor = q("#mainContent .workflow-grid");
-    if (anchor) anchor.insertAdjacentHTML("beforebegin", deskMarkup());
-    else $("mainContent").insertAdjacentHTML("beforeend", deskMarkup());
+    $("mainContent").insertAdjacentHTML("beforeend", deskMarkup());
     const input = $("rdCode");
     if (input && DF.scanner) {
       DF.scanner.attach(input, {
@@ -399,8 +342,9 @@
         },
       });
     }
-    if (!desk.batches.length || Date.now() - (desk.loadedAt || 0) > 30000) {
-      desk.loadedAt = Date.now();
+    if (desk.epoch !== Ops.navEpoch || desk.loadedFor !== desk.hubId) {
+      desk.epoch = Ops.navEpoch;
+      desk.loadedFor = desk.hubId;
       void loadBatches();
     }
   };
@@ -439,6 +383,7 @@
       desk.batch = null;
       desk.missing = null;
       desk.batches = [];
+      desk.loadedFor = desk.hubId;
       void loadBatches();
       $("rdCode")?.focus();
     }
@@ -456,6 +401,7 @@
       const button = event.target.closest("[data-rd]");
       if (!button || !$("receiveDesk")?.contains(button)) return;
       event.stopImmediatePropagation();
+      if (button.dataset.rd === "find") return void findCode();
       if (button.dataset.rd === "missing") loadMissing().catch(error => showToast(DF.describe(error)));
       if (button.dataset.rd === "labels") {
         const run = desk.missing ? Promise.resolve() : loadMissing();
@@ -464,6 +410,32 @@
     },
     true,
   );
+  /** "Find": the code in the box → the parcel drawer (nothing is received). */
+  function findCode() {
+    const input = $("rdCode");
+    const raw = input.value.trim();
+    if (!raw) {
+      desk.feedback = { tone: "warn", text: "Scan or type a tracking ID, CN or phone number, then choose Find." };
+      return paintDesk();
+    }
+    Ops.recordScan?.(raw, "HUB_LOOKUP", desk.hubId, "KEYBOARD");
+    (Ops.findParcels ? Ops.findParcels(raw) : Promise.resolve([]))
+      .then(found => {
+        if (!found.length) {
+          desk.feedback = { tone: "bad", text: `No parcel found for ${raw}.` };
+          return paintDesk();
+        }
+        const p = found[0];
+        desk.feedback = { tone: "blue", text: `${p.trackingId} · ${p.statusLabel} · ${p.currentHub?.name || "not at a hub"} · ${p.recipient?.name || "recipient not set"}, ${p.delivery?.zone || "—"}` };
+        paintDesk();
+        Ops.drawer?.open(p.trackingId, found.length > 1 ? found : []);
+      })
+      .catch(error => {
+        desk.feedback = { tone: "bad", text: DF.describe(error) };
+        paintDesk();
+      });
+  }
+
   // Live: other desks receiving parcels of the chosen import.
   DF.events.on("parcel.updated", () => {
     if (!desk.batchId || !$("receiveDesk")) return;
@@ -500,19 +472,7 @@
     });
   }).observe(document.getElementById("mainContent") || document.body, { childList: true, subtree: true });
 
-  // The tracking history dialog doubles as the parcel's detail view.
-  const baseHistory = courierTrackingHistory;
-  courierTrackingHistory = function (id) {
-    baseHistory(id);
-    const parcel = Ops.apiParcel(id);
-    const header = document.querySelector("#courierHistoryBackdrop header");
-    if (!header || !canChangeIntake(parcel)) return;
-    const info = parcel.intake === "DROP_OFF" ? `Drop-off at ${parcel.dropOffHub?.name || "hub"}` : parcel.pickupRider ? `Rider pickup · ${parcel.pickupRider.label}` : "Rider pickup";
-    header.insertAdjacentHTML(
-      "afterend",
-      `<div data-intake-detail style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:10px 12px;border:1px solid #dfe5ee;border-radius:9px"><span style="color:#647184">${esc(info)}</span>${intakeButton(parcel)}</div>`,
-    );
-  };
+  // (The parcel's detail view is the drawer, bridge-parcel.js: it shows the intake and its change button.)
 
   function openIntakeChange(parcel) {
     const toDropOff = parcel.intake !== "DROP_OFF";
@@ -556,7 +516,6 @@
       if (!parcel) return;
       if (!Ops.require("dispatch", "change pickup or drop-off")) return;
       if (!INTAKE_CHANGEABLE.includes(parcel.status)) return void showToast(`${parcel.trackingId} is ${parcel.statusLabel.toLowerCase()}; pickup and drop-off can only change before pickup.`);
-      $("courierHistoryBackdrop")?.remove();
       openIntakeChange(parcel);
     },
     true,

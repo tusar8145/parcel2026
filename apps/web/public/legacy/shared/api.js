@@ -610,7 +610,7 @@
       }
     }
     if (app === "courier-operation") {
-      jobs.push(parcels.reload());
+      // Parcels are loaded per table on screen (server-paged lists, courier-operation/bridge-lists.js).
       // Not every operations role may list riders (e.g. finance); the page copes without them.
       if (auth.hasRole("SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "SUPPORT_AGENT"))
         jobs.push(api("/riders?active=true").then(r => (state.riders = r)).catch(() => (state.riders = [])));
@@ -670,7 +670,7 @@
         profile.style.cursor = "pointer";
         profile.title = "Sign out";
         profile.addEventListener("click", async () => {
-          if (!confirm(`Sign out ${user.name}?`)) return;
+          if (!(await DF.confirm({ title: "Sign out?", message: `Sign out ${user.name} on this device?`, confirm: "Sign out" }))) return;
           await auth.logout();
           location.href = "/login";
         });
@@ -690,6 +690,13 @@
 
   const listeners = new Map(); // type -> Set<handler>; "*" gets everything, "reconnect" after a gap
   let streaming = false;
+  /** The live stream's state: "connecting" | "live" | "offline" (DF.events.state; "connection" events on change). */
+  let connection = "connecting";
+  const setConnection = next => {
+    if (next === connection) return;
+    connection = next;
+    emit("connection", { state: next });
+  };
 
   async function streamEvents() {
     if (streaming) return;
@@ -718,6 +725,7 @@
             const data = raw ? JSON.parse(raw) : {};
             if (type === "ready") {
               failures = 0;
+              setConnection("live");
               // Anything may have changed while we weren't connected.
               if (!first) emit("reconnect", data);
               first = false;
@@ -727,8 +735,10 @@
           }
         }
         emit("reconnect", {}); // the server closes the stream when the token expires
+        setConnection("connecting");
       } catch {
         failures++;
+        setConnection(failures > 1 || navigator.onLine === false ? "offline" : "connecting");
       }
       await new Promise(resolve => setTimeout(resolve, Math.min(30_000, 1000 * 2 ** Math.min(failures, 5))));
     }
@@ -756,6 +766,10 @@
     /** Reconnects the stream (e.g. when the device comes back online). */
     restart() {
       if (state.user) void streamEvents();
+    },
+    /** "connecting" | "live" | "offline"; subscribe to "connection" for changes. */
+    get state() {
+      return connection;
     },
   };
 
@@ -884,6 +898,91 @@
     field.addEventListener("blur", () => check(true));
     field.addEventListener("input", () => touched && check(false));
     return check;
+  };
+
+  // ───────────── small in-page dialogs (replace window.confirm / prompt / alert) ─────────────
+
+  /**
+   * One consistent small dialog for every panel (own inline styles, above any page modal):
+   *   await DF.confirm("Delete it?") / DF.confirm({ title, message, confirm: "Delete", danger: true }) → true|false
+   *   await DF.prompt({ title, message, label, value, required, multiline, placeholder, maxLength, validate }) → string|null
+   *   await DF.choose({ title, message, label, options: [{ value, label }], value }) → value|null
+   *   await DF.alert({ title, message }) → undefined
+   * Esc / Cancel / the backdrop resolve false|null. Browser tests: `.df-dialog [data-df-dialog-ok]`,
+   * `[data-df-dialog-cancel]`, the field `#dfDialogInput` (tests/e2e/support.ts `confirmDialog`).
+   */
+  const dialogEsc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+  function smallDialog({ title, message = "", field = null, ok = "OK", cancel = "Cancel", danger = false, alertOnly = false }) {
+    return new Promise(resolve => {
+      const previous = document.activeElement;
+      const overlay = document.createElement("div");
+      overlay.className = "df-dialog";
+      overlay.setAttribute("role", alertOnly ? "alertdialog" : "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-labelledby", "dfDialogTitle");
+      overlay.style.cssText = "position:fixed;inset:0;z-index:2147483000;background:rgba(20,32,51,.45);display:grid;place-items:center;padding:16px;font-family:inherit";
+      const accent = danger ? "#b42318" : "#0f7b5f";
+      const control = field
+        ? field.options
+          ? `<select id="dfDialogInput" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d6dde6;border-radius:9px;font:inherit;background:#fff">${field.options.map(o => `<option value="${dialogEsc(o.value)}" ${String(o.value) === String(field.value ?? "") ? "selected" : ""}>${dialogEsc(o.label)}</option>`).join("")}</select>`
+          : field.multiline
+          ? `<textarea id="dfDialogInput" rows="3" maxlength="${field.maxLength || 500}" placeholder="${dialogEsc(field.placeholder || "")}" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d6dde6;border-radius:9px;font:inherit;resize:vertical">${dialogEsc(field.value || "")}</textarea>`
+          : `<input id="dfDialogInput" type="${field.type || "text"}" value="${dialogEsc(field.value || "")}" maxlength="${field.maxLength || 200}" placeholder="${dialogEsc(field.placeholder || "")}" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d6dde6;border-radius:9px;font:inherit">`
+        : "";
+      overlay.innerHTML = `<form style="width:min(440px,100%);background:#fff;color:#172033;border-radius:14px;padding:20px 20px 16px;box-shadow:0 24px 70px rgba(16,24,40,.28)" novalidate>
+        <h2 id="dfDialogTitle" style="margin:0 0 6px;font-size:17px;line-height:1.3">${dialogEsc(title || (field ? "Please confirm" : "Are you sure?"))}</h2>
+        ${message ? `<p style="margin:0 0 12px;color:#5b6576;font-size:14px;line-height:1.45;white-space:pre-line">${dialogEsc(message)}</p>` : ""}
+        ${field ? `<label for="dfDialogInput" style="display:block;margin:0 0 6px;font-size:13px;font-weight:600">${dialogEsc(field.label || "Value")}${field.required ? "" : ` <span style="font-weight:400;color:#8a94a3">(optional)</span>`}</label>${control}` : ""}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+          ${alertOnly ? "" : `<button type="button" data-df-dialog-cancel style="padding:8px 14px;border:1px solid #d6dde6;border-radius:9px;background:#fff;color:#172033;font:inherit;font-weight:600;cursor:pointer">${dialogEsc(cancel)}</button>`}
+          <button type="submit" data-df-dialog-ok style="padding:8px 14px;border:1px solid ${accent};border-radius:9px;background:${accent};color:#fff;font:inherit;font-weight:600;cursor:pointer">${dialogEsc(ok)}</button>
+        </div></form>`;
+      document.body.append(overlay);
+      const form = overlay.querySelector("form");
+      const input = overlay.querySelector("#dfDialogInput");
+      let check = () => true;
+      if (input) check = DF.validate.field(input, () => (field.required && !input.value.trim() ? "This field is required" : field.validate?.(input.value.trim()) || ""));
+      const finish = value => {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey, true);
+        try {
+          previous?.focus?.();
+        } catch {}
+        resolve(value);
+      };
+      const cancelValue = alertOnly ? undefined : field ? null : false;
+      const onKey = event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          finish(cancelValue);
+        }
+      };
+      document.addEventListener("keydown", onKey, true);
+      overlay.addEventListener("mousedown", event => event.target === overlay && finish(cancelValue));
+      overlay.querySelector("[data-df-dialog-cancel]")?.addEventListener("click", () => finish(cancelValue));
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (input && !check(true)) return void input.focus();
+        finish(alertOnly ? undefined : input ? input.value.trim() : true);
+      });
+      (input || overlay.querySelector("[data-df-dialog-ok]")).focus();
+    });
+  }
+  const asOptions = (value, fallbackTitle) => (typeof value === "string" ? { message: value, title: fallbackTitle } : value || {});
+  DF.confirm = options => {
+    const o = asOptions(options);
+    return smallDialog({ title: o.title, message: o.message, ok: o.confirm || "Confirm", cancel: o.cancel || "Cancel", danger: !!o.danger });
+  };
+  DF.prompt = options => {
+    const o = asOptions(options);
+    return smallDialog({ title: o.title, message: o.message, ok: o.confirm || "Save", cancel: o.cancel || "Cancel", danger: !!o.danger, field: { label: o.label, value: o.value, required: !!o.required, multiline: !!o.multiline, placeholder: o.placeholder, maxLength: o.maxLength, validate: o.validate, type: o.type } });
+  };
+  DF.choose = options => smallDialog({ title: options.title, message: options.message, ok: options.confirm || "Continue", cancel: options.cancel || "Cancel", field: { label: options.label, value: options.value, required: true, options: options.options || [] } });
+  DF.alert = options => {
+    const o = asOptions(options, "Notice");
+    return smallDialog({ title: o.title, message: o.message, ok: o.confirm || "OK", alertOnly: true });
   };
 
   DF.ready = boot().catch(error => {

@@ -401,8 +401,8 @@
       const previewButton = event.target.closest("[data-nt-preview]");
       if (previewButton) void busy(previewButton, () => preview(form));
       const resetButton = event.target.closest("[data-nt-reset]");
-      if (resetButton && confirm("Go back to the default text for this message?"))
-        void busy(resetButton, async () => {
+      if (resetButton)
+        void DF.confirm({ title: "Restore the default text?", message: "Your edits to this message are replaced by the default text.", confirm: "Restore default" }).then(ok => ok && busy(resetButton, async () => {
           try {
             replaceEvent(await DF.api(`/notifications/templates/${encodeURIComponent(name)}/${channel}/reset`, { method: "POST" }));
             rerenderEditor();
@@ -410,7 +410,7 @@
           } catch (error) {
             fail(error);
           }
-        });
+        }));
     });
     form.addEventListener("submit", event => {
       event.preventDefault();

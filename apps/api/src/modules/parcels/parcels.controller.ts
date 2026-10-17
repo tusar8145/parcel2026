@@ -7,7 +7,6 @@ import {
   cancelParcelSchema,
   createParcelSchema,
   deliveryOutcomeSchema,
-  listParcelsQuerySchema,
   pickupOutcomeSchema,
   updateStatusSchema,
 } from "@delivery-fast/shared";
@@ -19,6 +18,7 @@ import { withIdempotency } from "../../common/idempotency";
 import { ParcelsService } from "./parcels.service";
 import { RiderTasksService } from "./rider-tasks.service";
 import { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
+import { listParcelsWithStageSchema } from "./parcel-stages";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { AnalyticsService } from "../analytics/analytics.service";
 
@@ -64,8 +64,8 @@ export class ParcelsController {
   @AllowApiKey()
   @RequireApiKeyScope("parcels:read")
   @Get("parcels")
-  @ApiZodQuery(listParcelsQuerySchema)
-  list(@CurrentActor() actor: Actor, @ZQuery(listParcelsQuerySchema) query: z.infer<typeof listParcelsQuerySchema>) {
+  @ApiZodQuery(listParcelsWithStageSchema)
+  list(@CurrentActor() actor: Actor, @ZQuery(listParcelsWithStageSchema) query: z.infer<typeof listParcelsWithStageSchema>) {
     return this.parcels.list(actor, query);
   }
 

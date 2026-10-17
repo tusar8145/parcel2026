@@ -208,5 +208,52 @@
     return input;
   }
 
-  DF.scanner = { start, stop, open, attach, normalize, supported };
+  /**
+   * The same scan result for every scan box: a short high beep (ok) or a long low one (error), a
+   * vibration on phones, and the box flashing green or red. `input` is an element or its id (looked up
+   * now, so a box redrawn after the scan still flashes); `message` (optional) is announced in a polite
+   * live region next to it. The box gets data-scan-result="ok|error" (browser tests read it).
+   *   DF.scanner.feedback(input, ok, message?)
+   */
+  let feedbackCtx = null;
+  function scanFeedback(input, ok, message) {
+    try {
+      navigator.vibrate?.(ok ? 60 : [80, 60, 80]);
+      feedbackCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+      const osc = feedbackCtx.createOscillator();
+      const gain = feedbackCtx.createGain();
+      osc.frequency.value = ok ? 880 : 220;
+      gain.gain.value = 0.06;
+      osc.connect(gain).connect(feedbackCtx.destination);
+      osc.start();
+      osc.stop(feedbackCtx.currentTime + (ok ? 0.08 : 0.25));
+    } catch {}
+    const el = typeof input === "string" ? document.getElementById(input) : input;
+    if (!el) return;
+    el.dataset.scanResult = ok ? "ok" : "error";
+    const colour = ok ? "#12a150" : "#d92d20";
+    el.style.transition = "box-shadow .15s, border-color .15s";
+    el.style.boxShadow = `0 0 0 3px ${ok ? "#12a15033" : "#d92d2033"}`;
+    el.style.borderColor = colour;
+    clearTimeout(el._dfScanTimer);
+    el._dfScanTimer = setTimeout(() => {
+      el.style.boxShadow = "";
+      el.style.borderColor = "";
+    }, 900);
+    if (message != null) {
+      let live = el.parentElement?.querySelector(":scope > .df-scan-result");
+      if (!live) {
+        live = document.createElement("small");
+        live.className = "df-scan-result";
+        live.setAttribute("role", "status");
+        live.setAttribute("aria-live", "polite");
+        live.style.cssText = "display:block;margin-top:4px;font-size:12px;font-weight:600";
+        (el.nextElementSibling?.matches?.("button") ? el.nextElementSibling : el).after(live);
+      }
+      live.textContent = message;
+      live.style.color = colour;
+    }
+  }
+
+  DF.scanner = { start, stop, open, attach, normalize, supported, feedback: scanFeedback };
 })();

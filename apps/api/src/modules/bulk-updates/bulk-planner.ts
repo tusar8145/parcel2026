@@ -17,7 +17,8 @@ import type { Hub, Parcel, Prisma, Rider } from "../../generated/prisma/client";
 import type { Catalog } from "../pricing/pricing.service";
 import { resolvePlace } from "../parcels/places";
 import { describeMissing, missingFor, type MissingField } from "../parcels/incomplete";
-import { ACTION_LABEL, DETAIL_KEYS, headerOf, parseAction, parseSettableStatus, riderCodeOf, type BulkAction, type BulkColumnKey } from "./bulk-columns";
+import { ACTION_LABEL, DETAIL_KEYS, headerOf, parseSettableStatus, riderCodeOf, type BulkAction, type BulkColumnKey } from "./bulk-columns";
+import { parseChoice, type BulkChoice } from "./bulk-kinds";
 
 export type BulkRowCells = Partial<Record<BulkColumnKey, string>>;
 export interface Problem {
@@ -114,6 +115,8 @@ export class BulkPlanner {
       catalog: Catalog;
       /** Hub operators' hubs; null = the whole network. */
       scope: string[] | null;
+      /** The page template's Action labels (null = any action: All parcels) and its title for messages. */
+      allowed?: { labels: Set<string>; page: string } | null;
     },
   ) {
     for (const r of ctx.riders) this.ridersByCode.set(r.code.toUpperCase(), r);
@@ -139,8 +142,13 @@ export class BulkPlanner {
     const warn = (column: string, message: string) => warnings.push({ column, message });
     const base: CheckedRow = { rowNumber, status: "ERROR", action: null, trackingId: cells.tracking_id ?? null, parcelId: null, expectedVersion: null, priority: 0, cells, plan: null, errors, warnings, result: null, dedupeKey: null };
 
-    const action = cells.action ? parseAction(cells.action) : undefined;
-    if (!action) err("action", `"${cells.action}" is not an action: choose one from the list`);
+    let choice = cells.action ? parseChoice(cells.action) : undefined;
+    if (!choice) err("action", `"${cells.action}" is not an action: choose one from the list`);
+    else if (this.ctx.allowed && !this.ctx.allowed.labels.has(choice.label)) {
+      err("action", `"${choice.label}" isn't an action of the ${this.ctx.allowed.page} page: choose one from the list (or upload the file on All parcels)`);
+      choice = undefined;
+    }
+    const action = choice?.action;
     base.action = action ?? null;
     const priority = cells.priority ? (norm(cells.priority) === "high" ? 1 : norm(cells.priority) === "normal" ? 0 : null) : 0;
     if (priority === null) err("priority", "Choose Normal or High");
@@ -166,7 +174,8 @@ export class BulkPlanner {
         else this.seen.set(parcel.id, rowNumber);
       }
     }
-    if (!action || !parcel) return base;
+    if (!action || !choice || !parcel) return base;
+    const label = choice.label;
     if (versionText && version === null) err("version", "The version was changed: download a fresh file");
     if (!versionText) warn("version", "No version (not a downloaded file?): changes made since can't be detected");
 
@@ -174,15 +183,15 @@ export class BulkPlanner {
     const detailFilled = DETAIL_KEYS.filter(k => cells[k]?.trim());
     if (detailFilled.length && action !== "COMPLETE_DETAILS" && action !== "ASSIGN_DELIVERY")
       err(detailFilled[0], `The Set … columns are only used by "${ACTION_LABEL.COMPLETE_DETAILS}" (or "${ACTION_LABEL.ASSIGN_DELIVERY}")`);
-    if (cells.rider?.trim() && !RIDER_ACTIONS.includes(action)) warn("rider", `Ignored: "${ACTION_LABEL[action]}" doesn't use a rider`);
-    if (cells.new_status?.trim() && action !== "SET_STATUS") warn("new_status", `Ignored: only "${ACTION_LABEL.SET_STATUS}" uses it`);
-    if (cells.hub?.trim() && !HUB_ACTIONS.includes(action)) warn("hub", `Ignored: "${ACTION_LABEL[action]}" doesn't use a hub`);
+    if (cells.rider?.trim() && !RIDER_ACTIONS.includes(action)) warn("rider", `Ignored: "${label}" doesn't use a rider`);
+    if (cells.new_status?.trim() && (action !== "SET_STATUS" || choice.status)) warn("new_status", choice.status ? `Ignored: "${label}" always sets "${PARCEL_STATUS_LABEL[choice.status]}"` : `Ignored: only "${ACTION_LABEL.SET_STATUS}" uses it`);
+    if (cells.hub?.trim() && !HUB_ACTIONS.includes(action)) warn("hub", `Ignored: "${label}" doesn't use a hub`);
     const note = cells.note?.trim() || undefined;
     if (note && note.length > 500) err("note", "Use at most 500 characters");
-    if (NOTE_REQUIRED.includes(action) && !note) err("note", action === "ADD_NOTE" ? "Write the note" : `Give the reason for "${ACTION_LABEL[action]}"`);
+    if ((NOTE_REQUIRED.includes(action) || choice.noteRequired) && !note) err("note", action === "ADD_NOTE" ? "Write the note" : `Give the reason for "${label}"`);
 
     const plan: BulkPlan = { note };
-    const done = this.planAction(action, parcel, cells, plan, err, warn);
+    const done = this.planAction(action, choice, parcel, cells, plan, err, warn);
     base.plan = plan;
     base.dedupeKey = createHash("sha256").update(JSON.stringify([parcel.id, version, action, plan])).digest("hex");
     if (done && !errors.length) {
@@ -205,7 +214,7 @@ export class BulkPlanner {
   }
 
   /** Validates the action for this parcel and fills `plan`; returns why it is already done, if it is. */
-  private planAction(action: BulkAction, p: PlannerParcel, cells: BulkRowCells, plan: BulkPlan, err: (c: string, m: string) => void, warn: (c: string, m: string) => void): string | null {
+  private planAction(action: BulkAction, choice: BulkChoice, p: PlannerParcel, cells: BulkRowCells, plan: BulkPlan, err: (c: string, m: string) => void, warn: (c: string, m: string) => void): string | null {
     const status = p.status as ParcelStatus;
     const label = statusLabelOf(p);
     const can = (to: ParcelStatus) => canTransition(status, to, "ops", { intake: p.intake });
@@ -243,7 +252,7 @@ export class BulkPlanner {
         return null;
       }
       case "SET_STATUS": {
-        const raw = cells.new_status?.trim();
+        const raw = choice.status ? PARCEL_STATUS_LABEL[choice.status] : cells.new_status?.trim();
         const to = raw ? parseSettableStatus(raw) : undefined;
         if (!raw) {
           err("new_status", "Choose the new status");
@@ -260,6 +269,10 @@ export class BulkPlanner {
             PENDING_CONFIRMATION: "a parcel can't go back to pending",
           };
           err("new_status", parsed ? `"${PARCEL_STATUS_LABEL[parsed]}" can't be set here: ${hint[parsed] ?? "choose one from the list"}` : `"${raw}" is not a status (choose one from the list)`);
+          return null;
+        }
+        if (choice.statuses && !choice.statuses.includes(to)) {
+          err("new_status", `"${choice.label}" moves a parcel to ${choice.statuses.map(s => `"${PARCEL_STATUS_LABEL[s]}"`).join(", ")}: choose one from the list`);
           return null;
         }
         plan.status = to;

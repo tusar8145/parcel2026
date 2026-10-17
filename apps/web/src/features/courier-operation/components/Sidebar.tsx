@@ -69,14 +69,14 @@ export default function Sidebar() {
           <span>fast</span>
         </div>
       </div>{" "}
-      <button className="company-switch" id="companySwitch">
+      {/* A brand label (there is one company to show; nothing to switch). */}
+      <div className="company-switch" id="companySwitch" style={{ cursor: "default" }}>
         <span className="company-avatar">DF</span>
         <span className="company-info">
           <strong>Delivery Fast</strong>
           <small>Operations console</small>
         </span>
-        <span className="switch-chevron">⌄</span>
-      </button>{" "}
+      </div>{" "}
       <nav id="navigation">
         {" "}
         {/* Courier Operations navigation, organised around the parcel journey. Each item opens a
@@ -113,12 +113,11 @@ export default function Sidebar() {
           <NavItem nav="Settings" icon="settings" label="Settings" />
         </div>{" "}
         {/* The original page buttons, kept hidden: the page scripts mark the page on screen
-            here (".nav-item.active", "[data-page=Hubs].active") and write their badges. */}
+            here (".nav-item.active", "[data-page=Hubs].active"). Badges are on the journey menu. */}
         <div className="nav-group" id="legacyNav" hidden aria-hidden="true">
           {LEGACY_PAGES.map(([page, label]) => (
             <button key={page} type="button" className={page === "Overview" ? "nav-item active" : "nav-item"} data-page={page} tabIndex={-1}>
               {label}
-              {["Shipments", "Dispatch", "Exceptions"].includes(page) ? <span className="nav-count" /> : null}
             </button>
           ))}
         </div>{" "}

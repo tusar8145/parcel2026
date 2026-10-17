@@ -5,24 +5,29 @@
  * is one or more tabs, and each tab is an original page (its renderer, data, actions and
  * permissions unchanged) shown with a filter, a mode or a subset of its sections:
  *
- *   Today               Overview + a card per journey stage with its live count (the map stays)
- *   1 New orders        Shipments, only "Pending operations confirmation" (all lines)
- *   2 Pickup            Dispatch (pickup half of the queue) · Scheduled pickups
- *   3 Hub desk          Hubs: Receive (scan, receive, transfer, register) · Drop-off receive (receive
- *                       desk) · Hub Pickup counter
+ *   Today               Overview: a card per journey stage with its live count, one metrics row, the
+ *                       map, the latest parcels and the priority alerts
+ *   1 New orders        Shipments, only "Pending operations confirmation" (all lines), bulk Accept & assign
+ *   2 Pickup            Dispatch: waiting for a pickup rider + being picked up · Scheduled pickups
+ *   3 Hub desk          Hubs: Receive (the receive desk: any arrival, drop-offs, "Find") · At my hub
+ *                       (parcels at the hub now, with their next action) · Hub Pickup counter · End of day
  *   4 Transfers         Linehaul
- *   5 Delivery          Dispatch (delivery half of the queue, map, route planner)
+ *   5 Delivery          Dispatch: waiting for a delivery rider + out with riders, map, route planner
  *   6 Problems          Exceptions page: Exceptions · Failed delivery · Needs info · SLA late-risk
  *   7 Returns           Returns
  *   8 COD & settlement  COD & finance
  *   All parcels         Shipments · E-commerce · Banking & Financial · Customer (the service-line pages)
  *   Reports             Reports · Analytics & SLA
- *   Riders · Merchants · Hubs & zones (Hubs: register, capacity, zones, routes) · CN stock · Settings
+ *   Riders · Merchants · Hubs & zones (Hubs: register with capacity, zones, routes) · CN stock · Settings
+ *
+ * Parcel tables are server-paged lists (bridge-lists.js, about 100 rows a page): a tab's `list` names
+ * its stage / service line; hub operators see "my hub" by default. A tab draws only its own sections.
  *
  * The page scripts keep using the original page names (render("Hubs"), Ops.page(), the hidden
  * #breadcrumbPage and #legacyNav buttons), so every old name still opens the right place:
  * render(oldName), ?page=<old or new name>[&tab=<tab>], alert and notification links. Stage counts
- * are the parcels of the loaded working set at each stage (updated with live parcel events).
+ * come from GET /ops/stage-counts (database counts for the scope on screen, reloaded after live
+ * parcel events).
  * The menu shows what each role uses (the permissions themselves are unchanged).
  */
 (() => {
@@ -33,7 +38,6 @@
   const q = (selector, root = document) => root.querySelector(selector);
   const qa = (selector, root = document) => [...root.querySelectorAll(selector)];
   const esc = Ops.esc;
-  const CLOSED = ["DELIVERED", "PICKUP_CANCELLED", "RETURNED"];
   const show = (el, on) => el && (el.style.display = on ? "" : "none");
 
   document.head.insertAdjacentHTML(
@@ -51,17 +55,9 @@
 
   // ───────────── journey stages ─────────────
 
-  /** Parcels at each stage (API statuses), counted from the working set. */
-  const STAGES = {
-    "New orders": p => p.status === "PENDING_CONFIRMATION",
-    Pickup: p => ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED", "PICKED_UP"].includes(p.status),
-    "Hub desk": p => ["AT_HUB", "READY_FOR_COLLECTION"].includes(p.status),
-    Transfers: p => p.status === "IN_TRANSIT",
-    Delivery: p => ["ASSIGNED", "OUT_FOR_DELIVERY"].includes(p.status),
-    Problems: p => ["EXCEPTION", "RETRY_SCHEDULED"].includes(p.status) || (!!p.incomplete && !CLOSED.includes(p.status)),
-    Returns: p => p.status === "RETURN_SCHEDULED",
-  };
-  const JOURNEY = Object.keys(STAGES);
+  const JOURNEY = ["New orders", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns"];
+  /** Each stage's number in GET /ops/stage-counts `stages`. */
+  const STAGE_COUNT = { "New orders": "newOrders", Pickup: "pickup", "Hub desk": "hubDesk", Transfers: "transfers", Delivery: "delivery", Problems: "problems", Returns: "returns" };
   const STAGE_HINT = {
     "New orders": ["box", "Accept & assign rider"],
     Pickup: ["clock", "Riders collecting"],
@@ -71,8 +67,6 @@
     Problems: ["alert", "Exceptions · failed · needs info"],
     Returns: ["box", "Going back to merchants"],
   };
-  /** Pickup-side work in the dispatch queue (the rest is delivery). */
-  const isPickupWork = p => ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"].includes(p.status) || (p.status === "EXCEPTION" && !p.pickedUpAt && !p.currentHub);
 
   // ───────────── views ─────────────
 
@@ -81,8 +75,8 @@
     "New orders": {
       stage: "New orders",
       subtitle: "Orders waiting for operations: accept and assign a pickup rider, switch to drop-off, or cancel the request.",
-      tabs: [{ id: "New orders", page: "Shipments", rows: p => p.status === "PENDING_CONFIRMATION" }],
-      bulk: { preset: "pending_review" },
+      tabs: [{ id: "New orders", page: "Shipments", list: { stage: "new" }, bulkAccept: true }],
+      bulk: {}, // the New orders template (bridge-bulk.js) holds this page's parcels
       shipmentPage: true,
     },
     Pickup: {
@@ -91,44 +85,46 @@
         { id: "Assign pickup rider", page: "Dispatch", mode: "pickup" },
         { id: "Scheduled pickups", page: "Scheduled pickups" },
       ],
-      bulk: { status: "PICKUP_ASSIGNED" },
+      bulk: {},
       subtitle: "Assign pickup riders to accepted orders and follow merchants' scheduled pickups.",
     },
     "Hub desk": {
       stage: "Hub desk",
       tabs: [
         { id: "Receive", page: "Hubs", part: "receive" },
-        { id: "Drop-off receive", page: "Hubs", part: "desk" },
+        { id: "At my hub", page: "Hubs", part: "athub" },
         { id: "Hub Pickup counter", page: "Hubs", part: "collect" },
+        // End-of-day reconciliation (bridge-desk.js): arrivals, dispatches and cash for a hub and a day.
+        { id: "End of day", page: "Hubs", part: "eod" },
       ],
-      bulk: { status: "AT_HUB" },
-      subtitle: "Receive parcels into the hub, scan drop-offs and hand parcels to receivers at the counter.",
+      bulk: {},
+      subtitle: "Receive every arrival (drop-offs, pickups, transfers), work the parcels at your hub and hand parcels to receivers at the counter.",
     },
-    Transfers: { stage: "Transfers", tabs: [{ id: "Transfers", page: "Linehaul" }], bulk: { status: "IN_TRANSIT" } },
+    Transfers: { stage: "Transfers", tabs: [{ id: "Transfers", page: "Linehaul" }] }, // no bulk: transfers go through linehaul bags
     Delivery: {
       stage: "Delivery",
       tabs: [{ id: "Assign delivery rider", page: "Dispatch", mode: "delivery" }],
-      bulk: { preset: "at_hub_unassigned" },
+      bulk: {},
       subtitle: "Assign delivery riders to parcels at the hub, plan routes and follow riders on the map.",
     },
     Problems: {
       stage: "Problems",
       tabs: [
-        { id: "Exceptions", page: "Exceptions", rows: p => p.status === "EXCEPTION", bulk: { status: "EXCEPTION" }, title: "Exception work queue" },
-        { id: "Failed delivery", page: "Exceptions", rows: p => p.status === "RETRY_SCHEDULED", bulk: { status: "RETRY_SCHEDULED" }, title: "Failed deliveries · retry scheduled" },
-        { id: "Needs info", page: "Exceptions", rows: p => !!p.incomplete && !CLOSED.includes(p.status), bulk: { incomplete: true }, title: "Orders with details missing" },
-        { id: "SLA late-risk", page: "Exceptions", rows: (p, s) => s?.sla === "At risk" && !CLOSED.includes(p.status), bulk: { sla: "AT_RISK" }, title: "Late or at risk of missing the delivery promise", sla: true },
+        { id: "Exceptions", page: "Exceptions", list: { stage: "exceptions" }, bulk: { status: "EXCEPTION" }, title: "Exception work queue", empty: "No open exceptions." },
+        { id: "Failed delivery", page: "Exceptions", list: { stage: "failed" }, bulk: { status: "RETRY_SCHEDULED" }, title: "Failed deliveries · retry scheduled", empty: "No failed deliveries waiting for another attempt." },
+        { id: "Needs info", page: "Exceptions", list: { stage: "needs_info" }, bulk: { incomplete: true }, title: "Orders with details missing", empty: "No orders are missing details." },
+        { id: "SLA late-risk", page: "Exceptions", list: { stage: "sla_risk" }, bulk: { sla: "AT_RISK" }, title: "Late or at risk of missing the delivery promise", sla: true, empty: "No parcels are past their promised delivery time." },
       ],
       subtitle: "Resolve exceptions, failed deliveries, missing details and parcels at risk of running late.",
     },
-    Returns: { stage: "Returns", tabs: [{ id: "Returns", page: "Returns" }], bulk: { status: "RETURN_SCHEDULED" } },
+    Returns: { stage: "Returns", tabs: [{ id: "Returns", page: "Returns" }], bulk: {} },
     "COD & settlement": { tabs: [{ id: "COD & settlement", page: "COD & finance" }] },
     "All parcels": {
       tabs: [
-        { id: "All", page: "Shipments" },
-        { id: "E-commerce", page: "E-commerce operations" },
-        { id: "Banking & Financial", page: "Banking & Financial operations" },
-        { id: "Customer", page: "Customer parcels" },
+        { id: "All", page: "Shipments", list: {} },
+        { id: "E-commerce", page: "E-commerce operations", list: { line: "ECOMMERCE" } },
+        { id: "Banking & Financial", page: "Banking & Financial operations", list: { line: "BANKING_FINANCIAL" } },
+        { id: "Customer", page: "Customer parcels", list: { line: "CUSTOMER" }, merchants: false },
       ],
       shipmentPage: true,
     },
@@ -140,7 +136,7 @@
     },
     Riders: { keepTitle: true, tabs: [{ id: "Riders", page: "Riders" }] },
     Merchants: { keepTitle: true, tabs: [{ id: "Merchants", page: "Merchants" }] },
-    "Hubs & zones": { tabs: [{ id: "Hubs & zones", page: "Hubs", part: "manage" }], subtitle: "Hub register, capacity, delivery zones and routes." },
+    "Hubs & zones": { tabs: [{ id: "Hubs & zones", page: "Hubs", part: "manage" }], subtitle: "Hub register (with capacity), delivery zones and routes." },
     "CN stock": { keepTitle: true, tabs: [{ id: "CN stock", page: "CN stock" }] },
     Settings: { keepTitle: true, tabs: [{ id: "Settings", page: "Settings" }] },
   };
@@ -176,9 +172,12 @@
   const tabOf = (view = state.view, tab = state.tab) => VIEWS[view]?.tabs[tab];
   Ops.view = () => (state.view ? { view: state.view, tab: tabOf()?.id } : null);
 
+  /** Old tab names (links, bookmarks) → today's tab. */
+  const TAB_ALIAS = { "drop-off receive": "Receive", "hub register": "At my hub" };
   const findTab = (view, tab) => {
     const tabs = VIEWS[view].tabs;
-    const i = typeof tab === "number" ? tab : tabs.findIndex(t => t.id.toLowerCase() === String(tab ?? "").toLowerCase());
+    const wanted = TAB_ALIAS[String(tab ?? "").toLowerCase()] || tab;
+    const i = typeof tab === "number" ? tab : tabs.findIndex(t => t.id.toLowerCase() === String(wanted ?? "").toLowerCase());
     return i >= 0 && i < tabs.length ? i : 0;
   };
   /** A view or old page name (any case) → { view, tab } or null. */
@@ -220,30 +219,25 @@
       decorate();
       return;
     }
+    const moved = state.view !== target.view || state.tab !== target.tab;
     state.view = target.view;
     state.tab = target.tab;
     const tab = tabOf();
-    Ops.dispatchQueueFilter = tab.mode === "pickup" ? isPickupWork : tab.mode === "delivery" ? p => !isPickupWork(p) : null;
-    try {
-      innerRender(tab.page);
-    } finally {
-      Ops.dispatchQueueFilter = null;
-    }
+    // The page scripts draw only what the tab shows (Hub desk parts, Pickup / Delivery halves).
+    Ops.tabMode = tab.mode || null;
+    Ops.hubPart = tab.part || null;
+    // Opening a tab (not a redraw of it): sections load their data once per opening (Ops.navEpoch).
+    if (moved) Ops.navEpoch = (Ops.navEpoch || 0) + 1;
+    innerRender(tab.page);
     decorate();
+    if (moved) {
+      // Another view: only the parcels it shows (and the open drawer's) stay in the browser.
+      Ops.lists.forgetHidden();
+      Ops.keepParcels([...Ops.lists.shownIds(), ...(Ops.drawer?.ids?.() || [])]);
+    }
   };
 
   // ───────────── drawing a view ─────────────
-
-  const stageRows = stage => shipments.filter(s => s._api && STAGES[stage](s._api));
-
-  /** Replaces a button's words, keeping its icon. */
-  function setLabel(button, text) {
-    if (!button) return;
-    const icon = button.querySelector("svg");
-    button.textContent = "";
-    if (icon) button.append(icon, ` ${text}`);
-    else button.textContent = text;
-  }
 
   function headingActions() {
     const heading = q("#mainContent .page-heading");
@@ -276,7 +270,28 @@
   function groupShipmentButtons() {
     const actions = headingActions();
     if (!actions || q(".df-more", actions)) return;
-    const keep = '[data-action^="new"], a.button, #courierImport, #courierBulkUpdate, #stageBulkUpdate, #printGeneratedCNs';
+    // One Export: "Download orders / shipments" wrote the same CSV as Export.
+    $("courierDownload")?.remove();
+    // One print control: the format select reads "Print…" and prints the choice (labels included);
+    // "Print labels" stays as the one shortcut. The old Print button is kept hidden (the page script's handler).
+    const format = $("courierPrintFormat");
+    if (format && !format.dataset.printMenu) {
+      format.dataset.printMenu = "1";
+      format.insertAdjacentHTML("afterbegin", `<option value="" selected>Print…</option>`);
+      format.value = "";
+      format.setAttribute("aria-label", "Print: choose what to print");
+      format.title = "Prints the ticked rows, else the rows on screen";
+      const option = q('option[value="label"]', format);
+      if (option) option.textContent = "Shipment labels";
+      const print = $("courierPrint");
+      if (print) print.style.display = "none";
+    }
+    const cn = $("generateCNs");
+    if (cn) {
+      cn.textContent = "CN stock";
+      cn.title = "Pre-printed consignment number labels (allocate, print, check)";
+    }
+    const keep = '[data-action^="new"], a.button, #courierImport, #courierBulkUpdate, #stageBulkUpdate, #printGeneratedCNs, #courierPrintFormat, #courierPrint';
     const rest = [...actions.children].filter(el => !el.matches(keep) && !el.matches('input[type="file"]'));
     const primary = q('[data-action^="new"], a.button', actions);
     for (const el of rest) el.classList.remove("button-primary");
@@ -294,83 +309,88 @@
 
   function stageBulkButton(view, tab) {
     const filters = tab.bulk || VIEWS[view].bulk;
-    if (!filters || !Ops.can("dispatch") || !window.DFImport?.bulk) return;
+    const kind = Ops.bulkKindOf?.(view);
+    if (!filters || !kind || !Ops.can("dispatch") || !window.DFImport?.bulk) return;
     $("courierBulkUpdate")?.remove(); // the page's own button (status from the page filter) is replaced by the stage preset
     const actions = headingActions();
     if (!actions || $("stageBulkUpdate")) return;
     actions.insertAdjacentHTML(
       "beforeend",
-      `<button class="button" id="stageBulkUpdate" type="button" data-stage-bulk title="Download this stage's parcels, fill in actions in Excel, upload and apply">Bulk update by Excel</button>`,
+      `<button class="button" id="stageBulkUpdate" type="button" data-stage-bulk data-kind="${kind}" title="Download this page's parcels with only this page's actions, fill them in in Excel, upload and apply">${Ops.bulkLabel(kind)}</button>`,
     );
   }
 
-  function stagePanel(title, subtitle, rows) {
-    $("stageParcels")?.remove();
-    $("mainContent").insertAdjacentHTML(
-      "beforeend",
-      `<section class="panel table-panel" id="stageParcels" style="margin-top:14px"><div class="panel-heading"><div><h2 class="panel-title">${esc(title)}</h2><p class="panel-subtitle">${esc(subtitle)}</p></div></div>${shipmentRows(rows)}<div class="shipment-count" style="padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px">${esc(`Showing ${rows.length} parcel${rows.length === 1 ? "" : "s"} · updates live`)}</div></section>`,
-    );
+  /** A stage table (server-paged, bridge-lists.js) after `after`, or at the end of the page. */
+  function stageList(id, cfg, title, subtitle, after) {
+    q(`#mainContent [data-list="${CSS.escape(id)}"]`)?.remove();
+    const html = Ops.lists.panel(id, cfg, { title, subtitle, tools: cfg.tools || "" });
+    if (after) after.insertAdjacentHTML("afterend", html);
+    else $("mainContent").insertAdjacentHTML("beforeend", html);
+    Ops.lists.mount(id);
+    return q(`#mainContent [data-list="${CSS.escape(id)}"]`);
   }
 
-  /** Hubs page sections for each tab (Hub desk) and for Hubs & zones. */
+  /** Hub desk tabs: the receive desk and the counter draw themselves (Ops.hubPart); "At my hub" is a stage table. */
   function hubParts(part) {
-    const main = $("mainContent");
-    show($("collectCounter"), part === "collect");
-    show($("receiveDesk"), part === "desk");
-    show($("hubScanForm")?.closest(".workflow-grid"), part === "receive");
-    const transfer = $("hubTransferForm")?.closest(".panel");
-    const config = $("hubConfigForm")?.closest(".panel");
-    show(transfer, part === "receive");
-    show(config, part === "manage");
-    const grid = (transfer || config)?.closest(".workflow-grid");
-    if (grid) {
-      show(grid, part === "receive" || part === "manage");
-      grid.style.gridTemplateColumns = part === "receive" || part === "manage" ? "1fr" : "";
-    }
-    show($("hubRegister"), part === "manage");
-    show($("networkConfig"), part === "manage");
-    show($("hubShipmentRows")?.closest(".table-panel"), part === "receive");
-    const report = qa(":scope > .table-panel", main).find(p => q(".panel-title", p)?.textContent === "Shipment transfer report");
-    show(report, part === "receive");
-    show(q(":scope > .workflow-kpis", main), part !== "manage");
-    const scan = q('#mainContent .heading-actions [data-hub-focus="scan"]');
-    show(scan, part === "receive");
+    if (part !== "athub") return;
+    const mine = Ops.scope.available();
+    const chosen = Ops.lists.get("hub-now")?.filters.hubId || "";
+    // Network staff choose a hub; hub operators switch between their hub and all hubs (Ops.scope).
+    const tools = mine
+      ? ""
+      : `<select class="select-small" data-list-hub aria-label="Hub"><option value="">All hubs</option>${DF.state.hubs.map(h => `<option value="${esc(h.id)}"${h.id === chosen ? " selected" : ""}>${esc(h.name)}</option>`).join("")}</select>`;
+    stageList(
+      "hub-now",
+      { params: () => ({ stage: "hub" }), tools, empty: "No parcels at the hub right now. Parcels you receive appear here with their next step." },
+      mine && Ops.scope.value() === "mine" ? "At my hub now" : "At hubs now",
+      "Received and waiting: assign a delivery rider, add to a transfer when another hub delivers there, or hand over at the counter",
+    );
   }
 
+  /** Pickup and Delivery: the stage's two tables (waiting for a rider, with a rider); the map and route planner on Delivery. */
   function dispatchMode(mode) {
     const pickup = mode === "pickup";
-    const map = q("#mainContent .map")?.closest(".panel");
-    show(map, !pickup);
-    show($("routePlanner"), !pickup);
+    // The assignment queue (with its "N additional shipments" line) gives way to the stage tables.
+    qa("#mainContent .panel").find(p => q(".panel-title", p)?.textContent === "Assignment queue")?.remove();
     const grid = q("#mainContent .dashboard-grid");
-    if (grid) grid.style.gridTemplateColumns = pickup ? "1fr" : "";
-    const queue = qa("#mainContent .panel").find(p => q(".panel-title", p)?.textContent === "Assignment queue");
-    if (queue) {
-      const sub = q(".panel-subtitle", queue);
-      if (sub) sub.textContent = pickup ? "Accepted orders and pickups waiting for a rider" : "Parcels at the hub waiting for a delivery rider";
-    }
-    const stage = pickup ? "Pickup" : "Delivery";
-    stagePanel(
-      pickup ? "Parcels being picked up" : "Parcels out with delivery riders",
-      pickup ? "Pickup assigned, confirmed or picked up · on the way to the hub" : "Assigned to a delivery rider or out for delivery",
-      stageRows(stage),
-    );
+    if (grid && pickup) grid.remove();
+    else if (grid) grid.style.gridTemplateColumns = "1fr";
+    if (pickup) $("routePlanner")?.remove();
+    const tables = pickup
+      ? [
+          ["pickup-waiting", "pickup_waiting", "Waiting for a pickup rider", "Accepted orders without a pickup rider (new orders are accepted with a rider in New orders)", "Every accepted order has a pickup rider."],
+          ["pickup-active", "pickup", "Being picked up", "Pickup assigned, confirmed or picked up · on the way to the hub", "No pickups in progress."],
+        ]
+      : [
+          ["delivery-waiting", "delivery_waiting", "Waiting for a delivery rider", "At the hub · assign a rider, or add to a transfer when another hub delivers there", "No parcels are waiting at a hub for a delivery rider."],
+          ["delivery-active", "delivery", "Out with delivery riders", "Assigned to a delivery rider or out for delivery", "No parcels are out with delivery riders."],
+        ];
+    let after = (!pickup && q("#mainContent .dashboard-grid")) || q("#mainContent .metrics") || q("#mainContent .df-tabs") || q("#mainContent .page-heading");
+    for (const [id, stage, title, subtitle, empty] of tables) after = stageList(id, { params: () => ({ stage }), empty }, title, subtitle, after) || after;
   }
 
   function problemsTab(tab) {
-    const body = $("shipmentBody");
-    if (body) {
-      const rows = shipments.filter(s => s._api && tab.rows(s._api, s));
-      body.closest(".table-scroll").outerHTML = shipmentRows(rows);
-      if (!rows.length) $("shipmentBody").innerHTML = `<tr><td colspan="8" class="empty-state">Nothing here right now.</td></tr>`;
-    }
+    Ops.lists.main(`problems-${tab.list.stage}`, { params: () => ({ ...tab.list }), empty: tab.empty });
     const title = q("#mainContent .table-panel .panel-title");
     if (title) title.textContent = tab.title;
     show($("slaAlerts"), !!tab.sla);
   }
 
+  /** Today: the stage cards and one metrics row; the service-line cards and "Network health" repeated them. */
+  function todayLayout() {
+    q("#mainContent .service-card-grid")?.remove();
+    qa("#mainContent .panel").find(p => q(".panel-title", p)?.textContent === "Network health")?.remove();
+    const grid = q("#mainContent .dashboard-grid");
+    if (grid) grid.style.gridTemplateColumns = "1fr";
+    const feed = $("shipmentBody")?.closest(".table-panel");
+    const feedSub = feed && q(".panel-subtitle", feed);
+    if (feedSub) feedSub.textContent = "The newest parcels · search finds any parcel";
+    Ops.lists.main("today-feed", { params: () => ({}), limit: 6, more: false, merchants: false, noun: "recent parcel", empty: "No parcels yet." });
+  }
+
   function todayCards() {
     if ($("stageCards")) return;
+    // (The numbers follow GET /ops/stage-counts: updateCounts below.)
     const allowed = allowedViews();
     const counts = stageCounts();
     const cards = JOURNEY.filter(stage => allowed.has(stage))
@@ -393,9 +413,8 @@
   /** The same words for the same actions everywhere (labels only). */
   function consistentLabels() {
     qa("#mainContent [data-assign-shipment], #mainContent .alert-list [data-action=\"assign\"]").forEach(b => /^assign$/i.test(b.textContent.trim()) && (b.textContent = "Assign rider"));
-    qa('#mainContent .heading-actions [data-action="assign"]').forEach(b => /assign shipment/i.test(b.textContent) && setLabel(b, "Assign rider"));
-    const receive = q('#hubReceiveForm button[type="submit"]');
-    if (receive) receive.textContent = "Receive";
+    // One way to assign a rider: the row's next action or the drawer ("Suggest riders" and Excel for many).
+    qa('#mainContent .page-heading [data-action="assign"]').forEach(b => b.remove());
     qa("#mainContent [data-exception]").forEach(b => (b.textContent = "Resolve"));
   }
 
@@ -415,41 +434,31 @@
       if (sub && v.subtitle) sub.textContent = v.subtitle;
     }
     tabsBar(view);
-    if (view === "Today") todayCards();
+    if (view === "Today") {
+      todayCards();
+      todayLayout();
+    }
     if (tab.part) hubParts(tab.part);
     if (tab.mode) dispatchMode(tab.mode);
     if (view === "Problems") problemsTab(tab);
-    if (view === "Transfers") stagePanel("Parcels in transit between hubs", "Transferred out of a hub and not yet received at the next one", stageRows("Transfers"));
-    if (view === "Returns") stagePanel("Return scheduled", "Parcels going back to their merchants", stageRows("Returns"));
+    if (view === "Transfers") stageList("transfers", { params: () => ({ stage: "transfers" }), empty: "No parcels are between hubs right now." }, "Parcels in transit between hubs", "Transferred out of a hub and not yet received at the next one");
+    if (view === "Returns") stageList("returns", { params: () => ({ stage: "returns" }), empty: "No parcels are on a return run." }, "Return scheduled", "Parcels going back to their merchants on a return run");
     if (view === "New orders") {
       show(q("#mainContent .stats-mini"), false);
-      show($("statusFilter"), false);
+      $("statusFilter")?.remove(); // every order here has the same status
       const panelTitle = q("#mainContent .table-panel .panel-title");
       if (panelTitle) panelTitle.textContent = "Orders waiting for operations";
+      const panelSub = q("#mainContent .table-panel .panel-subtitle");
+      if (panelSub) panelSub.textContent = "Newest first · 100 a page · tick orders to accept and assign them together";
+      Ops.lists.main("new-orders", { params: () => ({ ...tab.list }), bulkAccept: tab.bulkAccept, noun: "order", empty: "No orders are waiting for operations." });
     }
+    if (view === "All parcels") Ops.lists.main(`all-${tab.id}`, { params: () => ({ ...tab.list }), merchants: tab.merchants, empty: "No parcels match." });
     stageBulkButton(view, tab);
     if (v.shipmentPage) groupShipmentButtons();
-    if (tab.rows && $("shipmentBody") && view !== "Problems") applyShipmentFilters();
     consistentLabels();
     applyMenu();
     updateCounts();
   }
-
-  // A tab with its own rows (New orders) keeps only those, whatever the search or paging adds.
-  const baseFilters = applyShipmentFilters;
-  applyShipmentFilters = function () {
-    baseFilters();
-    const tab = state.view && tabOf();
-    if (!tab?.rows || state.view === "Problems") return;
-    let shown = 0;
-    qa("#shipmentBody tr[data-shipment-id]").forEach(row => {
-      const s = shipments.find(item => item.id === row.dataset.shipmentId);
-      if (!s?._api || !tab.rows(s._api, s)) row.hidden = true;
-      if (!row.hidden) shown++;
-    });
-    const count = $("shipmentBody")?.closest(".table-panel")?.querySelector(".shipment-count");
-    if (count?.firstChild) count.firstChild.textContent = `Showing ${shown} order${shown === 1 ? "" : "s"} · updates live`;
-  };
 
   // The assign and exception dialogs use the same words as the buttons that open them.
   const previousOpenModal = openModal;
@@ -467,7 +476,7 @@
 
   // ───────────── counts ─────────────
 
-  /** Statuses behind each stage, counted in the database by GET /ops/overview (`shipments.byStatus`). */
+  /** Before the stage counts arrive: the statuses behind each stage in GET /ops/overview `shipments.byStatus`. */
   const STAGE_STATUSES = {
     "New orders": ["PENDING_CONFIRMATION"],
     Pickup: ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED", "PICKED_UP"],
@@ -478,22 +487,18 @@
     Returns: ["RETURN_SCHEDULED"],
   };
   /**
-   * Parcels per stage: the database's counts from the overview (refreshed after live parcel
-   * events), else the loaded working set. "Needs info" orders (not a status) come from the working set.
+   * Parcels per stage: GET /ops/stage-counts for the scope on screen (Problems includes "Needs info",
+   * Returns the return requests too), reloaded after live parcel events; the overview until it arrives.
    */
   function stageCounts() {
     const counts = Object.fromEntries(JOURNEY.map(k => [k, 0]));
-    const byStatus = Ops.overview?.shipments?.byStatus;
-    if (byStatus) {
-      for (const k of JOURNEY) counts[k] = STAGE_STATUSES[k].reduce((n, st) => n + (Number(byStatus[st]) || 0), 0);
-      counts.Problems += shipments.filter(s => s._api?.incomplete && !CLOSED.includes(s._api.status) && !STAGE_STATUSES.Problems.includes(s._api.status)).length;
+    const stages = Ops.stageCountsData?.stages;
+    if (stages) {
+      for (const k of JOURNEY) counts[k] = Number(stages[STAGE_COUNT[k]]) || 0;
       return counts;
     }
-    for (const s of shipments) {
-      const p = s._api;
-      if (!p) continue;
-      for (const k of JOURNEY) if (STAGES[k](p)) counts[k]++;
-    }
+    const byStatus = Ops.overview?.shipments?.byStatus;
+    if (byStatus) for (const k of JOURNEY) counts[k] = STAGE_STATUSES[k].reduce((n, st) => n + (Number(byStatus[st]) || 0), 0);
     return counts;
   }
   Ops.stageCounts = stageCounts;
@@ -510,12 +515,7 @@
   function updateCounts() {
     for (const [stage, n] of Object.entries(stageCounts())) qa(`[data-stage-count="${stage}"]`).forEach(el => (el.textContent = Ops.num(n)));
   }
-  const baseSet = DF.parcels.set;
-  DF.parcels.set = function (items) {
-    const changed = baseSet.call(DF.parcels, items);
-    setTimeout(updateCounts);
-    return changed;
-  };
+  Ops.onCounts?.push(updateCounts);
 
   // ───────────── role-based menu ─────────────
 
@@ -580,6 +580,18 @@
     navigate(card.dataset.stageOpen);
   });
 
+  // "Print…": choosing a format prints it (the page script's Print handler), then the select reads "Print…" again.
+  window.addEventListener(
+    "change",
+    event => {
+      const select = event.target;
+      if (select?.id !== "courierPrintFormat" || !select.dataset.printMenu || !select.value) return;
+      $("courierPrint")?.click();
+      setTimeout(() => (select.value = ""), 0);
+    },
+    true,
+  );
+
   window.addEventListener(
     "click",
     event => {
@@ -589,7 +601,7 @@
       if (!Ops.require("dispatch", "update parcels in bulk")) return;
       const tab = tabOf();
       const filters = { ...(tab?.bulk || VIEWS[state.view]?.bulk || {}) };
-      void (Ops.bulkConfig ? Ops.bulkConfig() : Promise.resolve({ mode: "bulk", onDone: () => Ops.refresh().catch(() => undefined) }))
+      void Ops.bulkConfig(Ops.bulkKindOf(state.view) || "all")
         .then(cfg => window.DFImport.bulk({ ...cfg, filters }))
         .catch(error => showToast(DF.describe(error)));
     },

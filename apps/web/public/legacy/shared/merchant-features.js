@@ -667,11 +667,15 @@
     if ((el = hit("[data-dff-product-delete]"))) {
       stop(event);
       const p = (F.products || []).find(x => x.id === el.dataset.dffProductDelete);
-      if (!p || !confirm(`Remove ${p.name} (${p.sku}) from the catalogue?`)) return;
-      return void DF.api(`/merchants/me/products/${p.id}${q()}`, { method: "DELETE" })
-        .then(loadProducts)
-        .then(() => window.renderPage("Products"))
-        .then(() => toast(`${p.name} removed.`), fail);
+      if (!p) return;
+      return void DF.confirm({ title: `Remove ${p.name}?`, message: `${p.sku} is removed from the catalogue. Shipments already booked keep it.`, confirm: "Remove product", danger: true }).then(
+        ok =>
+          ok &&
+          DF.api(`/merchants/me/products/${p.id}${q()}`, { method: "DELETE" })
+            .then(loadProducts)
+            .then(() => window.renderPage("Products"))
+            .then(() => toast(`${p.name} removed.`), fail),
+      );
     }
     if ((el = hit("[data-dff-report]"))) return stop(event), void downloadReport(el.dataset.dffReport);
     if ((el = hit("[data-dff-report-view]"))) return stop(event), void viewReport(el.dataset.dffReportView);
@@ -683,10 +687,14 @@
     }
     if ((el = hit("[data-dff-pickup-cancel]"))) {
       stop(event);
-      if (!confirm("Cancel this pickup?")) return;
-      return void DF.api(`/merchants/me/pickup-requests/${el.dataset.dffPickupCancel}/cancel${q()}`, { method: "POST" })
-        .then(loadPickups)
-        .then(() => (refreshPickupPage(), toast("Pickup cancelled.")), fail);
+      const pickupId = el.dataset.dffPickupCancel;
+      return void DF.confirm({ title: "Cancel this pickup?", message: "The rider won't come for it.", confirm: "Cancel pickup", cancel: "Keep it", danger: true }).then(
+        ok =>
+          ok &&
+          DF.api(`/merchants/me/pickup-requests/${pickupId}/cancel${q()}`, { method: "POST" })
+            .then(loadPickups)
+            .then(() => (refreshPickupPage(), toast("Pickup cancelled.")), fail),
+      );
     }
     if ((el = hit("[data-dff-schedule-toggle]"))) {
       stop(event);
@@ -697,18 +705,22 @@
     }
     if ((el = hit("[data-dff-schedule-delete]"))) {
       stop(event);
-      if (!confirm("Remove this recurring pickup? Its upcoming pickups are cancelled.")) return;
-      return void DF.api(`/merchants/me/pickup-schedules/${el.dataset.dffScheduleDelete}${q()}`, { method: "DELETE" })
-        .then(loadPickups)
-        .then(() => (openSchedules(), refreshPickupPage(), toast("Recurring pickup removed.")), fail);
+      const scheduleId = el.dataset.dffScheduleDelete;
+      return void DF.confirm({ title: "Remove this recurring pickup?", message: "Its upcoming pickups are cancelled.", confirm: "Remove", danger: true }).then(
+        ok =>
+          ok &&
+          DF.api(`/merchants/me/pickup-schedules/${scheduleId}${q()}`, { method: "DELETE" })
+            .then(loadPickups)
+            .then(() => (openSchedules(), refreshPickupPage(), toast("Recurring pickup removed.")), fail),
+      );
     }
     if (hit("#dffReturns")) return stop(event), void openReturns();
     if ((el = hit("[data-dff-returns]"))) return stop(event), void openReturns(el.dataset.dffReturns);
     if ((el = hit("[data-dff-return-request]"))) return stop(event), void requestReturn(el.dataset.dffReturnRequest).catch(fail);
     if ((el = hit("[data-dff-return-received]"))) {
       stop(event);
-      if (!confirm(`Confirm you received ${el.dataset.dffReturnReceived} back?`)) return;
-      return void confirmReceived(el.dataset.dffReturnReceived);
+      const returned = el.dataset.dffReturnReceived;
+      return void DF.confirm({ title: `Received ${returned} back?`, message: "Confirm the returned parcel reached you.", confirm: "Yes, received" }).then(ok => ok && confirmReceived(returned));
     }
     if (hit("[data-dff-open-kyc], [data-df-open-kyc]")) return stop(event), void openKyc();
     if (hit("[data-dff-kyc-submit]")) return stop(event), void submitKyc();

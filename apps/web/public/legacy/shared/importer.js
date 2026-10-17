@@ -13,13 +13,15 @@
  *   DFImport.bulk(cfg)          Courier Operations "Bulk update by Excel" (cfg.mode = "bulk"): download the
  *                               filtered parcels (GET /bulk-updates/export), then the same upload → preview →
  *                               apply → progress → result steps on /bulk-updates (bulk_update.* events)
- *   DFImport.bulkHistory(cfg)   past bulk updates with their downloads
+ *   DFImport.bulkHistory(cfg)   past bulk updates with their downloads, filtered by page
  *
  * cfg: { kind: "ecommerce"|"document", merchantId?, forOps?, merchants?: [{id, code, name}],
  *        hubs?: [{id, name}], hubId?, tones?: { good, warn, bad, info }, noun?: "orders",
  *        printLabels?(trackingIds, job), onDone?(job) }
- * bulk cfg: { filters?: { preset, status, merchantId, hubId, intake, sla, from, to, incomplete }, line?:
- *        "ecommerce"|"document"|"customer", merchants?: [{id, code, name}], hubs?: [{id, name}], tones?, onDone?(job) }
+ * bulk cfg: { bulkKind?: "new_orders"|"pickup"|"hub_desk"|"delivery"|"problems"|"returns"|"all" (the page's own
+ *        template: its parcels, actions and columns from GET /bulk-updates/kinds; default all), filters?: { preset, status,
+ *        merchantId, hubId, intake, sla, from, to, incomplete }, line?: "ecommerce"|"document"|"customer",
+ *        merchants?: [{id, code, name}], hubs?: [{id, name}], tones?, onDone?(job) }
  */
 (() => {
   const DF = window.DF;
@@ -57,6 +59,11 @@
   const base = () => (isBulk() ? "/bulk-updates" : "/imports");
   const rowStatus = () => (isBulk() ? BULK_ROW_STATUS : ROW_STATUS);
   const jobStatus = cfg => (isBulk(cfg) ? BULK_JOB_STATUS : JOB_STATUS);
+  /** The page template of a bulk update (GET /bulk-updates/kinds): "new_orders", …, "all". */
+  const bulkKind = (cfg = ui?.cfg) => cfg?.bulkKind || "all";
+  const kindDef = (kind = bulkKind()) => (ui?.kinds || []).find(k => k.kind === kind);
+  const pageOf = kind => kindDef(kind)?.page || (kind === "all" ? "All parcels" : kind);
+  const bulkTitle = (cfg = ui?.cfg) => `Bulk update ${pageOf(bulkKind(cfg))} by Excel`;
 
   let ui = null; // the open dialog: { cfg, step, job, rows, filter, page, file, unsubscribe, poll }
 
@@ -196,14 +203,18 @@
 
   async function open(cfg) {
     ui = { cfg: { tones: DEFAULT_TONES, ...cfg }, step: "choose", filter: "all", page: 1, filters: { ...(cfg.filters || {}) } };
-    draw(isBulk(cfg) ? "Bulk update by Excel" : `Import ${noun(cfg)} from Excel`, "Loading the limits…", "", button("close", "Cancel"));
+    draw(isBulk(cfg) ? bulkTitle(cfg) : `Import ${noun(cfg)} from Excel`, "Loading the limits…", "", button("close", "Cancel"));
     try {
       const [limits, config] = isBulk(cfg)
-        ? [await DF.api("/bulk-updates/limits"), null]
+        ? await Promise.all([DF.api("/bulk-updates/limits"), DF.api("/bulk-updates/kinds")])
         : await Promise.all([DF.api(q("/imports/limits", { merchantId: cfg.merchantId })), DF.api("/imports/config")]);
       if (!ui) return;
       ui.limits = limits;
-      ui.config = config;
+      ui.config = isBulk(cfg) ? null : config;
+      if (isBulk(cfg)) {
+        ui.kinds = config;
+        if (!kindDef()) throw new Error(`You can't use the ${pageOf(bulkKind())} bulk update.`);
+      }
       if (!isBulk(cfg)) await loadPackage();
       if (!ui) return;
       // A file chosen before the dialog opened (e.g. the panel's own file input).
@@ -326,7 +337,7 @@
     }
     form.append("file", file, file.name);
     try {
-      const response = await DF.apiRaw(`${base()}/validate`, { method: "POST", body: form });
+      const response = await DF.apiRaw(isBulk() ? q(`${base()}/validate`, { kind: bulkKind() }) : `${base()}/validate`, { method: "POST", body: form });
       const job = await response.json();
       if (!ui) return;
       ui.job = job;
@@ -471,7 +482,7 @@
   async function commit(target) {
     target.disabled = true;
     try {
-      const job = await DF.api(isBulk() ? `/bulk-updates/${ui.job.id}/apply` : `/imports/${ui.job.id}/commit`, { method: "POST" });
+      const job = await DF.api(isBulk() ? q(`/bulk-updates/${ui.job.id}/apply`, { kind: bulkKind() }) : `/imports/${ui.job.id}/commit`, { method: "POST" });
       if (!ui) return;
       ui.job = job;
       if (["COMPLETED", "FAILED"].includes(job.status)) return finish();
@@ -702,6 +713,11 @@
       const legend = document.querySelector("#dfiNotifications legend");
       if (legend) legend.textContent = notificationLegend();
     }
+    // Bulk update history: one page's bulk updates, or every page's.
+    if (event.target.id === "dfiHKind" && isBulk()) {
+      ui.historyKind = event.target.value;
+      return void bulkHistory(ui.cfg);
+    }
     // Operations: the merchant chosen for the file brings its package (choices, template columns).
     if (event.target.id === "dfiMerchant" && !isBulk()) {
       readOptions();
@@ -739,15 +755,34 @@
   const selectOf = (id, options, value, all) =>
     `<select class="select-small" id="${id}"><option value="">${esc(all)}</option>${options.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
 
+  /** What the page's template can do: its actions (what each needs and does) and the columns to fill in. */
+  function kindInfo() {
+    const def = kindDef();
+    if (!def) return "";
+    const editable = def.columns.filter(c => c.editable && !/^Set /.test(c.header)).map(c => c.header);
+    const sets = def.columns.some(c => /^Set /.test(c.header));
+    return `<section id="dfiKindInfo" data-kind="${esc(def.kind)}" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
+        <strong style="display:block;margin-bottom:4px">${esc(def.title)} · what this file can do</strong>
+        <span class="panel-subtitle" style="display:block;margin-bottom:6px">It lists ${esc(def.scope)}.</span>
+        <ul style="margin:0 0 6px;padding-left:18px">${def.actions
+          .map(a => `<li data-action-label="${esc(a.label)}"><strong>${esc(a.label)}</strong>: ${esc(a.does)} <span style="color:#637083">Needs: ${esc(a.needs)}.</span></li>`)
+          .join("")}</ul>
+        <span>Columns to fill in: <strong>${esc([...editable, ...(sets ? ["the Set … columns (complete details)"] : [])].join(", "))}</strong>. The other columns are the parcel's data (grey, locked).${
+          def.kind === "all" ? "" : " A file from another page is refused here; All parcels takes any page's file."
+        }</span>
+      </section>`;
+  }
+
   function bulkChooseStep(message = "") {
     const { cfg, limits } = ui;
     const f = ui.filters;
+    const def = kindDef();
     ui.step = "choose";
-    const presets = PRESETS.map(
+    const presets = PRESETS.filter(([v]) => !def || def.presets.includes(v)).map(
       ([v, l]) => `<button type="button" class="button button-sm${f.preset === v ? " button-primary" : ""}" data-dfi="preset" data-preset="${v}" aria-pressed="${f.preset === v}">${esc(l)}</button>`,
     ).join("");
     const fields = [
-      field("Status", selectOf("dfiBStatus", STATUS_OPTIONS, f.status, "All statuses")),
+      field("Status", selectOf("dfiBStatus", def && def.kind !== "all" ? def.statuses.map(s => [s.value, s.label]) : STATUS_OPTIONS, f.status, def && def.kind !== "all" ? `Every ${def.page} status` : "All statuses")),
       field("Merchant", selectOf("dfiBMerchant", (cfg.merchants || []).map(m => [m.id, `${m.code} · ${m.name}`]), f.merchantId, "All merchants")),
       field("Hub", selectOf("dfiBHub", (cfg.hubs || []).map(h => [h.id, h.name]), f.hubId, cfg.hubs?.length === 1 ? "My hub's work" : "All hubs")),
       field("Intake", selectOf("dfiBIntake", [["PICKUP", "Rider pickup"], ["DROP_OFF", "Drop-off at hub"]], f.intake, "Pickup and drop-off")),
@@ -758,8 +793,9 @@
     ];
     const body = `<div style="display:grid;gap:18px">
       <section id="dfiExport" style="display:grid;gap:10px">
-        <h3 style="margin:0;font-size:15px">1 · Download the parcels to update</h3>
-        <p class="panel-subtitle" style="margin:0">Choose a quick filter or set your own${cfg.line ? ` (service line: <strong>${esc(LINE_LABEL[cfg.line])}</strong>)` : ""}. The Excel file lists the matching parcels with their data (grey, locked) and action columns with dropdowns: rider assignment, status, cancel, receive, drop-off, return, completing details or a note. <strong>Max ${esc(fmt(limits.maxRows))} parcels per file.</strong></p>
+        <h3 style="margin:0;font-size:15px">1 · Download the ${esc(def && def.kind !== "all" ? `${def.page} parcels` : "parcels to update")}</h3>
+        ${kindInfo()}
+        <p class="panel-subtitle" style="margin:0">${presets ? "Choose a quick filter or set your own" : "Narrow it with the filters below if you like"}${cfg.line ? ` (service line: <strong>${esc(LINE_LABEL[cfg.line])}</strong>)` : ""}. The Excel file lists the matching parcels with their data (grey, locked) and the action columns with dropdowns. <strong>Max ${esc(fmt(limits.maxRows))} parcels per file.</strong></p>
         <div role="group" aria-label="Quick filters" style="display:flex;gap:6px;flex-wrap:wrap">${presets}${button("preset", "Clear filters", { extra: 'data-preset=""' })}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">${fields.join("")}</div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${button("download", "Download for bulk update (.xlsx)", { primary: true, extra: 'id="dfiBDownload"' })}<span class="panel-subtitle" id="dfiExportInfo" role="status">${esc(ui.exportInfo || "")}</span></div>
@@ -772,7 +808,7 @@
       ${message ? `<p role="alert" id="dfiMessage" style="margin:0;color:#b42318;font-weight:600">${esc(message)}</p>` : ""}
     </div>`;
     draw(
-      "Bulk update by Excel",
+      bulkTitle(),
       "Download → fill in the actions in Excel → upload → check the preview → apply. Each row is applied on its own, exactly like the single action.",
       body,
       `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("history", "Bulk update history")}</div>${button("close", "Cancel")}${button("check", "Check file", { primary: true, disabled: !ui.file })}`,
@@ -805,6 +841,7 @@
     const f = ui.filters;
     const day = (d, end) => (d ? new Date(`${d}T${end ? "23:59:59.999" : "00:00:00"}`).toISOString() : "");
     return q("/bulk-updates/export", {
+      kind: bulkKind(),
       preset: f.preset,
       status: f.status,
       merchantId: f.merchantId,
@@ -925,7 +962,7 @@
     ].filter(Boolean);
     draw(
       `Preview · ${job.fileName || "upload"}`,
-      `${esc(job.number)} · nothing changes until you apply.`,
+      `${esc(job.number)} · ${esc(job.kindTitle || "")} · nothing changes until you apply.`,
       summary([
         [`${fmt(c.rows)} rows with an action`, "info", "rows"],
         [`${fmt(c.toApply)} will apply`, "good", "apply"],
@@ -961,7 +998,7 @@
     const rowsAvailable = job.rowsAvailable !== false;
     draw(
       failed ? `Bulk update ${job.number} stopped` : `Bulk update ${job.number} finished`,
-      esc(job.fileName || ""),
+      esc([job.kindTitle, job.fileName].filter(Boolean).join(" · ")),
       lead +
         summary([
           [`${fmt(r.applied)} applied`, "good", "applied"],
@@ -984,10 +1021,16 @@
     ui = ui && ui.cfg.mode === "bulk" ? ui : { cfg: { tones: DEFAULT_TONES, ...cfg, mode: "bulk" }, filter: "all", page: 1, filters: { ...(cfg.filters || {}) } };
     ui.step = "history";
     ui.job = null;
+    // A page's history starts with that page's bulk updates; All parcels shows every page's.
+    ui.historyKind ??= bulkKind() === "all" ? "" : bulkKind();
     draw("Bulk update history", "Loading…", "", button("close", "Close"));
     try {
-      const list = await DF.api("/bulk-updates?limit=50");
+      const [list, kinds] = await Promise.all([DF.api(q("/bulk-updates", { limit: 50, kind: ui.historyKind })), ui.kinds ? ui.kinds : DF.api("/bulk-updates/kinds").catch(() => [])]);
       if (!ui) return;
+      ui.kinds = kinds;
+      const kindFilter = `<label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;margin-bottom:10px">Page<select class="select-small" id="dfiHKind"><option value="">Every page</option>${kinds
+        .map(k => `<option value="${esc(k.kind)}" ${k.kind === ui.historyKind ? "selected" : ""}>${esc(k.title)}</option>`)
+        .join("")}</select></label>`;
       const rows = list.items
         .map(j => {
           const [label, key] = BULK_JOB_STATUS[j.status] || [j.status, "info"];
@@ -996,13 +1039,13 @@
             j.downloads.failedRows ? `<button type="button" class="button button-sm" data-dfi="failed" data-id="${esc(j.id)}">Not applied (.xlsx)</button>` : "",
           ].join(" ");
           const done = j.status === "COMPLETED";
-          return `<tr data-bulk="${esc(j.number)}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.applied)}</td><td>${fmt(j.result.alreadyDone)}</td><td>${fmt(done ? j.result.notApplied : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
+          return `<tr data-bulk="${esc(j.number)}" data-kind="${esc(j.kind || "all")}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td data-col="kind">${esc(j.kindTitle || "")}</td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.applied)}</td><td>${fmt(j.result.alreadyDone)}</td><td>${fmt(done ? j.result.notApplied : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
         })
         .join("");
       draw(
         "Bulk update history",
         `${list.items.length ? `The last ${fmt(list.items.length)} bulk update${list.items.length === 1 ? "" : "s"}` : "No bulk updates yet"} · each has its own number, recorded on every change in the audit log.`,
-        `<div class="table-scroll" style="max-height:60vh;overflow:auto"><table id="dfiHistory"><thead><tr><th>BULK UPDATE</th><th>UPLOADED</th><th>ROWS</th><th>APPLIED</th><th>ALREADY DONE</th><th>NOT APPLIED</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty-state">No bulk updates yet.</td></tr>`}</tbody></table></div>`,
+        `${kindFilter}<div class="table-scroll" style="max-height:60vh;overflow:auto"><table id="dfiHistory"><thead><tr><th>BULK UPDATE</th><th>PAGE</th><th>UPLOADED</th><th>ROWS</th><th>APPLIED</th><th>ALREADY DONE</th><th>NOT APPLIED</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="9" class="empty-state">No bulk updates yet.</td></tr>`}</tbody></table></div>`,
         `${button("new", "New bulk update")}${button("close", "Close", { primary: true })}`,
       );
     } catch (error) {

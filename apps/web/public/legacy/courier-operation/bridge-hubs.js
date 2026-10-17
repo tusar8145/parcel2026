@@ -1,8 +1,9 @@
 /*
  * Courier Operations → Hubs & zones → "Hub register": every hub (deactivated ones too, for people
- * who manage hubs) with create / edit / deactivate / delete.
+ * who manage hubs) with its capacity and load, and create / edit / deactivate / delete.
  *
  *   List                     GET /hubs?includeInactive=true (hub:manage), else the active hubs
+ *   Capacity columns         GET /hubs/capacity (held now, inbound, utilisation, load state, zones / routes)
  *   Add / edit               POST /hubs, PATCH /hubs/:id (district → zone from the catalog)
  *   Deactivate / activate    PATCH /hubs/:id { active }
  *   Delete (only unused)     GET /hubs/:id/usage → DELETE /hubs/:id (409 IN_USE lists what uses it)
@@ -48,22 +49,27 @@
     loadRegister();
     const hubs = reg.hubs || DF.state.hubs;
     const showGroups = !!groups();
+    // Load against capacity (the former "Hub capacity" panel), per hub.
+    const loadOf = new Map((Ops.cache["hub-capacity"]?.value || []).map(c => [c.hub.id, c]));
+    const STATE = { OK: "Healthy", "Near capacity": "Monitor", "Over capacity": "At capacity" };
     const rows = (hubs || [])
       .map(h => {
         const g = groupOf(h);
+        const c = loadOf.get(h.id);
         const actions = manage()
           ? `<div class="row-actions"><button class="button button-sm" type="button" data-hub-edit="${h.id}">Edit</button><button class="button button-sm" type="button" data-hub-toggle="${h.id}">${h.active ? "Deactivate" : "Activate"}</button><button class="button button-sm" type="button" data-hub-delete="${h.id}">Delete</button></div>`
           : "";
-        return `<tr data-hub-row="${h.id}"><td><strong>${esc(h.name)}</strong><span class="subcell">${esc(h.code)}</span></td><td>${esc(h.zone ? `${h.zone}, ${h.district}` : `${h.district} · no zone set`)}</td>${showGroups ? `<td>${esc(g ? g.name : "—")}</td>` : ""}<td>${esc(h.address)}</td><td>${h.capacity ?? "—"}</td><td>${ui.pill(h.active ? "Active" : "Inactive")}</td><td>${actions}</td></tr>`;
+        const coverage = c ? ` · ${c.zones} zone${c.zones === 1 ? "" : "s"} · ${c.routes} route${c.routes === 1 ? "" : "s"}` : "";
+        return `<tr data-hub-row="${h.id}"><td><strong>${esc(h.name)}</strong><span class="subcell">${esc(h.code + coverage)}</span></td><td>${esc(h.zone ? `${h.zone}, ${h.district}` : `${h.district} · no zone set`)}<span class="subcell" title="${esc(h.address)}">${esc(h.address)}</span></td>${showGroups ? `<td>${esc(g ? g.name : "—")}</td>` : ""}<td>${h.capacity ?? "—"}</td><td data-hub-load>${c ? num(c.load) : "—"}</td><td>${c ? num(c.inbound) : "—"}</td><td>${c?.utilisation == null ? "—" : `${c.utilisation}%`}</td><td>${c ? ui.pill(STATE[c.state] || c.state) : "—"}</td><td>${ui.pill(h.active ? "Active" : "Inactive")}</td><td>${actions}</td></tr>`;
       })
       .join("");
-    const cols = ["Hub", "District · zone", ...(showGroups ? ["Hub group"] : []), "Address", "Capacity", "Status", ""];
+    const cols = ["Hub", "District · zone · address", ...(showGroups ? ["Hub group"] : []), "Capacity", "Held now", "Inbound", "Utilisation", "Load", "Status", ""];
     const add = manage() ? `<button class="button button-sm" type="button" data-hub-add>${typeof icon === "function" ? icon("plus") : ""} Add hub</button>` : "";
     const count = (hubs || []).length;
     const inactive = (hubs || []).filter(h => !h.active).length;
     return `<div id="hubRegister">${ui.panel(
       "Hub register",
-      `${num(count)} hub${count === 1 ? "" : "s"}${inactive ? ` · ${num(inactive)} deactivated (kept for existing parcels, hidden from new bookings)` : ""}`,
+      `${num(count)} hub${count === 1 ? "" : "s"}${inactive ? ` · ${num(inactive)} deactivated (kept for existing parcels, hidden from new bookings)` : ""} · parcels held against capacity, plus parcels on the way in`,
       ui.table(cols, rows, reg.error ? DF.describe(reg.error) : "Loading hubs…"),
       add,
     )}</div>`;
@@ -73,6 +79,7 @@
   Ops.enhance.Hubs = page => {
     baseHubs?.(page);
     $("hubRegister")?.remove();
+    if (Ops.hubPart !== "manage") return; // the register is on Hubs & zones only
     const anchor = $("networkConfig");
     if (anchor) anchor.insertAdjacentHTML("beforebegin", registerPanel());
     else $("mainContent").insertAdjacentHTML("beforeend", registerPanel());
@@ -199,7 +206,12 @@
   async function toggle(hub, button) {
     if (!Ops.require("manageHubs", "change hubs")) return;
     const next = !hub.active;
-    if (!confirm(next ? `Activate ${hub.name}? It appears again in hub lists and for new bookings.` : `Deactivate ${hub.name}? It disappears from hub lists and new bookings (drop-offs, transfers, riders' hand-overs). Its parcels, riders and history stay.`)) return;
+    const ok = await Ops.confirm(
+      next
+        ? { title: `Activate ${hub.name}?`, message: "It appears again in hub lists and for new bookings.", confirm: "Activate hub" }
+        : { title: `Deactivate ${hub.name}?`, message: "It disappears from hub lists and new bookings (drop-offs, transfers, riders' hand-overs). Its parcels, riders and history stay.", confirm: "Deactivate hub", danger: true },
+    );
+    if (!ok) return;
     button.disabled = true;
     try {
       await DF.api(`/hubs/${hub.id}`, { method: "PATCH", body: { active: next } });
@@ -237,7 +249,7 @@
     try {
       const usage = await DF.api(`/hubs/${hub.id}/usage`);
       if (usage.total) return showUsage(hub, usage);
-      if (!confirm(`Delete ${hub.name} (${hub.code})? Nothing uses it. This can't be undone.`)) return;
+      if (!(await Ops.confirm({ title: `Delete ${hub.name} (${hub.code})?`, message: "Nothing uses it. This can't be undone.", confirm: "Delete hub", danger: true }))) return;
       await DF.api(`/hubs/${hub.id}`, { method: "DELETE" });
       await refreshHubs();
       showToast(`${hub.name} deleted.`);

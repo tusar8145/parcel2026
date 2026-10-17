@@ -42,7 +42,7 @@ export default function AddressesView() {
   }, []);
 
   const remove = async (a: Address) => {
-    if (!confirm(`Delete the saved address for ${a.contactName}?`)) return;
+    if (!(await df().confirm({ title: "Delete this saved address?", message: `The address for ${a.contactName} is removed from your address book.`, confirm: "Delete address", danger: true }))) return;
     try {
       await df().api(`/me/addresses/${a.id}`, { method: "DELETE" });
       toast("Address deleted.");

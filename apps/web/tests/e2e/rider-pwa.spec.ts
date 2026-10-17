@@ -1,5 +1,5 @@
 import { type Browser, type BrowserContextOptions, type Page, type Route } from "@playwright/test";
-import { Fixtures, apiUrl, expect, test, type TempRider } from "./support";
+import { Fixtures, apiUrl, confirmDialog, expect, test, type TempRider } from "./support";
 
 /*
  * Rider app as an offline-capable PWA. Signs in as a temporary rider (support.ts) and never changes
@@ -177,6 +177,7 @@ test("offline deliveries are queued with proof, replayed with an Idempotency-Key
   await page.click("#dfSyncChip");
   await expect(page.locator("#modalFields")).toContainText("This parcel was changed by someone else");
   await page.click("[data-df-queue-discard]");
+  await confirmDialog(page, { title: "Discard this update?" });
   await expect(page.locator("#modalFields")).toContainText("No updates waiting", { timeout: 10_000 });
   await context.close();
 });

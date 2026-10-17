@@ -2,7 +2,7 @@
  * Courier Operations on the API, part 7: SLA engine (Analytics & SLA page, Exceptions page).
  *
  *   Summary / alerts     GET /sla/summary, /sla/alerts, POST /sla/alerts/:id/acknowledge
- *   Report               GET /sla/report?from&to&hubId (CSV export, print)
+ *   Report               GET /sla/report?from&to&hubId (CSV export; print: GET /documents/sla-report, PDF)
  *   Policies             GET/POST/PATCH/DELETE /sla/policies (hub managers)
  *   Run the check now    POST /sla/monitor (it also runs every five minutes on the server)
  * New breaches are escalated by the server (ops.sla_breach); "sla.updated" events refresh the views.
@@ -113,6 +113,9 @@
   const baseExceptions = Ops.enhance.Exceptions;
   Ops.enhance.Exceptions = page => {
     baseExceptions?.(page);
+    // Only the SLA late-risk tab shows (and loads) the alerts; the other Problems tabs don't fetch them.
+    const tab = Ops.view?.()?.tab;
+    if (tab && tab !== "SLA late-risk") return;
     $("mainContent").insertAdjacentHTML("beforeend", alertsPanel(true));
   };
 
@@ -192,13 +195,11 @@
     const csv = "﻿" + rows.map(row => row.map(v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n");
     courierCsvDownload(`delivery-fast-sla-${r.from}-to-${r.to}.csv`, csv);
   }
+  /** The SLA report as a PDF in a new tab (same dates and hub as on screen). */
   function printReport() {
-    const panel = $("slaReport");
-    if (!panel) return;
-    const clone = panel.cloneNode(true);
-    clone.querySelector(".table-tools")?.remove();
-    Ops.printPage(`SLA report ${report.from} to ${report.to}`, `<h1>Delivery Fast · SLA report</h1><p>${esc(report.from)} to ${esc(report.to)}</p>${clone.innerHTML}`);
+    return Ops.printPdf(`/documents/sla-report?from=${report.from}&to=${report.to}${report.hubId ? `&hubId=${report.hubId}` : ""}`, { title: "Preparing the SLA report…" });
   }
+
 
   window.addEventListener(
     "click",
@@ -212,9 +213,10 @@
       event.stopImmediatePropagation();
       try {
         if (ack) {
-          const note = prompt("Acknowledge this alert. What is being done? (optional)", "");
+          const note = await Ops.prompt({ title: "Acknowledge this alert", message: "Everyone watching SLA alerts sees that you are on it.", label: "What is being done?", multiline: true, maxLength: 500, confirm: "Acknowledge", placeholder: "e.g. Rider called; delivering before 6 pm" });
           if (note === null) return;
-          await DF.api(`/sla/alerts/${ack.dataset.slaAck}/acknowledge`, { method: "POST", body: { note: note.trim() || undefined } });
+          await DF.api(`/sla/alerts/${ack.dataset.slaAck}/acknowledge`, { method: "POST", body: { note: note || undefined } });
+          showToast("Alert acknowledged.");
           Ops.invalidate(alertsKey(), "sla-summary");
           alertsExtra = { items: [], next: null };
           return void Ops.rerender(true);
@@ -228,7 +230,7 @@
         }
         if (policy) return policyDialog(policy.dataset.slaPolicy);
         if (del) {
-          if (!confirm("Delete this SLA policy? Parcels already booked keep their due times.")) return;
+          if (!(await Ops.confirm({ title: "Delete this SLA policy?", message: "Parcels already booked keep their due times.", confirm: "Delete policy", danger: true }))) return;
           await DF.api(`/sla/policies/${del.dataset.slaDelete}`, { method: "DELETE" });
           closeModal();
           Ops.invalidate("sla-policies");

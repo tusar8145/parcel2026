@@ -35,6 +35,8 @@ model BulkUpdateJob {
   /// BLK-YYMMDD-NNN.
   number           String           @unique
   status           BulkUpdateStatus @default(VALIDATED)
+  /// The page template the file was downloaded from (bulk-kinds.ts): new_orders, pickup, hub_desk, delivery, problems, returns, or all.
+  kind             String           @default("all")
   fileName         String?
   fileSha256       String?
   fileBytes        Int              @default(0)
@@ -64,6 +66,7 @@ model BulkUpdateJob {
   rows             BulkUpdateRow[]
 
   @@index([createdById, createdAt])
+  @@index([kind, createdAt])
   @@index([status, updatedAt])
   @@map("bulk_update_jobs")
 }

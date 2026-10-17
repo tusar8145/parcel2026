@@ -52,7 +52,7 @@ test("operations pages added for linehaul, CN stock, reports, SLA, shifts and ma
 
   await opsNav(page, "delivery");
   await page.click('#mainContent [data-action="dispatch"]');
-  await expect(page.locator("#modalTitle")).toHaveText("Create dispatch");
+  await expect(page.locator("#modalTitle")).toHaveText("Suggest riders");
   await page.click("#modalCancel");
   await expect(page.locator("#routePlanner")).toBeVisible();
   await expect(page.locator("#mainContent .leaflet-container").first()).toBeVisible({ timeout: 15_000 });

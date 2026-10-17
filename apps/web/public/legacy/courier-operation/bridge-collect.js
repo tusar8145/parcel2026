@@ -18,6 +18,7 @@
 
   async function load() {
     if (!state.hubId) return;
+    state.loadedFor = state.hubId;
     try {
       state.items = (await DF.api(`/ops/collections?hubId=${encodeURIComponent(state.hubId)}`)).items;
     } catch (error) {
@@ -48,6 +49,7 @@
       .join("");
     return `<section class="panel table-panel" id="collectCounter" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">Hub Pickup counter</h2><p class="panel-subtitle">Parcels waiting for their receivers. Hand them over against the collection code; cash on delivery goes into this hub's cash.</p></div>
       <div class="table-tools"><label class="subcell" style="display:flex;gap:6px;align-items:center">Hub <select class="select-small" id="collectHub">${hubs().map(h => `<option value="${esc(h.id)}" ${h.id === state.hubId ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</select></label><span class="status status-blue" id="collectCount">${state.items.length} waiting</span></div></div>
+      <form class="workflow-form" id="collectScanForm" autocomplete="off" style="padding:0 16px"><label>Find a waiting parcel<input id="collectScan" placeholder="Scan the label or type the tracking ID, then Enter" autocomplete="off"></label></form>
       <p class="panel-subtitle" id="collectMessage" aria-live="polite">${esc(state.message)}</p>
       <div class="table-scroll"><table><thead><tr><th>TRACKING ID</th><th>RECEIVER</th><th>COD</th><th>COLLECT BY</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="empty-state">No parcels are waiting for collection at this hub.</td></tr>`}</tbody></table></div></section>`;
   }
@@ -56,19 +58,61 @@
     const existing = $("collectCounter");
     if (!existing) return;
     existing.outerHTML = markup();
+    const scan = $("collectScan");
+    if (scan) DF.scanner?.attach(scan, { title: "Scan the parcel label", onScan: () => $("collectScanForm")?.requestSubmit() });
   }
 
+  /** The counter's scan box: a waiting parcel opens its hand-over form (shared scan feedback either way). */
+  function findWaiting(raw) {
+    const code = DF.scanner?.normalize ? DF.scanner.normalize(raw) : String(raw || "").trim().toUpperCase();
+    if (!code) return;
+    Ops.recordScan?.(code, "HUB_LOOKUP", state.hubId);
+    const hit = state.items.find(p => p.trackingId.toUpperCase() === code);
+    if (!hit) {
+      state.message = `${code} isn't waiting for collection at this hub.`;
+      paint();
+      DF.scanner?.feedback?.("collectScan", false);
+      return void $("collectScan")?.focus();
+    }
+    state.handing = hit.trackingId;
+    state.message = `${hit.trackingId} · ${hit.recipient?.name || "receiver"}: check the collection code, then confirm the hand-over.`;
+    paint();
+    DF.scanner?.feedback?.("collectScan", true);
+    $("collectCode")?.focus();
+  }
+  window.addEventListener(
+    "submit",
+    event => {
+      if (event.target.id !== "collectScanForm") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      findWaiting($("collectScan").value);
+    },
+    true,
+  );
+
+  // Only on its own Hub desk tab (Ops.hubPart, bridge-nav.js). Loaded once when the tab opens, then
+  // after live parcel changes; redraws of the page reuse what was loaded.
   const baseHubs = Ops.enhance.Hubs;
   Ops.enhance.Hubs = page => {
     baseHubs?.(page);
     $("collectCounter")?.remove();
+    if (Ops.hubPart !== "collect") return;
     if (!state.hubId || !hubs().some(h => h.id === state.hubId)) state.hubId = hubs()[0]?.id || null;
-    const anchor = $("receiveDesk") || document.querySelector("#mainContent .workflow-grid");
-    if (anchor) anchor.insertAdjacentHTML("beforebegin", markup());
-    else $("mainContent").insertAdjacentHTML("beforeend", markup());
-    void load();
+    $("mainContent").insertAdjacentHTML("beforeend", markup());
+    const scan = $("collectScan");
+    if (scan) DF.scanner?.attach(scan, { title: "Scan the parcel label", onScan: () => $("collectScanForm")?.requestSubmit() });
+    if (state.epoch !== Ops.navEpoch || state.loadedFor !== state.hubId) {
+      state.epoch = Ops.navEpoch;
+      void load();
+    }
   };
-  DF.events?.on?.("parcel.updated", () => $("collectCounter") && void load());
+  let liveTimer = null;
+  DF.events?.on?.("parcel.updated", () => {
+    if (!$("collectCounter")) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => void load(), 800);
+  });
 
   const photo = file =>
     new Promise((resolve, reject) => {

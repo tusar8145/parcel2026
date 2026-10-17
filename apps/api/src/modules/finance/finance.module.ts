@@ -21,6 +21,6 @@ import { DisputesService } from "./disputes.service";
 @Module({
   controllers: [CodController, SettlementsController, InvoicesController, LedgerController, ReconciliationController, DisputesController],
   providers: [CodService, SettlementsService, InvoicesService, LedgerReportsService, SettlementScheduleService, ReconciliationService, DisputesService],
-  exports: [SettlementsService, DisputesService],
+  exports: [SettlementsService, DisputesService, InvoicesService],
 })
 export class FinanceModule {}

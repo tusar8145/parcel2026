@@ -2,6 +2,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { test as base, expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { hash as argonHash } from "@node-rs/argon2";
 import pg from "pg";
+// The API tests' PDF reader (page count, text through the fonts' ToUnicode maps).
+import { pdfHas, readPdf } from "../../../api/test/pdf-text";
 
 /**
  * Shared set-up for the browser tests (playwright.e2e.config.ts).
@@ -35,6 +37,11 @@ export async function routeApi(context: BrowserContext) {
     if (url.origin === new URL(API_ORIGIN).origin) return route.fallback();
     // The live event stream never ends, so it can't be fetched and fulfilled: it is continued to the API instead.
     if (url.pathname === "/api/v1/events") return route.continue({ url: `${API_ORIGIN}${url.pathname}${url.search}` });
+    // File uploads (multipart/form-data) are continued to the API too: Chromium doesn't hand the file parts
+    // of a request body to Playwright, so route.fetch() would forward the upload without its file
+    // (the bulk-update / import upload answered "The file is empty").
+    const type = (await route.request().headerValue("content-type")) || "";
+    if (/multipart\/form-data/i.test(type)) return route.continue({ url: `${API_ORIGIN}${url.pathname}${url.search}` });
     await route.fulfill({ response: await route.fetch({ url: `${API_ORIGIN}${url.pathname}${url.search}` }) });
   });
 }
@@ -78,8 +85,11 @@ export const OPS_NAV = {
   pickup: ["Pickup", "Assign pickup rider"],
   scheduledPickups: ["Pickup", "Scheduled pickups"],
   hubReceive: ["Hub desk", "Receive"],
-  dropOffReceive: ["Hub desk", "Drop-off receive"],
+  /** The receive desk handles every arrival, drop-offs included (the old "Drop-off receive" tab). */
+  dropOffReceive: ["Hub desk", "Receive"],
+  hubAtHub: ["Hub desk", "At my hub"],
   hubPickupCounter: ["Hub desk", "Hub Pickup counter"],
+  hubEndOfDay: ["Hub desk", "End of day"],
   transfers: ["Transfers"],
   delivery: ["Delivery"],
   exceptions: ["Problems", "Exceptions"],
@@ -117,14 +127,70 @@ export async function opsNav(page: Page, area: OpsArea) {
 
 /** Clicks an action in a parcel row (or any block with a "More" menu), opening "More" when the action sits in it. */
 export async function rowAction(scope: Locator, selector: string) {
-  const target = scope.locator(selector).first();
-  if (!(await target.isVisible())) await scope.locator("details.df-more > summary").first().click();
-  await target.click();
+  // A live update may redraw the row (closing its menu) between the two clicks: try again until the action is clicked.
+  await expect(async () => {
+    const target = scope.locator(selector).first();
+    if (!(await target.isVisible())) await scope.locator("details.df-more > summary").first().click({ timeout: 5_000 });
+    await target.click({ timeout: 5_000 });
+  }).toPass({ timeout: 60_000 });
 }
 
 /** Clicks a page-heading button, opening the heading's "More actions" menu when the button sits in it. */
 export async function headingAction(page: Page, selector: string) {
   await rowAction(page.locator("#mainContent .page-heading"), selector);
+}
+
+/**
+ * Answers the in-page confirm / prompt (shared/api.js DF.confirm, DF.prompt, DF.choose: the panels have no
+ * window.confirm / prompt left): checks the title when given, types `value` into its field, confirms, and
+ * waits for it to close. Returns the dialog's text.
+ */
+export async function confirmDialog(page: Page, { value, title, choose }: { value?: string; title?: string | RegExp; choose?: string } = {}) {
+  const dialog = page.locator(".df-dialog");
+  await expect(dialog).toBeVisible();
+  if (title) await expect(dialog.locator("#dfDialogTitle")).toHaveText(title);
+  const text = (await dialog.innerText()).trim();
+  if (value !== undefined) await dialog.locator("#dfDialogInput").fill(value);
+  if (choose !== undefined) await dialog.locator("#dfDialogInput").selectOption(choose);
+  await dialog.locator("[data-df-dialog-ok]").click();
+  await expect(dialog).toHaveCount(0);
+  return text;
+}
+
+/** Courier Operations' form dialogs with a review step for money (Ops.form): the review table, then Confirm. */
+export async function confirmReview(page: Page, expected: (string | RegExp)[] = []) {
+  const review = page.locator("#opsFormReview");
+  await expect(review).toBeVisible();
+  for (const e of expected) await expect(review).toContainText(e);
+  await page.click("#modalSubmit");
+}
+
+/**
+ * Print buttons open an API-generated PDF in a new tab (shared/print.js): runs `action`, waits for
+ * the new tab and the /documents/… response, checks it is a PDF and that the tab shows it (a blob:
+ * URL in an iframe), and returns the PDF's text (decoded like the API tests do) for assertions.
+ */
+export async function openPdf(page: Page, action: () => Promise<unknown>) {
+  const response = page.waitForResponse(r => /\/api\/v1\/documents\//.test(r.url()), { timeout: 90_000 });
+  const tab = page.context().waitForEvent("page");
+  await action();
+  const [popup, res] = await Promise.all([tab, response]);
+  expect(res.status(), await res.text().catch(() => "")).toBe(200);
+  expect(res.headers()["content-type"]).toBe("application/pdf");
+  // The tab shows the PDF (a blob: URL from the opener) in the browser's viewer.
+  const frame = popup.locator("iframe#pdf");
+  await expect(frame).toHaveAttribute("src", /^blob:/, { timeout: 30_000 });
+  // What the tab shows: read the blob back in the page that created it.
+  const base64 = await page.evaluate(async url => {
+    const buffer = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    let text = "";
+    for (let i = 0; i < buffer.length; i += 0x8000) text += String.fromCharCode(...buffer.subarray(i, i + 0x8000));
+    return btoa(text);
+  }, (await frame.getAttribute("src"))!);
+  const bytes = Buffer.from(base64, "base64");
+  expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  const info = readPdf(bytes);
+  return { popup, response: res, info, has: (text: string) => pdfHas(info, text) };
 }
 
 export async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []) {

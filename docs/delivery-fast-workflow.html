@@ -294,7 +294,7 @@ sequenceDiagram
     <thead><tr><th>কাজ</th><th>কোথায়</th><th>কীভাবে</th></tr></thead>
     <tbody>
       <tr><td><b>নতুন order</b></td><td>Merchant panel, অথবা Operations → E-commerce / Document operations</td><td>Template download (dropdown সহ) → পূরণ → upload → preview → <b>Create</b> → ব্যর্থ সারি Error column সহ download</td></tr>
-      <tr><td><b>Bulk update</b></td><td>Operations → Shipments → <b>Bulk update by Excel</b></td><td>Filter (যেমন Pending) → download → <b>Action</b> column বাছাই → upload → preview → <b>Apply</b></td></tr>
+      <tr><td><b>Bulk update</b></td><td>Operations → যে পেজের কাজ সেই পেজে (New orders, Pickup, Hub desk, Delivery, Problems, Returns) → <b>Bulk update &lt;পেজ&gt; by Excel</b>; সব action একসাথে: All parcels → <b>Bulk update All parcels by Excel</b></td><td>প্রতিটি পেজের Excel-এ শুধু সেই পেজের action ও দরকারি column; অন্য পেজের file নেওয়া হয় না (All parcels সব নেয়) · Filter → download → <b>Action</b> column বাছাই → upload → preview → <b>Apply</b></td></tr>
       <tr><td><b>Label print</b></td><td>Import-এর পরে, অথবা Shipments-এ বাছাই করে</td><td>A4 (৪টা) বা thermal 100×150 mm</td></tr>
     </tbody>
   </table></div>

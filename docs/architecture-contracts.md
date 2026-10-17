@@ -62,6 +62,25 @@ Event types in use: `parcel.created`, `parcel.updated`, `rider.location`, `ticke
 ## Barcode scanning (web: public/legacy/shared/scanner.js)
 - `DF.scanner.start(videoElement, onCode)` / `DF.scanner.stop()` (camera; BarcodeDetector with a
   ZXing fallback from `/vendor/zxing`). Always keep a typed-input fallback.
+- One scan result for every scan box: `DF.scanner.feedback(inputOrId, ok, message?)` (high short beep / low
+  long beep, vibration, the box flashing green / red, `data-scan-result="ok|error"`, optional live message).
+  Used by the receive desk, linehaul bag scans / bag receive / truck loading, the CN check and the Hub
+  Pickup counter's scan box.
+
+## In-page dialogs (web: shared/api.js, courier-operation/bridge-network.js)
+No panel uses `window.prompt` / `confirm` / `alert`.
+- Every panel: `await DF.confirm({ title, message, confirm, cancel, danger })` → boolean,
+  `DF.prompt({ title, message, label, value, required, multiline, maxLength, validate })` → string | null,
+  `DF.choose({ title, label, options, value })` → value | null, `DF.alert(...)`. One small self-styled
+  dialog above any page modal (Esc / Cancel / backdrop = no). Browser tests: `confirmDialog(page, { title,
+  value })` in tests/e2e/support.ts (`.df-dialog`, `#dfDialogInput`, `[data-df-dialog-ok]`).
+- Courier Operations forms: `Ops.form({ title, fields, validate, review, confirm, onSubmit })` on the
+  console modal (`Ops.dialog`): labelled fields (text, number, date, select, searchable select, textarea,
+  phone with +880, static), inline validation, an optional review table before money actions
+  (`#opsFormReview`, test helper `confirmReview`), API errors inside the dialog (`#opsFormError`), success
+  as a toast. Field ids are `of_<id>` unless `domId` is given. `Ops.confirm` / `Ops.prompt` = DF.confirm /
+  DF.prompt. Returns' dialogs, the parcel editor and the hub picker use it; the tracking-history dialog
+  was replaced by the parcel drawer ("Track" opens the drawer).
 
 ## Rider location and proof of delivery (modules/rider)
 - `POST /rider/location { lat, lng, accuracy, heading?, speed?, at }` while on shift; publishes
@@ -299,11 +318,42 @@ writer/reader, parse slots, `ImportConfigService` limits); `ParcelsService`, `In
   after fixing), `GET /bulk-updates?mine=` (history: your own; operations managers everyone's),
   `DELETE /bulk-updates/:id` (drop a checked file), `GET /bulk-updates/limits`. Checked files nobody applies
   are discarded after a day; rows of finished bulk updates are kept 90 days.
-- Web: Shipments and the E-commerce / Document / Customer operations pages have "Bulk update by Excel"
-  and "Bulk update history" (courier-operation/bridge-bulk.js) → `DFImport.bulk(cfg)` /
-  `DFImport.bulkHistory(cfg)`: step 1 downloads with the page's filters plus hub, intake, SLA state and
-  quick presets; then the import dialog's upload → preview (All / Will apply / Warnings / Errors, the cell
-  in error highlighted) → apply → progress → result steps.
+- Page templates ("kinds", `bulk-kinds.ts`, 2026-10-17): every Courier Operations page with a bulk button has
+  its own file: its own parcel filter, only that page's actions (existing actions only, some under a page label
+  with a fixed or narrowed status), only the columns they need, its own Instructions sheet and title. `kind` =
+  `new_orders | pickup | hub_desk | delivery | problems | returns | all` (default all = every action and column,
+  as before) on `GET /bulk-updates/export?kind=`, `POST /bulk-updates/validate?kind=` (or multipart field
+  `kind`: the page it is uploaded on), `POST /bulk-updates/:id/apply?kind=` and `GET /bulk-updates?kind=`
+  (history filter). `GET /bulk-updates/kinds` lists the caller's templates (a page whose actions the caller
+  can't perform is left out; today every action needs `parcel:dispatch`) with actions (label, needs, does),
+  columns, statuses and presets. The file carries its kind in the hidden `template` column (39th column of the
+  All parcels file); another page's file is refused with `BULK_KIND_MISMATCH` (422, `{ fileKind, pageKind }`),
+  a file mixing kinds with `BULK_KIND_MIXED`; All parcels takes any kind (and any action). On a page, an action
+  of another page typed into its file is a row error. `BulkUpdateJob.kind` (migration `bulk_update_kind`)
+  is the file's kind; job views carry `kind`, `kindTitle` ("New orders bulk update"), `page`, and the kind's
+  columns; failed-rows downloads use the kind's format.
+
+  | Page | Parcels | Actions |
+  |---|---|---|
+  | New orders | Pending operations confirmation | Accept & assign pickup rider, Cancel, Change to drop-off, Change to rider pickup, Complete details, Add note |
+  | Pickup | Pickup assigned / confirmed, picked up | Assign / reassign pickup rider, Mark picked up (= Change status → Picked up), Cancel, Add note |
+  | Hub desk | Picked up, in transit, drop-offs on their way, at hub, ready for collection | Receive at hub, Mark exception (= Change status → Exception, reason required), Add note |
+  | Delivery | At hub without delivery rider (doorstep), assigned | Assign delivery rider, Complete details, Add note |
+  | Problems | Exception, retry scheduled, needs info, SLA at risk / breached | Resolve: change status (At hub, Out for delivery, Retry scheduled, Exception), Assign delivery rider, Schedule return, Complete details, Add note |
+  | Returns | Retry scheduled, exception, return scheduled, at hub after a delivery attempt | Schedule return, Add note |
+  | All parcels | any filter | every action |
+
+  Transfers has no bulk file: moving parcels between hubs goes through linehaul bags and manifests, which have
+  no bulk action; adding to a return run has none either.
+- Web: All parcels (Shipments and the E-commerce / Banking & Financial / Customer tabs) has "Bulk update All
+  parcels by Excel" and "Bulk update history" (courier-operation/bridge-bulk.js); the journey pages have
+  "Bulk update <page> by Excel" (`#stageBulkUpdate`, bridge-nav.js with `DFOps.bulkKindOf(view)`,
+  `DFOps.bulkLabel(kind)`, `DFOps.bulkConfig(kind)`) → `DFImport.bulk(cfg)` with `cfg.bulkKind` /
+  `DFImport.bulkHistory(cfg)`: step 1 shows what the page's file can do (`#dfiKindInfo`: its actions and the
+  columns to fill in) and downloads with the page's filters plus hub, intake, SLA state and the page's quick
+  presets; then the import dialog's upload → preview (All / Will apply / Warnings / Errors, the cell in error
+  highlighted) → apply → progress → result steps. History has a page filter (`#dfiHKind`, starting with the
+  page's own) and a PAGE column.
 
 ## Incomplete orders ("Needs info", parcels/incomplete.ts)
 - Data model: imports may book a parcel with `recipientName`, `recipientPhone`, `deliveryStreet`,
@@ -535,14 +585,14 @@ mode or a subset of their sections. The page scripts keep the old internal names
 
 | Old page | New place |
 |---|---|
-| Live overview | Today (stage cards with live counts, then the old overview and map) |
+| Live overview | Today (stage cards with live counts, one metrics row, map, newest parcels, alerts; the service-line cards and "Network health" were dropped) |
 | Shipments | All parcels › All |
 | E-commerce operations | All parcels › E-commerce |
 | Banking & Financial operations | All parcels › Banking & Financial |
 | Customer parcels | All parcels › Customer |
-| Dispatch & routes | Pickup › Assign pickup rider (pickup half of the queue) and Delivery (delivery half, map, route planner); `?page=Dispatch` → Delivery |
+| Dispatch & routes | Pickup › Assign pickup rider (tables: waiting for a pickup rider, being picked up) and Delivery (tables: waiting for a delivery rider, out with riders; map, route planner); the assignment queue was dropped; `?page=Dispatch` → Delivery |
 | Scheduled pickups | Pickup › Scheduled pickups |
-| Hubs & zones (hub operations) | Hub desk › Receive (scan, receive, transfer, hub register, transfer report) · Drop-off receive (receive desk) · Hub Pickup counter; Hubs & zones (hub register, capacity, zones, routes, network setup); `?page=Hubs` → Hub desk |
+| Hubs & zones (hub operations) | Hub desk › Receive (the receive desk: every arrival, plus Find) · At my hub (parcels at the hub now, paged, with their next action) · Hub Pickup counter · End of day (reconciliation); Hubs & zones (hub register with capacity columns, zones, routes); `?page=Hubs` → Hub desk; old tab "Drop-off receive" → Receive. Removed: the scan & quick status form, the manual receive form, the hub-to-hub transfer form (Transfers is the way), the transfer report, the shipment register with status dropdowns, network setup and the separate capacity panel |
 | Linehaul | Transfers |
 | Exceptions | Problems › Exceptions (also Failed delivery, Needs info, SLA late-risk) |
 | Returns (RTO) | Returns |
@@ -550,25 +600,100 @@ mode or a subset of their sections. The page scripts keep the old internal names
 | Analytics & SLA | Reports › Analytics & SLA |
 | Reports | Reports › Reports |
 | Riders & fleet, Merchant accounts, CN stock, Admin settings | Riders, Merchants, CN stock, Settings |
-| (new) New orders | Shipments page limited to Pending operations confirmation (all lines) |
+| (new) New orders | Shipments page limited to Pending operations confirmation (all lines), with bulk Accept & assign for ticked rows |
 
-- Stage counts (menu badges, Today cards): `GET /ops/overview` `shipments.byStatus` (database counts,
-  reloaded after `parcel.*` events): New orders = PENDING_CONFIRMATION; Pickup = PICKUP_ASSIGNED +
-  PICKUP_CONFIRMED + PICKED_UP; Hub desk = AT_HUB + READY_FOR_COLLECTION; Transfers = IN_TRANSIT;
-  Delivery = ASSIGNED + OUT_FOR_DELIVERY; Problems = EXCEPTION + RETRY_SCHEDULED + open "Needs info" orders
-  of the working set; Returns = RETURN_SCHEDULED. Without the overview they come from the working set.
+- Parcel tables (courier-operation/bridge-lists.js): New orders, All parcels (every tab), every stage
+  table, the Today feed and Hub desk › At my hub are server-paged lists: `GET /parcels` 100 rows a page,
+  "Load more" (cursor); search, status, dates, merchant, service line and stage are server filters. The
+  browser keeps only the parcels on screen (no working set); `parcel.*` events re-fetch the changed parcel
+  and patch its rows (or drop them when they leave the list, or reload the first page for newcomers);
+  a reconnect reloads the lists and counts; a 3-minute safety poll reloads the counts only. The action
+  column is pinned on the right of every parcel table; rows have no status dropdowns (next action, drawer).
+- Read-only filters for the lists (`GET /parcels`, apps/api/src/modules/parcels/parcel-stages.ts):
+  `stage` = new | pickup_waiting | pickup | hub | transfers | delivery_waiting | delivery | exceptions |
+  failed | needs_info | sla_risk | problems | returns; `line` = CUSTOMER | ECOMMERCE | BANKING_FINANCIAL;
+  `forHubIds` (comma list) = parcels that belong to those hubs now: current hub, drop-offs booked to them,
+  picked up by their riders, pickups from the zones they serve (delivery zones and the hub's own zone).
+- "My hub": hub operators' lists and counts default to `forHubIds` = their hubs, with a "My hub / All hubs"
+  switch on each table (remembered per browser, `deliveryfast-ops-scope`). UI default only; the API's
+  permissions are unchanged.
+- Stage counts (menu badges, Today cards, stage metrics): `GET /ops/stage-counts[?forHubIds=]` (same
+  filters as the lists, reloaded after `parcel.*` events): New orders = PENDING_CONFIRMATION; Pickup =
+  accepted without a rider + being picked up; Hub desk = AT_HUB + READY_FOR_COLLECTION; Transfers =
+  IN_TRANSIT; Delivery = ASSIGNED + OUT_FOR_DELIVERY; Problems = EXCEPTION + RETRY_SCHEDULED + open
+  "Needs info" (also Problems' "Awaiting action"); Returns = return requests + RETURN_SCHEDULED (what the
+  Returns page lists). `detail` carries each part (pickupWaiting, deliveryWaiting, slaRisk, …).
+- One way to assign a rider: the row's next action or the drawer; "Suggest riders" (the former Create
+  dispatch) and Excel for many; New orders also accepts ticked rows together (one rider, one
+  `POST /parcels/:id/assign-pickup` per order, progress and result in the dialog).
+- A tab draws only its own sections (`DFOps.hubPart`, `DFOps.tabMode`); sections that load data (receive
+  desk batches, counter) load once per opening of the tab (`DFOps.navEpoch`), then on events.
 - Menu per role (permissions unchanged; hidden pages stay reachable by link): super admin / operations
   manager everything; hub operator Today, the seven stages, COD & settlement (rider cash handovers),
   All parcels, Riders (with `rider:read`); finance COD & settlement (first, landing page), All parcels,
   Reports, Merchants; support Today, All parcels and Support.
 - Next action (`DFOps.nextAction(parcel)`): Pending → Accept & assign rider (assign dialog); awaiting
-  drop-off → Receive (Hub desk › Drop-off receive); At hub → Assign rider, or Add to transfer when a hub
+  drop-off → Receive (Hub desk › Receive); At hub → Assign rider, or Add to transfer when a hub
   of the delivery zone other than the current one is known (Transfers); Exception → Resolve; Needs info →
   Edit details; Ready for collection → Hand over (Hub Pickup counter); Return scheduled without a run →
   Add to return run (Returns › Return a parcel). Rows show it, then Details (drawer) and More.
 - Parcel drawer `DFOps.drawer.open(trackingId)` (summary, actions, price lines, proof via
-  `GET /parcels/:id/proof`, staff notes, tracking history); the top-bar search (tracking ID / CN /
-  phone, Enter) opens it using the working set, `GET /parcels/:id` and `GET /parcels?q=`.
-- Stage pages have "Bulk update by Excel" with the stage preset (`DFOps.bulkConfig()` from bridge-bulk.js).
+  `GET /parcels/:id/proof`, staff notes with "Add a staff note" (`POST /parcels/:id/notes`), "Messages
+  sent" (`GET /parcels/:id/messages`), tracking history); the top-bar search (tracking ID / CN /
+  phone, Enter) opens it using the parcels on screen, `GET /parcels/:id` and `GET /parcels?q=`. Row
+  "Track" opens the drawer too.
+- Parcel message log `GET /parcels/:trackingId/messages` (parcel:read:any; hub operators only their hubs'
+  parcels, like printed documents; merchants and riders 403): the parcel's outbox SMS / email, newest first,
+  max 100: channel, event + label, masked recipient (`+880 17•• •••678`, `ra•••@example.com`), state,
+  attempts, provider, last error, queued / sent time; text with security codes masked (events with a code
+  variable: every 4–8 digit number → `••••`; link query strings cut). Outbox rows carry `trackingId`
+  (NotifyService sets it from `vars.trackingId`, migration `outbox_tracking_id`); older rows match by text.
+- Hub desk › End of day (courier-operation/bridge-desk.js): `GET /ops/hub-reconciliation?hubId&date`
+  (hub:read + parcel:read:any; hub operators their own hubs; modules/hub-reconciliation): per hub and Dhaka
+  day: arrivals received (AT_HUB events at the hub) + still expected (loaded in inbound bags, drop-offs booked
+  to the hub, picked up by its riders) = expected; dispatched out = out for delivery with its riders +
+  parcels in its bags on trips that departed that day; delivered by its riders; held now (AT_HUB) and ready
+  for collection now; cash (with cod:receive or finance:read): COD collected by its riders and at its
+  counter that day, cash handovers received, collected that day and not handed over, still with riders (any
+  day), per rider. PDF: `GET /documents/hub-reconciliation` (same figures).
+- Desk tools (bridge-desk.js): the top-bar search also answers "which hub serves this zone / area"
+  (catalog zones and areas → `GET /zones` → the zone's hub, else the hub located in the zone; choosing one
+  opens Hubs & zones filtered to it); the live chip shows the event stream's state (`DF.events.state`,
+  "connection" events); the bell lists breached SLA alerts and open problem counts; keyboard: "/" search,
+  F2 the scan box on screen, Esc closes the dialog then the drawer, and a Hub desk tab focuses its scan box
+  when it opens.
+- Shipment headings: one Export (CSV), the "Print…" select (invoices, labels, list; choosing prints the
+  ticked rows, else the rows on screen) and one "Print labels" shortcut; "CN stock" opens CN stock.
+- Stage pages have "Bulk update <page> by Excel" with the page's own template (`DFOps.bulkKindOf(view)` /
+  `DFOps.bulkConfig(kind)` from bridge-bulk.js; tab presets such as Problems › Exceptions only narrow it);
+  Transfers has none (see "Bulk operations by Excel").
 - Browser tests: `opsNav(page, area)` and `OPS_NAV` in `apps/web/tests/e2e/support.ts`; `rowAction` /
-  `headingAction` open "More" menus.
+  `headingAction` open "More" menus. With `E2E_API_ORIGIN`, file uploads are continued to that API
+  (Chromium doesn't expose multipart file parts to route.fetch).
+
+## Printed documents / PDFs (modules/documents, web: public/legacy/shared/print.js)
+Every print button opens a PDF generated by the API in a new tab; there is no `window.print` HTML printing left.
+- Writer: pdfkit (fontkit shaping) with bundled Noto Sans + Noto Sans Bengali (`apps/api/assets/fonts`, OFL; the
+  Dockerfile copies them; `DOCUMENT_FONTS_DIR` overrides). Text is split into Bangla / other runs per font, so Bangla
+  names and addresses render with conjuncts. Code 128 (`pdf/code128.ts`) for tracking IDs, CNs, bags and manifests;
+  QR codes link to `APP_URL/track/:id`. Header: brand (`notification-settings.brand`: appName, support), finance
+  seller (name, address, BIN), website; date in Asia/Dhaka; "Page x of y".
+- Endpoints (all `application/pdf` inline with a filename; audited `document.generate`):
+  `GET|POST /documents/labels {ids|batchId, format: a4|thermal}` (max 2,000; streamed),
+  `GET|POST /documents/invoices {ids|batchId, layout: a4|a4-4|a4-8|pos, line: all|ecommerce|document|customer}` (max 1,000),
+  `GET|POST /documents/parcel-list {ids|batchId, title?}` (max 5,000) — staff with parcel:read:any (hub operators: their
+  hubs' parcels), merchants / API keys (`parcels:read`) their own, customers theirs; unknown or out-of-scope IDs are
+  left out (`X-Missing-Count`, `X-Missing`), none found → 404, too many → 422 `TOO_MANY_PARCELS`.
+  `GET /documents/manifest/:trip`, `/bag-label/:bag` (hub:read, trip/bag hub scope), `/run-sheet/:rider?date=`
+  (parcel:read:any + rider:read; the rider's assignments that day, route-plan order; nothing → 422 `NOTHING_TO_PRINT`),
+  `GET|POST /documents/cn-sheet/:batchId {cns?}` (parcel:dispatch; counts the print like `/cn/batches/:id/print`),
+  `/return-run/:id` (parcel:dispatch), `/finance-invoice/:id`, `/settlement/:id` (finance:read; merchants their own),
+  `/statement?from&to&line` (merchant owners: delivered prepaid parcels not yet invoiced), `/report/:runId`,
+  `/sla-report?from&to&hubId` (parcel:read:any), `/hub-reconciliation?hubId&date` (hub:read + parcel:read:any;
+  hub operators their own hubs; audited with the hub as entity).
+- Web: `DFPrint.open(path, opts)`, `DFPrint.parcels(kind, ids, params)`, `DFPrint.format(selectValue, ids)` (the panels'
+  "All invoices · A4", "E-commerce invoices · A4", "4 invoices · A4", "Invoice · POS 80mm", "Shipment labels", "Order list"
+  options). The tab opens inside the click (pop-up blockers), shows "Preparing…", then the PDF in the browser viewer with a
+  Download link keeping the file name; errors show in the tab and as a toast. Courier Operations prints the ticked rows,
+  else the rows the table shows (`DFOps.printIds()`).
+- Browser tests: `openPdf(page, action)` in `tests/e2e/support.ts`; API tests read PDFs with `test/pdf-text.ts`.

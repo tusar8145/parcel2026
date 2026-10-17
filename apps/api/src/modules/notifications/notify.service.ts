@@ -86,6 +86,8 @@ export class NotifyService {
       optedOut = new Set(prefs.map(p => CHANNEL_OF[p.channel]));
     }
 
+    // Parcel messages are linked to their parcel (its message log in Courier Operations).
+    const trackingId = typeof input.vars?.trackingId === "string" && input.vars.trackingId.trim() ? input.vars.trackingId.trim().toUpperCase().slice(0, 40) : null;
     const ids: string[] = [];
     for (const channel of wanted) {
       if (optedOut.has(channel)) continue;
@@ -102,6 +104,7 @@ export class NotifyService {
           subject: message.subject,
           html: message.html,
           userId,
+          trackingId,
         }),
       );
     }

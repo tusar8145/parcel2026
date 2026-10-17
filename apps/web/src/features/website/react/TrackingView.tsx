@@ -502,7 +502,7 @@ function CancelButton({ item, owner, token, onDone }: { item: Item; owner: "user
   const { busy, run } = useBusy();
   const cancel = () =>
     run(async () => {
-      if (!confirm(`Cancel pickup request ${item.trackingId}?`)) return;
+      if (!(await df().confirm({ title: `Cancel pickup request ${item.trackingId}?`, message: "The rider won't come for it. This can't be undone.", confirm: "Cancel pickup", cancel: "Keep it", danger: true }))) return;
       try {
         if (owner === "token") await df().api(`/track/${encodeURIComponent(item.trackingId)}/cancel`, { method: "POST", body: { token } });
         else await df().api(`/parcels/${encodeURIComponent(item.trackingId)}/cancel`, { method: "POST", body: {} });

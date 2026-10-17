@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, test, type TempUser } from "./support";
+import { Fixtures, confirmDialog, expect, test, type TempUser } from "./support";
 
 /**
  * Support tickets across the website, Courier Operations and the rider app, partner applications,
@@ -251,9 +251,9 @@ test("partner applications: a visitor signs up, returns to the form, and staff s
   await ops.click(`[data-support-open="${riderNumber}"]`);
   const panel = ops.locator(".st-application");
   await expect(panel).toContainText("Rider application · Submitted");
-  ops.removeAllListeners("dialog"); // open() accepts every dialog empty; this prompt needs the message
-  ops.once("dialog", dialog => dialog.accept("Please send a photo of your NID"));
+  // The message to the applicant (required for "information requested") in the in-page dialog.
   await panel.locator(`[data-application-status="INFO_REQUESTED"]`).click();
+  await confirmDialog(ops, { title: "Ask the applicant for information", value: "Please send a photo of your NID" });
   await expect(panel).toContainText("Rider application · Information requested");
   await expect(ops.locator(".st-messages")).toContainText("Please send a photo of your NID");
   expect((await api(ops, `/applications/${riderNumber}`)).status).toBe("INFO_REQUESTED");

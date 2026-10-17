@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, OPS_NAV, expect, opsNav, test, type OpsArea, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, OPS_NAV, confirmDialog, expect, opsNav, test, type OpsArea, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 // Every account is temporary (support.ts): the operations manager, the Gulshan hub operator,
 // finance and support staff, the merchant and the rider are created in the database before the
@@ -89,10 +89,11 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await opsNav(ops, "customerParcels");
   await expect(ops.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`)).toHaveCount(0);
 
-  // ── Pickup: dispatch assigns the pickup to the rider ──
-  await opsNav(ops, "pickup");
-  await ops.click('.heading-actions [data-action="assign"]');
-  await ops.selectOption("#assignShipment", trackingId);
+  // ── New orders: accept and assign the pickup rider (the row's next action) ──
+  await opsNav(ops, "newOrders");
+  await ops.fill("#shipmentSearch", trackingId);
+  await ops.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"] .button-primary`, { hasText: "Accept & assign rider" }).click();
+  await expect(ops.locator("#assignShipment")).toHaveValue(trackingId);
   await chooseOption(ops, "#assignRider", rider.code);
   await ops.click("#modalSubmit");
   await expect(toast(ops)).toContainText(`${trackingId} assigned to ${riderLabel} for pickup`);
@@ -106,40 +107,44 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await riderPage.click("#submitAction");
   await expect(toast(riderPage)).toContainText("handed to Gulshan Sorting Hub");
 
-  // ── Gulshan's hub operator transfers it to Dhanmondi ──
+  // ── Gulshan's hub operator finds it at their hub, and it moves on to Dhanmondi (Transfers' bags and
+  //    manifests do this in the panel; here the status change is made through the API) ──
   const hub = await signedIn(browser, HUB_GULSHAN, /\/courier-operation/, errors);
+  await opsNav(hub, "hubAtHub");
+  await hub.fill("#listSearch-hub-now", trackingId);
+  await expect(hub.locator(`[data-list="hub-now"] tr[data-shipment-id="${trackingId}"]`)).toBeVisible({ timeout: 20_000 });
+  // Hub operators receive only at their own hub.
   await opsNav(hub, "hubReceive");
-  await expect(hub.locator("#hubShipmentRows")).toContainText(trackingId);
-  // Hub operators scan and receive only at their own hub.
-  await expect(hub.locator("#hubScanLocation option")).toHaveText(["Gulshan Sorting Hub"]);
-  await hub.fill('#hubTransferForm input[name="tracking"]', trackingId);
-  await hub.selectOption('#hubTransferForm select[name="hub"]', { label: "Dhanmondi Hub" });
-  await hub.click('#hubTransferForm button[type="submit"]');
-  await expect(toast(hub)).toContainText(`${trackingId} transfer from Gulshan Sorting Hub to Dhanmondi Hub recorded`);
-  await expect(hub.locator("#mainContent")).toContainText("Shipment transfer report");
-  await expect(hub.locator("#mainContent table").last()).toContainText(trackingId);
+  await expect(hub.locator("#rdHub option")).toHaveText(["Gulshan Sorting Hub"]);
+  const dhanmondi = await hub.evaluate(async () => {
+    const DF = (window as unknown as { DF: { state: { hubs: { id: string; name: string }[] } } }).DF;
+    return DF.state.hubs.find(h => h.name === "Dhanmondi Hub")!.id;
+  });
+  await hub.evaluate(
+    ([id, to]) => (window as unknown as { DF: { api: (p: string, i: unknown) => Promise<unknown> } }).DF.api(`/parcels/${id}/status`, { method: "POST", body: { status: "IN_TRANSIT", hubId: to } }),
+    [trackingId, dhanmondi] as const,
+  );
 
-  // ── Dhanmondi receives it (operations manager at the hub console) ──
+  // ── Dhanmondi receives it at the receive desk (operations manager) ──
   await reload(ops);
   await opsNav(ops, "hubReceive");
-  await ops.fill('#hubReceiveForm input[name="tracking"]', trackingId);
-  await ops.fill('#hubReceiveForm input[name="sender"]', shop.name);
-  await ops.fill('#hubReceiveForm input[name="recipient"]', recipient);
-  await ops.selectOption('#hubReceiveForm select[name="line"]', "E-commerce");
-  await ops.selectOption('#hubReceiveForm select[name="hub"]', { label: "Dhanmondi Hub" });
-  await ops.click('#hubReceiveForm button[type="submit"]');
-  await expect(toast(ops)).toContainText(`${trackingId} received at Dhanmondi Hub`);
+  await ops.selectOption("#rdHub", { label: "Dhanmondi Hub" });
+  await ops.fill("#rdCode", trackingId);
+  await ops.press("#rdCode", "Enter");
+  await expect(ops.locator("#rdFeedback")).toContainText(`${trackingId} received at Dhanmondi Hub`, { timeout: 20_000 });
   // Scanning it again at the same hub is recognised.
-  await ops.fill("#hubScanId", trackingId);
-  await ops.selectOption("#hubScanEvent", "Received at hub");
-  await ops.selectOption("#hubScanLocation", { label: "Dhanmondi Hub" });
-  await ops.click('#hubScanForm button[type="submit"]');
-  await expect(ops.locator("#hubScanFeedback")).toContainText(`${trackingId} is already at Dhanmondi Hub`);
+  await ops.fill("#rdCode", trackingId);
+  await ops.press("#rdCode", "Enter");
+  await expect(ops.locator("#rdFeedback")).toContainText(`${trackingId} was already received at Dhanmondi Hub`, { timeout: 20_000 });
 
   // ── Delivery: dispatch assigns the delivery to the rider ──
   await opsNav(ops, "delivery");
-  await ops.click('.heading-actions [data-action="assign"]');
-  await ops.selectOption("#assignShipment", trackingId);
+  await ops.fill("#listSearch-delivery-waiting", trackingId);
+  const waiting = ops.locator(`[data-list="delivery-waiting"] tr[data-shipment-id="${trackingId}"]`);
+  await expect(waiting).toBeVisible({ timeout: 20_000 });
+  // Dhanmondi delivers to Dhanmondi: the next action is "Assign rider".
+  await waiting.locator(".button-primary", { hasText: "Assign rider" }).click();
+  await expect(ops.locator("#assignShipment")).toHaveValue(trackingId);
   await chooseOption(ops, "#assignRider", rider.code);
   await ops.click("#modalSubmit");
   await expect(toast(ops)).toContainText("for delivery");
@@ -161,6 +166,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await expect(otpHint).toContainText("Development code:");
   await riderPage.fill("#deliveryOtp", (await otpHint.textContent())!.match(/\d{4}/)![0]);
   await riderPage.click("#submitAction");
+  await confirmDialog(riderPage, { title: "Cash collected?" });
   await expect(toast(riderPage)).toContainText(`${trackingId} delivered`);
 
   // ── The rider's cash page shows the collection ──

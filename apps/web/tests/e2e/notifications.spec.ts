@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
-import { API_ORIGIN, expect, test } from "./support";
+import { API_ORIGIN, confirmDialog, expect, test } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -123,6 +123,7 @@ test.describe.serial("super admin notifications", () => {
       expect((await api(page, "/notifications/events")).body.events.find((e: any) => e.event === "parcel.booked").channels.sms.body).toBe("Booked {{trackingId}}. Charge Tk {{charge}}.");
 
       await editor.locator("[data-nt-reset]").click();
+      await confirmDialog(page, { title: "Restore the default text?" });
       await expect(toast(page)).toContainText("Default text restored");
       await expect(row.locator('[data-nt-edit="parcel.booked|sms"]')).not.toContainText("customised");
 

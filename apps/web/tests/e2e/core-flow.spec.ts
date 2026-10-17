@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, opsNav, test, type TempRider, type TempUser } from "./support";
+import { Fixtures, confirmDialog, expect, opsNav, test, type TempRider, type TempUser } from "./support";
 
 // The operations manager and the rider are temporary, and the customer who signs up is deleted
 // afterwards with the parcel, its COD and messages (support.ts).
@@ -125,6 +125,7 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await expect(otpHint).toContainText("Development code:");
   await rider.fill("#deliveryOtp", (await otpHint.textContent())!.match(/\d{4}/)![0]);
   await rider.click("#submitAction");
+  await confirmDialog(rider, { title: "Cash collected?" });
   await expect(toast(rider)).toContainText(`${trackingId} delivered`);
 
   // ── Customer sees it delivered ──

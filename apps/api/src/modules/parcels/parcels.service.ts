@@ -15,6 +15,7 @@ import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
 import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { opsHubScope } from "./ops-scope";
+import { forHubsWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
 import { PickupSlotsService } from "./pickup-slots.service";
@@ -376,11 +377,15 @@ export class ParcelsService {
 
   // ───────────── reading ─────────────
 
-  async list(actor: Actor, query: z.infer<typeof listParcelsQuerySchema>) {
+  async list(actor: Actor, query: z.infer<typeof listParcelsQuerySchema> & Partial<z.infer<typeof stageFilterSchema>>) {
     const q = query.q?.trim();
     const where: Prisma.ParcelWhereInput = {
       AND: [
         this.scope(actor),
+        // Courier Operations' paged lists: journey stage, service line and "my hub" (parcel-stages.ts).
+        query.stage ? stageWhere(query.stage) : {},
+        query.line ? lineWhere(query.line) : {},
+        query.forHubIds?.length ? await forHubsWhere(this.prisma, query.forHubIds) : {},
         {
           status: query.status?.length ? { in: query.status } : undefined,
           channel: query.channel,

@@ -974,8 +974,11 @@ model OutboxMessage {
   provider          String?
   providerMessageId String?
   providerResponse  String?
+  /// The parcel the message is about (vars.trackingId when sent), for the parcel's message log
+  trackingId        String?
 
   @@index([state, createdAt])
+  @@index([trackingId])
   @@map("outbox_messages")
 }
 

@@ -44,9 +44,9 @@
       (page?.items || [])
         .map(p => {
           const actions = [];
-          if (p.status === "DRAFT" && p.createdById !== me) actions.push(`<button class="button button-sm" data-payout-approve="${esc(p.id)}">Approve</button>`);
-          if (p.status === "APPROVED" && Ops.can("manageFinance")) actions.push(`<button class="button button-sm" data-payout-pay="${esc(p.id)}">Mark paid</button>`);
-          if (p.status === "DRAFT" || p.status === "APPROVED") actions.push(`<button class="button button-sm" data-payout-cancel="${esc(p.id)}">Cancel</button>`);
+          if (p.status === "DRAFT" && p.createdById !== me) actions.push(`<button class="button button-sm" data-payout-approve="${esc(p.id)}" data-number="${esc(p.number)}" data-rider="${esc(p.rider.code)} · ${esc(p.rider.name)}" data-amount="${esc(String(p.amount))}">Approve</button>`);
+          if (p.status === "APPROVED" && Ops.can("manageFinance")) actions.push(`<button class="button button-sm" data-payout-pay="${esc(p.id)}" data-number="${esc(p.number)}" data-rider="${esc(p.rider.code)} · ${esc(p.rider.name)}" data-amount="${esc(String(p.amount))}">Mark paid</button>`);
+          if (p.status === "DRAFT" || p.status === "APPROVED") actions.push(`<button class="button button-sm" data-payout-cancel="${esc(p.id)}" data-number="${esc(p.number)}" data-rider="${esc(p.rider.code)} · ${esc(p.rider.name)}" data-amount="${esc(String(p.amount))}">Cancel</button>`);
           return `<tr><td><strong>${esc(p.number)}</strong><span class="subcell">${p.earnings} lines</span></td><td>${esc(p.rider.code)} · ${esc(p.rider.name)}</td><td>${esc(new Date(p.periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric" }))} – ${esc(new Date(new Date(p.periodEnd).getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric" }))}</td><td>${Ops.money(p.amount)}</td><td>${tag(PAYOUT[p.status] || [p.status, "status-pending"])}${p.paymentReference ? `<span class="subcell">${esc(p.paymentMethod)} · ${esc(p.paymentReference)}</span>` : ""}</td><td style="white-space:nowrap">${actions.join(" ") || (p.status === "DRAFT" ? `<span class="subcell">Another person approves</span>` : "")}</td></tr>`;
         })
         .join("") || `<tr><td colspan="6" class="empty-state">${error ? esc(DF.describe(error)) : page ? "No rider payouts yet." : "Loading…"}</td></tr>`;
@@ -150,49 +150,82 @@
       const decline = t.closest("[data-handover-decline]");
       if (decline) {
         event.stopImmediatePropagation();
-        if (!confirm("Decline this handover request? The rider keeps the cash and can ask again.")) return;
-        return void DF.api(`/cod/handover-requests/${decline.dataset.handoverDecline}/cancel`, { method: "POST" })
-          .then(() => {
-            Ops.invalidate("handover-requests");
-            Ops.rerender(true);
-            showToast("Request declined.");
-          })
-          .catch(error => showToast(DF.describe(error)));
+        void Ops.confirm({ title: "Decline this handover request?", message: "The rider keeps the cash and can ask again.", confirm: "Decline request", danger: true }).then(ok => {
+          if (!ok) return;
+          DF.api(`/cod/handover-requests/${decline.dataset.handoverDecline}/cancel`, { method: "POST" })
+            .then(() => {
+              Ops.invalidate("handover-requests");
+              Ops.rerender(true);
+              showToast("Request declined.");
+            })
+            .catch(error => showToast(DF.describe(error)));
+        });
+        return;
       }
       if (t.closest("[data-payout-run]")) {
         event.stopImmediatePropagation();
         const { start, end } = thisMonth();
-        const from = fromDhakaDate(prompt("Pay period start (YYYY-MM-DD, Dhaka)", dateInput(start)), false);
-        if (!from) return;
-        const lastDay = prompt("Pay period end, inclusive (YYYY-MM-DD)", dateInput(new Date(end.getTime() - 1)));
-        let to = fromDhakaDate(lastDay, true);
-        if (!to) return;
-        if (to > Date.now()) to = new Date();
-        return void call(
-          () => DF.api("/rider-payouts/runs", { method: "POST", body: { periodStart: from.toISOString(), periodEnd: to.toISOString() } }),
-          r => `${r.created.length} payout${r.created.length === 1 ? "" : "s"} prepared (${Ops.money(r.total)})${r.skipped.length ? ` · ${r.skipped.length} rider${r.skipped.length === 1 ? "" : "s"} skipped` : ""}. Another person approves them.`,
-        );
+        const DAY = /^\d{4}-\d{2}-\d{2}$/;
+        return void Ops.form({
+          title: "Prepare rider payouts",
+          description: "Creates one payout per rider from their unpaid earnings in the period (Dhaka calendar days). Another person approves them.",
+          submit: "Review",
+          fields: [
+            { id: "from", label: "Pay period start", type: "date", value: dateInput(start), required: true },
+            { id: "to", label: "Pay period end (inclusive)", type: "date", value: dateInput(new Date(end.getTime() - 1)), required: true, max: dateInput(new Date()) },
+          ],
+          validate: {
+            from: v => (DAY.test(v) ? "" : "Choose a date"),
+            to: (v, all) => (!DAY.test(v) ? "Choose a date" : all.from && v < all.from ? "The end can't be before the start" : ""),
+          },
+          review: v => [["Period", `${v.from} – ${v.to}`], ["Riders", "Everyone with unpaid earnings in the period"]],
+          reviewNote: "Payouts are drafted now; money moves only when finance marks each one paid.",
+          confirm: "Prepare payouts",
+          onSubmit: async v => {
+            const from = fromDhakaDate(v.from, false);
+            let to = fromDhakaDate(v.to, true);
+            if (to > Date.now()) to = new Date();
+            const r = await DF.api("/rider-payouts/runs", { method: "POST", body: { periodStart: from.toISOString(), periodEnd: to.toISOString() } });
+            Ops.invalidate("rider-payouts");
+            Ops.rerender(true);
+            return `${r.created.length} payout${r.created.length === 1 ? "" : "s"} prepared (${Ops.money(r.total)})${r.skipped.length ? ` · ${r.skipped.length} rider${r.skipped.length === 1 ? "" : "s"} skipped` : ""}. Another person approves them.`;
+          },
+        });
       }
       const approve = t.closest("[data-payout-approve]");
       if (approve) {
         event.stopImmediatePropagation();
-        return void call(() => DF.api(`/rider-payouts/${approve.dataset.payoutApprove}/approve`, { method: "POST" }), p => `${p.number} approved.`);
+        const d = approve.dataset;
+        return void Ops.confirm({ title: `Approve ${d.number}?`, message: `${d.rider} · ${Ops.money(Number(d.amount))}. Finance can pay it once approved.`, confirm: "Approve payout" }).then(ok => ok && call(() => DF.api(`/rider-payouts/${d.payoutApprove}/approve`, { method: "POST" }), p => `${p.number} approved.`));
       }
       const pay = t.closest("[data-payout-pay]");
       if (pay) {
         event.stopImmediatePropagation();
-        const method = (prompt(`Payment method (${METHODS.join(", ")})`, "BKASH") || "").trim().toUpperCase().replace(/\s+/g, "_");
-        if (!method) return;
-        if (!METHODS.includes(method)) return void showToast(`Choose one of: ${METHODS.join(", ")}.`);
-        const reference = (prompt("Transaction or reference number", "") || "").trim();
-        if (!reference) return;
-        return void call(() => DF.api(`/rider-payouts/${pay.dataset.payoutPay}/pay`, { method: "POST", body: { paymentMethod: method, paymentReference: reference } }), p => `${p.number} paid. The rider has been notified.`);
+        const d = pay.dataset;
+        const LABELS = { BKASH: "bKash", NAGAD: "Nagad", ROCKET: "Rocket", BANK_TRANSFER: "Bank transfer", CASH: "Cash" };
+        return void Ops.form({
+          title: `Mark ${d.number} paid`,
+          description: `${d.rider} · ${Ops.money(Number(d.amount))}. The rider gets an SMS.`,
+          submit: "Review payment",
+          fields: [
+            { id: "paymentMethod", label: "Payment method", type: "select", value: "BKASH", options: METHODS.map(m => ({ value: m, label: LABELS[m] || m })), required: true },
+            { id: "paymentReference", label: "Transaction or reference number", required: true, maxLength: 120 },
+          ],
+          validate: { paymentReference: v => (v.length < 3 ? "At least 3 characters" : "") },
+          review: v => [["Payout", d.number], ["Rider", d.rider], ["Amount", Ops.money(Number(d.amount))], ["Method", LABELS[v.paymentMethod]], ["Reference", v.paymentReference]],
+          confirm: "Confirm payment",
+          onSubmit: async v => {
+            const p = await DF.api(`/rider-payouts/${d.payoutPay}/pay`, { method: "POST", body: { paymentMethod: v.paymentMethod, paymentReference: v.paymentReference } });
+            Ops.invalidate("rider-payouts");
+            Ops.rerender(true);
+            return `${p.number} paid. The rider has been notified.`;
+          },
+        });
       }
       const cancel = t.closest("[data-payout-cancel]");
       if (cancel) {
         event.stopImmediatePropagation();
-        if (!confirm("Cancel this payout? Its earnings become unpaid again.")) return;
-        return void call(() => DF.api(`/rider-payouts/${cancel.dataset.payoutCancel}/cancel`, { method: "POST", body: {} }), p => `${p.number} cancelled.`);
+        return void Ops.confirm({ title: `Cancel ${cancel.dataset.number}?`, message: "Its earnings become unpaid again.", confirm: "Cancel payout", cancel: "Keep it", danger: true }).then(ok => ok && call(() => DF.api(`/rider-payouts/${cancel.dataset.payoutCancel}/cancel`, { method: "POST", body: {} }), p => `${p.number} cancelled.`));
       }
     },
     true,

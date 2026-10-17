@@ -4,7 +4,7 @@
  *   Rider cash on hand, cash handovers           GET /cod/riders, /cod/handovers, POST /cod/handovers
  *   Metrics                                      GET /finance/summary
  *   Settlement approvals (maker-checker), pay    /settlements…
- *   Invoices with VAT, Mushak-6.3-style print    /invoices…
+ *   Invoices with VAT, Mushak-6.3-style PDF      /invoices…, GET /documents/finance-invoice/:id (settlements: /documents/settlement/:id)
  *   Refunds / claims / weight disputes           /disputes…
  *   Bank / bKash reconciliation                  /finance/reconciliation/…
  *   Ledger trial balance, period close           /finance/ledger/…
@@ -64,7 +64,7 @@
     if (finance()) {
       const s = Ops.lazy("finance-summary", () => DF.api("/finance/summary"), 30000);
       setMetrics([
-        ["COD with riders", s ? Ops.money(s.codWithRiders) : "—", "wallet", `${riders.length} riders`, "to hand over"],
+        ["COD with riders", s ? Ops.money(s.codWithRiders) : "—", "wallet", riders.length ? `${riders.length} rider${riders.length === 1 ? "" : "s"}` : "riders", "to hand over"],
         ["COD at hubs", s ? Ops.money(s.codAtHubs) : "—", "chart", "received", "ready to settle"],
         ["Payouts pending approval", s ? Ops.money(s.payablePendingApproval) : "—", "clock", s ? `${Ops.money(s.payableAwaitingPayment)} approved` : "", "merchant settlements"],
         ["Settled this month", s ? Ops.money(s.settledThisMonth) : "—", "check", s ? `${Ops.money(s.invoicesOutstanding)} invoiced` : "", "paid out"],
@@ -72,15 +72,22 @@
       registerText("Merchant settlement batches · maker-checker approval", `Showing ${genericPages["COD & finance"].rows.length} settlement batches`);
     } else if (Ops.can("receiveCash")) {
       setMetrics([
-        ["COD with riders", Ops.money(withRiders), "wallet", `${riders.length} riders`, Ops.me?.hubIds ? "your hub" : "network wide"],
+        ["COD with riders", Ops.money(withRiders), "wallet", `${riders.length} rider${riders.length === 1 ? "" : "s"}`, Ops.me?.hubIds ? "your hub" : "network wide"],
         ["Collections in hand", Ops.num(riders.reduce((n, r) => n + r.collections, 0)), "box", oldest ? `oldest ${Ops.ago(oldest)}` : "none waiting", "not handed over"],
-        ["Received today", Ops.money(receivedToday.reduce((n, h) => n + h.amount, 0)), "chart", `${receivedToday.length} handovers`, "at hubs"],
-        ["Settlement", "Finance", "check", "merchant payouts", "approved by finance"],
+        ["Received today", Ops.money(receivedToday.reduce((n, h) => n + h.amount, 0)), "chart", `${receivedToday.length} handover${receivedToday.length === 1 ? "" : "s"}`, "at hubs"],
       ]);
       registerText("Cash received from riders · newest first", `Showing ${recent.length} recent handovers`);
     } else {
       setMetrics([["COD & finance", "—", "wallet", "restricted", "finance, hub and operations staff"]]);
       registerText("COD and finance figures are available to finance, hub and operations staff.", "No records for your role");
+    }
+
+    // The register: a message instead of an empty table.
+    const register = $("genericBody");
+    if (register && !register.children.length) {
+      const error = Ops.lazyError(finance() ? "settlements" : "handovers");
+      const loading = finance() ? !Ops.cache.settlements?.value : !Ops.cache.handovers?.value;
+      register.innerHTML = `<tr><td colspan="${genericPages["COD & finance"].cols.length}" class="empty-state">${esc(error ? DF.describe(error) : loading ? "Loading…" : finance() ? "No settlement batches yet. Draft one from the merchant settlements panel below." : "No cash handovers yet. Riders' cash appears below; receive it against their collections.")}</td></tr>`;
     }
 
     if (Ops.can("receiveCash")) {
@@ -211,7 +218,7 @@
           open.map(
             s =>
               `<tr><td><strong>${esc(s.number)}</strong>${s.autoDrafted ? `<span class="subcell">automatic</span>` : ""}</td><td>${esc(s.merchant.name)}</td><td>${Ops.money(s.codTotal)}</td><td>${Ops.money(s.chargesTotal)}</td><td>${Ops.money(s.adjustmentsTotal)}</td><td><strong>${Ops.money(s.netPayable)}</strong></td><td>${s.carriedForward ? Ops.money(s.carriedForward) : "—"}</td><td>${pill(s.status)}</td><td style="white-space:nowrap">${btn("View", `data-fin-settlement-view="${s.id}"`)} ${
-                s.status === "DRAFT" ? `${btn("Approve", `data-fin-settlement-approve="${s.id}"`)} ${btn("Discard", `data-fin-settlement-delete="${s.id}"`)}` : btn("Mark paid", `data-fin-settlement-pay="${s.id}" data-net="${s.netPayable}"`)
+                s.status === "DRAFT" ? `${btn("Approve", `data-fin-settlement-approve="${s.id}" data-number="${esc(s.number)}" data-merchant-name="${esc(s.merchant.name)}" data-net="${s.netPayable}"`)} ${btn("Discard", `data-fin-settlement-delete="${s.id}" data-number="${esc(s.number)}"`)}` : btn("Mark paid", `data-fin-settlement-pay="${s.id}" data-net="${s.netPayable}" data-number="${esc(s.number)}" data-merchant-name="${esc(s.merchant.name)}"`)
               }</td></tr>`,
           ),
           "No settlements waiting for approval or payment.",
@@ -232,7 +239,7 @@
           invoices.map(
             i =>
               `<tr><td><strong>${esc(i.number)}</strong>${i.paymentReference ? `<span class="subcell">ref ${esc(i.paymentReference)}</span>` : ""}</td><td>${esc(i.merchant.name)}</td><td>${dateShort(i.periodStart)} – ${dateShort(i.periodEnd)}</td><td>${Ops.money(i.taxableValue)}</td><td>${Ops.money(i.vatAmount)} <span class="subcell">${i.vatRate}%</span></td><td><strong>${Ops.money(i.total)}</strong></td><td>${dateShort(i.dueAt)}${i.overdue ? `<span class="subcell">overdue</span>` : ""}</td><td>${pill(i.status)}</td><td style="white-space:nowrap">${btn("Print", `data-fin-invoice-print="${i.id}"`)} ${
-                i.status === "ISSUED" ? `${btn("Mark paid", `data-fin-invoice-pay="${i.id}"`)} ${btn("Void", `data-fin-invoice-void="${i.id}"`)}` : ""
+                i.status === "ISSUED" ? `${btn("Mark paid", `data-fin-invoice-pay="${i.id}" data-number="${esc(i.number)}" data-total="${i.total}" data-merchant-name="${esc(i.merchant.name)}"`)} ${btn("Void", `data-fin-invoice-void="${i.id}" data-number="${esc(i.number)}" data-total="${i.total}"`)}` : ""
               }</td></tr>`,
           ),
           errorText("fin-invoices", "No invoices yet."),
@@ -256,7 +263,7 @@
                 d.weight ? `<span class="subcell">${d.weight.bookedKg} → ${d.weight.actualKg} kg · ${d.weight.difference >= 0 ? "+" : ""}${Ops.money(d.weight.difference)}</span>` : ""
               }</td><td>${esc(d.merchant?.name || "Customer")}</td><td>${d.claimedAmount == null ? "—" : Ops.money(d.claimedAmount)}</td><td>${d.approvedAmount == null ? "—" : Ops.money(d.approvedAmount)}</td><td>${pill(d.status)}</td><td style="white-space:nowrap">${
                 d.status === "OPEN" ? btn("Review", `data-fin-dispute="review" data-number="${esc(d.number)}"`) + " " : ""
-              }${d.status === "OPEN" || d.status === "UNDER_REVIEW" ? `${btn("Approve", `data-fin-dispute="approve" data-number="${esc(d.number)}" data-kind="${d.kind}" data-claimed="${d.claimedAmount ?? ""}" data-merchant="${d.merchant ? 1 : ""}"`)} ${btn("Reject", `data-fin-dispute="reject" data-number="${esc(d.number)}"`)}` : esc(d.resolution || "")}</td></tr>`,
+              }${d.status === "OPEN" || d.status === "UNDER_REVIEW" ? `${btn("Approve", `data-fin-dispute="approve" data-number="${esc(d.number)}" data-kind="${d.kind}" data-claimed="${d.claimedAmount ?? ""}" data-merchant="${d.merchant ? 1 : ""}" data-merchant-name="${esc(d.merchant?.name || "")}" data-parcel="${esc(d.parcel.trackingId)}"`)} ${btn("Reject", `data-fin-dispute="reject" data-number="${esc(d.number)}"`)}` : esc(d.resolution || "")}</td></tr>`,
           ),
           errorText("fin-disputes", "No disputes."),
         ),
@@ -342,165 +349,278 @@
     if (message) showToast(message);
   };
   const fail = error => showToast(DF.describe(error));
-  const ask = (question, fallback = "") => {
-    const answer = prompt(question, fallback);
-    return answer === null ? null : answer.trim();
+  const REF = value => (value && value.length < 3 ? "At least 3 characters" : "");
+  const money = v => Ops.money(Number(v || 0));
+  const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((label, i) => ({ value: String(i), label }));
+  const CYCLES = [
+    { value: "MANUAL", label: "Manual (drafted by finance)" },
+    { value: "DAILY", label: "Daily" },
+    { value: "WEEKLY", label: "Weekly" },
+    { value: "BIWEEKLY", label: "Every two weeks" },
+  ];
+  const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  /** "2026-10-01" (a Dhaka calendar day) → the instant it starts. */
+  const dhakaStart = day => new Date(`${day}T00:00:00+06:00`).toISOString();
+  const moneyRule = (value, { required = true, max } = {}) => {
+    if (!value) return required ? "Enter an amount" : "";
+    if (!/^\d+(\.\d{1,2})?$/.test(value)) return "Use a number with up to 2 decimals";
+    if (required && Number(value) <= 0) return "The amount must be more than 0";
+    if (max != null && Number(value) > max) return `At most ${money(max)}`;
+    return "";
   };
-  async function pickMerchant(question) {
-    const merchants = (await DF.api("/ops/merchants").catch(() => [])).filter(m => m.status === "ACTIVE");
-    if (!merchants.length) return void showToast("No active merchants.");
-    const answer = ask(`${question}\n${merchants.map((m, i) => `${i + 1}. ${m.code} · ${m.name}`).join("\n")}`, "1");
-    if (answer === null) return undefined;
-    const m = merchants[Number(answer) - 1];
-    if (!m) showToast("Choose a merchant from the list.");
-    return m;
+  /** The merchant search-select field for Ops.form (active merchants). */
+  async function merchantField(label) {
+    const options = await Ops.merchantOptions();
+    if (!options.length) {
+      showToast("No active merchants.");
+      return null;
+    }
+    return { id: "merchantId", label, type: "search-select", options, required: true, placeholder: "Search by code or name…", emptyLabel: "— Choose a merchant —" };
   }
+  const merchantLabel = (field, id) => field.options.find(o => o.value === id)?.label || id;
 
-  function printWindow(title, body) {
-    const w = window.open("", "_blank", "width=900,height=1000");
-    if (!w) return void showToast("Allow pop-ups to print.");
-    w.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4;margin:14mm}body{font:12px Arial,sans-serif;color:#182230}h1{font-size:18px;margin:0}h2{font-size:13px;margin:16px 0 6px}.muted{color:#647184}.note{border:1px solid #d69e00;background:#fff8e6;padding:8px;margin:10px 0;font-weight:bold}table{border-collapse:collapse;width:100%}th,td{border:1px solid #dfe4eb;padding:6px;text-align:left}th{background:#f5f7fa;font-size:10px}td.n,th.n{text-align:right}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.sign{display:flex;justify-content:space-between;margin-top:40px}.sign span{border-top:1px solid #687384;padding-top:6px;width:40%}@media print{.note{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${body}<script>window.onload=()=>window.print()<\/script></body></html>`,
-    );
-    w.document.close();
-  }
   const n2 = v => Number(v || 0).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  async function printInvoice(id) {
-    const i = await DF.api(`/invoices/${id}`).catch(fail);
-    if (!i) return;
-    const rows = (i.lines || [])
-      .map((l, k) => `<tr><td>${k + 1}</td><td>${esc(l.description)}<br><span class="muted">${esc(l.trackingId)}</span></td><td>Service</td><td class="n">1</td><td class="n">${n2(l.taxableValue ?? l.amount)}</td><td class="n">${i.vatRate}%</td><td class="n">${n2(l.vat ?? 0)}</td><td class="n">${n2(l.amount)}</td></tr>`)
-      .join("");
-    printWindow(
-      `Tax invoice ${i.number}`,
-      `<div class="note">DRAFT FOR ACCOUNTANT REVIEW — Mushak-6.3-style layout generated by Delivery Fast. Verify against current NBR requirements before issuing.</div>
-      <h1>Tax Invoice <span class="muted">(Mushak-6.3)</span></h1><p class="muted">Invoice ${esc(i.number)} · issued ${dateShort(i.issuedAt)} · period ${dateShort(i.periodStart)} – ${dateShort(i.periodEnd)} · due ${dateShort(i.dueAt)}</p>
-      <div class="grid"><div><h2>Seller</h2><strong>${esc(i.seller?.name || "")}</strong><br>BIN: ${esc(i.seller?.bin || "— (set in finance settings)")}<br>${esc(i.seller?.address || "")}</div><div><h2>Buyer</h2><strong>${esc(i.buyer?.name || i.merchant.name)}</strong> (${esc(i.merchant.code)})<br>BIN: ______________<br>${esc(i.buyer?.address || "")}</div></div>
-      <h2>Supply details</h2><table><thead><tr><th>#</th><th>Description of service</th><th>Unit</th><th class="n">Qty</th><th class="n">Taxable value (৳)</th><th class="n">VAT rate</th><th class="n">VAT (৳)</th><th class="n">Total incl. VAT (৳)</th></tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr><th colspan="4">Total</th><th class="n">${n2(i.taxableValue)}</th><th></th><th class="n">${n2(i.vatAmount)}</th><th class="n">${n2(i.total)}</th></tr></tfoot></table>
-      <p>Status: <strong>${esc(i.status)}</strong>${i.paymentReference ? ` · payment reference ${esc(i.paymentReference)}` : ""}</p>
-      <div class="sign"><span>Authorised signatory (name, designation)</span><span>Received by</span></div>`,
-    );
-  }
+  /** Tax invoice (Mushak-6.3-style draft: VAT breakdown, BIN, payment status) as a PDF in a new tab. */
+  const printInvoice = id => Ops.printPdf(`/documents/finance-invoice/${id}`, { title: "Preparing the tax invoice…" });
 
-  async function viewSettlement(id) {
-    const s = await DF.api(`/settlements/${id}`).catch(fail);
-    if (!s) return;
-    const lines = s.lines.map(l => `<tr><td>${esc(l.trackingId)}</td><td>${dateShort(l.deliveredAt)}</td><td class="n">${n2(l.codAmount)}</td><td class="n">${n2(l.charge)}</td><td class="n">${n2(l.net)}</td></tr>`).join("");
-    const adj = s.adjustments.map(a => `<tr><td>${esc(a.kind.replace(/_/g, " ").toLowerCase())}</td><td>${esc(a.description)}</td><td class="n">${n2(-a.amount)}</td></tr>`).join("");
-    printWindow(
-      `Settlement ${s.number}`,
-      `<h1>COD settlement ${esc(s.number)}</h1><p class="muted">${esc(s.merchant.name)} (${esc(s.merchant.code)}) · ${esc(s.status)} · drafted ${s.autoDrafted ? "automatically" : `by ${esc(s.createdBy?.name || "—")}`} · approved by ${esc(s.approvedBy?.name || "—")}${s.paidAt ? ` · paid ${dateShort(s.paidAt)} ref ${esc(s.reference)}` : ""}</p>
-      <table><thead><tr><th>Parcel</th><th>Delivered</th><th class="n">COD (৳)</th><th class="n">Charge (৳)</th><th class="n">Net (৳)</th></tr></thead><tbody>${lines || `<tr><td colspan="5">No collections</td></tr>`}</tbody></table>
-      ${adj ? `<h2>Adjustments</h2><table><thead><tr><th>Kind</th><th>Description</th><th class="n">Effect on payout (৳)</th></tr></thead><tbody>${adj}</tbody></table>` : ""}
-      <h2>Summary</h2><table><tbody><tr><td>COD collected</td><td class="n">${n2(s.codTotal)}</td></tr><tr><td>Delivery charges (incl. VAT ${n2(s.vat.onCharges)} at ${s.vat.rate}%)</td><td class="n">−${n2(s.chargesTotal)}</td></tr><tr><td>Adjustments</td><td class="n">${n2(-s.adjustmentsTotal)}</td></tr><tr><th>Net payable</th><th class="n">${n2(s.netPayable)}</th></tr>${s.carriedForward ? `<tr><td>Shortfall carried to the next settlement</td><td class="n">${n2(s.carriedForward)}</td></tr>` : ""}</tbody></table>`,
-    );
-  }
+  /** COD settlement statement as a PDF in a new tab. */
+  const viewSettlement = id => Ops.printPdf(`/documents/settlement/${id}`, { title: "Preparing the settlement statement…" });
 
   const actions = {
     "fin-settlement-new": async () => {
-      const m = await pickMerchant("Draft a settlement for which merchant?");
-      if (m) DF.api("/settlements", { method: "POST", body: { merchantId: m.id } }).then(s => done(`${s.number} drafted: net ${Ops.money(s.netPayable)}. Another finance user must approve it.`), fail);
+      const field = await merchantField("Merchant");
+      if (!field) return;
+      Ops.form({
+        title: "Draft a settlement",
+        description: "Collects the merchant's delivered, unsettled COD less charges. Another finance user approves it.",
+        submit: "Draft settlement",
+        fields: [field],
+        onSubmit: async v => {
+          const s = await DF.api("/settlements", { method: "POST", body: { merchantId: v.merchantId } });
+          done(null);
+          return `${s.number} drafted: net ${Ops.money(s.netPayable)}. Another finance user must approve it.`;
+        },
+      });
     },
     "fin-settlement-view": b => viewSettlement(b.dataset.finSettlementView),
-    "fin-settlement-approve": b => DF.api(`/settlements/${b.dataset.finSettlementApprove}/approve`, { method: "POST" }).then(s => done(`${s.number} approved.`), fail),
-    "fin-settlement-delete": b => confirm("Discard this draft? Its collections return to the unsettled pool.") && DF.api(`/settlements/${b.dataset.finSettlementDelete}`, { method: "DELETE" }).then(() => done("Draft discarded."), fail),
+    "fin-settlement-approve": async b => {
+      const { number, merchantName, net } = b.dataset;
+      if (!(await Ops.confirm({ title: `Approve ${number}?`, message: `${merchantName} · net payable ${money(net)}.\nOnce approved it can be paid out; the approval is recorded under your name.`, confirm: "Approve settlement" }))) return;
+      DF.api(`/settlements/${b.dataset.finSettlementApprove}/approve`, { method: "POST" }).then(s => done(`${s.number} approved.`), fail);
+    },
+    "fin-settlement-delete": async b => {
+      if (!(await Ops.confirm({ title: `Discard ${b.dataset.number || "this draft"}?`, message: "Its collections return to the unsettled pool.", confirm: "Discard draft", danger: true }))) return;
+      DF.api(`/settlements/${b.dataset.finSettlementDelete}`, { method: "DELETE" }).then(() => done("Draft discarded."), fail);
+    },
     "fin-settlement-pay": b => {
+      const { number, merchantName } = b.dataset;
       const net = Number(b.dataset.net);
-      const reference = net > 0 ? ask(`Bank / bKash transaction reference for the ${Ops.money(net)} payout:`) : "";
-      if (reference === null || (net > 0 && !reference)) return;
-      DF.api(`/settlements/${b.dataset.finSettlementPay}/pay`, { method: "POST", body: reference ? { reference } : {} }).then(s => done(net > 0 ? `${s.number} paid; the merchant was notified.` : `${s.number} closed with no payout; ${Ops.money(s.carriedForward)} carried forward.`), fail);
+      const id = b.dataset.finSettlementPay;
+      Ops.form({
+        title: `Mark ${number} paid`,
+        description: net > 0 ? `Record the ${Ops.money(net)} payout to ${merchantName}. The merchant is notified.` : `Nothing is payable to ${merchantName}; closing it carries the balance forward.`,
+        submit: net > 0 ? "Review payout" : "Close settlement",
+        fields: net > 0
+          ? [
+              { id: "via", label: "Paid by", type: "select", options: [{ value: "", label: "The merchant's payout account" }, { value: "BANK", label: "Bank transfer" }, { value: "BKASH", label: "bKash" }] },
+              { id: "reference", label: "Bank / bKash transaction reference", required: true, maxLength: 120, placeholder: "e.g. TRX9F82K1" },
+            ]
+          : [{ id: "info", label: "Payout", type: "static", value: "৳0 — no transfer is needed." }],
+        validate: { reference: REF },
+        review: net > 0 ? v => [["Settlement", number], ["Merchant", merchantName], ["Amount", Ops.money(net)], ["Paid by", v.via ? (v.via === "BANK" ? "Bank transfer" : "bKash") : "Payout account"], ["Reference", v.reference]] : null,
+        confirm: "Confirm payout",
+        onSubmit: async v => {
+          const body = net > 0 ? { reference: v.reference, ...(v.via ? { via: v.via } : {}) } : {};
+          const s = await DF.api(`/settlements/${id}/pay`, { method: "POST", body });
+          done(null);
+          return net > 0 ? `${s.number} paid; the merchant was notified.` : `${s.number} closed with no payout; ${Ops.money(s.carriedForward)} carried forward.`;
+        },
+      });
     },
     "fin-invoice-new": async () => {
-      const m = await pickMerchant("Invoice which merchant?");
-      if (!m) return;
-      const from = ask("Period start (YYYY-MM-DD):", `${thisPeriod(-1)}-01`);
-      const to = from && ask("Period end, exclusive (YYYY-MM-DD):", `${thisPeriod()}-01`);
-      if (!from || !to) return;
-      DF.api("/invoices", { method: "POST", body: { merchantId: m.id, periodStart: from, periodEnd: to } }).then(i => done(`${i.number} issued: ${Ops.money(i.total)} incl. VAT ${Ops.money(i.vatAmount)}.`), fail);
+      const field = await merchantField("Merchant");
+      if (!field) return;
+      Ops.form({
+        title: "Issue a tax invoice",
+        description: "Invoices the merchant's delivered parcels in the period, with VAT. Days are Dhaka calendar days.",
+        submit: "Review invoice",
+        fields: [field, { id: "from", label: "Period start", type: "date", value: `${thisPeriod(-1)}-01`, required: true }, { id: "to", label: "Period end (inclusive)", type: "date", value: new Date(Date.parse(`${thisPeriod()}-01T00:00:00Z`) - 86400000).toISOString().slice(0, 10), required: true }],
+        validate: {
+          from: v => (ISO_DAY.test(v) ? "" : "Choose a date"),
+          to: (v, all) => (!ISO_DAY.test(v) ? "Choose a date" : all.from && v < all.from ? "The end can't be before the start" : ""),
+        },
+        review: v => [["Merchant", merchantLabel(field, v.merchantId)], ["Period", `${dateShort(dhakaStart(v.from))} – ${dateShort(dhakaStart(v.to))}`]],
+        reviewNote: "The invoice number is issued and posted to the ledger when you confirm.",
+        confirm: "Issue invoice",
+        onSubmit: async v => {
+          const end = new Date(Date.parse(dhakaStart(v.to)) + 86400000).toISOString();
+          const i = await DF.api("/invoices", { method: "POST", body: { merchantId: v.merchantId, periodStart: dhakaStart(v.from), periodEnd: end } });
+          done(null);
+          return `${i.number} issued: ${Ops.money(i.total)} incl. VAT ${Ops.money(i.vatAmount)}.`;
+        },
+      });
     },
     "fin-invoice-print": b => printInvoice(b.dataset.finInvoicePrint),
     "fin-invoice-pay": b => {
-      const reference = ask("Payment reference (bank / bKash transaction):");
-      if (reference === null) return;
-      DF.api(`/invoices/${b.dataset.finInvoicePay}/mark-paid`, { method: "POST", body: reference ? { reference } : {} }).then(i => done(`${i.number} marked paid.`), fail);
+      const { number, total, merchantName } = b.dataset;
+      Ops.form({
+        title: `Mark ${number} paid`,
+        description: `${merchantName} · ${money(total)}`,
+        submit: "Review payment",
+        fields: [
+          { id: "via", label: "Received by", type: "select", value: "BANK", options: [{ value: "BANK", label: "Bank transfer" }, { value: "BKASH", label: "bKash" }, { value: "CASH", label: "Cash" }], required: true },
+          { id: "reference", label: "Payment reference (bank / bKash transaction)", maxLength: 120 },
+        ],
+        validate: { reference: REF },
+        review: v => [["Invoice", number], ["Merchant", merchantName], ["Amount", money(total)], ["Received by", v.via], ["Reference", v.reference || "—"]],
+        confirm: "Confirm payment",
+        onSubmit: async v => {
+          const i = await DF.api(`/invoices/${b.dataset.finInvoicePay}/mark-paid`, { method: "POST", body: { via: v.via, ...(v.reference ? { reference: v.reference } : {}) } });
+          done(null);
+          return `${i.number} marked paid.`;
+        },
+      });
     },
     "fin-invoice-void": b => {
-      const reason = ask("Why is this invoice void?");
-      if (reason) DF.api(`/invoices/${b.dataset.finInvoiceVoid}/void`, { method: "POST", body: { reason } }).then(i => done(`${i.number} voided and reversed in the ledger.`), fail);
+      const { number, total } = b.dataset;
+      Ops.form({
+        title: `Void ${number}`,
+        description: `The ${money(total)} invoice is reversed in the ledger. This can't be undone.`,
+        submit: "Review",
+        fields: [{ id: "reason", label: "Why is this invoice void?", type: "textarea", required: true, maxLength: 300 }],
+        validate: { reason: v => (v.length < 3 ? "At least 3 characters" : "") },
+        review: v => [["Invoice", number], ["Amount reversed", money(total)], ["Reason", v.reason]],
+        confirm: "Void invoice",
+        onSubmit: async v => {
+          const i = await DF.api(`/invoices/${b.dataset.finInvoiceVoid}/void`, { method: "POST", body: { reason: v.reason } });
+          done(null);
+          return `${i.number} voided and reversed in the ledger.`;
+        },
+      });
     },
     "fin-dispute": b => {
-      const { number, kind, claimed, merchant } = b.dataset;
+      const { number, kind, claimed, merchant, merchantName, parcel } = b.dataset;
       const action = b.dataset.finDispute;
       if (action === "review") return DF.api(`/disputes/${number}/review`, { method: "POST" }).then(() => done(`${number} taken for review.`), fail);
-      const resolution = ask(action === "reject" ? "Reason for rejecting (sent to the customer / merchant):" : "Decision note (sent to the customer / merchant):");
-      if (!resolution) return;
-      if (action === "reject") return DF.api(`/disputes/${number}/reject`, { method: "POST", body: { resolution } }).then(() => done(`${number} rejected.`), fail);
-      const body = { resolution };
-      if (kind !== "WEIGHT_DISCREPANCY") {
-        const amount = ask("Approved amount (৳):", claimed);
-        if (!amount) return;
-        body.approvedAmount = amount;
-        if (!merchant) {
-          const via = ask("Pay by BANK, BKASH or CASH?", "BKASH");
-          const ref = via && ask("Payment reference:");
-          if (!via || !ref) return;
-          Object.assign(body, { payout: via.toUpperCase(), payoutReference: ref });
-        }
-      }
-      DF.api(`/disputes/${number}/approve`, { method: "POST", body }).then(d => done(`${d.number} approved${d.payout === "MERCHANT_BALANCE" ? " · applied to the next settlement" : ""}.`), fail);
+      if (action === "reject")
+        return Ops.form({
+          title: `Reject ${number}`,
+          description: `Parcel ${parcel || ""}. The reason is sent to the ${merchant ? "merchant" : "customer"}.`,
+          submit: "Reject claim",
+          fields: [{ id: "resolution", label: "Reason for rejecting", type: "textarea", required: true, maxLength: 1000 }],
+          validate: { resolution: v => (v.length < 3 ? "Explain the decision (at least 3 characters)" : "") },
+          onSubmit: async v => {
+            await DF.api(`/disputes/${number}/reject`, { method: "POST", body: { resolution: v.resolution } });
+            done(null);
+            return `${number} rejected.`;
+          },
+        });
+      const paysMoney = kind !== "WEIGHT_DISCREPANCY";
+      const PAYOUTS = [{ value: "BKASH", label: "bKash" }, { value: "BANK", label: "Bank transfer" }, { value: "CASH", label: "Cash" }];
+      Ops.form({
+        title: `Approve ${number}`,
+        description: paysMoney ? (merchant ? `Approved money is added to ${merchantName}'s next settlement.` : "The customer is paid by bKash, bank or cash.") : "Weight disputes adjust the parcel's charge; no payout.",
+        submit: paysMoney ? "Review" : "Approve",
+        fields: [
+          { id: "resolution", label: "Decision note (sent to the customer / merchant)", type: "textarea", required: true, maxLength: 1000 },
+          ...(paysMoney ? [{ id: "amount", label: "Approved amount (৳)", type: "number", value: claimed, required: true, min: 0, step: "0.01", hint: claimed ? `Claimed: ${money(claimed)}` : "" }] : []),
+          ...(paysMoney && !merchant ? [{ id: "payout", label: "Pay by", type: "select", value: "BKASH", options: PAYOUTS, required: true }, { id: "payoutReference", label: "Payment reference", required: true, maxLength: 120 }] : []),
+        ],
+        validate: { resolution: v => (v.length < 3 ? "Explain the decision (at least 3 characters)" : ""), amount: v => moneyRule(v), payoutReference: REF },
+        review: paysMoney
+          ? v => [["Claim", number], ["Parcel", parcel || "—"], ["Claimed", claimed ? money(claimed) : "—"], ["Approved amount", money(v.amount)], ["Paid", merchant ? `${merchantName} balance (next settlement)` : `${PAYOUTS.find(p => p.value === v.payout)?.label} · ref ${v.payoutReference}`], ["Note", v.resolution]]
+          : null,
+        confirm: "Approve and pay",
+        onSubmit: async v => {
+          const body = { resolution: v.resolution };
+          if (paysMoney) {
+            body.approvedAmount = v.amount;
+            if (!merchant) Object.assign(body, { payout: v.payout, payoutReference: v.payoutReference });
+          }
+          const d = await DF.api(`/disputes/${number}/approve`, { method: "POST", body });
+          done(null);
+          return `${d.number} approved${d.payout === "MERCHANT_BALANCE" ? " · applied to the next settlement" : ""}.`;
+        },
+      });
     },
     "fin-recon-match": b => {
-      const value = q(`[data-fin-recon-target="${b.dataset.finReconMatch}"]`)?.value;
+      const select = q(`[data-fin-recon-target="${b.dataset.finReconMatch}"]`);
+      const value = select?.value;
       if (!value) return void showToast("Choose the payment this bank line belongs to.");
       const [kind, id] = value.split(":");
       const body = { [kind === "riderPayout" ? "riderPayoutId" : `${kind}Id`]: id };
-      DF.api(`/finance/reconciliation/lines/${b.dataset.finReconMatch}/match`, { method: "POST", body })
-        .catch(error => {
+      const path = `/finance/reconciliation/lines/${b.dataset.finReconMatch}/match`;
+      DF.api(path, { method: "POST", body })
+        .catch(async error => {
           if (error.code !== "AMOUNT_MISMATCH") throw error;
-          const note = ask(`${DF.describe(error)}\nNote explaining the difference:`);
+          const note = await Ops.prompt({ title: "Amounts don't match", message: `${DF.describe(error)}\nMatch anyway with a note explaining the difference.`, label: "Note explaining the difference", required: true, multiline: true, maxLength: 300, confirm: "Match with note", validate: v => (v.length < 3 ? "At least 3 characters" : "") });
           if (!note) return null;
-          return DF.api(`/finance/reconciliation/lines/${b.dataset.finReconMatch}/match`, { method: "POST", body: { ...body, note } });
+          return DF.api(path, { method: "POST", body: { ...body, note } });
         })
         .then(r => r && done("Bank line matched."), fail);
     },
-    "fin-recon-ignore": b => {
-      const note = ask("Why does this line need no match (e.g. bank charge, own-account transfer)?");
+    "fin-recon-ignore": async b => {
+      const note = await Ops.prompt({ title: "Ignore this bank line", message: "It stays on the statement but needs no payment match.", label: "Why does it need no match? (e.g. bank charge, own-account transfer)", required: true, multiline: true, maxLength: 300, confirm: "Ignore line", validate: v => (v.length < 3 ? "Say why this line needs no match" : "") });
       if (note) DF.api(`/finance/reconciliation/lines/${b.dataset.finReconIgnore}/ignore`, { method: "POST", body: { note } }).then(() => done("Line ignored."), fail);
     },
-    "fin-close": b => {
+    "fin-close": async b => {
       const period = b.dataset.finClose;
-      if (confirm(`Close ${period}? Postings dated in it will go to the next open month.`)) DF.api(`/finance/ledger/periods/${period}/close`, { method: "POST", body: {} }).then(() => done(`${period} closed.`), fail);
+      if (!(await Ops.confirm({ title: `Close ${period}?`, message: "Postings dated in it will go to the next open month.", confirm: `Close ${period}`, danger: true }))) return;
+      DF.api(`/finance/ledger/periods/${period}/close`, { method: "POST", body: {} }).then(() => done(`${period} closed.`), fail);
     },
     "fin-schedule-set": async () => {
-      const m = await pickMerchant("Set the settlement schedule for which merchant?");
-      if (!m) return;
-      const cycle = ask("Cycle: MANUAL, DAILY, WEEKLY or BIWEEKLY", "WEEKLY");
-      if (!cycle) return;
-      const body = { cycle: cycle.toUpperCase() };
-      if (["WEEKLY", "BIWEEKLY"].includes(body.cycle)) {
-        const day = ask("Weekday (0 = Sunday … 6 = Saturday):", "0");
-        if (day === null) return;
-        body.weekday = Number(day);
-      }
-      const min = ask("Minimum net payable to draft (৳):", "0");
-      if (min === null) return;
-      body.minimumAmount = min || 0;
-      DF.api(`/finance/settlement-schedules/${m.id}`, { method: "PUT", body }).then(s => done(`${m.name}: ${s.cycle.toLowerCase()} settlements${s.nextRunAt ? `, next ${Ops.when(s.nextRunAt)}` : ""}.`), fail);
+      const field = await merchantField("Merchant");
+      if (!field) return;
+      const weekly = v => v.cycle === "WEEKLY" || v.cycle === "BIWEEKLY";
+      Ops.form({
+        title: "Settlement schedule",
+        description: "Settlements are drafted automatically (06:00 Dhaka) on the merchant's cycle; approval and payment stay manual.",
+        submit: "Review schedule",
+        fields: [
+          field,
+          { id: "cycle", label: "Cycle", type: "select", value: "WEEKLY", options: CYCLES, required: true },
+          { id: "weekday", label: "Weekday", type: "select", value: "0", options: WEEKDAYS, required: true, show: weekly },
+          { id: "minimumAmount", label: "Minimum net payable to draft (৳)", type: "number", value: "0", min: 0, step: "0.01", required: true },
+        ],
+        validate: { minimumAmount: v => moneyRule(v || "0", { required: false }) },
+        review: v => [["Merchant", merchantLabel(field, v.merchantId)], ["Cycle", CYCLES.find(c => c.value === v.cycle)?.label], ...(weekly(v) ? [["Weekday", WEEKDAYS[Number(v.weekday)].label]] : []), ["Minimum net payable", money(v.minimumAmount)]],
+        confirm: "Save schedule",
+        onSubmit: async v => {
+          const body = { cycle: v.cycle, minimumAmount: v.minimumAmount || 0, ...(weekly(v) ? { weekday: Number(v.weekday) } : {}) };
+          const s = await DF.api(`/finance/settlement-schedules/${v.merchantId}`, { method: "PUT", body });
+          done(null);
+          const name = merchantLabel(field, v.merchantId).split(" · ").slice(1).join(" · ");
+          return `${name}: ${s.cycle.toLowerCase()} settlements${s.nextRunAt ? `, next ${Ops.when(s.nextRunAt)}` : ""}.`;
+        },
+      });
     },
     "fin-config": async () => {
       const cfg = await DF.api("/finance/config").catch(fail);
       if (!cfg) return;
-      const rate = ask("VAT rate (%):", String(cfg.vatRate));
-      if (rate === null) return;
-      const bin = ask("Company BIN (13 digits, printed on invoices):", cfg.seller.bin);
-      if (bin === null) return;
-      const name = ask("Company name on invoices:", cfg.seller.name);
-      if (name === null) return;
-      const address = ask("Company address on invoices:", cfg.seller.address);
-      if (address === null) return;
-      DF.api("/finance/config", { method: "PUT", body: { vatRate: Number(rate), seller: { bin, name, address } } }).then(c => done(`Saved: VAT ${c.vatRate}% · BIN ${c.seller.bin || "not set"}.`), fail);
+      Ops.form({
+        title: "VAT & BIN settings",
+        description: "Printed on every tax invoice. Changes apply to invoices issued from now on.",
+        submit: "Review settings",
+        fields: [
+          { id: "vatRate", label: "VAT rate (%)", type: "number", value: String(cfg.vatRate), min: 0, max: 50, step: "0.01", required: true },
+          { id: "bin", label: "Company BIN", value: cfg.seller.bin || "", maxLength: 14, placeholder: "13 digits, or 9 digits-4 digits", hint: "Printed on invoices." },
+          { id: "name", label: "Company name on invoices", value: cfg.seller.name || "", required: true, maxLength: 160, full: true },
+          { id: "address", label: "Company address on invoices", type: "textarea", value: cfg.seller.address || "", maxLength: 300 },
+        ],
+        validate: {
+          vatRate: v => (!/^\d+(\.\d{1,2})?$/.test(v) ? "Enter a percentage, e.g. 15" : Number(v) > 50 ? "VAT rate looks too high" : ""),
+          bin: v => (!v || /^\d{13}$/.test(v) || /^\d{9}-\d{4}$/.test(v) ? "" : "BIN must be 13 digits (or 9 digits-4 digits)"),
+          name: v => (v.length < 2 ? "At least 2 characters" : ""),
+        },
+        review: v => [["VAT rate", `${v.vatRate}% (was ${cfg.vatRate}%)`], ["BIN", v.bin || "not set"], ["Company name", v.name], ["Address", v.address || "—"]],
+        confirm: "Save settings",
+        onSubmit: async v => {
+          const c = await DF.api("/finance/config", { method: "PUT", body: { vatRate: Number(v.vatRate), seller: { bin: v.bin, name: v.name, address: v.address } } });
+          done(null);
+          return `Saved: VAT ${c.vatRate}% · BIN ${c.seller.bin || "not set"}.`;
+        },
+      });
     },
     "fin-schedule-run": () => DF.api("/finance/settlement-schedules/run", { method: "POST", body: {} }).then(r => done(r.length ? r.map(x => `${x.merchantCode}: ${x.result}`).join(" · ") : "No schedule is due."), fail),
   };

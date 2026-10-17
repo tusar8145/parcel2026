@@ -636,10 +636,11 @@
       const status = decision.dataset.applicationStatus;
       const number = decision.dataset.applicationNumber;
       const needsMessage = status === "INFO_REQUESTED" || status === "REJECTED";
-      const message = prompt(needsMessage ? "Message to the applicant (required):" : "Message to the applicant (optional):", "");
-      if (message === null || (needsMessage && !message.trim())) return;
+      const titles = { INFO_REQUESTED: "Ask the applicant for information", REJECTED: "Reject the application", APPROVED: "Approve the application" };
+      void DF.prompt({ title: titles[status] || `${number}: update status`, message: "The applicant receives this message.", label: "Message to the applicant", required: needsMessage, multiline: true, maxLength: 1000, confirm: status === "REJECTED" ? "Reject" : "Send", danger: status === "REJECTED" }).then(message => {
+      if (message === null || (needsMessage && !message)) return;
       decision.disabled = true;
-      DF.api(`/applications/${encodeURIComponent(number)}/status`, { method: "POST", body: { status, ...(message.trim() ? { message: message.trim() } : {}) } })
+      DF.api(`/applications/${encodeURIComponent(number)}/status`, { method: "POST", body: { status, ...(message ? { message } : {}) } })
         .then(async app => {
           store.applications.set(number, app);
           store.details.delete(number);
@@ -649,21 +650,23 @@
         })
         .catch(error => toast(DF.describe(error)))
         .finally(() => decision.isConnected && (decision.disabled = false));
+      });
       return;
     }
     if (inbox() && event.target.closest("[data-support-save-canned]")) {
       event.preventDefault();
       const body = (document.getElementById("supportReply")?.value || "").trim();
       if (!body) return void toast("Write the reply you want to save first.");
-      const title = prompt("Title for this canned response:", body.slice(0, 40));
+      void DF.prompt({ title: "Save as a canned response", label: "Title", value: body.slice(0, 40), required: true, maxLength: 80, confirm: "Save" }).then(title => {
       if (!title) return;
-      DF.api("/support/canned-responses", { method: "POST", body: { title: title.trim(), body } })
+      DF.api("/support/canned-responses", { method: "POST", body: { title, body } })
         .then(row => {
           store.canned = [...(store.canned || []), row];
           toast(`Saved "${row.title}".`);
           renderIfIdle();
         })
         .catch(error => toast(DF.describe(error)));
+      });
       return;
     }
     const file = event.target.closest("[data-support-file]");

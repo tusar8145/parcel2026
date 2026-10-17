@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import fs from "node:fs";
 import { type BrowserContext, type Page } from "@playwright/test";
-import { API_BASE, Fixtures, expect, opsNav, test, type TempUser } from "./support";
+import { API_BASE, Fixtures, expect, opsNav, test, type TempUser, openPdf } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -291,13 +291,10 @@ test.describe.serial("spreadsheet imports", () => {
     // Labels for the new parcels (the existing Code 128 label sheet).
     await page.click('[data-dfi="labels"]');
     await expect(page.locator("#modalTitle")).toHaveText("Print labels");
-    const popupPromise = context.waitForEvent("page");
-    await page.click("#modalSubmit");
-    const popup = await popupPromise;
-    await popup.waitForSelector("#labels .lbl");
-    await expect(popup.locator(".lbl")).toHaveCount(2);
-    await expect(popup.locator(".lbl").nth(1)).toContainText("DETAILS PENDING");
-    await popup.close();
+    const labels = await openPdf(page, () => page.click("#modalSubmit"));
+    expect(labels.response.headers()["x-document-count"]).toBe("2");
+    expect(labels.has("DETAILS PENDING")).toBe(true);
+    await labels.popup.close();
 
     // The register marks the incomplete order "Needs info"; Edit details completes it.
     const row = page.locator(`#shipmentBody tr[data-shipment-id="${parcels[1].trackingId}"]`);

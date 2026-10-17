@@ -8,7 +8,7 @@ import type { Actor } from "../../common/auth/actor";
 import { AppError } from "../../common/errors";
 import { ApiZodQuery, ZQuery } from "../../common/zod";
 import { BulkUpdatesService } from "./bulk-updates.service";
-import { bulkExportQuerySchema, bulkFailedRowsQuerySchema, bulkListQuerySchema, bulkRowsQuerySchema } from "./bulk-updates.schemas";
+import { bulkExportQuerySchema, bulkFailedRowsQuerySchema, bulkKindQuerySchema, bulkKindSchema, bulkListQuerySchema, bulkRowsQuerySchema } from "./bulk-updates.schemas";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const attachment = (name: string) => `attachment; filename="${name.replace(/["\\\r\n]/g, "_")}"`;
@@ -31,9 +31,16 @@ export class BulkUpdatesController {
     return this.bulk.limits(actor);
   }
 
+  /** The page templates (kinds) the caller may use: each page's actions, columns, statuses and quick filters. */
+  @Get("kinds")
+  kinds(@CurrentActor() actor: Actor) {
+    return this.bulk.kinds(actor);
+  }
+
   /**
    * The filtered parcels (hub operators: their hubs' work) as an .xlsx: read-only data, action columns
    * with dropdowns from live data, a suggested rider, a hidden version column; at most the row limit.
+   * `kind` picks the page template (only that page's parcels, actions and columns; default all).
    * Headers: X-Row-Count (rows in the file), X-Matched (parcels matching), X-Row-Limit.
    */
   @Get("export")
@@ -54,19 +61,26 @@ export class BulkUpdatesController {
       .send(file.buffer);
   }
 
-  /** Dry run: checks every row with an Action of the uploaded .xlsx / .csv (multipart field `file`). Nothing changes. */
+  /**
+   * Dry run: checks every row with an Action of the uploaded .xlsx / .csv (multipart field `file`). Nothing changes.
+   * `kind` (query or multipart field) is the page it is uploaded on: a file of another page's template is refused
+   * (BULK_KIND_MISMATCH); All parcels (default) takes any.
+   */
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post("validate")
   @HttpCode(201)
   @ApiConsumes("multipart/form-data")
-  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" } }, required: ["file"] } })
-  async validate(@CurrentActor() actor: Actor, @Req() req: FastifyRequest, @ReqMeta() meta: RequestMeta) {
+  @ApiZodQuery(bulkKindQuerySchema)
+  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, kind: { type: "string", enum: [...bulkKindSchema.options] } }, required: ["file"] } })
+  async validate(@CurrentActor() actor: Actor, @Req() req: FastifyRequest, @ZQuery(bulkKindQuerySchema) query: z.infer<typeof bulkKindQuerySchema>, @ReqMeta() meta: RequestMeta) {
     const limits = await this.bulk.limits(actor);
     if (!req.isMultipart()) throw new AppError("VALIDATION_FAILED", "Upload the file as multipart/form-data (field \"file\")", 422);
     let file: { buffer: Buffer; fileName: string } | null = null;
+    let kindField: string | undefined;
     try {
       for await (const part of req.parts({ limits: { fileSize: limits.maxBytes, files: 1, fields: 5 } }))
         if (part.type === "file") file = { buffer: await part.toBuffer(), fileName: part.filename || "upload" };
+        else if (part.fieldname === "kind") kindField = String(part.value ?? "");
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === "FST_REQ_FILE_TOO_LARGE") throw new AppError("FILE_TOO_LARGE", `Files can be at most ${limits.maxFileMb} MB. Split it into smaller files.`, 413, { maxFileMb: limits.maxFileMb });
@@ -74,10 +88,12 @@ export class BulkUpdatesController {
       throw error;
     }
     if (!file) throw new AppError("VALIDATION_FAILED", "Choose a file to upload (form field \"file\")", 422);
-    return this.bulk.validateUpload(actor, file, meta);
+    const kind = kindField ? bulkKindSchema.safeParse(kindField) : null;
+    if (kind && !kind.success) throw new AppError("VALIDATION_FAILED", `Unknown bulk update page "${kindField}"`, 422);
+    return this.bulk.validateUpload(actor, file, meta, kind?.data ?? query.kind);
   }
 
-  /** History: your bulk updates (operations managers: everyone's unless `mine=true`). */
+  /** History: your bulk updates (operations managers: everyone's unless `mine=true`); `kind` filters by page. */
   @Get()
   @ApiZodQuery(bulkListQuerySchema)
   list(@CurrentActor() actor: Actor, @ZQuery(bulkListQuerySchema) query: z.infer<typeof bulkListQuerySchema>) {
@@ -100,8 +116,9 @@ export class BulkUpdatesController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post(":id/apply")
   @HttpCode(200)
-  apply(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
-    return this.bulk.apply(actor, id, meta);
+  @ApiZodQuery(bulkKindQuerySchema)
+  apply(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZQuery(bulkKindQuerySchema) query: z.infer<typeof bulkKindQuerySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.bulk.apply(actor, id, meta, query.kind);
   }
 
   /** Drops a checked file that won't be applied. */

@@ -16,9 +16,10 @@ export default function Topbar() {
         </strong>
       </div>
       <div className="top-actions">
-        <span className="live-chip">
+        {/* The live event stream's real state (bridge-desk.js: Live / Connecting… / Offline). */}
+        <span className="live-chip" id="liveChip" data-state="connecting" role="status" aria-live="polite">
           <i />
-          {" Network live"}
+          <span id="liveChipText">{" Connecting…"}</span>
         </span>
         <div className="search-wrap">
           <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8">
@@ -27,16 +28,16 @@ export default function Topbar() {
           <input
             id="globalSearch"
             className="top-search"
-            placeholder="Tracking ID, CN or phone…"
-            aria-label="Find a parcel by tracking ID, CN or phone (type or scan, then Enter)"
+            placeholder="Tracking ID, CN, phone or zone…"
+            aria-label="Find a parcel by tracking ID, CN or phone (type or scan, then Enter), or type a zone or area to see the hub that serves it"
             autoComplete="off"
           />
         </div>
-        <button className="icon-button" id="notifications" aria-label="Notifications">
+        <button className="icon-button" id="notifications" aria-label="Operations alerts" aria-haspopup="dialog" aria-expanded="false">
           <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
             <use href="#i-bell" />
           </svg>
-          <i className="notification-dot" />
+          <i className="notification-dot" hidden />
         </button>
         <div className="avatar">AM</div>
       </div>

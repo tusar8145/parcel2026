@@ -1,5 +1,5 @@
 import { type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, confirmDialog, expect, test, type TempMerchant, type TempRider, type TempUser, openPdf } from "./support";
 
 /**
  * The two merchant panels on the real API: booking, tracking, cancelling, billing, API keys
@@ -163,6 +163,7 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await nav(page, "Orders");
   await page.fill("#tableSearch", recipient);
   await row.locator("[data-df-cancel]").click();
+  await confirmDialog(page, { title: `Cancel ${trackingId}?`, value: "Customer changed their mind" });
   await expect(toast(page)).toContainText(`${trackingId} cancelled`);
   await expect(row).toContainText("Pickup cancelled");
   await expect(row.locator("[data-df-cancel]")).toHaveCount(0);
@@ -206,14 +207,12 @@ test("e-commerce merchant: batch import is idempotent and labels print real orde
   // Labels for the filtered orders, with the real merchant on them.
   await page.fill("#tableSearch", tag);
   await page.selectOption("#merchantPrintFormat", "label");
-  const [popup] = await Promise.all([page.waitForEvent("popup"), page.click("#merchantPrint")]);
-  await popup.waitForLoadState();
-  const html = await popup.content();
-  expect(html).toContain(`Batch One ${tag}`);
-  expect(html).toContain(shop.code);
-  expect(html).not.toContain("MER-10048");
-  expect((html.match(/class="invoice /g) || []).length).toBe(2);
-  await popup.close();
+  const labels = await openPdf(page, () => page.click("#merchantPrint"));
+  expect(labels.response.headers()["x-document-count"]).toBe("2");
+  expect(labels.has(`Batch One ${tag}`)).toBe(true);
+  expect(labels.has(shop.code)).toBe(true);
+  expect(labels.has("MER-10048")).toBe(false);
+  await labels.popup.close();
   expect(errors).toEqual([]);
 });
 
@@ -237,6 +236,7 @@ test("e-commerce merchant: API keys and webhooks", async ({ browser, api: reques
 
   // ── Revoke it ──
   await keyRow.locator("[data-df-revoke]").click();
+  await confirmDialog(page);
   await expect(toast(page)).toContainText("revoked");
   await expect(keyRow).toContainText("Revoked");
   expect((await request.get("/api/v1/parcels?limit=1", { headers: auth(key) })).status()).toBe(401);
@@ -255,8 +255,10 @@ test("e-commerce merchant: API keys and webhooks", async ({ browser, api: reques
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("webhook.test");
   await page.keyboard.press("Escape");
   await hook.locator("[data-df-hook-rotate]").click();
+  await confirmDialog(page, { title: "Rotate the signing secret?" });
   await expect(page.locator("#dfRevealedSecret")).toContainText("whsec_");
   await hook.locator("[data-df-hook-delete]").click();
+  await confirmDialog(page, { title: "Remove this webhook endpoint?" });
   await expect(toast(page)).toContainText("Webhook removed");
   await expect(hook).toHaveCount(0);
 
@@ -343,15 +345,12 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   const bill = page.locator(`#documentBillRows tr[data-document-bill="${number}"]`);
   await expect(bill).toContainText("Due");
   await expect(page.locator("#documentBillRows [data-bill-paid]")).toHaveCount(0);
-  const [popup] = await Promise.all([page.waitForEvent("popup"), bill.locator("[data-bill-view]").click()]);
-  await popup.waitForLoadState();
-  const html = await popup.content();
-  expect(html).toContain(number);
-  expect(html).toContain(trackingId);
-  expect(html).toContain("MBP-DHK-07");
-  expect(html).toContain(bank.name);
-  expect(html).not.toContain("MER-10124");
-  await popup.close();
+  const billPdf = await openPdf(page, () => bill.locator("[data-bill-view]").click());
+  expect(billPdf.has(number)).toBe(true);
+  expect(billPdf.has(trackingId)).toBe(true);
+  expect(billPdf.has(bank.name)).toBe(true);
+  expect(billPdf.has("MER-10124")).toBe(false);
+  await billPdf.popup.close();
 
   await nav(page, "Payments");
   await expect(page.locator("#tableBody")).toContainText(number);

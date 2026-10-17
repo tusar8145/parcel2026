@@ -2,11 +2,10 @@
  * Courier Operations on the API, part 3: network configuration and shared UI helpers.
  *
  *   Add rider (Riders page)              POST /riders (rider:manage)
- *   Create dispatch (Dispatch page)      GET /routing/suggestions → POST /routing/suggestions/accept
- *   Hubs & zones: network configuration  /zones, /routes, /hubs/capacity, PATCH /hubs/:id
- *   Hub console scans                    DF.scanner camera button + POST /scans (scan compliance)
+ *   Suggest riders (Pickup / Delivery)   GET /routing/suggestions → POST /routing/suggestions/accept
+ *   Hubs & zones: network configuration  /zones, /routes, PATCH /hubs/:id (capacity: bridge-hubs.js register)
  *
- * Ops.ui / Ops.dialog / Ops.recordScan / Ops.printPage are shared with the other bridge-*.js files.
+ * Ops.ui / Ops.dialog / Ops.recordScan / Ops.printPdf are shared with the other bridge-*.js files.
  */
 (() => {
   const DF = window.DF;
@@ -57,8 +56,10 @@
 
   /** Opens the console's shared dialog. Ops.submitters[kind](button) handles the submit (async; throw to keep it open). */
   Ops.submitters = {};
-  Ops.dialog = (kind, { title, description = "", submit = "Save", fields, wide = false, context = {} }) => {
+  Ops.dialog = (kind, { title, description = "", submit = "Save", fields, wide = false, context = {}, noValidate = false }) => {
     modalContext = { kind, ...context };
+    // Ops.form validates inline itself (DF.validate.field); other dialogs keep the browser's checks.
+    $("modalForm").noValidate = noValidate;
     $("modalTitle").textContent = title;
     $("modalDescription").textContent = description;
     $("modalSubmit").textContent = submit;
@@ -72,6 +73,7 @@
   closeModal = function () {
     const modal = q("#modalBackdrop .modal");
     if (modal) modal.style.maxWidth = "";
+    $("modalForm").noValidate = false;
     baseClose();
   };
   window.addEventListener(
@@ -93,24 +95,169 @@
     true,
   );
 
+  /** Small confirm / text prompt (shared/api.js DF.confirm / DF.prompt; the same dialog in every panel). */
+  Ops.confirm = options => DF.confirm(options);
+  Ops.prompt = options => DF.prompt(options);
+
+  /**
+   * A form on the console's modal (replaces prompt() chains): labelled fields, inline validation
+   * (DF.validate.field), an optional review step (money), and the result or error inside the dialog.
+   *
+   *   Ops.form({ title, description, submit, wide,
+   *     fields: [{ id, label, type: text|number|date|month|select|search-select|textarea|static,
+   *                value, options: [{value,label}], required, placeholder, hint, full, min, max, step, maxLength,
+   *                show: values => bool }],
+   *     validate: { id: (value, values) => message|"" },
+   *     review: values => [[label, text], …] | null,   // shown before onSubmit with a "Confirm" button
+   *     confirm: "Confirm payout",
+   *     onSubmit: async values => "success toast" })   // throw to keep the dialog open with the error
+   * Field ids are prefixed `of_` in the DOM (`#of_reference`).
+   */
+  let formSeq = 0;
+  Ops.form = config => {
+    const kind = `opsForm${++formSeq}`;
+    const fid = id => config.fields.find(f => f.id === id)?.domId || `of_${id}`;
+    const fieldHtml = f => {
+      const id = fid(f.id);
+      const req = f.required ? "required" : "";
+      const ph = f.placeholder ? `placeholder="${esc(f.placeholder)}"` : "";
+      const common = `id="${id}" name="${esc(f.id)}" ${req} ${ph} ${f.maxLength ? `maxlength="${f.maxLength}"` : ""}`;
+      let control;
+      if (f.type === "static") control = `<div id="${id}" style="padding:9px 0;color:#344054">${f.html ?? esc(f.value ?? "")}</div>`;
+      else if (f.type === "select") control = ui.select(id, f.options || [], f.value, `name="${esc(f.id)}" ${req}`);
+      else if (f.type === "search-select")
+        control = `<input id="${id}_q" type="search" placeholder="${esc(f.placeholder || "Type to search…")}" autocomplete="off" aria-label="Search ${esc(f.label)}" style="margin-bottom:6px">${ui.select(id, [{ value: "", label: f.emptyLabel || "— Choose —" }, ...(f.options || [])], f.value, `name="${esc(f.id)}" size="6" ${req} style="height:auto"`)}`;
+      else if (f.type === "textarea") control = `<textarea ${common} rows="${f.rows || 3}">${esc(f.value ?? "")}</textarea>`;
+      else control = `<input ${common} type="${f.type || "text"}" value="${esc(f.value ?? "")}" ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""} ${f.step != null ? `step="${f.step}"` : ""} ${f.type === "number" ? 'inputmode="decimal"' : ""}>`;
+      const label = `${f.label}${f.required || f.type === "static" ? "" : " (optional)"}`;
+      return `<div class="field${f.full || f.type === "textarea" || f.type === "search-select" || f.type === "static" ? " full" : ""}" data-of-field="${esc(f.id)}"><label for="${id}">${esc(label)}</label>${control}${f.hint ? `<small style="display:block;margin-top:4px;color:#7b8594;font-size:12px">${esc(f.hint)}</small>` : ""}</div>`;
+    };
+    const errorBox = `<div class="field full" id="opsFormError" role="alert" style="display:none;padding:10px 12px;border-radius:9px;background:#fef3f2;color:#b42318;font-size:13px"></div>`;
+    let step = "edit";
+    let values = {};
+    let checks = [];
+    const read = () => {
+      const out = {};
+      for (const f of config.fields) {
+        if (f.type === "static") continue;
+        const el = $(fid(f.id));
+        out[f.id] = el ? String(el.value ?? "").trim() : "";
+      }
+      return out;
+    };
+    const applyShow = () => {
+      const now = read();
+      for (const f of config.fields)
+        if (f.show) {
+          const box = q(`[data-of-field="${f.id}"]`);
+          if (box) box.style.display = f.show(now) ? "" : "none";
+        }
+    };
+    const showError = message => {
+      const box = $("opsFormError");
+      if (!box) return void showToast(message);
+      box.textContent = message;
+      box.style.display = message ? "" : "none";
+    };
+    const drawEdit = () => {
+      step = "edit";
+      Ops.dialog(kind, { title: config.title, description: config.description || "", submit: config.review ? config.submit || config.next || "Review" : config.submit || "Save", wide: !!config.wide, noValidate: true, fields: config.fields.map(fieldHtml).join("") + errorBox });
+      for (const f of config.fields) {
+        if (f.type === "static") continue;
+        const el = $(fid(f.id));
+        if (!el) continue;
+        if (values[f.id] !== undefined && f.type !== "search-select") el.value = values[f.id];
+        if (f.type === "search-select") {
+          if (values[f.id]) el.value = values[f.id];
+          const search = $(`${fid(f.id)}_q`);
+          search?.addEventListener("input", () => {
+            const term = search.value.trim().toLowerCase();
+            let first = null;
+            for (const option of el.options) {
+              if (!option.value) continue;
+              const hit = !term || option.textContent.toLowerCase().includes(term);
+              option.hidden = !hit;
+              if (hit && !first) first = option;
+            }
+            if (term && first && (el.selectedOptions[0]?.hidden || !el.value)) el.value = first.value;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        }
+        el.addEventListener("change", applyShow);
+        el.addEventListener("input", applyShow);
+      }
+      checks = config.fields
+        .filter(f => f.type !== "static" && $(fid(f.id)))
+        .map(f => {
+          const el = $(fid(f.id));
+          if (f.type === "phone") {
+            // +880 prefix and its own inline message (shared/api.js DF.phoneInput).
+            DF.phoneInput(el);
+            return { f, check: () => (el.dispatchEvent(new Event("blur")), !DF.phoneProblem(el.value)) };
+          }
+          return { f, check: DF.validate.field(el, () => {
+            if (f.show && !f.show(read())) return "";
+            if (f.required && !el.value.trim()) return f.type === "select" || f.type === "search-select" ? "Choose one" : "This field is required";
+            return config.validate?.[f.id]?.(el.value.trim(), read()) || "";
+          }) };
+        });
+      applyShow();
+      (config.fields.find(f => f.type === "search-select") ? $(`${fid(config.fields.find(f => f.type === "search-select").id)}_q`) : null)?.focus();
+    };
+    const drawReview = rows => {
+      step = "review";
+      $("modalTitle").textContent = config.reviewTitle || `Review · ${config.title}`;
+      $("modalDescription").textContent = config.reviewNote || "Check the details before you confirm. This is recorded in the audit log.";
+      $("modalSubmit").textContent = config.confirm || "Confirm";
+      $("modalFields").innerHTML = `<div class="field full" id="opsFormReview"><table style="width:100%;border-collapse:collapse">${rows
+        .map(([label, text]) => `<tr><th style="text-align:left;padding:7px 10px 7px 0;color:#667085;font-weight:600;width:42%;border-bottom:1px solid var(--line,#eef1f4)">${esc(label)}</th><td style="padding:7px 0;border-bottom:1px solid var(--line,#eef1f4);font-weight:600">${esc(text)}</td></tr>`)
+        .join("")}</table><button type="button" class="button button-sm" id="opsFormBack" style="margin-top:12px">← Back to edit</button></div>${errorBox}`;
+      $("opsFormBack").addEventListener("click", drawEdit);
+      $("modalSubmit").focus();
+    };
+    const run = async () => {
+      try {
+        const message = await config.onSubmit(values);
+        closeModal();
+        if (message) showToast(message);
+      } catch (error) {
+        if (error === null) throw null;
+        showError(error instanceof DF.ApiError ? DF.describe(error) : error?.message || "Something went wrong.");
+        throw null;
+      }
+    };
+    Ops.submitters[kind] = async () => {
+      if (step === "review") return run();
+      const results = checks.map(({ check }) => check(true));
+      if (!results.every(Boolean)) {
+        q("#modalFields [aria-invalid=true]")?.focus();
+        throw null;
+      }
+      values = read();
+      for (const f of config.fields) if (f.show && !f.show(values)) delete values[f.id];
+      showError("");
+      const rows = config.review?.(values);
+      if (rows && rows.length) return drawReview(rows);
+      return run();
+    };
+    drawEdit();
+  };
+
+  /** Merchant choices for Ops.form search-selects (active merchants, "CODE · Name"). */
+  Ops.merchantOptions = async () => {
+    const merchants = (await DF.api("/ops/merchants").catch(() => [])).filter(m => m.status === "ACTIVE");
+    return merchants.map(m => ({ value: m.id, label: `${m.code} · ${m.name}`, merchant: m }));
+  };
+
   /** Fire-and-forget scan event for scan compliance. */
   Ops.recordScan = (code, kind, hubId, source = "KEYBOARD", ok = true, message) => {
     if (!code || String(code).trim().length < 3) return;
     DF.api("/scans", { method: "POST", body: { code: String(code).trim(), kind, hubId: hubId || undefined, source, ok, message } }).catch(() => undefined);
   };
 
-  /** A printable page in a popup (A4), printed on load. */
-  Ops.printPage = (title, body, { landscape = false, autoPrint = true } = {}) => {
-    const popup = window.open("", "_blank");
-    if (!popup) return void showToast("Allow pop-ups to print.");
-    popup.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4${landscape ? " landscape" : ""};margin:12mm}body{font:12px Arial,sans-serif;color:#182230}h1{margin:0 0 4px;font-size:20px}h2{margin:18px 0 6px;font-size:14px}p{color:#647184;margin:3px 0}table{border-collapse:collapse;width:100%;margin-top:8px}th,td{border-bottom:1px solid #dfe4eb;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f5f7fa;font-size:10px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.grid div{border:1px solid #dfe4eb;border-radius:6px;padding:8px}.grid strong{display:block;font-size:15px}.sign{display:flex;justify-content:space-between;gap:24px;margin-top:42px}.sign span{flex:1;border-top:1px solid #687384;padding-top:6px}.barcode svg{height:46px;max-width:100%}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${body}${autoPrint ? `<script>window.onload=()=>window.print()<\/script>` : ""}</body></html>`,
-    );
-    popup.document.close();
-  };
+  /** Printing: the API generates the PDF (GET /documents/…) and it opens in a new tab (shared/print.js). */
+  Ops.printPdf = (path, options) => window.DFPrint.open(path, options);
 
-  /** Barcode SVG (Code 39) for a code, from the page script. */
-  Ops.barcode = code => (typeof courierBarcode === "function" ? courierBarcode(code) : esc(code));
 
   const lazyLoad = (key, path, maxAge = 60000) => Ops.lazy(key, () => DF.api(path), maxAge);
 
@@ -190,7 +337,7 @@
   const baseSettings = Ops.enhance.Settings;
   Ops.enhance.Settings = page => {
     baseSettings?.(page);
-    if (DF.mfa?.manage) headingButton("mfa", "Two-step verification", "settings", false);
+    // (The Settings card list has the Two-step verification button, bridge-pages.js.)
   };
   window.addEventListener(
     "click",
@@ -203,7 +350,7 @@
     true,
   );
 
-  // ───────────── Create dispatch (assignment suggestions) ─────────────
+  // ───────────── Suggest riders (assignment suggestions; the original "Create dispatch") ─────────────
 
   let suggestionState = { items: [], unmatched: [] };
 
@@ -234,16 +381,16 @@
   }
 
   Ops.modals.dispatch = () => {
-    if (!Ops.require("dispatch", "create dispatches")) return;
+    if (!Ops.require("dispatch", "assign riders")) return;
     const hubs = Ops.myHubs() || DF.state.hubs;
     Ops.dialog("dispatch", {
-      title: "Create dispatch",
+      title: "Suggest riders",
       description: "Suggested riders for every shipment waiting at the hub.",
       submit: "Assign selected",
       wide: true,
       fields:
         ui.field("dispatchHub", "Hub", ui.select("dispatchHub", ui.hubOptions(hubs, Ops.myHubs() ? undefined : "All hubs"), Ops.myHubs()?.[0]?.id)) +
-        ui.field("dispatchKind", "Shipments", ui.select("dispatchKind", [{ value: "delivery", label: "Deliveries waiting at the hub" }, { value: "pickup", label: "Pickup requests" }, { value: "all", label: "Deliveries and pickups" }], "delivery")) +
+        ui.field("dispatchKind", "Shipments", ui.select("dispatchKind", [{ value: "delivery", label: "Deliveries waiting at the hub" }, { value: "pickup", label: "Pickup requests" }, { value: "all", label: "Deliveries and pickups" }], Ops.tabMode === "pickup" ? "pickup" : "delivery")) +
         `<div class="field full" id="dispatchSuggestions"></div>`,
     });
     $("dispatchHub").addEventListener("change", loadSuggestions);
@@ -263,7 +410,7 @@
   const baseDispatch = Ops.enhance.Dispatch;
   Ops.enhance.Dispatch = page => {
     baseDispatch?.(page);
-    if (Ops.can("dispatch")) headingButton("dispatch", "Create dispatch", "route", false);
+    if (Ops.can("dispatch")) headingButton("dispatch", "Suggest riders", "route", false);
   };
 
   // The original page script maps data-action="dispatch" / "rider" to its own sample dialogs; route them here.
@@ -313,6 +460,7 @@
   const basePrepareHubs = Ops.prepare.Hubs;
   Ops.prepare.Hubs = page => {
     basePrepareHubs?.(page);
+    if (Ops.hubPart !== "manage") return; // Hub desk tabs don't show the network configuration
     const zones = loadZones()?.items;
     const routes = loadRoutes()?.items;
     const active = zones?.filter(z => z.active) || [];
@@ -327,15 +475,8 @@
 
   function configPanels() {
     const manage = Ops.can("manageHubs");
-    const capacity = Ops.cache["hub-capacity"]?.value || [];
     const zones = Ops.cache.zones?.value?.items || [];
     const routes = Ops.cache.routes?.value?.items || [];
-    const capRows = capacity
-      .map(
-        c =>
-          `<tr><td><strong>${esc(c.hub.name)}</strong><span class="subcell">${esc(c.hub.code)} · ${esc(c.hub.zone ? `${c.hub.zone}, ${c.hub.district}` : `${c.hub.district} · no zone set`)}${c.hub.lat != null ? ` · ${c.hub.lat.toFixed(4)}, ${c.hub.lng.toFixed(4)}` : " · no map location"}</span></td><td>${c.capacity ?? "—"}</td><td>${c.load}</td><td>${c.inbound}</td><td>${c.utilisation == null ? "—" : `${c.utilisation}%`}</td><td>${ui.pill(c.state === "OK" ? "Healthy" : c.state === "Near capacity" ? "Monitor" : c.state === "Over capacity" ? "At capacity" : c.state)}</td><td>${c.zones} zones · ${c.routes} routes</td><td>${manage ? `<button class="button button-sm" data-hub-capacity="${c.hub.id}">Edit</button>` : ""}</td></tr>`,
-      )
-      .join("");
     const zoneRows = zones
       .map(
         z =>
@@ -349,20 +490,17 @@
       )
       .join("");
     const add = (kind, label) => (manage ? `<button class="button button-sm" type="button" data-config-add="${kind}">${icon("plus")} ${label}</button>` : "");
-    return `<div id="networkConfig">${ui.panel("Hub capacity", "Parcels held at each hub against its capacity, plus parcels on the way in", ui.table(["Hub", "Capacity", "Held now", "Inbound", "Utilisation", "State", "Coverage", ""], capRows, Ops.lazyError("hub-capacity") ? DF.describe(Ops.lazyError("hub-capacity")) : "Loading hub capacity…"))}${ui.panel("Delivery zones", "Catalog areas → zone → hub · used by assignment suggestions, SLA and maps", zoneFilterBar(zones.length) + ui.table(["Zone", "Areas", "Hub", "Route", "Map centre", "Status", ""], zoneRows, Ops.cache.zones ? "No zones configured yet." : "Loading zones…"), add("zone", "Add zone"))}${ui.panel("Operating routes", "Zones a hub serves together, with a default rider for assignment suggestions", ui.table(["Route", "Hub", "Default rider", "Zones", "Note", "Status", ""], routeRows, Ops.cache.routes ? "No routes configured yet." : "Loading routes…"), add("route", "Add route"))}</div>`;
+    return `<div id="networkConfig">${ui.panel("Delivery zones", "Catalog areas → zone → hub · used by assignment suggestions, SLA and maps", zoneFilterBar(zones.length) + ui.table(["Zone", "Areas", "Hub", "Route", "Map centre", "Status", ""], zoneRows, Ops.cache.zones ? "No zones configured yet." : "Loading zones…"), add("zone", "Add zone"))}${ui.panel("Operating routes", "Zones a hub serves together, with a default rider for assignment suggestions", ui.table(["Route", "Hub", "Default rider", "Zones", "Note", "Status", ""], routeRows, Ops.cache.routes ? "No routes configured yet." : "Loading routes…"), add("route", "Add route"))}</div>`;
   }
 
   const baseHubs = Ops.enhance.Hubs;
   Ops.enhance.Hubs = page => {
     baseHubs?.(page);
     $("networkConfig")?.remove();
-    const register = q("#hubShipmentRows")?.closest(".table-panel");
-    if (register) register.insertAdjacentHTML("beforebegin", configPanels());
-    else $("mainContent").insertAdjacentHTML("beforeend", configPanels());
-    attachHubScanner();
+    if (Ops.hubPart === "manage") $("mainContent").insertAdjacentHTML("beforeend", configPanels());
   };
 
-  // Zone dialog (add from the Network setup form's name, or edit).
+  // Zone dialog (add, or edit).
   Ops.modals.zoneConfig = name => openZone(null, name);
   function openZone(zone, typedName) {
     if (!Ops.require("manageHubs", "configure zones")) return;
@@ -464,136 +602,24 @@
     showToast(`Route ${route.code} ${id ? "saved" : "added"}.`);
   };
 
-  // Hub zone: the catalog zone (of the hub's district) the hub stands in; drop-offs are priced from it.
-  const hubZoneOptions = (district, current) => {
-    const zones = Ops.catalog?.zonesByDistrict?.[district] || [];
-    return [{ value: "", label: zones.length ? "Choose the hub's zone" : "No zones in the catalog for this district" }, ...zones, ...(current && !zones.includes(current) ? [current] : [])];
-  };
-  const fillHubZones = (district, keep) => {
-    $("hubZone").innerHTML = hubZoneOptions(district, keep)
-      .map(o => (typeof o === "string" ? `<option>${esc(o)}</option>` : `<option value="${esc(o.value)}">${esc(o.label)}</option>`))
-      .join("");
-    if (keep) $("hubZone").value = keep;
-  };
-
-  // New hub (Network setup → Add, kind "hub"): district → zone, street address.
-  Ops.modals.hubCreate = name => {
-    if (!Ops.require("manageHubs", "add hubs")) return;
-    const districts = Ops.catalog?.districts || [...new Set(DF.state.hubs.map(h => h.district))];
-    Ops.dialog("hubCreate", {
-      title: "Add hub",
-      description: "The hub's district and zone are where drop-offs there are priced from; the address is shown to senders.",
-      submit: "Add hub",
-      fields:
-        ui.field("hubName", "Hub name", ui.input("hubName", `required maxlength="120" value="${esc(name || "")}"`), true) +
-        ui.field("hubDistrict", "District", ui.select("hubDistrict", districts, districts[0])) +
-        ui.field("hubZone", "Zone", ui.select("hubZone", hubZoneOptions(districts[0]), "")) +
-        ui.field("hubAddress", "Street address", ui.input("hubAddress", `required maxlength="300" placeholder="Road, area"`), true),
-    });
-    $("hubDistrict").addEventListener("change", () => fillHubZones($("hubDistrict").value));
-  };
-  Ops.submitters.hubCreate = async () => {
-    const valid = DF.validate($("modalForm"), {
-      hubName: v => (v.trim().length < 2 ? "Enter the hub's name" : DF.state.hubs.some(h => h.name.toLowerCase() === v.trim().toLowerCase()) ? "A hub with this name exists" : ""),
-      hubZone: v => (v ? "" : "Choose the zone the hub is in"),
-      hubAddress: v => (v.trim().length < 2 ? "Enter the hub's street address" : ""),
-    });
-    if (!valid()) return;
-    const name = $("hubName").value.trim();
-    const district = $("hubDistrict").value;
-    const letters = s => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const base = `${letters(district).slice(0, 3)}-${letters(name).slice(0, 3)}`;
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const code = attempt ? `${base}${attempt + 1}` : base;
-      try {
-        const hub = await DF.api("/hubs", { method: "POST", body: { code, name, district, zone: $("hubZone").value, address: $("hubAddress").value.trim() } });
-        closeModal();
-        DF.state.hubs = await DF.api("/hubs");
-        await Ops.loadOverview?.().catch(() => undefined);
-        Ops.invalidate("hub-capacity", "map");
-        Ops.rerender(true);
-        showToast(`Hub “${hub.name}” (${hub.code}) added to the network.`);
-        return;
-      } catch (error) {
-        if (error.code !== "HUB_CODE_TAKEN") throw error;
-      }
-    }
-    showToast("Couldn't find a free hub code. Try a more specific name.");
-  };
-
-  Ops.modals.hubCapacity = hubId => {
-    if (!Ops.require("manageHubs", "change hub capacity")) return;
-    const hub = Ops.hubById(hubId);
-    if (!hub) return;
-    Ops.dialog("hubCapacity", {
-      title: `Hub settings · ${hub.name}`,
-      description: "The zone is where drop-offs at this hub are priced from. Capacity drives the hub load warnings; the location places the hub on maps and starts route plans.",
-      submit: "Save hub",
-      context: { hubId },
-      fields:
-        ui.field("hubZone", `Zone · ${hub.district}`, ui.select("hubZone", hubZoneOptions(hub.district, hub.zone), hub.zone || ""), true) +
-        ui.field("hubCap", "Capacity (parcels held at once)", ui.input("hubCap", `type="number" min="1" step="1" value="${hub.capacity ?? ""}" placeholder="Not set"`), true) +
-        ui.field("hubLat", "Latitude", ui.input("hubLat", `type="number" step="0.000001" min="20" max="27" value="${hub.lat ?? ""}"`)) +
-        ui.field("hubLng", "Longitude", ui.input("hubLng", `type="number" step="0.000001" min="88" max="93" value="${hub.lng ?? ""}"`)),
-    });
-  };
-  Ops.submitters.hubCapacity = async () => {
-    const valid = DF.validate($("modalForm"), { hubLat: v => (!!v !== !!$("hubLng").value ? "Give both latitude and longitude, or neither" : "") });
-    if (!valid()) return;
-    const num = id => ($(id).value === "" ? null : Number($(id).value));
-    const hub = await DF.api(`/hubs/${modalContext.hubId}`, { method: "PATCH", body: { zone: $("hubZone").value || null, capacity: num("hubCap"), lat: num("hubLat"), lng: num("hubLng") } });
-    closeModal();
-    DF.state.hubs = await DF.api("/hubs").catch(() => DF.state.hubs);
-    Ops.invalidate("hub-capacity", "map");
-    Ops.rerender(true);
-    showToast(`${hub.name} saved.`);
-  };
-
   window.addEventListener(
     "click",
     event => {
       const add = event.target.closest("[data-config-add]");
       const zone = event.target.closest("[data-zone-edit]");
       const route = event.target.closest("[data-route-edit]");
-      const cap = event.target.closest("[data-hub-capacity]");
-      if (!add && !zone && !route && !cap) return;
+      if (!add && !zone && !route) return;
       event.stopImmediatePropagation();
       if (add) return void openModal(add.dataset.configAdd === "zone" ? "zoneConfig" : "routeConfig", "");
       if (zone) return void openZone((Ops.cache.zones?.value?.items || []).find(z => z.id === zone.dataset.zoneEdit));
-      if (route) return void openRoute((Ops.cache.routes?.value?.items || []).find(r => r.id === route.dataset.routeEdit));
-      openModal("hubCapacity", cap.dataset.hubCapacity);
+      openRoute((Ops.cache.routes?.value?.items || []).find(r => r.id === route.dataset.routeEdit));
     },
     true,
   );
 
-  // ───────────── hub console: camera scanning + scan events ─────────────
-
-  /** Where the code in the hub scan box came from (camera vs. keyboard / USB scanner). */
-  Ops.scanSource = "KEYBOARD";
-  function attachHubScanner() {
-    const input = $("hubScanId");
-    if (!input || !DF.scanner) return;
-    DF.scanner.attach(input, {
-      title: "Scan parcels at the hub",
-      label: "Camera",
-      continuous: true,
-      onScan: () => {
-        Ops.scanSource = "CAMERA";
-        $("hubScanForm")?.requestSubmit();
-      },
-    });
-    input.addEventListener("keydown", () => (Ops.scanSource = "KEYBOARD"));
-    for (const name of ["tracking"]) {
-      for (const form of ["hubReceiveForm", "hubTransferForm"]) {
-        const field = q(`#${form} input[name="${name}"]`);
-        if (field) DF.scanner.attach(field, { title: "Scan the parcel label", label: "Camera" });
-      }
-    }
-  }
-
   // Live: other people's zone / route changes.
   DF.events.on("network.updated", () => {
     Ops.invalidate("zones", "routes", "hub-capacity");
-    if (Ops.page() === "Hubs") Ops.rerender();
+    if (Ops.page() === "Hubs" && Ops.hubPart === "manage") Ops.rerender();
   });
 })();

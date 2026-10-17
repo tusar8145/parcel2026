@@ -25,6 +25,8 @@ interface DFClient {
   ApiError: new (...args: any[]) => ApiErrorLike;
   ready?: Promise<unknown>;
   describe(error: unknown): string;
+  /** The shared small confirm dialog (public/legacy/shared/api.js). */
+  confirm(options: string | { title?: string; message?: string; confirm?: string; cancel?: string; danger?: boolean }): Promise<boolean>;
   localPhone(phone: string): string;
   state: { user: SessionUser | null; catalog: Catalog | null };
   route: {

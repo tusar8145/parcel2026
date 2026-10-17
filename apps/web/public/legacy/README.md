@@ -24,11 +24,25 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
    that run before the original handlers. They perform the action through the API, then refresh
    the data, and the page re-renders through its own `storage` event listener.
 
-Shared UI modules loaded before the bridges that use them: `shared/importer.js` (`window.DFImport`:
+Shared UI modules loaded before the bridges that use them: `shared/print.js` (`window.DFPrint`: every print button opens an API-generated PDF in a new tab, see docs/architecture-contracts.md "Printed documents"), `shared/importer.js` (`window.DFImport`:
 the Excel/CSV import dialog, history and "Needs info" completion form for the merchant panels and
 Courier Operations, drawn with each panel's own modal/table/status classes; in bulk mode, `DFImport.bulk`, the same
-steps run Courier Operations' "Bulk update by Excel" on /bulk-updates, see courier-operation/bridge-bulk.js) and
+steps run Courier Operations' "Bulk update <page> by Excel" on /bulk-updates with the page's own template, see
+courier-operation/bridge-bulk.js) and
 `shared/scanner.js` (barcode scanning).
+
+Dialogs: no panel uses `window.confirm` / `prompt` / `alert`. `shared/api.js` has `DF.confirm`, `DF.prompt`,
+`DF.choose` and `DF.alert` (one small in-page dialog for every panel); Courier Operations forms use
+`Ops.form` (bridge-network.js: labelled fields, inline validation, a review step for money). See
+docs/architecture-contracts.md "In-page dialogs".
+
+`courier-operation/bridge-desk.js` (loaded before the drawer and navigation pair): the live chip, the alerts
+bell, the zone → serving hub lookup in the top-bar search, keyboard shortcuts and Hub desk › End of day.
+
+`courier-operation/bridge-lists.js` makes every Courier Operations parcel table a server-paged list
+(`DFOps.lists`: 100 rows a page, "Load more", server-side search and filters, live row patches), holds the
+hub operators' "My hub / All hubs" scope (`DFOps.scope`) and the stage counts (`GET /ops/stage-counts`,
+`[data-count-key]`), and adds bulk Accept & assign to New orders.
 
 Courier Operations navigation (around the parcel journey) is the last pair of scripts:
 `courier-operation/bridge-parcel.js` (parcel drawer `DFOps.drawer.open(id)`, the "next action" per parcel

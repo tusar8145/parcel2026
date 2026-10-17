@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, test } from "./support";
+import { Fixtures, confirmDialog, expect, test } from "./support";
 
 /**
  * Public website: real URLs and SEO, legal pages and cookie consent, React forms with
@@ -132,6 +132,7 @@ test("guest books with SMS verification, then tracks and cancels with the privat
   await expect(stranger.locator("[data-cancel-request]")).toHaveCount(0);
 
   await page.click("[data-cancel-request]");
+  await confirmDialog(page, { title: `Cancel pickup request ${trackingId}?` });
   await expect(toast(page)).toContainText("cancelled");
   await expect(page.locator("#trackingResult")).toContainText(/cancelled/i);
 });
@@ -187,6 +188,7 @@ test("customer signs up, verifies email from the profile, and manages saved addr
   await page.click('form[data-form="address"] button[type="submit"]');
   await expect(page.locator(".customer-address-item", { hasText: "Home Pickup" })).toContainText("Road 12, House 7");
   await page.locator(".customer-address-item", { hasText: "Home Pickup" }).getByRole("button", { name: "Delete" }).click();
+  await confirmDialog(page, { title: "Delete this saved address?" });
   await expect(page.locator(".customer-address-item", { hasText: "Home Pickup" })).toHaveCount(0);
 });
 

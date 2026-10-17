@@ -1,15 +1,15 @@
 /*
- * Courier Operations on the API, part 1: the shipment register and parcel actions.
+ * Courier Operations on the API, part 1: the parcel rows and parcel actions.
  *
- * - Every page's shipment list (Overview feed, Shipments, Exceptions, Dispatch queue, the
- *   service-line pages and the hub register) is built from a bounded working set from
- *   GET /parcels (the newest active parcels and the last week's closed ones) plus whatever
- *   server-side search, filters and "Load more" fetched. The page's sample shipments are dropped.
- * - Counters come from GET /ops/overview (computed in the database). Live updates arrive as
- *   parcel.created / parcel.updated events: changed parcels are re-fetched one by one, with a
- *   slow safety refresh (DF.live) instead of polling.
- * - Actions (assign, status, cancel, exceptions, corrections, notes) call the parcel
- *   endpoints; the API enforces roles and hub scope and its message is shown on refusal.
+ * - Parcel tables (New orders, All parcels, every stage, the Today feed, Hub desk "At my hub") are
+ *   server-paged lists from GET /parcels (about 100 rows a page, "Load more", server-side search and
+ *   filters; bridge-lists.js). The browser keeps only the parcels on screen (DF.parcels.cache, merged
+ *   with Ops.upsertParcels); the page's sample shipments are dropped.
+ * - Counters come from GET /ops/overview and GET /ops/stage-counts (computed in the database). Live
+ *   updates arrive as parcel.created / parcel.updated events: changed parcels are re-fetched one by
+ *   one and patch their rows and the counts (no page redraw); a slow safety refresh reloads the counts.
+ * - Actions (assign, status, cancel, exceptions, corrections, notes) call the parcel endpoints; the
+ *   API enforces roles and hub scope and its message is shown on refusal.
  *
  * bridge-pages.js adds the page-specific views (overview counters, dispatch, riders, hubs,
  * merchants, COD, analytics, settings) and bookings. Shared helpers live on window.DFOps.
@@ -18,13 +18,6 @@
   const DF = window.DF;
   const PARCELS_KEY = "deliveryfast-customer-parcels";
   const ROLE_LABEL = { SUPER_ADMIN: "Super admin", OPS_MANAGER: "Operations manager", HUB_OPERATOR: "Hub operator", FINANCE: "Finance", SUPPORT_AGENT: "Support agent" };
-  const TERMINAL = ["DELIVERED", "PICKUP_CANCELLED", "RETURNED"];
-  const ACTIVE = ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED", "PICKED_UP", "AT_HUB", "ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "RETURN_SCHEDULED", "EXCEPTION"];
-  const CLOSED_DAYS = 7;
-  /** The working set kept in the browser; everything else is found through server-side search. */
-  const ACTIVE_CAP = 1000;
-  const CLOSED_CAP = 300;
-  const EXTRA_CAP = 2000;
   const $ = id => document.getElementById(id);
   const esc = value => courierEscape(value);
 
@@ -34,8 +27,8 @@
     overview: null,
     me: null,
     catalog: null,
-    /** Parcels found by search that fall outside the loaded window; kept across reloads. */
-    extra: new Map(),
+    /** Stage counts (GET /ops/stage-counts) for the scope on screen; bridge-lists.js loads them. */
+    stageCountsData: null,
     prepare: {},
     enhance: {},
     modals: {},
@@ -77,18 +70,31 @@
   Ops.myHubs = () => (Ops.me?.hubIds ? DF.state.hubs.filter(h => Ops.me.hubIds.includes(h.id)) : null);
   Ops.inMyHubs = hubId => !Ops.me?.hubIds || Ops.me.hubIds.includes(hubId);
 
-  /** Asks which hub, defaulting to the operator's own hub. */
-  Ops.pickHub = (question, hubs = DF.state.hubs, preferred) => {
-    if (!hubs.length) return void showToast("No hubs are configured yet.");
-    if (hubs.length === 1) return hubs[0];
-    const list = hubs.map((h, i) => `${i + 1}. ${h.name}`).join("\n");
-    const start = Math.max(0, hubs.findIndex(h => h.id === preferred?.id)) + 1;
-    const answer = prompt(`${question}\n${list}`, String(start));
-    if (answer === null) return undefined;
-    const hub = hubs[Number(answer) - 1];
-    if (!hub) showToast("Choose a hub from the list.");
-    return hub;
-  };
+  /** Asks which hub (a hub select in the console dialog), defaulting to the operator's own hub. Resolves the hub, or undefined. */
+  Ops.pickHub = (question, hubs = DF.state.hubs, preferred) =>
+    new Promise(resolve => {
+      if (!hubs.length) return resolve(void showToast("No hubs are configured yet."));
+      if (hubs.length === 1) return resolve(hubs[0]);
+      let chosen;
+      Ops.form({
+        title: "Choose a hub",
+        description: question,
+        submit: "Continue",
+        fields: [{ id: "hubId", label: "Hub", type: "select", required: true, value: preferred?.id || hubs[0].id, options: hubs.map(h => ({ value: h.id, label: h.code ? `${h.name} (${h.code})` : h.name })) }],
+        onSubmit: async v => {
+          chosen = hubs.find(h => h.id === v.hubId);
+          return "";
+        },
+      });
+      // Resolves when the dialog closes (chosen, or undefined when cancelled).
+      const backdrop = $("modalBackdrop");
+      const watch = new MutationObserver(() => {
+        if (backdrop.classList.contains("open")) return;
+        watch.disconnect();
+        resolve(chosen);
+      });
+      watch.observe(backdrop, { attributes: true, attributeFilter: ["class"] });
+    });
 
   /**
    * Cached background load: returns the last value at once and refreshes it when older than
@@ -117,41 +123,61 @@
 
   // ───────────── loading ─────────────
 
-  async function fetchAll(query, cap) {
-    const items = [];
-    let cursor = null;
-    do {
-      const page = await DF.api(`/parcels?limit=200${query}${cursor ? `&cursor=${cursor}` : ""}`);
-      items.push(...page.items);
-      cursor = page.nextCursor;
-    } while (cursor && items.length < cap);
-    return items;
-  }
-
-  /** Every active parcel plus recently closed ones (and anything found by search). */
-  async function loadParcels() {
-    const since = new Date(Date.now() - CLOSED_DAYS * 86400000).toISOString();
-    const [active, closed] = await Promise.all([fetchAll(`&status=${ACTIVE.join(",")}`, ACTIVE_CAP), fetchAll(`&status=${TERMINAL.join(",")}&from=${since}`, CLOSED_CAP)]);
-    // Search results stay available, newest first, up to a bound.
-    while (Ops.extra.size > EXTRA_CAP) Ops.extra.delete(Ops.extra.keys().next().value);
-    const byId = new Map([...Ops.extra].map(([id, p]) => [id, p]));
-    for (const p of [...active, ...closed]) byId.set(p.trackingId, p);
-    for (const id of Ops.extra.keys()) Ops.extra.set(id, byId.get(id));
-    const items = [...byId.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
-    return DF.parcels.set(items);
-  }
-
   async function loadOverview() {
     Ops.overview = await DF.api("/ops/overview");
     Ops.me = Ops.overview.me;
-    updateNavCounts();
   }
   Ops.loadOverview = loadOverview;
 
-  /** Parcels and counters; re-renders the page on screen if the parcels didn't (overview). */
+  /**
+   * After an action or a reconnect: counters, then the page on screen redrawn with its lists
+   * reloaded from the server (bridge-lists.js). Nothing else is reloaded.
+   */
   Ops.refresh = async () => {
-    const [changed] = await Promise.all([loadParcels(), loadOverview()]);
-    if (!changed) Ops.rerender();
+    await Promise.all([loadOverview(), Ops.loadStageCounts?.()]);
+    Ops.lists?.invalidate();
+    Ops.rerender();
+  };
+
+  /** Called with the changed parcels after Ops.upsertParcels (the drawer repaints, counts follow). */
+  Ops.onParcels = [];
+  const shipmentIndex = new Map();
+
+  /**
+   * Merges parcels from the API into the browser's set (DF.parcels.cache) and the page's shipment
+   * rows (`shipments`), without redrawing anything; returns them.
+   */
+  Ops.upsertParcels = items => {
+    if (!items?.length) return [];
+    const byId = new Map(DF.parcels.cache.map((p, i) => [p.trackingId, i]));
+    for (const p of items) {
+      const i = byId.get(p.trackingId);
+      if (i === undefined) {
+        byId.set(p.trackingId, DF.parcels.cache.length);
+        DF.parcels.cache.push(p);
+      } else DF.parcels.cache[i] = p;
+      const row = toShipment(p);
+      const known = shipmentIndex.get(p.trackingId);
+      const at = known ? shipments.indexOf(known) : -1;
+      if (at >= 0) shipments[at] = row;
+      else shipments.push(row);
+      shipmentIndex.set(p.trackingId, row);
+    }
+    for (const fn of Ops.onParcels) {
+      try {
+        fn(items);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    return items;
+  };
+
+  /** Keeps only these parcels in the browser (the lists on screen and the open drawer). */
+  Ops.keepParcels = keep => {
+    const wanted = new Set(keep);
+    DF.parcels.cache = DF.parcels.cache.filter(p => wanted.has(p.trackingId));
+    syncShipments();
   };
 
   // ───────────── API parcels → the page's shipment rows ─────────────
@@ -252,7 +278,11 @@
   /** Replaces the page's shipments (samples, demo CNs, stale rows) with the API's parcels. */
   function syncShipments() {
     shipments.splice(0, shipments.length, ...DF.parcels.cache.map(toShipment));
+    shipmentIndex.clear();
+    for (const row of shipments) shipmentIndex.set(row.id, row);
   }
+  /** The page's row for a tracking ID (fast lookup). */
+  Ops.shipment = id => shipmentIndex.get(id);
   // The original pages call this by name after storage changes.
   window.syncWebsiteCustomerParcels = syncShipments;
 
@@ -266,7 +296,8 @@
     const active = document.activeElement;
     if (active && active !== document.body && $("mainContent").contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName) && active.type !== "checkbox") return true;
     if ($("modalBackdrop").classList.contains("open") || $("generatedCNDialog")?.open || $("courierHistoryBackdrop")) return true;
-    return !!document.querySelector("#shipmentBody [data-shipment-select]:checked");
+    // Ticked rows or an open "More" menu.
+    return !!document.querySelector("#shipmentBody [data-shipment-select]:checked, #mainContent details.df-more[open]");
   }
 
   /** Re-renders the page on screen, keeping search and filter values. */
@@ -286,6 +317,7 @@
   const flushPending = () => setTimeout(() => pendingRender && Ops.rerender(), 50);
   document.addEventListener("focusout", flushPending);
   document.addEventListener("change", e => e.target.matches?.("[data-shipment-select],[data-shipment-select-all]") && flushPending());
+  document.addEventListener("toggle", e => e.target.matches?.("details.df-more") && !e.target.open && flushPending(), true);
 
   /**
    * Pages the bridges add (Linehaul, CN stock, Reports…): Ops.pages[name] = { render() → HTML },
@@ -336,17 +368,46 @@
     }
   };
 
-  function updateNavCounts() {
-    const s = Ops.overview?.shipments;
-    if (!s) return;
-    const set = (page, value) => {
-      const badge = document.querySelector(`#navigation [data-page="${page}"] .nav-count`);
-      if (badge) badge.textContent = Ops.num(value);
-    };
-    set("Shipments", s.active);
-    set("Dispatch", s.unassigned);
-    set("Exceptions", s.exceptions + s.atRisk);
-  }
+  // ───────────── parcel rows ─────────────
+  // The page's shipment table markup (01.js shipmentRows) without the status dropdowns (the next
+  // action and the drawer cover those actions) and with condensed cells; the last column (the next
+  // action, Details, More) stays pinned on the right while the table scrolls sideways.
+
+  const cut = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+  shipmentRows = function (rows) {
+    const body = rows
+      .map(s => {
+        const id = esc(s.id);
+        const line = serviceCategory(s);
+        const sub = [line, s.service, s.created].filter(Boolean).join(" · ");
+        const customer = line === "Customer parcels" ? ` · Sender pays ৳${Number(s.deliveryFee) || 0}${Number(s.codAmount) ? ` · COD ৳${Number(s.codAmount)}` : ""}` : "";
+        const merchant = s.merchant || "Merchant not set";
+        const recipient = s.recipient || "Recipient not set";
+        const destination = s.destination || "Address not set";
+        const actions = [
+          `<button class="button button-sm" data-track="${id}">History</button>`,
+          `<button class="button button-sm" data-generated-edit="${id}">Edit details</button>`,
+          line === "Customer parcels" && isPendingCustomerPickup(s)
+            ? `<button class="button button-sm" data-customer-confirm="${id}">Accept & assign rider</button><button class="button button-sm" data-customer-cancel="${id}">Cancel request</button>`
+            : "",
+          s.status === "Exception" || s.sla === "At risk" ? ` <button class="button button-sm" data-exception="${id}">Review</button>` : "",
+        ].join("");
+        return `<tr data-shipment-id="${id}"><td><input type="checkbox" data-shipment-select="${id}" aria-label="Select ${id}"></td><td class="tracking">${id}<span class="subcell"><span title="${esc(sub + customer)}">${esc(cut(sub + customer, 64))}</span></span></td><td title="${esc(`${merchant} → ${recipient}`)}"><strong style="color:#455265;font-weight:600">${esc(cut(merchant, 30))}</strong><span class="subcell">${esc(cut(recipient, 30))}</span></td><td title="${esc(destination)}">${esc(cut(destination, 34))}</td><td title="${esc(s.rider)}">${esc(cut(String(s.rider || ""), 28))}</td><td>${statusPill(esc(s.status))}</td><td>${statusPill(esc(s.sla))}</td><td>${actions}</td></tr>`;
+      })
+      .join("");
+    return `<div class="table-scroll"><table class="df-parcels"><thead><tr><th><input type="checkbox" data-shipment-select-all aria-label="Select visible shipments"></th><th>CN / TRACKING ID</th><th>MERCHANT / RECIPIENT</th><th>DESTINATION</th><th>RIDER</th><th>STATUS</th><th>SLA</th><th></th></tr></thead><tbody id="shipmentBody">${body}</tbody></table></div>`;
+  };
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfRowStyles">
+.df-parcels th:last-child,.df-parcels td:last-child{position:sticky;right:0;z-index:1;background:#fff;box-shadow:-10px 0 10px -10px #1720332e}
+.df-parcels th:last-child{background:#fafbfd}
+.df-parcels tr:hover td:last-child{background:#fff}
+.df-parcels td:first-child,.df-parcels th:first-child{width:34px}
+.df-parcels td:last-child .df-row-actions{flex-wrap:nowrap}
+.df-parcels td:last-child:has(details[open]){z-index:50}
+</style>`,
+  );
 
   const baseCloseModal = closeModal;
   closeModal = function () {
@@ -389,6 +450,7 @@
   const PICKUP_STAGE = ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"];
   const isPickupAssignment = p => PICKUP_STAGE.includes(p.status) || (p.status === "EXCEPTION" && !p.pickedUpAt && !p.currentHub);
 
+  /** Active riders as <option>s: the operator's own hub first, online before offline. */
   function riderOptions() {
     const mine = new Set((Ops.me?.hubIds || []).filter(Boolean));
     const rank = r => (mine.size && !mine.has(r.hub?.id) ? 2 : 0) + (r.status === "ONLINE" ? 0 : 1);
@@ -401,6 +463,8 @@
       })
       .join("");
   }
+
+  Ops.riderOptions = riderOptions;
 
   function fillAssignDialog(shipmentId) {
     const riders = $("assignRider");
@@ -493,9 +557,10 @@
       return void Ops.act(DF.api(`/parcels/${encodeURIComponent(id)}/notes`, { method: "POST", body: { note } }), `${id}: follow-up recorded on the parcel timeline.`);
     if (/return/i.test(resolution)) return void Ops.setStatus(id, { status: "RETURN_SCHEDULED", note }, `${id}: return to sender scheduled.`);
     if (/hub/i.test(resolution)) {
-      const hub = (parcel.currentHub && Ops.hubById(parcel.currentHub.id)) || Ops.pickHub(`Which hub should receive ${id}?`, Ops.myHubs() || DF.state.hubs);
-      if (!hub) return;
-      return void Ops.setStatus(id, { status: "AT_HUB", hubId: hub.id, note }, `${id}: routed to ${hub.name}.`);
+      const known = parcel.currentHub && Ops.hubById(parcel.currentHub.id);
+      return void Promise.resolve(known || Ops.pickHub(`Which hub should receive ${id}?`, Ops.myHubs() || DF.state.hubs)).then(hub => {
+        if (hub) void Ops.setStatus(id, { status: "AT_HUB", hubId: hub.id, note }, `${id}: routed to ${hub.name}.`);
+      });
     }
     // Another attempt: a parcel waiting at a hub needs a delivery rider first.
     if (["AT_HUB", "IN_TRANSIT"].includes(parcel.status)) {
@@ -517,99 +582,55 @@
       event.stopImmediatePropagation();
       if (!Ops.require("dispatch", "cancel pickup requests")) return;
       const id = cancel.dataset.customerCancel;
-      const reason = prompt(`Cancel pickup request ${id}? Add a reason for the customer (optional):`);
-      if (reason === null) return;
-      void Ops.act(DF.api(`/parcels/${encodeURIComponent(id)}/cancel`, { method: "POST", body: { reason: reason.trim() || undefined } }), `${id}: pickup request cancelled.`);
-    },
-    true,
-  );
-
-  /** A status picked from a row's select (customer rows and the hub register). */
-  Ops.changeStatus = (id, label, select) => {
-    const parcel = Ops.apiParcel(id);
-    const restore = () => Ops.rerender(true);
-    if (!parcel) return restore();
-    if (!Ops.require("dispatch", "change parcel status")) return restore();
-    if (/^delivered$/i.test(label)) {
-      showToast("Only the delivering rider can mark a parcel delivered, with the recipient's code, signature or photo.");
-      return restore();
-    }
-    if (/^(pickup assigned|assigned)$/i.test(label)) {
-      restore();
-      return openModal("assign", id);
-    }
-    const body = { status: /^return to hub$/i.test(label) ? "At hub" : label };
-    if (/^(at hub|return to hub)$/i.test(label)) {
-      const hub = (parcel.currentHub && Ops.inMyHubs(parcel.currentHub.id) && Ops.hubById(parcel.currentHub.id)) || Ops.pickHub(`Which hub is ${id} at?`, Ops.myHubs() || DF.state.hubs);
-      if (!hub) return restore();
-      body.hubId = hub.id;
-    }
-    if (/^in transit$/i.test(label)) {
-      const others = DF.state.hubs.filter(h => h.id !== parcel.currentHub?.id);
-      const hub = Ops.pickHub(`${id} is in transit to which hub?`, others.length ? others : DF.state.hubs);
-      if (!hub) return restore();
-      body.hubId = hub.id;
-    }
-    if (/^exception$/i.test(label)) {
-      const note = prompt(`What's wrong with ${id}? (shown to staff only)`, "");
-      if (note === null) return restore();
-      body.note = note.trim() || undefined;
-    }
-    void Ops.setStatus(id, body, `${id} updated to ${body.status}.`);
-  };
-
-  window.addEventListener(
-    "change",
-    event => {
-      const select = event.target.closest?.("[data-customer-status]");
-      if (!select || !Ops.apiParcel(select.dataset.customerStatus)) return;
-      event.stopImmediatePropagation();
-      Ops.changeStatus(select.dataset.customerStatus, select.value, select);
+      void Ops.prompt({ title: `Cancel pickup request ${id}?`, message: "The customer is told the pickup is cancelled. This can't be undone.", label: "Reason for the customer", multiline: true, maxLength: 300, confirm: "Cancel pickup", cancel: "Keep it", danger: true }).then(reason => {
+        if (reason === null) return;
+        void Ops.act(DF.api(`/parcels/${encodeURIComponent(id)}/cancel`, { method: "POST", body: { reason: reason || undefined } }), `${id}: pickup request cancelled.`);
+      });
     },
     true,
   );
 
   // ───────────── tracking history ─────────────
+  // "Track" opens the parcel drawer (bridge-parcel.js): its tracking history, notes, messages and actions
+  // replace the separate history dialog.
 
   const baseHistory = courierTrackingHistory;
   courierTrackingHistory = function (id) {
-    const parcel = Ops.apiParcel(id);
-    if (!parcel) return baseHistory(id);
-    const events = [...parcel.events].reverse();
-    const markup = `<div id="courierHistoryBackdrop" role="dialog" aria-modal="true" aria-labelledby="courierHistoryTitle" style="position:fixed;inset:0;z-index:100;background:#14203380;display:grid;place-items:center;padding:18px"><section style="width:min(560px,100%);max-height:85vh;overflow:auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 24px 70px #10182840"><header style="display:flex;justify-content:space-between;gap:12px"><div><h2 id="courierHistoryTitle" style="margin:0;font-size:18px">Tracking history · ${esc(id)}</h2><p style="margin:6px 0;color:#778293">${esc(parcel.recipient.name)} · ${esc(parcel.delivery.label)} · ${esc(parcel.statusLabel)}</p></div><button type="button" id="closeCourierHistory" class="button" aria-label="Close tracking history">×</button></header><ol style="list-style:none;margin:18px 0 0;padding:0">${events
-      .map(
-        (e, index) =>
-          `<li style="position:relative;margin-left:8px;padding:0 0 18px 25px;border-left:${index === events.length - 1 ? "0" : "1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index === 0 ? "#3766e8" : "#cbd5e1"}"></span><strong>${esc(e.title)}${e.internal ? " · internal" : ""}</strong><div style="margin-top:3px;color:#647184">${esc([e.location, e.description].filter(Boolean).join(" · "))}</div><small style="display:block;margin-top:4px;color:#99a3af">${esc([Ops.when(e.at), e.actor].filter(Boolean).join(" · "))}</small></li>`,
-      )
-      .join("")}</ol><p style="margin:0;color:#929eac;font-size:12px">Newest first. Internal entries are visible to staff only.</p></section></div>`;
-    $("courierHistoryBackdrop")?.remove();
-    document.body.insertAdjacentHTML("beforeend", markup);
-    $("closeCourierHistory").addEventListener("click", () => {
-      $("courierHistoryBackdrop").remove();
-      flushPending();
-    });
-    $("courierHistoryBackdrop").addEventListener("click", e => {
-      if (e.target.id === "courierHistoryBackdrop") {
-        e.currentTarget.remove();
-        flushPending();
-      }
-    });
+    if (!Ops.apiParcel(id) || !Ops.drawer) return baseHistory(id);
+    Ops.drawer.open(id);
   };
 
   // ───────────── corrections to a booked parcel ─────────────
 
   function openParcelEditor(parcel) {
-    generatedCNDialog();
-    const form = $("generatedCNForm");
-    form.dataset.mode = "parcel";
-    form.dataset.shipmentId = parcel.trackingId;
-    $("generatedCNTitle").textContent = `Edit parcel · ${parcel.trackingId}`;
-    $("generatedCNDescription").textContent = `${parcel.statusLabel} · ${parcel.merchant?.name || parcel.sender.name} → ${parcel.delivery.zone}, ${parcel.delivery.district}. Price-affecting details (zones, weight, COD) can't change after booking. Every change is recorded on the parcel's timeline.`;
-    const input = (name, label, value, attrs = "") => `<label>${label}<input name="${name}" value="${esc(value ?? "")}" ${attrs}></label>`;
-    $("generatedCNFields").innerHTML = `<div class="cn-dialog-grid">${input("recipient", "Recipient name", parcel.recipient.name, "required maxlength=120")}${input("recipientPhone", "Recipient phone", DF.localPhone(parcel.recipient.phone), 'required inputmode="tel"')}${input("street", "Street address", parcel.delivery.street, "required maxlength=200")}${input("area", "Area / landmark", parcel.delivery.area, "maxlength=120")}<label class="cn-span-full">Delivery instructions<input name="instructions" value="${esc(parcel.instructions || "")}" maxlength="500"></label><label class="cn-span-full">Reason for the change<input name="note" maxlength="500" placeholder="e.g. Recipient confirmed a new phone number"></label></div>`;
-    $("generatedCNSubmit").textContent = "Save parcel details";
-    $("generatedCNDialog").showModal();
-    $("generatedCNFields").querySelector("input")?.focus();
+    Ops.form({
+      title: `Edit parcel · ${parcel.trackingId}`,
+      description: `${parcel.statusLabel} · ${parcel.merchant?.name || parcel.sender.name} → ${parcel.delivery.zone}, ${parcel.delivery.district}. Price-affecting details (zones, weight, COD) can't change after booking. Every change is recorded on the parcel's timeline.`,
+      submit: "Save parcel details",
+      wide: true,
+      fields: [
+        { id: "recipient", label: "Recipient name", value: parcel.recipient.name, required: true, maxLength: 120 },
+        { id: "recipientPhone", label: "Recipient phone", type: "phone", value: DF.localPhone(parcel.recipient.phone), required: true },
+        { id: "street", label: "Street address", value: parcel.delivery.street, required: true, maxLength: 200 },
+        { id: "area", label: "Area / landmark", value: parcel.delivery.area, maxLength: 120 },
+        { id: "instructions", label: "Delivery instructions", value: parcel.instructions || "", maxLength: 500, full: true },
+        { id: "note", label: "Reason for the change", maxLength: 500, full: true, placeholder: "e.g. Recipient confirmed a new phone number" },
+      ],
+      validate: { recipient: v => (v.length < 2 ? "At least 2 characters" : "") },
+      onSubmit: async v => {
+        const fresh = Ops.apiParcel(parcel.trackingId) || parcel;
+        const body = {
+          recipient: { name: v.recipient, phone: v.recipientPhone },
+          delivery: { street: v.street, area: v.area },
+          instructions: v.instructions,
+          note: v.note || undefined,
+          expectedVersion: fresh.version,
+        };
+        await DF.api(`/parcels/${encodeURIComponent(parcel.trackingId)}`, { method: "PATCH", body });
+        await Ops.refresh().catch(() => undefined);
+        return `${parcel.trackingId} details saved.`;
+      },
+    });
   }
 
   window.addEventListener(
@@ -630,39 +651,6 @@
     true,
   );
 
-  window.addEventListener(
-    "submit",
-    event => {
-      const form = event.target;
-      if (form.id !== "generatedCNForm" || form.dataset.mode !== "parcel") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const parcel = Ops.apiParcel(form.dataset.shipmentId);
-      if (!parcel) return void closeGeneratedCNDialog();
-      const data = new FormData(form);
-      const value = key => String(data.get(key) || "").trim();
-      const body = {
-        recipient: { name: value("recipient"), phone: value("recipientPhone") },
-        delivery: { street: value("street"), area: value("area") },
-        instructions: value("instructions"),
-        note: value("note") || undefined,
-        expectedVersion: parcel.version,
-      };
-      const button = $("generatedCNSubmit");
-      button.disabled = true;
-      DF.api(`/parcels/${encodeURIComponent(parcel.trackingId)}`, { method: "PATCH", body })
-        .then(async () => {
-          closeGeneratedCNDialog();
-          await Ops.refresh().catch(() => undefined);
-          showToast(`${parcel.trackingId} details saved.`);
-        })
-        .catch(error => showToast(DF.describe(error)))
-        .finally(() => (button.disabled = false));
-    },
-    true,
-  );
-  $("generatedCNDialog")?.addEventListener("close", flushPending);
-
   // ───────────── consignment numbers ─────────────
   // "Generate CNs" opens CN stock (pre-allocated batches, bridge-cn.js); "Print labels" (the
   // original "Print generated CNs" button) is handled by bridge-intake.js.
@@ -680,193 +668,58 @@
     true,
   );
 
-  // ───────────── search, notifications ─────────────
+  // ───────────── notifications ─────────────
+  // (The top-bar search is bridge-parcel.js: tracking ID, CN or phone → the parcel drawer.)
 
-  $("globalSearch").addEventListener(
-    "keydown",
-    async event => {
-      if (event.key !== "Enter") return;
-      event.stopImmediatePropagation();
-      const raw = event.currentTarget.value.trim();
-      if (!raw) return;
-      const q = raw.toLowerCase();
-      const local = shipments.find(s => s.id.toLowerCase() === q) || shipments.find(s => [s.recipient, s.merchant, s.recipientPhone].some(v => String(v || "").toLowerCase().includes(q)));
-      let hit = local;
-      if (!hit) {
-        try {
-          const page = await DF.api(`/parcels?limit=20&q=${encodeURIComponent(raw)}`);
-          for (const p of page.items) Ops.extra.set(p.trackingId, p);
-          if (page.items.length) {
-            DF.parcels.set([...DF.parcels.cache.filter(p => !Ops.extra.has(p.trackingId)), ...page.items]);
-            syncShipments();
-            hit = shipments.find(s => s.id === page.items[0].trackingId);
-          }
-        } catch (error) {
-          return void showToast(DF.describe(error));
-        }
-      }
-      if (!hit) return void showToast(`No shipment found for “${raw}”.`);
-      render("Shipments");
-      const search = $("shipmentSearch");
-      if (search) {
-        search.value = hit.id;
-        search.dispatchEvent(new Event("input"));
-      }
-      showToast(`${hit.id} · ${hit.status} · ${hit.destination}`);
-    },
-    true,
-  );
-
-  $("notifications").addEventListener(
-    "click",
-    event => {
-      event.stopImmediatePropagation();
-      const s = Ops.overview?.shipments;
-      if (!s) return void showToast("Operations alerts are loading.");
-      const total = s.exceptions + s.atRisk + s.unassigned;
-      showToast(total ? `${total} operations alerts: ${s.exceptions} exceptions, ${s.atRisk} SLA at risk, ${s.unassigned} waiting for a rider.` : "No operations alerts right now.");
-    },
-    true,
-  );
-
-  // ───────────── server-side search, filters and paging ─────────────
-  // The shipment pages filter the working set in the browser as before; search text, status
-  // and dates also go to GET /parcels so parcels outside the working set are found, and
-  // "Load more" pages through the full result with the API's cursor.
-
-  const SHIPMENT_PAGES = { Shipments: null, Exceptions: null, "Customer parcels": "Customer parcels", "E-commerce operations": "E-commerce", "Banking & Financial operations": "Documents" };
-  const server = { key: "", cursor: null, loading: false, timer: null };
-
-  function serverQuery() {
-    const params = new URLSearchParams({ limit: "100" });
-    const q = $("shipmentSearch")?.value.trim();
-    const status = $("statusFilter")?.value;
-    const byStatusDate = $("shipmentDateField")?.value === "status";
-    const from = $("shipmentDateFrom")?.value;
-    const to = $("shipmentDateTo")?.value;
-    if (q && q.length >= 2) params.set("q", q);
-    if (status === "Needs info") params.set("incomplete", "true");
-    else if (status) params.set("status", status);
-    if (!byStatusDate && from) params.set("from", new Date(`${from}T00:00:00`).toISOString());
-    if (!byStatusDate && to) params.set("to", new Date(`${to}T23:59:59.999`).toISOString());
-    return params;
-  }
-
-  /** Rebuilds the shipment table on screen without a full page render (keeps focus while typing). */
-  function refreshShipmentTable() {
-    const body = $("shipmentBody");
-    const page = Ops.page();
-    if (!body || !(page in SHIPMENT_PAGES) || page === "Exceptions") return;
-    const category = SHIPMENT_PAGES[page];
-    const rows = shipments.filter(s => !category || serviceCategory(s) === category);
-    const checked = new Set([...body.querySelectorAll("[data-shipment-select]:checked")].map(i => i.dataset.shipmentSelect));
-    body.closest(".table-scroll").outerHTML = shipmentRows(rows);
-    for (const id of checked) {
-      const box = document.querySelector(`#shipmentBody [data-shipment-select="${CSS.escape(id)}"]`);
-      if (box) box.checked = true;
-    }
-    applyShipmentFilters();
-    pagingFooter();
-  }
-
-  function pagingFooter() {
-    const count = $("shipmentBody")?.closest(".table-panel")?.querySelector(".shipment-count");
-    if (!count) return;
-    count.querySelector("[data-shipments-more]")?.remove();
-    if (server.key && server.cursor)
-      count.insertAdjacentHTML("beforeend", ` <button class="button button-sm" type="button" data-shipments-more>${server.loading ? "Loading…" : "Load more from the server"}</button>`);
-  }
-
-  async function serverSearch(more = false) {
-    const params = serverQuery();
-    const key = params.toString();
-    const filtered = params.has("q") || params.has("status") || params.has("from") || params.has("to");
-    if (!more) server.cursor = null;
-    server.key = filtered ? key : "";
-    if (!filtered) return void pagingFooter();
-    if (more && server.cursor) params.set("cursor", server.cursor);
-    server.loading = true;
-    pagingFooter();
-    try {
-      const page = await DF.api(`/parcels?${params}`);
-      if (server.key !== key) return; // the filters changed meanwhile
-      for (const p of page.items) {
-        Ops.extra.delete(p.trackingId);
-        Ops.extra.set(p.trackingId, p);
-      }
-      server.cursor = page.nextCursor;
-      const fresh = new Map(page.items.map(p => [p.trackingId, p]));
-      const known = new Set(DF.parcels.cache.map(p => p.trackingId));
-      DF.parcels.cache = DF.parcels.cache.map(p => fresh.get(p.trackingId) || p).concat(page.items.filter(p => !known.has(p.trackingId)));
-      syncShipments();
-      refreshShipmentTable();
-    } catch (error) {
-      showToast(DF.describe(error));
-    } finally {
-      server.loading = false;
-      pagingFooter();
-    }
-  }
-
-  window.addEventListener("input", event => {
-    if (event.target.id !== "shipmentSearch" || !(Ops.page() in SHIPMENT_PAGES)) return;
-    clearTimeout(server.timer);
-    server.timer = setTimeout(() => void serverSearch(), 350);
-  });
-  window.addEventListener("change", event => {
-    if (!["statusFilter", "shipmentDateField", "shipmentDateFrom", "shipmentDateTo"].includes(event.target.id) || !(Ops.page() in SHIPMENT_PAGES)) return;
-    void serverSearch();
-  });
-  window.addEventListener(
-    "click",
-    event => {
-      if (!event.target.closest("[data-shipments-more]")) return;
-      event.stopImmediatePropagation();
-      if (!server.loading) void serverSearch(true);
-    },
-    true,
-  );
-  Ops.pagingFooter = pagingFooter;
-  const otherEnhance = Ops.enhance["*"];
-  Ops.enhance["*"] = page => {
-    otherEnhance?.(page);
-    if (page in SHIPMENT_PAGES) pagingFooter();
-  };
+  // The bell lists real alerts (bridge-desk.js).
 
   // ───────────── live updates ─────────────
-  // A changed parcel is re-fetched on its own; many changes at once (a truck departing) or a
-  // reconnect reload the working set. Counters follow a little later.
+  // A changed parcel is re-fetched on its own and patches its rows in the lists on screen
+  // (bridge-lists.js) and the drawer; many changes at once (a truck departing) reload the lists.
+  // Counters follow a little later. A reconnect reloads counters and lists; a slow safety poll
+  // reloads the counters only.
 
   const changedIds = new Set();
+  const createdIds = new Set();
   let liveTimer = null;
   let countersTimer = null;
   async function applyChanges() {
     const ids = [...changedIds];
+    const created = new Set(createdIds);
     changedIds.clear();
-    if (ids.length > 25) return void (await Ops.refresh().catch(() => undefined));
+    createdIds.clear();
+    if (ids.length > 25) return void Ops.lists?.reloadVisible();
     const results = await Promise.allSettled(ids.map(id => DF.api(`/parcels/${encodeURIComponent(id)}`)));
-    let items = DF.parcels.cache;
-    results.forEach(r => {
-      if (r.status !== "fulfilled") return;
-      const p = r.value;
-      if (Ops.extra.has(p.trackingId)) Ops.extra.set(p.trackingId, p);
-      items = items.some(x => x.trackingId === p.trackingId) ? items.map(x => (x.trackingId === p.trackingId ? p : x)) : [p, ...items];
-    });
-    DF.parcels.set(items); // fires the storage event: rows rebuilt and the page redrawn
+    const fresh = results.filter(r => r.status === "fulfilled").map(r => r.value);
+    if (!fresh.length) return;
+    Ops.upsertParcels(fresh);
+    Ops.lists?.patch(fresh, created);
   }
-  const onParcel = data => {
+  const refreshCounters = async () => {
+    await Promise.all([loadOverview(), Ops.loadStageCounts?.()]);
+    // Today shows the overview's figures and alerts: redraw it (no long tables there).
+    if (Ops.page() === "Overview") Ops.rerender();
+  };
+  const onParcel = (data, type) => {
     if (!data?.id) return;
     changedIds.add(data.id);
+    if (type === "parcel.created") createdIds.add(data.id);
     clearTimeout(liveTimer);
     liveTimer = setTimeout(() => void applyChanges().catch(() => undefined), 500);
     clearTimeout(countersTimer);
-    countersTimer = setTimeout(() => void loadOverview().then(() => Ops.page() === "Overview" && Ops.rerender()).catch(() => undefined), 2500);
+    countersTimer = setTimeout(() => void refreshCounters().catch(() => undefined), 2500);
   };
   Ops.liveParcels = () => {
     DF.events.on("parcel.updated", onParcel);
     DF.events.on("parcel.created", onParcel);
-    // Reconnects and a slow safety refresh reload the working set and counters.
-    DF.live([], Ops.refresh, { fallbackMs: 180_000 });
+    // After a gap in the event stream anything may have changed: counters and the lists on screen.
+    DF.events.on("reconnect", () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshCounters().catch(() => undefined);
+      Ops.lists?.reloadVisible();
+    });
+    // Slow safety refresh in case an event was missed: the counts only.
+    DF.poll(refreshCounters, 180_000);
   };
 
   // ───────────── start ─────────────
@@ -879,12 +732,14 @@
   syncShipments();
 
   DF.bridgeReady = (async () => {
-    const [parcels, overview, catalog] = await Promise.allSettled([loadParcels(), loadOverview(), DF.api("/catalog")]);
+    const [overview, catalog] = await Promise.allSettled([loadOverview(), DF.api("/catalog")]);
     if (catalog.status === "fulfilled") Ops.catalog = catalog.value;
-    if (parcels.status === "rejected" || overview.status === "rejected") showToast(DF.describe(parcels.reason || overview.reason));
+    if (overview.status === "rejected") showToast(DF.describe(overview.reason));
+    // Stage counts follow the person's scope ("my hub" for hub operators), known from the overview.
+    await Ops.loadStageCounts?.().catch(() => undefined);
     const role = document.querySelector(".user-profile small");
     if (role && Ops.me?.hubs?.length) role.textContent = `${Ops.roleName()} · ${Ops.me.hubs.map(h => h.name).join(", ")}`;
-    syncShipments();
+    Ops.ready = true; // the lists on screen may load now (they wait for the person's scope)
     render(Ops.page());
   })();
   Ops.liveParcels();

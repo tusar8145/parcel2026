@@ -13,18 +13,31 @@ import {
   transfersQuerySchema,
 } from "./ops.schemas";
 import { OpsService } from "./ops.service";
+import { StageCountsService } from "./stage-counts.service";
+import { stageCountsQuerySchema } from "../parcels/parcel-stages";
 
 /** Courier Operations console: network counters, dispatch, analytics, reports and bookings by staff. */
 @ApiTags("operations")
 @Controller("ops")
 export class OpsController {
-  constructor(private readonly ops: OpsService) {}
+  constructor(
+    private readonly ops: OpsService,
+    private readonly stages: StageCountsService,
+  ) {}
 
   /** Live counters for the command center, nav badges and priority alerts, plus what the caller may do. */
   @RequirePermissions("parcel:read:any")
   @Get("overview")
   overview(@CurrentActor() actor: Actor) {
     return this.ops.overview(actor);
+  }
+
+  /** Parcels per journey stage (menu badges, Today cards, stage metrics); `forHubIds` counts "my hub" only. */
+  @RequirePermissions("parcel:read:any")
+  @Get("stage-counts")
+  @ApiZodQuery(stageCountsQuerySchema)
+  stageCounts(@Query(new ZodPipe(stageCountsQuerySchema)) query: z.infer<typeof stageCountsQuerySchema>) {
+    return this.stages.counts(query);
   }
 
   /** Assignment queue size and each rider's workload today (hub operators: their hub). */

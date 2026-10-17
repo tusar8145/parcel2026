@@ -363,33 +363,30 @@
       if ((b = btn("[data-pkg-default]"))) {
         stop(event);
         const p = S.packages.find(x => x.id === b.dataset.pkgDefault);
-        if (!confirm(`Make ${p.name} the default ${segLabel(p.segment)} package? Everyone without their own package will use it.`)) return;
-        return busy(b, async () => {
+        return void DF.confirm({ title: `Make ${p.name} the default?`, message: `Every ${segLabel(p.segment)} merchant without their own package will use it.`, confirm: "Make default" }).then(ok => ok && busy(b, async () => {
           outcome(await DF.api(`/packages/${p.id}/default`, { method: "POST" }), `${p.name} is now the default package.`);
           await load("packages", "assignments");
           render();
-        });
+        }));
       }
       if ((b = btn("[data-pkg-archive]"))) {
         stop(event);
         const p = S.packages.find(x => x.id === b.dataset.pkgArchive);
-        if (!confirm(`Archive ${p.name}? It can't be assigned any more; merchants already on it keep it until you assign another.`)) return;
-        return busy(b, async () => {
+        return void DF.confirm({ title: `Archive ${p.name}?`, message: "It can't be assigned any more; merchants already on it keep it until you assign another.", confirm: "Archive", danger: true }).then(ok => ok && busy(b, async () => {
           outcome(await DF.api(`/packages/${p.id}/archive`, { method: "POST" }), `${p.name} archived.`);
           await load("packages");
           render();
-        });
+        }));
       }
       if ((b = btn("[data-pkg-delete]"))) {
         stop(event);
         const p = S.packages.find(x => x.id === b.dataset.pkgDelete);
-        if (!confirm(`Delete ${p.name}? Only packages nothing used can be deleted.`)) return;
-        return busy(b, async () => {
+        return void DF.confirm({ title: `Delete ${p.name}?`, message: "Only packages nothing used can be deleted.", confirm: "Delete", danger: true }).then(ok => ok && busy(b, async () => {
           await DF.api(`/packages/${p.id}`, { method: "DELETE" });
           toast(`${p.name} deleted.`);
           await load("packages");
           render();
-        });
+        }));
       }
       if ((b = btn("[data-pkg-assign]"))) {
         stop(event);
@@ -416,12 +413,11 @@
       if ((b = btn("[data-pkg-product-delete]"))) {
         stop(event);
         const p = S.products.find(x => x.id === b.dataset.pkgProductDelete);
-        if (!confirm(`Delete ${p.name}?`)) return;
-        return busy(b, async () => {
+        return void DF.confirm({ title: `Delete ${p.name}?`, message: "The product is removed from the catalogue.", confirm: "Delete", danger: true }).then(ok => ok && busy(b, async () => {
           await DF.api(`/parcel-products/${p.id}`, { method: "DELETE" });
           await load("products");
           render();
-        });
+        }));
       }
       if ((b = btn("[data-pkg-group-save]"))) {
         stop(event);
@@ -446,12 +442,11 @@
       if ((b = btn("[data-pkg-group-delete]"))) {
         stop(event);
         const g = S.groups.find(x => x.id === b.dataset.pkgGroupDelete);
-        if (!confirm(`Delete the hub group ${g.name}?`)) return;
-        return busy(b, async () => {
+        return void DF.confirm({ title: `Delete the hub group ${g.name}?`, message: "Prices between its hubs go back to the normal zone prices.", confirm: "Delete group", danger: true }).then(ok => ok && busy(b, async () => {
           await DF.api(`/hub-groups/${g.id}`, { method: "DELETE" });
           await load("groups");
           render();
-        });
+        }));
       }
     },
     true,

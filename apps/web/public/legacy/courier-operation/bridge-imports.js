@@ -4,7 +4,7 @@
  *
  *   Sample Excel / Import Excel     GET /imports/templates/:kind, the importer dialog (merchant per row
  *   (shipment pages)                or for the whole file, rider pickup or drop-off at a hub), result
- *                                   with "Print labels" (Ops.labels, POST /ops/labels)
+ *                                   with "Print labels" (Ops.labels → PDF, GET/POST /documents/labels)
  *   Import history                  GET /imports (operations imports)
  *   "Needs info"                    a badge on imported orders that miss delivery details, a status
  *                                   filter option (GET /parcels?incomplete=true) and "Edit details"
@@ -38,8 +38,9 @@
       hubId: Ops.myHubs()?.[0]?.id,
       tones: TONES,
       printLabels: ids => {
-        if (ids.length > 500) showToast(`Labels for the first 500 of ${ids.length} parcels; print the rest from the shipment list.`);
-        Ops.labels?.open(ids.slice(0, 500), { description: `${Math.min(ids.length, 500)} imported parcel${ids.length === 1 ? "" : "s"}. Stick each label on its parcel.` });
+        const max = window.DFPrint.LIMITS.labels;
+        if (ids.length > max) showToast(`Labels for the first ${max.toLocaleString("en-US")} of ${ids.length.toLocaleString("en-US")} parcels; print the rest from the shipment list.`);
+        Ops.labels?.open(ids.slice(0, max), { description: `${Math.min(ids.length, max)} imported parcel${ids.length === 1 ? "" : "s"}. Stick each label on its parcel.` });
       },
       onDone: () => Ops.refresh().catch(() => undefined),
     };
@@ -121,7 +122,7 @@
     if (!SHIPMENT_PAGES.includes(page)) return;
     const select = $("statusFilter");
     if (select && ![...select.options].some(o => o.value === NEEDS)) {
-      const n = shipments.filter(incomplete).length;
+      const n = Ops.countValue?.("detail.needsInfo") || 0; // GET /ops/stage-counts (bridge-lists.js)
       select.insertAdjacentHTML("beforeend", `<option value="${NEEDS}">${NEEDS}${n ? ` (${n})` : ""}</option>`);
     }
     const actions = document.querySelector("#mainContent .page-heading .heading-actions");

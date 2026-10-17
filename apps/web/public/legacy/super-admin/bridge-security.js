@@ -326,12 +326,16 @@
     const reset = t.closest?.("[data-sec-reset-mfa]");
     if (reset) {
       const user = SEC.staff.find(u => u.id === reset.dataset.secResetMfa);
-      if (!user || !confirm(`Turn off two-step verification for ${user.name}? They are signed out everywhere${user.mfa?.required ? " and must set it up again at their next sign-in" : ""}.`)) return;
-      return void act(reset, async () => {
-        await DF.api(`/users/${user.id}/mfa/reset`, { method: "POST" });
-        showToast(`${user.name}: two-step verification reset and signed out.`);
-        await refreshAdmins("staff");
-      });
+      if (!user) return;
+      return void DF.confirm({ title: `Reset two-step verification for ${user.name}?`, message: `They are signed out everywhere${user.mfa?.required ? " and must set it up again at their next sign-in" : ""}.`, confirm: "Reset", danger: true }).then(
+        ok =>
+          ok &&
+          act(reset, async () => {
+            await DF.api(`/users/${user.id}/mfa/reset`, { method: "POST" });
+            showToast(`${user.name}: two-step verification reset and signed out.`);
+            await refreshAdmins("staff");
+          }),
+      );
     }
 
     for (const [attr, verb] of [
@@ -342,17 +346,16 @@
       const button = t.closest?.(`[data-${attr.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}]`);
       if (!button) continue;
       const id = button.dataset[attr];
-      let body = {};
-      if (verb === "reject") {
-        const note = prompt("Why is this change rejected? (shown to the requester)");
-        if (!note || note.trim().length < 3) return;
-        body = { note: note.trim() };
-      } else if (verb === "approve" && !confirm("Approve and apply this change now?")) return;
-      return void act(button, async () => {
-        const result = await DF.api(`/admin/changes/${id}/${verb}`, { method: "POST", body });
-        showToast(verb === "approve" ? `Approved: ${result.summary}` : verb === "reject" ? "Change rejected." : "Change withdrawn.");
-        await refreshAdmins("changes", "roles");
-      });
+      const run = body =>
+        act(button, async () => {
+          const result = await DF.api(`/admin/changes/${id}/${verb}`, { method: "POST", body });
+          showToast(verb === "approve" ? `Approved: ${result.summary}` : verb === "reject" ? "Change rejected." : "Change withdrawn.");
+          await refreshAdmins("changes", "roles");
+        });
+      if (verb === "reject")
+        return void DF.prompt({ title: "Reject this change?", message: "The requester sees your reason.", label: "Why is it rejected?", required: true, multiline: true, maxLength: 500, confirm: "Reject change", danger: true, validate: v => (v.length < 3 ? "At least 3 characters" : "") }).then(note => note && run({ note }));
+      if (verb === "approve") return void DF.confirm({ title: "Approve and apply this change now?", message: "It takes effect immediately and is recorded under your name.", confirm: "Approve and apply" }).then(ok => ok && run({}));
+      return void run({});
     }
 
     const save = t.closest?.("[data-sec-save-col]");
@@ -379,12 +382,16 @@
     const del = t.closest?.("[data-sec-delete-role]");
     if (del) {
       const role = SEC.roles?.customRoles.find(c => c.id === del.dataset.secDeleteRole);
-      if (!role || !confirm(`Delete the role "${role.name}"? ${role.users} user${role.users === 1 ? "" : "s"} will lose it.`)) return;
-      return void act(del, async () => {
-        const result = await DF.api(`/admin/custom-roles/${role.id}`, { method: "DELETE" });
-        showToast(pendingNote(result));
-        await refreshAdmins("roles", "changes");
-      });
+      if (!role) return;
+      return void DF.confirm({ title: `Delete the role "${role.name}"?`, message: `${role.users} user${role.users === 1 ? "" : "s"} will lose it.`, confirm: "Delete role", danger: true }).then(
+        ok =>
+          ok &&
+          act(del, async () => {
+            const result = await DF.api(`/admin/custom-roles/${role.id}`, { method: "DELETE" });
+            showToast(pendingNote(result));
+            await refreshAdmins("roles", "changes");
+          }),
+      );
     }
 
     const end = t.closest?.("[data-sec-end-support]");
@@ -442,8 +449,9 @@
         if (!userId) return showToast("Search for the user first, then choose them.");
         if (reason.length < 10) return showToast("Say why you need access (at least 10 characters).");
         const readOnly = form.querySelector("#dfSupportMode").value !== "full";
-        if (!readOnly && !confirm("Full access lets you make changes as this user. Every action is recorded under your name. Continue?")) return;
-        // Open the tab now (popup blockers allow it only during the click), point it at the panel once ready.
+        // Full access: confirm in the page first. The tab opens right after the "Continue" click (the click's
+        // user activation still lets it open), then points at the panel once ready.
+        const start = () => {
         const tab = window.open("about:blank", "_blank");
         return void act(form.querySelector('[type="submit"]'), async () => {
           try {
@@ -465,6 +473,9 @@
             throw error;
           }
         });
+        };
+        if (readOnly) return void start();
+        return void DF.confirm({ title: "Start full-access support?", message: "Full access lets you make changes as this user. Every action is recorded under your name.", confirm: "Continue", danger: true }).then(ok => ok && start());
       }
     },
     true,

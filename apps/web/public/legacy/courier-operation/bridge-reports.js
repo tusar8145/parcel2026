@@ -1,7 +1,7 @@
 /*
  * Courier Operations on the API, part 9: Reports (sidebar "Reports").
  *
- *   Run a report        POST /reports/run { kind, from, to, hubId } → table, CSV (Excel), print / PDF
+ *   Run a report        POST /reports/run { kind, from, to, hubId } → table, CSV (Excel), PDF (GET /documents/report/:runId)
  *   Recent runs         GET /reports/runs, GET /reports/runs/:id (CSV kept on the server)
  *   Scheduled reports   GET/POST/PATCH/DELETE /reports/schedules, POST /reports/schedules/:id/run
  *                       (emailed daily / weekly through ops.scheduled_report with a link here)
@@ -87,7 +87,7 @@
     $("rpCompliance").outerHTML = ui.panel(
       "Scan compliance",
       c?.totals ? `${state.form.from} to ${state.form.to} · ${Ops.num(c.totals.scans)} scans (${Ops.num(c.totals.camera)} camera, ${Ops.num(c.totals.refused)} refused) · hubs ${c.totals.hubCompliance ?? "—"}% · riders ${c.totals.riderCompliance ?? "—"}%` : c?.error || "Loading…",
-      ui.table(["Hub", "Arrivals", "Scanned", "Missed", "By camera", "Compliance"], hubRows, c ? "No arrivals in this range." : "Loading…") + ui.table(["Rider", "Pickups scanned", "Deliveries scanned", "Compliance"], riderRows, c ? "No rider pickups or deliveries in this range." : "Loading…"),
+      `<h3 class="panel-subtitle" style="margin:4px 16px 6px;font-weight:650">By hub · arrivals scanned</h3>${ui.table(["Hub", "Arrivals", "Scanned", "Missed", "By camera", "Compliance"], hubRows, c ? "No arrivals in this range." : "Loading…")}<h3 class="panel-subtitle" style="margin:14px 16px 6px;font-weight:650">By rider · pickups and deliveries scanned</h3>${ui.table(["Rider", "Pickups scanned", "Deliveries scanned", "Compliance"], riderRows, c ? "No rider pickups or deliveries in this range." : "Loading…")}`,
       "",
       'id="rpCompliance"',
     );
@@ -194,14 +194,9 @@
           const t = state.result.table;
           return courierCsvDownload(`delivery-fast-${t.kind.toLowerCase()}-${t.from}-to-${t.to}.csv`, csvText(t.header, t.rows));
         }
-        case "print": {
-          const t = state.result.table;
-          return Ops.printPage(
-            t.title,
-            `<h1>Delivery Fast · ${esc(t.title)}</h1><p>${esc(t.from)} to ${esc(t.to)} · ${esc(t.hub?.name || "Whole network")} · printed ${esc(new Date().toLocaleString("en-GB"))}</p><table><thead><tr>${t.header.map(h => `<th>${esc(h.toUpperCase())}</th>`).join("")}</tr></thead><tbody>${t.rows.map(r => `<tr>${r.map(v => `<td>${esc(v ?? "—")}</td>`).join("")}</tr>`).join("")}</tbody></table>`,
-            { landscape: t.header.length > 7 },
-          );
-        }
+        case "print":
+          // The stored run as a PDF table (GET /documents/report/:runId) in a new tab.
+          return void Ops.printPdf(`/documents/report/${state.result.run.id}`, { title: "Preparing the report…" });
         case "close":
           state.result = null;
           return paint();
@@ -216,10 +211,12 @@
             .then(r => (showToast(r.status === "OK" ? "Report sent to its recipients." : `The report failed: ${r.error}`), loadSide()))
             .catch(error => showToast(DF.describe(error)));
         case "delete-schedule":
-          if (!confirm("Delete this scheduled report?")) return;
-          return void DF.api(`/reports/schedules/${id}`, { method: "DELETE" })
-            .then(() => (closeModal(), loadSide()))
-            .catch(error => showToast(DF.describe(error)));
+          return void Ops.confirm({ title: "Delete this scheduled report?", message: "Its recipients stop receiving it.", confirm: "Delete schedule", danger: true }).then(ok => {
+            if (!ok) return;
+            DF.api(`/reports/schedules/${id}`, { method: "DELETE" })
+              .then(() => (closeModal(), loadSide(), showToast("Scheduled report deleted.")))
+              .catch(error => showToast(DF.describe(error)));
+          });
       }
     },
     true,

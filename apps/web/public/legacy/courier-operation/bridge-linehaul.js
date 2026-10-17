@@ -4,7 +4,7 @@
  *   Bags        POST /linehaul/bags, /bags/:bag/items (scan), /seal, /reopen, DELETE items
  *   Trips       POST /linehaul/trips, /trips/:trip/bags (load), /depart, /arrive, /close, /cancel
  *   Receiving   POST /linehaul/bags/:bag/receive (whole bag, or the parcels scanned out of it)
- *   Manifests   GET /linehaul/trips/:trip → printable A4 manifest with barcodes
+ *   Manifests   GET /linehaul/trips/:trip; print: GET /documents/manifest/:trip (PDF) and /documents/bag-label/:bag
  *   Issues      GET /linehaul/discrepancies, POST /discrepancies/:id/resolve
  *   Vehicles    GET/POST/PATCH /linehaul/vehicles (hub managers)
  *
@@ -337,21 +337,28 @@
       const result = await DF.api(`/linehaul/bags/${b.id}/items`, { method: "POST", body: { code, source } });
       state.bag = result.bag;
       state.last = result.added ? `${code.toUpperCase()} added · ${result.bag.totals.parcels} parcel(s) in the bag` : `${code.toUpperCase()} is already in this bag`;
+      paint("bag");
+      DF.scanner?.feedback?.("lhScanParcel", result.added);
+      return;
     } catch (error) {
       state.last = DF.describe(error);
       showToast(state.last);
     }
     paint("bag");
+    DF.scanner?.feedback?.("lhScanParcel", false);
   }
 
   function scanOut(code, _source) {
     const r = state.receive;
     const clean = DF.scanner ? DF.scanner.normalize(code) : String(code).trim().toUpperCase();
-    if (!r || !clean || r.scanned.includes(clean)) return;
+    if (!r || !clean) return;
+    if (r.scanned.includes(clean)) return void DF.scanner?.feedback?.("lhReceiveParcel", false, `${clean} was already scanned`);
     r.scanned.push(clean);
     r.seal = $("lhArrivalSeal")?.value.trim() || r.seal;
     r.source = _source || r.source || "KEYBOARD";
     paint("receive");
+    const onManifest = r.bag.items.some(i => i.state === "LOADED" && i.parcel.trackingId === clean);
+    DF.scanner?.feedback?.("lhReceiveParcel", onManifest, onManifest ? `${clean} matched the manifest` : `${clean} is not on this bag's manifest`);
   }
 
   async function receive(whole) {
@@ -359,7 +366,7 @@
     if (!r) return;
     const hubId = r.bag.destHub.id;
     const sealNo = ($("lhArrivalSeal")?.value || r.seal || "").trim() || undefined;
-    if (whole && !confirm(`Receive ${r.bag.number} with all ${r.bag.totals.loaded} manifested parcel(s) at ${r.bag.destHub.name}?`)) return;
+    if (whole && !(await Ops.confirm({ title: `Receive ${r.bag.number} whole?`, message: `All ${r.bag.totals.loaded} manifested parcel(s) are received at ${r.bag.destHub.name} without scanning each one.`, confirm: "Receive whole bag" }))) return;
     try {
       const result = await DF.api(`/linehaul/bags/${r.bag.id}/receive`, {
         method: "POST",
@@ -381,14 +388,18 @@
       state.trip = await DF.api(`/linehaul/trips/${t.id}/bags`, { method: "POST", body: { bag: code, source } });
       showToast(`${String(code).toUpperCase()} loaded on ${t.number}.`);
       void loadList("bags");
+      paint("trip");
+      DF.scanner?.feedback?.("lhLoadBag", true);
+      return;
     } catch (error) {
       showToast(DF.describe(error));
     }
     paint("trip");
+    DF.scanner?.feedback?.("lhLoadBag", false);
   }
 
   async function tripAction(id, action, question) {
-    if (question && !confirm(question)) return;
+    if (question && !(await Ops.confirm(typeof question === "string" ? { message: question, confirm: "Continue" } : question))) return;
     try {
       const trip = await DF.api(`/linehaul/trips/${id}/${action}`, { method: "POST" });
       if (state.trip?.id === id) state.trip = trip;
@@ -401,27 +412,9 @@
     }
   }
 
-  function printManifest(t) {
-    const bagRows = t.bags.map(b => `<tr><td class="barcode">${Ops.barcode(b.number)}<br>${esc(b.number)}</td><td>${esc(b.sealNo || "—")}</td><td>${b.totals.parcels}</td><td>${b.totals.weightKg} kg</td><td>${Ops.money(b.totals.codAmount)}</td></tr>`).join("");
-    const parcelRows = t.bags
-      .flatMap(b => b.items.map(i => `<tr><td>${esc(i.parcel.trackingId)}</td><td>${esc(b.number)}</td><td>${esc(i.parcel.recipient)}</td><td>${esc(i.parcel.zone)}, ${esc(i.parcel.district)}</td><td>${i.parcel.weightKg} kg</td><td>${i.parcel.codAmount ? Ops.money(i.parcel.codAmount) : "Prepaid"}</td><td>${esc(ITEM_STATE[i.state])}</td></tr>`))
-      .join("");
-    Ops.printPage(
-      `Manifest ${t.number}`,
-      `<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start"><div><h1>Delivery Fast · Linehaul manifest</h1><p>${esc(route(t))}</p><p>Printed ${esc(new Date().toLocaleString("en-GB"))}</p></div><div class="barcode" style="text-align:right">${Ops.barcode(t.number)}<br><strong>${esc(t.number)}</strong></div></div>
-<div class="grid"><div>Vehicle<strong>${esc(t.vehicleRegNo)}</strong>${esc(t.vehicle?.kind || "")}</div><div>Driver<strong>${esc(t.driverName)}</strong>${esc(DF.localPhone(t.driverPhone))}</div><div>Departure<strong>${esc(t.departedAt ? Ops.when(t.departedAt) : t.plannedDepartureAt ? `Planned ${Ops.when(t.plannedDepartureAt)}` : "Not departed")}</strong>${esc(TRIP_STATUS[t.status])}</div><div>Totals<strong>${t.totals.bags} bags · ${t.totals.parcels} parcels</strong>${t.totals.weightKg} kg · COD ${Ops.money(t.totals.codAmount)}</div></div>
-<h2>Bags</h2><table><thead><tr><th>BAG</th><th>SEAL</th><th>PARCELS</th><th>WEIGHT</th><th>COD</th></tr></thead><tbody>${bagRows || `<tr><td colspan="5">No bags loaded</td></tr>`}</tbody></table>
-<h2>Parcels</h2><table><thead><tr><th>TRACKING ID</th><th>BAG</th><th>RECIPIENT</th><th>DESTINATION</th><th>WEIGHT</th><th>COD</th><th>STATE</th></tr></thead><tbody>${parcelRows || `<tr><td colspan="7">No parcels</td></tr>`}</tbody></table>
-${t.note ? `<p>Note: ${esc(t.note)}</p>` : ""}<div class="sign"><span>Dispatcher (${esc(hubName(t.originHub))})</span><span>Driver</span><span>Receiver (${esc(hubName(t.destHub))})</span></div>`,
-    );
-  }
-
-  function printBagLabel(b) {
-    Ops.printPage(
-      `Bag ${b.number}`,
-      `<div style="border:2px solid #182230;border-radius:8px;padding:16px;max-width:420px"><h1>Delivery Fast · Linehaul bag</h1><div class="barcode">${Ops.barcode(b.number)}</div><h2>${esc(b.number)}</h2><p><strong>${esc(hubName(b.originHub))} → ${esc(hubName(b.destHub))}</strong></p><p>${b.totals.parcels} parcel(s) · ${b.totals.weightKg} kg${b.sealNo ? ` · Seal ${esc(b.sealNo)}` : ""}</p></div>`,
-    );
-  }
+  /** The manifest (bags, parcels, totals, signatures) and the bag tag as PDFs in a new tab. */
+  const printManifest = t => Ops.printPdf(`/documents/manifest/${t.id}`, { title: "Preparing the manifest…" });
+  const printBagLabel = b => Ops.printPdf(`/documents/bag-label/${b.id}`, { title: "Preparing the bag tag…" });
 
   // Dialogs.
   function newBagDialog() {
@@ -608,10 +601,12 @@ ${t.note ? `<p>Note: ${esc(t.note)}</p>` : ""}<div class="sign"><span>Dispatcher
         case "seal":
           return sealDialog();
         case "reopen":
-          if (!confirm(`Break the seal of ${state.bag.number} and reopen it?`)) return;
-          return void DF.api(`/linehaul/bags/${state.bag.id}/reopen`, { method: "POST" })
-            .then(bag => ((state.bag = bag), paint("bag"), loadList("bags")))
-            .catch(error => showToast(DF.describe(error)));
+          return void Ops.confirm({ title: `Reopen ${state.bag.number}?`, message: "The seal is broken and recorded; the bag must be sealed again before it travels.", confirm: "Break seal and reopen", danger: true }).then(ok => {
+            if (!ok) return;
+            DF.api(`/linehaul/bags/${state.bag.id}/reopen`, { method: "POST" })
+              .then(bag => ((state.bag = bag), paint("bag"), loadList("bags"), showToast(`${bag.number} reopened.`)))
+              .catch(error => showToast(DF.describe(error)));
+          });
         case "remove-item":
           return void DF.api(`/linehaul/bags/${state.bag.id}/items/${encodeURIComponent(el.dataset.code)}`, { method: "DELETE" })
             .then(bag => ((state.bag = bag), (state.last = `${el.dataset.code} removed`), paint("bag")))
@@ -625,13 +620,13 @@ ${t.note ? `<p>Note: ${esc(t.note)}</p>` : ""}<div class="sign"><span>Dispatcher
             .then(trip => ((state.trip = trip), paint("trip"), loadList("bags")))
             .catch(error => showToast(DF.describe(error)));
         case "depart":
-          return void tripAction(id, "depart", "Dispatch this truck? Every parcel on the manifest goes in transit to the destination hub.");
+          return void tripAction(id, "depart", { title: "Dispatch this truck?", message: "Every parcel on the manifest goes in transit to the destination hub.", confirm: "Dispatch truck" });
         case "arrive":
           return void tripAction(id, "arrive");
         case "close":
-          return void tripAction(id, "close", "Close this trip? Parcels in bags that weren't received are recorded as missing.");
+          return void tripAction(id, "close", { title: "Close this trip?", message: "Parcels in bags that weren't received are recorded as missing.", confirm: "Close trip", danger: true });
         case "cancel-trip":
-          return void tripAction(id, "cancel", "Cancel this planned trip? Its bags stay sealed and can go on another trip.");
+          return void tripAction(id, "cancel", { title: "Cancel this planned trip?", message: "Its bags stay sealed and can go on another trip.", confirm: "Cancel trip", cancel: "Keep it", danger: true });
         case "resolve":
           return resolveDialog(id);
         case "more":

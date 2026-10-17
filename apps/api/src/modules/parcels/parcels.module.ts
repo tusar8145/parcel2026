@@ -14,11 +14,13 @@ import { CompleteDetailsController } from "./complete-details.controller";
 import { CompleteDetailsService } from "./complete-details.service";
 import { CollectionsController } from "./collections.controller";
 import { CollectionsService } from "./collections.service";
+import { ParcelMessagesController } from "./parcel-messages.controller";
+import { ParcelMessagesService } from "./parcel-messages.service";
 
 @Module({
   imports: [PricingModule],
-  controllers: [ParcelsController, GuestBookingController, PickupSlotsController, IntakeChangeController, CompleteDetailsController, CollectionsController],
-  providers: [ParcelsService, ParcelWorkflowService, RiderTasksService, PickupSlotsService, GuestBookingService, IntakeChangeService, CompleteDetailsService, CollectionsService],
+  controllers: [ParcelsController, GuestBookingController, PickupSlotsController, IntakeChangeController, CompleteDetailsController, CollectionsController, ParcelMessagesController],
+  providers: [ParcelsService, ParcelWorkflowService, RiderTasksService, PickupSlotsService, GuestBookingService, IntakeChangeService, CompleteDetailsService, CollectionsService, ParcelMessagesService],
   exports: [ParcelsService, ParcelWorkflowService, PickupSlotsService, IntakeChangeService, CompleteDetailsService, CollectionsService],
 })
 export class ParcelsModule {}

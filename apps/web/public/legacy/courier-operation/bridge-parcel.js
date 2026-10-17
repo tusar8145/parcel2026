@@ -18,7 +18,7 @@
  *                      delivery (GET /parcels/:id/proof), staff notes and the tracking history,
  *                      beside the page (it stays open while you work).
  *   Global search      the top bar box: tracking ID, CN (pre-printed CNs are the tracking ID) or
- *                      phone, typed or scanned, then Enter → the drawer. Uses the working set, then
+ *                      phone, typed or scanned, then Enter → the drawer. Uses the parcels on screen, then
  *                      GET /parcels/:id and GET /parcels?q= (the existing search).
  */
 (() => {
@@ -192,7 +192,7 @@
   function decorateRow(tr) {
     tr.dataset.na = "1";
     const cell = tr.lastElementChild;
-    const s = shipments.find(x => x.id === tr.dataset.shipmentId);
+    const s = Ops.shipment?.(tr.dataset.shipmentId) || shipments.find(x => x.id === tr.dataset.shipmentId);
     const p = s?._api;
     if (!cell || !p) return;
     const controls = [...cell.children];
@@ -228,12 +228,6 @@
   const decorateRows = () => {
     rowsQueued = false;
     document.querySelectorAll("#shipmentBody tr[data-shipment-id]:not([data-na])").forEach(decorateRow);
-    // The hub register: a Details button next to History.
-    document.querySelectorAll("#hubShipmentRows [data-track]").forEach(track => {
-      const box = track.parentElement;
-      if (!box || box.querySelector("[data-drawer]")) return;
-      track.insertAdjacentHTML("afterend", `<button class="button button-sm" type="button" data-drawer="${esc(track.dataset.track)}">Details</button>`);
-    });
   };
   // Rows are redrawn by renders, searches, paging and live updates: decorate whatever is new
   // (after bridge-intake.js has added its "Change to drop-off" buttons in the same turn).
@@ -280,7 +274,7 @@
 
   // ───────────── the parcel drawer ─────────────
 
-  const drawer = { id: null, matches: [], proof: new Map() };
+  const drawer = { id: null, matches: [], proof: new Map(), messages: new Map(), messagesLoading: new Set(), noteDraft: "" };
 
   function ensureDrawer() {
     let el = $("parcelDrawer");
@@ -364,16 +358,49 @@
       .join("")}</ol>`;
   }
 
-  /** Staff notes and messages on the parcel's timeline (internal entries). */
+  /** Staff notes on the parcel's timeline (internal entries), with "Add note" (POST /parcels/:id/notes). */
   function notesMarkup(p) {
     const notes = [...(p.events || [])].filter(e => e.internal).reverse();
-    if (!notes.length) return `<p class="panel-subtitle" style="margin:0">No staff notes yet. Notes added when resolving exceptions or correcting details appear here.</p>`;
-    return `<div style="display:grid;gap:8px">${notes
+    const form = Ops.can("dispatch")
+      ? `<form id="drawerNoteForm" data-tracking="${esc(p.trackingId)}" style="display:grid;gap:6px;margin:0 0 10px"><label for="drawerNote" style="font-size:12px;font-weight:600;color:#647184">Add a staff note</label><textarea id="drawerNote" rows="2" maxlength="1000" aria-required="true" placeholder="e.g. Recipient asked for delivery after 5 pm" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical">${esc(drawer.noteDraft || "")}</textarea><div style="display:flex;gap:8px;align-items:center"><button type="submit" class="button button-sm button-primary" id="drawerNoteSave">Add note</button><small id="drawerNoteStatus" role="status" aria-live="polite" style="color:#647184"></small></div><p style="margin:0;color:#98a2ae;font-size:12px">Staff only · recorded on the parcel's timeline with your name.</p></form>`
+      : "";
+    if (!notes.length) return `${form}<p class="panel-subtitle" style="margin:0" data-drawer-notes-empty>No staff notes yet.</p>`;
+    return `${form}<div style="display:grid;gap:8px" data-drawer-notes>${notes
       .map(
         e =>
           `<div style="padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px"><strong>${esc(e.title)}</strong>${e.description ? `<div style="margin-top:3px;color:#647184">${esc(e.description)}</div>` : ""}<small style="display:block;margin-top:4px;color:#99a3af">${esc([Ops.when(e.at), e.actor].filter(Boolean).join(" · "))}</small></div>`,
       )
       .join("")}</div>`;
+  }
+
+  /** The parcel's SMS / email log (GET /parcels/:id/messages): loaded when the drawer opens, codes masked by the API. */
+  const MESSAGE_STATE = { SENT: ["Sent", "status-delivered"], PENDING: ["Queued", "status-pending"], FAILED: ["Failed", "status-failed"] };
+  function messagesMarkup(p) {
+    const log = drawer.messages.get(p.trackingId);
+    if (!log) {
+      loadMessages(p.trackingId);
+      return `<p class="panel-subtitle" style="margin:0">Loading messages…</p>`;
+    }
+    if (log.error) return `<p class="panel-subtitle" style="margin:0">${esc(log.error)}</p>`;
+    if (!log.items.length) return `<p class="panel-subtitle" style="margin:0" data-drawer-messages-empty>No SMS or email has been sent about this parcel.</p>`;
+    return `<div style="display:grid;gap:8px" data-drawer-messages>${log.items
+      .map(m => {
+        const [label, cls] = MESSAGE_STATE[m.state] || [m.state, "status-pending"];
+        const when = m.sentAt || m.queuedAt;
+        return `<div style="padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13px" data-message="${esc(m.id)}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong>${esc(m.channel === "EMAIL" ? "Email" : "SMS")} · ${esc(m.eventLabel)}</strong><span class="status ${cls}">${esc(label)}</span></div><div style="margin-top:4px;color:#647184;white-space:pre-line">${esc(m.subject ? `${m.subject}\n` : "")}${esc(m.text.length > 320 ? `${m.text.slice(0, 320)}…` : m.text)}</div><small style="display:block;margin-top:4px;color:#99a3af">${esc([`To ${m.to}`, Ops.when(when), m.provider, m.attempts > 1 ? `${m.attempts} attempts` : ""].filter(Boolean).join(" · "))}</small>${m.lastError && m.state !== "SENT" ? `<small style="display:block;margin-top:3px;color:var(--red)">${esc(m.lastError)}</small>` : ""}</div>`;
+      })
+      .join("")}</div>`;
+  }
+  function loadMessages(trackingId, force = false) {
+    if (!force && drawer.messagesLoading.has(trackingId)) return;
+    drawer.messagesLoading.add(trackingId);
+    DF.api(`/parcels/${encodeURIComponent(trackingId)}/messages`)
+      .then(r => drawer.messages.set(trackingId, { items: r.items }))
+      .catch(error => drawer.messages.set(trackingId, { error: DF.describe(error), items: [] }))
+      .finally(() => {
+        drawer.messagesLoading.delete(trackingId);
+        if (drawer.id === trackingId) paintDrawer();
+      });
   }
 
   function actionsMarkup(p) {
@@ -390,7 +417,6 @@
       if (p.status === "PENDING_CONFIRMATION") buttons.push(`<button type="button" class="button button-sm" data-customer-cancel="${id}">Cancel request</button>`);
     }
     buttons.push(`<button type="button" class="button button-sm" data-drawer-labels="${id}">Print label</button>`);
-    buttons.push(`<button type="button" class="button button-sm" data-drawer-history="${id}">Open history</button>`);
     return `<div class="df-actions">${buttons.filter(Boolean).join("")}</div>`;
   }
 
@@ -408,11 +434,12 @@
     const el = ensureDrawer();
     const p = drawer.id && Ops.apiParcel(drawer.id);
     if (!p) return void Ops.drawer.close();
-    const s = shipments.find(x => x.id === p.trackingId);
+    const s = Ops.shipment?.(p.trackingId) || shipments.find(x => x.id === p.trackingId);
     $("parcelDrawerTitle").textContent = p.trackingId;
     $("parcelDrawerSub").innerHTML = `${statusPill(esc(p.statusLabel))} ${s?.sla ? statusPill(esc(s.sla)) : ""}`;
     const body = $("parcelDrawerBody");
     const scroll = body.scrollTop;
+    const typing = document.activeElement?.id === "drawerNote" ? document.activeElement.selectionStart : null;
     body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>
       <section><h3>Parcel</h3>${kv([
         ["Merchant / sender", esc(p.merchant?.name || p.sender?.name || "—")],
@@ -430,9 +457,17 @@
       ])}</section>
       <section><h3>Price</h3>${priceMarkup(p)}</section>
       <section><h3>Proof of delivery</h3>${proofMarkup(p)}</section>
-      <section><h3>Notes & messages</h3>${notesMarkup(p)}</section>
+      <section id="drawerNotes"><h3>Staff notes</h3>${notesMarkup(p)}</section>
+      <section id="drawerMessages"><h3 style="display:flex;justify-content:space-between;align-items:center">Messages sent <button type="button" class="button button-sm" data-drawer-messages-refresh="${esc(p.trackingId)}" style="text-transform:none;letter-spacing:0">Refresh</button></h3>${messagesMarkup(p)}</section>
       <section><h3>Tracking history</h3>${historyMarkup(p)}</section>`;
     body.scrollTop = scroll;
+    if (typing != null) {
+      const note = $("drawerNote");
+      note?.focus({ preventScroll: true });
+      try {
+        note?.setSelectionRange(typing, typing);
+      } catch {}
+    }
     el.hidden = false;
   }
 
@@ -453,6 +488,8 @@
     get id() {
       return drawer.id;
     },
+    /** Parcels the drawer shows (the open one and the search matches): kept in the browser. */
+    ids: () => [drawer.id, ...drawer.matches.map(m => m.trackingId)].filter(Boolean),
   };
 
   window.addEventListener(
@@ -468,8 +505,12 @@
       }
       const labels = t.closest("[data-drawer-labels]");
       if (labels) return void Ops.labels?.open([labels.dataset.drawerLabels]);
-      const history = t.closest("[data-drawer-history]");
-      if (history) return void courierTrackingHistory(history.dataset.drawerHistory);
+      const refreshMessages = t.closest("[data-drawer-messages-refresh]");
+      if (refreshMessages) {
+        event.preventDefault();
+        drawer.messages.delete(refreshMessages.dataset.drawerMessagesRefresh);
+        return void loadMessages(refreshMessages.dataset.drawerMessagesRefresh, true);
+      }
       const proof = t.closest("[data-drawer-proof]");
       if (proof) {
         event.preventDefault();
@@ -478,32 +519,67 @@
     },
     true,
   );
+  // Add note: POST /parcels/:id/notes, then the parcel (with the note) is shown again.
+  window.addEventListener("input", event => {
+    if (event.target?.id === "drawerNote") drawer.noteDraft = event.target.value;
+  });
+  window.addEventListener(
+    "submit",
+    event => {
+      const form = event.target;
+      if (form?.id !== "drawerNoteForm") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const id = form.dataset.tracking;
+      const input = $("drawerNote");
+      const note = input.value.trim();
+      const status = $("drawerNoteStatus");
+      if (note.length < 2) {
+        input.setAttribute("aria-invalid", "true");
+        if (status) (status.textContent = "Write the note first (at least 2 characters)."), (status.style.color = "var(--red)");
+        return void input.focus();
+      }
+      const button = $("drawerNoteSave");
+      button.disabled = true;
+      if (status) (status.textContent = "Saving…"), (status.style.color = "#647184");
+      DF.api(`/parcels/${encodeURIComponent(id)}/notes`, { method: "POST", body: { note } })
+        .then(parcel => {
+          drawer.noteDraft = "";
+          Ops.upsertParcels?.([parcel]);
+          if (drawer.id === id) paintDrawer();
+          const after = $("drawerNoteStatus");
+          if (after) (after.textContent = "Note added."), (after.style.color = "var(--green)");
+          showToast(`${id}: note added.`);
+        })
+        .catch(error => {
+          const after = $("drawerNoteStatus");
+          if (after) (after.textContent = DF.describe(error)), (after.style.color = "var(--red)");
+        })
+        .finally(() => {
+          const again = $("drawerNoteSave");
+          if (again) again.disabled = false;
+        });
+    },
+    true,
+  );
+
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape" || !drawer.id) return;
     // Dialogs above the drawer close first.
-    if ($("modalBackdrop")?.classList.contains("open") || $("courierHistoryBackdrop") || $("rtoDialog") || $("generatedCNDialog")?.open) return;
+    if ($("modalBackdrop")?.classList.contains("open") || document.querySelector(".df-dialog") || $("generatedCNDialog")?.open) return;
     Ops.drawer.close();
   });
 
-  // The drawer follows the working set (live updates, actions).
-  const baseSet = DF.parcels.set;
-  DF.parcels.set = function (items) {
-    const changed = baseSet.call(DF.parcels, items);
-    if (drawer.id) queueMicrotask(() => drawer.id && paintDrawer());
-    return changed;
-  };
+  // The drawer follows its parcel (live updates, actions).
+  Ops.onParcels?.push(items => {
+    if (drawer.id && items.some(p => p.trackingId === drawer.id)) queueMicrotask(() => drawer.id && paintDrawer());
+  });
 
   // ───────────── global search ─────────────
 
-  /** Puts parcels found on the server into the working set (as the console's search does). */
+  /** Puts parcels found on the server into the browser's set (the drawer and actions read it). */
   function remember(items) {
-    if (!items.length) return;
-    for (const p of items) {
-      Ops.extra.delete(p.trackingId);
-      Ops.extra.set(p.trackingId, p);
-    }
-    const fresh = new Set(items.map(p => p.trackingId));
-    DF.parcels.set([...DF.parcels.cache.filter(p => !fresh.has(p.trackingId)), ...items]);
+    if (items.length) Ops.upsertParcels(items);
   }
 
   async function search(raw) {
@@ -529,6 +605,8 @@
     remember(page.items);
     return page.items;
   }
+  /** Tracking ID, CN or phone → matching parcels (the top-bar search; the Hub desk's "Find" uses it too). */
+  Ops.findParcels = search;
 
   window.addEventListener(
     "keydown",

@@ -144,9 +144,10 @@
       if (doc) {
         event.stopImmediatePropagation();
         const decision = doc.dataset.kycDecision;
-        const reason = decision === "REJECT" ? prompt("Why is this document rejected? The rider sees this.", "") : undefined;
-        if (decision === "REJECT" && !reason?.trim()) return;
-        return void act(() => DF.api(`/rider-kyc/documents/${doc.dataset.kycDoc}/review`, { method: "POST", body: { decision, reason: reason?.trim() } }), decision === "APPROVE" ? "Document approved." : "Document rejected.");
+        const docId = doc.dataset.kycDoc;
+        const review = reason => act(() => DF.api(`/rider-kyc/documents/${docId}/review`, { method: "POST", body: { decision, reason } }), decision === "APPROVE" ? "Document approved." : "Document rejected.");
+        if (decision !== "REJECT") return void review(undefined);
+        return void Ops.prompt({ title: "Reject this document", message: "The rider sees the reason in the app and can upload it again.", label: "Why is it rejected?", required: true, multiline: true, maxLength: 300, confirm: "Reject document", danger: true, placeholder: "e.g. The photo is blurred; the NID number can't be read", validate: v => (v.length < 3 ? "At least 3 characters" : "") }).then(reason => reason && review(reason));
       }
       if (t.closest('[data-kyc-final="REJECT"]')) {
         event.stopImmediatePropagation();

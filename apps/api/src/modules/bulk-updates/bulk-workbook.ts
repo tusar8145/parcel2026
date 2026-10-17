@@ -1,6 +1,7 @@
 import { columnLetter, STYLE, writeXlsx, type Cell, type DataValidation, type Sheet } from "../imports/xlsx/xlsx-writer";
 import { dependentListFormula, writeListsSheet, type ListColumn } from "../imports/import-templates";
-import { ACTION_HELP, ACTION_LABEL, BULK_ACTIONS, BULK_COLUMNS, PRIORITIES, SERVICES, SHEET_NAME, settableStatusLabels, type BulkColumnKey, type BulkListKey } from "./bulk-columns";
+import { PRIORITIES, SERVICES, SHEET_NAME, type BulkColumnKey, type BulkListKey } from "./bulk-columns";
+import { choiceHelp, columnsOf, KINDS, newStatusesOf, statusLabels, type BulkKind } from "./bulk-kinds";
 
 export type BulkCells = Partial<Record<BulkColumnKey, string | number>>;
 
@@ -14,6 +15,8 @@ export interface BulkLists {
 }
 
 export interface BulkWorkbookOptions {
+  /** The page template: its actions, columns and instructions. */
+  kind: BulkKind;
   rows: { cells: BulkCells; error?: string }[];
   lists: BulkLists;
   maxRows: number;
@@ -45,13 +48,15 @@ const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
  * filters still work), an Instructions sheet and the hidden Lists sheet the dropdowns read.
  */
 export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
-  const cols = BULK_COLUMNS;
+  const def = KINDS[opts.kind];
+  const cols = columnsOf(opts.kind);
+  const has = (key: BulkColumnKey) => cols.some(c => c.key === key);
   const { lists } = opts;
   const zones = unique(lists.districts.flatMap(d => lists.zonesByDistrict[d] ?? []));
   const listColumns: ListColumn[] = [
-    { title: "Actions", values: BULK_ACTIONS.map(a => ACTION_LABEL[a]), name: LIST_NAME.actions },
+    { title: "Actions", values: def.choices.map(c => c.label), name: LIST_NAME.actions },
     { title: "Riders", values: lists.riders, name: LIST_NAME.riders },
-    { title: "New status", values: settableStatusLabels(), name: LIST_NAME.statuses },
+    { title: "New status", values: statusLabels(newStatusesOf(opts.kind)), name: LIST_NAME.statuses },
     { title: "Hubs", values: lists.hubs.map(h => h.label), name: LIST_NAME.hubs },
     { title: "Priority", values: [...PRIORITIES], name: LIST_NAME.priorities },
     { title: "Services", values: [...SERVICES], name: LIST_NAME.services },
@@ -74,7 +79,7 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
     const prompt = { promptTitle: col.header, prompt: col.description };
     if (col.list) {
       let formula = LIST_NAME[col.list];
-      if (col.key === "rider" && lists.hubs.length) formula = dependentListFormula(letter("hub"), LIST_NAME.riders, "RD_", LIST_NAME.hubs);
+      if (col.key === "rider" && lists.hubs.length && has("hub")) formula = dependentListFormula(letter("hub"), LIST_NAME.riders, "RD_", LIST_NAME.hubs);
       if (col.key === "set_zone") formula = dependentListFormula(letter("set_district"), LIST_NAME.zones, "ZN_", LIST_NAME.districts);
       if (col.key === "set_area") formula = dependentListFormula(letter("set_zone"), LIST_NAME.areas, "AR_", LIST_NAME.zones);
       validations.push({
@@ -100,7 +105,7 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
     return col.editable ? (col.text ? STYLE.editableText : STYLE.editable) : STYLE.readonly;
   };
   const dataRows: Cell[][] = opts.rows.map(r => [
-    ...cols.map(c => ({ value: r.cells[c.key] ?? "", style: cellStyle(c.key) })),
+    ...cols.map(c => ({ value: c.key === "template" ? opts.kind : (r.cells[c.key] ?? ""), style: cellStyle(c.key) })),
     ...(opts.failed ? [{ value: r.error ?? "", style: STYLE.error }] : []),
   ]);
   const data: Sheet = {
@@ -117,38 +122,48 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
 
   const cut = opts.matched !== undefined && opts.matched > opts.rows.length;
   const intro: string[] = [
+    `This is the ${def.page} template: ${def.scope}. It offers only the ${def.page} actions${opts.kind === "all" ? "" : " and the columns they need"}.`,
     `How to use: on the "${SHEET_NAME}" sheet choose an Action for each parcel you want to change and fill the columns it needs (blue headers). Rows with an empty Action are ignored.`,
     "Grey columns are the parcel's data when you downloaded it and are locked. The sheet is protected without a password so nothing is typed over by mistake: filtering works as usual; to sort or edit grey cells use Review → Unprotect Sheet (no password).",
-    "Upload the file in Courier Operations (Bulk update by Excel → Upload). Every row is checked first and shown in a preview (will apply / warnings / errors); nothing changes until you press Apply.",
+    `Upload the file in Courier Operations on the ${def.page} page (Bulk update ${def.page} by Excel → Upload)${opts.kind === "all" ? "" : " or on All parcels; other pages refuse it"}. Every row is checked first and shown in a preview (will apply / warnings / errors); nothing changes until you press Apply.`,
     "Each row is applied on its own through the normal parcel workflow: lifecycle rules, hub scope, rider checks, notifications, webhooks and the audit log are the same as for a single action. One failed row doesn't stop the others.",
     "A parcel changed by someone else after you downloaded the file is refused (\"changed since you downloaded it\"): download a fresh file for it. Uploading the same file again doesn't apply a row twice; rows already done are reported as \"already done\".",
     `Limits: at most ${opts.maxRows.toLocaleString("en-US")} rows and ${opts.maxFileMb} MB per file; one parcel per row (a parcel listed twice is refused).${cut ? ` This file holds the first ${opts.rows.length.toLocaleString("en-US")} of ${opts.matched!.toLocaleString("en-US")} matching parcels: narrow the filters to get the rest.` : ""}`,
     ...(opts.filterText ? [`Downloaded: ${opts.filterText}.`] : []),
   ];
   const instructions: Cell[][] = [
-    [{ value: "Delivery Fast · Bulk operations by Excel", style: STYLE.title }],
+    [{ value: `Delivery Fast · ${def.title}`, style: STYLE.title }],
     ...intro.map(t => [t]),
     [],
     ["Action", "Columns it needs", "What it does"].map(v => ({ value: v, style: STYLE.headerOptional })),
-    ...BULK_ACTIONS.map(a => [
-      { value: ACTION_LABEL[a], style: STYLE.bold },
-      { value: ACTION_HELP[a].needs, style: STYLE.wrap },
-      { value: ACTION_HELP[a].does, style: STYLE.wrap },
+    ...def.choices.map(c => [
+      { value: c.label, style: STYLE.bold },
+      { value: choiceHelp(c).needs, style: STYLE.wrap },
+      { value: choiceHelp(c).does, style: STYLE.wrap },
     ]),
     [],
     ["Column", "Editable", "Notes"].map(v => ({ value: v, style: STYLE.headerOptional })),
     ...cols.filter(c => !c.hidden).map(c => [{ value: c.header, style: STYLE.bold }, { value: c.editable ? "Yes" : "No (locked)", style: STYLE.wrap }, { value: c.description, style: STYLE.wrap }]),
     [],
     [{ value: "Rules", style: STYLE.bold }],
-    ["Riders must be active; hub operators can choose only their own hubs' riders. A rider who is off shift, on break or over capacity gives a warning (the row still applies)."],
-    ["A delivery rider can only be assigned when the recipient name, phone, address, district and zone are known: complete a \"Needs info\" order first (or in the same row)."],
-    ["Change status follows the parcel lifecycle; Delivered is never set here (only the rider, with proof and COD)."],
-    ["Leave Rider empty on an \"Accept & assign pickup rider\" or \"Assign delivery rider\" row to accept the Suggested rider."],
+    ...rules(opts.kind, has),
   ];
 
   return writeXlsx({
-    title: "Delivery Fast bulk update",
+    title: `Delivery Fast ${def.title}`,
     sheets: [data, { name: "Instructions", rows: instructions, widths: [30, 50, 90] }, listsSheet.sheet],
     names: listsSheet.names,
   });
+}
+
+/** The Instructions sheet's rules that apply to the kind's actions. */
+function rules(kind: BulkKind, has: (key: BulkColumnKey) => boolean): string[][] {
+  const actions = new Set(KINDS[kind].choices.map(c => c.action));
+  const out: string[] = [];
+  if (has("rider")) out.push("Riders must be active; hub operators can choose only their own hubs' riders. A rider who is off shift, on break or over capacity gives a warning (the row still applies).");
+  if (actions.has("ASSIGN_DELIVERY")) out.push('A delivery rider can only be assigned when the recipient name, phone, address, district and zone are known: complete a "Needs info" order first (or in the same row).');
+  if (actions.has("SET_STATUS")) out.push("Status changes follow the parcel lifecycle; Delivered is never set here (only the rider, with proof and COD).");
+  if (has("suggested_rider")) out.push("Leave Rider empty on a rider row to accept the Suggested rider.");
+  out.push("Hub operators work only on their own hubs' parcels.");
+  return out.map(t => [t]);
 }

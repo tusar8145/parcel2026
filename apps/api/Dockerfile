@@ -31,6 +31,8 @@ COPY apps/api/prisma apps/api/prisma
 RUN --mount=type=cache,target=/root/.npm npm ci -w @delivery-fast/shared -w @delivery-fast/api --omit=dev --ignore-scripts
 COPY --from=build /repo/packages/shared/dist packages/shared/dist
 COPY --from=build /repo/apps/api/dist apps/api/dist
+# Fonts embedded in generated PDFs (Noto Sans + Noto Sans Bengali, OFL).
+COPY apps/api/assets apps/api/assets
 RUN mkdir -p apps/api/.data/files && chown -R node:node apps/api/.data
 USER node
 WORKDIR /repo/apps/api

@@ -3,6 +3,8 @@
 // their actions. See public/legacy/README.md.
 export const scripts = [
   "/legacy/shared/api.js",
+  // PDF printing (DFPrint): every print button opens an API-generated PDF in a new tab.
+  "/legacy/shared/print.js",
   "/legacy/ecommerce-merchant/01.js",
   "/legacy/ecommerce-merchant/02.js",
   "/legacy/ecommerce-merchant/03.js",

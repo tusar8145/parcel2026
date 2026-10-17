@@ -615,7 +615,7 @@
             proof = { method: "PHOTO", image: DF.proof ? await DF.proof.stampPhoto(file, stamp) : await photoDataUrl(file) };
           }
           const cod = Number(parcel.codAmount) || 0;
-          if (cod > 0 && !confirm(`Confirm you collected ৳${cod.toLocaleString("en-BD")} cash from the recipient.`)) throw new Error("Collect the COD amount before completing the delivery.");
+          if (cod > 0 && !(await DF.confirm({ title: "Cash collected?", message: `Confirm you collected ৳${cod.toLocaleString("en-BD")} cash from the recipient.`, confirm: `Yes, ৳${cod.toLocaleString("en-BD")} collected`, cancel: "Not yet" }))) throw new Error("Collect the COD amount before completing the delivery.");
           return post(id, "delivery", { outcome: "DELIVERED", receivedBy: parcel.recipient.name || "Recipient", proof, codCollected: cod, note, capture });
         }, `${id} delivered. ${method} proof saved with time and location.`);
       }
@@ -640,7 +640,8 @@
       const button = event.target.closest("[data-df-cancel-handover]");
       if (!button) return;
       event.stopImmediatePropagation();
-      if (!confirm("Cancel your cash handover request?")) return;
+      void DF.confirm({ title: "Cancel your cash handover request?", message: "You keep the cash and can ask again later.", confirm: "Cancel request", cancel: "Keep it", danger: true }).then(ok => {
+      if (!ok) return;
       button.disabled = true;
       DF.api(`/rider/handover-requests/${encodeURIComponent(button.dataset.dfCancelHandover)}/cancel`, { method: "POST" })
         .then(async () => {
@@ -651,6 +652,7 @@
           button.disabled = false;
           showToast(DF.describe(error));
         });
+      });
     },
     true,
   );

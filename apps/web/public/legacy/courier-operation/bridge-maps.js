@@ -184,6 +184,8 @@
     const base = Ops.enhance[page];
     Ops.enhance[page] = p => {
       base?.(p);
+      // Pickup (bridge-nav.js) shows neither the map nor the route planner.
+      if (page === "Dispatch" && Ops.tabMode === "pickup") return;
       void mountMap(page);
       if (page === "Dispatch") routePlanner();
     };

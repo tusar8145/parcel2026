@@ -25,7 +25,8 @@ import { ImportJobsService } from "../imports/import-jobs.service";
 import { ImportConfigService } from "../imports/import-config.service";
 import { writeCsv } from "../imports/csv";
 import { codeVariants } from "../ops/ops-common";
-import { ACTION_LABEL, BULK_COLUMNS, headerOf, matchBulkHeaders, SHEET_NAME, type BulkAction } from "./bulk-columns";
+import { ACTION_LABEL, headerOf, matchBulkHeaders, SHEET_NAME, type BulkAction } from "./bulk-columns";
+import { choiceHelp, columnsOf, isKind, KINDS, kindsFor, kindWhere, parseChoice, statusLabels, type BulkKind } from "./bulk-kinds";
 import { BulkPlanner, PARCEL_RELATIONS, riderLabel, statusLabelOf, type BulkPlan, type BulkRowCells, type CheckedRow, type PlannerParcel, type Problem } from "./bulk-planner";
 import { buildBulkWorkbook, type BulkCells, type BulkLists } from "./bulk-workbook";
 import type { bulkExportQuerySchema, bulkListQuerySchema, bulkRowsQuerySchema } from "./bulk-updates.schemas";
@@ -61,6 +62,7 @@ const MISSING_LABEL_SHORT: Record<string, string> = { recipientName: "Recipient 
 /** "2026-10-16 14:05" in Dhaka time. */
 const dhaka = (d: Date | null | undefined) => (d ? new Date(d.getTime() + 6 * 3600_000).toISOString().slice(0, 16).replace("T", " ") : "");
 const joinAddress = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(", ");
+const kindOf = (job: Pick<BulkUpdateJob, "kind">): BulkKind => (isKind(job.kind) ? job.kind : "all");
 const messageOf = (error: unknown) => (error instanceof AppError ? (error.getResponse() as { message: string }).message : null);
 /** Does the row change something the price depends on (destination, weight, service, first mile)? */
 const repricedBy = (r: CheckedRow) =>
@@ -171,6 +173,31 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     };
   }
 
+  /** The page templates the caller may use: each page's actions (what they need and do), columns and filters. */
+  kinds(actor: Actor) {
+    const user = this.staff(actor);
+    return kindsFor(user.permissions).map(def => ({
+      kind: def.kind,
+      page: def.page,
+      title: def.title,
+      scope: def.scope,
+      actions: def.choices.map(c => ({ label: c.label, action: c.action, ...choiceHelp(c) })),
+      columns: columnsOf(def.kind)
+        .filter(c => !c.hidden)
+        .map(c => ({ key: c.key, header: c.header, editable: c.editable })),
+      statuses: def.statuses.map((s, i) => ({ value: s, label: statusLabels(def.statuses)[i] })),
+      presets: def.presets,
+    }));
+  }
+
+  /** Refuses a page template the caller has no action of. */
+  private kindFor(actor: Actor, kind: BulkKind) {
+    const user = this.staff(actor);
+    const def = kindsFor(user.permissions).find(k => k.kind === kind);
+    if (!def) throw forbidden(`You can't use the ${KINDS[kind].page} bulk update`);
+    return def;
+  }
+
   /** Same row and file limits as operations imports (super admin → Spreadsheet imports). */
   async limits(actor: Actor) {
     this.staff(actor);
@@ -214,6 +241,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
 
   private async filterText(query: z.infer<typeof bulkExportQuerySchema>) {
     const parts: string[] = [];
+    if (query.kind !== "all") parts.push(KINDS[query.kind].page.toLowerCase());
     if (query.preset === "pending_review") parts.push("pending operations confirmation (awaiting review)");
     if (query.preset === "at_hub_unassigned") parts.push("at a hub without a delivery rider");
     if (query.preset === "needs_info") parts.push("needs info");
@@ -255,12 +283,13 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
 
   /** The .xlsx of the filtered parcels (at most the operations row limit) with the action columns. */
   async export(actor: Actor, query: z.infer<typeof bulkExportQuerySchema>, meta: RequestMeta) {
-    this.staff(actor);
+    this.kindFor(actor, query.kind);
     const settings = await this.importConfig.settings();
     const limits = this.imports.limitsFor(settings, true);
     const scope = opsHubScope(actor);
     if (scope && query.hubId && !scope.includes(query.hubId)) throw forbidden("You can only download your own hubs' parcels");
-    const where: Prisma.ParcelWhereInput = { AND: [await this.scopeWhere(actor), ...this.filterWhere(query)] };
+    const page = kindWhere(query.kind);
+    const where: Prisma.ParcelWhereInput = { AND: [await this.scopeWhere(actor), ...(page ? [page] : []), ...this.filterWhere(query)] };
     const [matched, parcels] = await Promise.all([
       this.prisma.parcel.count({ where }),
       this.prisma.parcel.findMany({
@@ -308,13 +337,15 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         missing: p.missingFields.map(f => MISSING_LABEL_SHORT[f] ?? f).join(", "),
         suggested_rider: s ? lists.riders.find(r => r.startsWith(`${s.rider.code} ·`)) ?? s.rider.label : "",
         version: p.version,
+        template: query.kind,
       };
       return { cells };
     });
-    const buffer = buildBulkWorkbook({ rows, lists, maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, filterText, matched });
-    await this.audit.record(actor, { action: "bulk_update.export", entityType: "bulk_update", data: { rows: rows.length, matched, filter: filterText } }, meta);
+    const buffer = buildBulkWorkbook({ kind: query.kind, rows, lists, maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, filterText, matched });
+    await this.audit.record(actor, { action: "bulk_update.export", entityType: "bulk_update", data: { kind: query.kind, rows: rows.length, matched, filter: filterText } }, meta);
     const stamp = dhaka(new Date()).replace(/[-: ]/g, "").slice(0, 12);
-    return { buffer, fileName: `delivery-fast-bulk-update-${stamp}.xlsx`, count: rows.length, matched, maxRows: limits.maxRows };
+    const prefix = query.kind === "all" ? "delivery-fast-bulk-update" : `delivery-fast-${query.kind.replace(/_/g, "-")}-bulk-update`;
+    return { buffer, fileName: `${prefix}-${stamp}.xlsx`, count: rows.length, matched, maxRows: limits.maxRows };
   }
 
   // ───────────── validate (dry run) ─────────────
@@ -333,6 +364,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     if (!match)
       throw new AppError("TEMPLATE_MISMATCH", "We couldn't find the header row with Tracking ID and Action. Download the parcels for a bulk update and keep the first row as it is.", 422);
     const result: { rowNumber: number; cells: BulkRowCells }[] = [];
+    const templates = new Set<string>();
     let ignored = 0;
     for (let i = headerIndex + 1; i < rows.length; i++) {
       const raw = rows[i] ?? [];
@@ -342,17 +374,18 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         if (key && v) cells[key] = v;
       });
       if (!Object.keys(cells).length) continue;
+      if (cells.template) templates.add(cells.template.trim().toLowerCase());
       if (!cells.action) {
         ignored++;
         continue;
       }
       result.push({ rowNumber: i + 1, cells });
     }
-    return { rows: result, ignored, ignoredColumns: match.unknown };
+    return { rows: result, ignored, ignoredColumns: match.unknown, templates };
   }
 
   /** Loads what the rows refer to and checks every row (the same rules as the apply step). */
-  private async check(actor: Actor, rows: { rowNumber: number; cells: BulkRowCells }[]): Promise<CheckedRow[]> {
+  private async check(actor: Actor, rows: { rowNumber: number; cells: BulkRowCells }[], kind: BulkKind = "all"): Promise<CheckedRow[]> {
     const typed = [...new Set(rows.map(r => r.cells.tracking_id?.trim().toUpperCase()).filter((v): v is string => !!v))];
     const variants = new Map(typed.map(t => [t, codeVariants(t)]));
     const found: PlannerParcel[] = [];
@@ -391,6 +424,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       hubs,
       catalog,
       scope: opsHubScope(actor),
+      allowed: kind === "all" ? null : { labels: new Set(KINDS[kind].choices.map(c => c.label)), page: KINDS[kind].page },
     });
     const checked = rows.map(r => planner.check(r.rowNumber, r.cells));
     await this.previewPrices(checked, new Map(found.map(p => [p.id, p])));
@@ -442,17 +476,47 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     return { rows: r.rows, before, after, difference: Math.round((after - before) * 100) / 100 };
   }
 
-  async validateUpload(actor: Actor, file: { buffer: Buffer; fileName: string }, meta: RequestMeta) {
+  /**
+   * The template a file was downloaded for (its hidden `template` column; none = All parcels) on the
+   * page it is uploaded on: another page's file is refused, All parcels takes any.
+   */
+  private fileKind(templates: Set<string>, pageKind: BulkKind): BulkKind {
+    const values = [...templates];
+    const unknown = values.find(v => !isKind(v));
+    if (unknown) throw new AppError("TEMPLATE_MISMATCH", `The template column says "${unknown}", which isn't a bulk update page. Download the file again and keep the hidden columns as they are.`, 422);
+    if (values.length > 1)
+      throw new AppError("BULK_KIND_MIXED", `This file mixes rows of the ${values.map(v => KINDS[v as BulkKind].page).join(" and ")} files. Upload each page's rows on its own page (or All parcels) in separate files.`, 422, { kinds: values });
+    const fileKind = (values[0] as BulkKind | undefined) ?? "all";
+    if (pageKind !== "all" && fileKind !== pageKind) {
+      const file = KINDS[fileKind].page;
+      const page = KINDS[pageKind].page;
+      throw new AppError(
+        "BULK_KIND_MISMATCH",
+        fileKind === "all"
+          ? `This is the All parcels file, with every action. Upload it on All parcels, or download the ${page} file here (Bulk update ${page} by Excel) and fill that in.`
+          : `This is the ${file} file. Upload it on the ${file} page (or All parcels), or download the ${page} file here and fill that in.`,
+        422,
+        { fileKind, pageKind },
+      );
+    }
+    return fileKind;
+  }
+
+  async validateUpload(actor: Actor, file: { buffer: Buffer; fileName: string }, meta: RequestMeta, pageKind: BulkKind = "all") {
     const user = this.staff(actor);
+    this.kindFor(actor, pageKind);
     const settings = await this.importConfig.settings();
     const limits = this.imports.limitsFor(settings, true);
     if (file.buffer.length > limits.maxBytes) throw new AppError("FILE_TOO_LARGE", `Files can be at most ${limits.maxFileMb} MB. Split it into smaller files.`, 413, { maxFileMb: limits.maxFileMb });
     const fileName = (file.fileName || "upload").slice(0, 200);
     const started = Date.now();
     const parsed = await this.imports.withParseSlot(async () => this.sheetRows(this.imports.parseFile(file.buffer, fileName, limits.maxRows, undefined, [SHEET_NAME]).rows));
+    const kind = this.fileKind(parsed.templates, pageKind);
+    this.kindFor(actor, kind);
     if (!parsed.rows.length)
       throw new AppError("NO_ACTIONS", parsed.ignored ? `None of the ${parsed.ignored.toLocaleString("en-US")} rows has an Action. Choose an action for the parcels to change.` : "The file has no parcels below the header row.", 422);
-    const results = await this.check(actor, parsed.rows);
+    // A page's file allows only that page's actions; All parcels allows any action.
+    const results = await this.check(actor, parsed.rows, pageKind === "all" ? "all" : kind);
     const counts = { READY: 0, WARNING: 0, ERROR: 0, ALREADY_DONE: 0 };
     for (const r of results) counts[r.status]++;
     const stored: StoredActor = { kind: "user", userId: user.userId, name: user.name };
@@ -463,6 +527,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         const created = await tx.bulkUpdateJob.create({
           data: {
             number,
+            kind,
             fileName,
             fileSha256: createHash("sha256").update(file.buffer).digest("hex"),
             fileBytes: file.buffer.length,
@@ -501,7 +566,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
             action: "bulk_update.validate",
             entityType: "bulk_update",
             entityId: created.id,
-            data: { number, fileName, rows: results.length, ignored: parsed.ignored, ready: counts.READY, warnings: counts.WARNING, errors: counts.ERROR, alreadyDone: counts.ALREADY_DONE },
+            data: { number, kind, fileName, rows: results.length, ignored: parsed.ignored, ready: counts.READY, warnings: counts.WARNING, errors: counts.ERROR, alreadyDone: counts.ALREADY_DONE },
           },
           meta,
           tx,
@@ -510,7 +575,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       },
       { timeout: 60_000 },
     );
-    this.logger.log(`Checked ${job.number}: ${results.length} rows in ${Date.now() - started} ms`);
+    this.logger.log(`Checked ${job.number} (${kind}): ${results.length} rows in ${Date.now() - started} ms`);
     return { ...(await this.view(job, parsed.ignoredColumns)), rows: await this.rowsPage(job, { filter: "all", page: 1, pageSize: 50 }) };
   }
 
@@ -535,6 +600,10 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     return {
       id: job.id,
       number: job.number,
+      kind: kindOf(job),
+      /** "New orders bulk update". */
+      kindTitle: KINDS[kindOf(job)].title,
+      page: KINDS[kindOf(job)].page,
       status: job.status,
       fileName: job.fileName,
       createdBy: createdBy?.name ?? (job.actor as StoredActor).name,
@@ -551,7 +620,9 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         notApplied: job.errorRows + job.failedCount,
         skipped: job.alreadyDoneCount + job.skippedRows,
       },
-      columns: BULK_COLUMNS.filter(c => !c.hidden).map(c => ({ key: c.key, header: c.header, editable: c.editable })),
+      columns: columnsOf(kindOf(job))
+        .filter(c => !c.hidden)
+        .map(c => ({ key: c.key, header: c.header, editable: c.editable })),
       ignoredColumns,
       /** Rows that re-price their parcel: how many, the charges before and after, and the difference (null once the rows are purged). */
       pricing,
@@ -581,7 +652,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         rowNumber: r.rowNumber,
         status: r.status,
         action: r.action,
-        actionLabel: r.action ? ACTION_LABEL[r.action as BulkAction] : null,
+        actionLabel: r.action ? (parseChoice(String((r.cells as BulkRowCells).action ?? ""))?.label ?? ACTION_LABEL[r.action as BulkAction]) : null,
         trackingId: r.trackingId,
         cells: r.cells,
         errors: describe(r, (r.errors as Problem[] | null) ?? []),
@@ -601,7 +672,10 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
   async list(actor: Actor, query: z.infer<typeof bulkListQuerySchema>) {
     const user = this.staff(actor);
     const everyone = opsHubScope(actor) === null && !query.mine;
-    const rows = await this.prisma.bulkUpdateJob.findMany({ where: { status: { not: "DISCARDED" }, ...(everyone ? {} : { createdById: user.userId }) }, ...pageArgs(query) });
+    const rows = await this.prisma.bulkUpdateJob.findMany({
+      where: { status: { not: "DISCARDED" }, ...(everyone ? {} : { createdById: user.userId }), ...(query.kind ? { kind: query.kind } : {}) },
+      ...pageArgs(query),
+    });
     const page = toPage(rows, query.limit);
     return { items: await Promise.all(page.items.map(j => this.view(j))), nextCursor: page.nextCursor };
   }
@@ -611,18 +685,20 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     const job = await this.load(actor, id);
     if (job.rowsPurgedAt) throw new AppError("ROWS_PURGED", "The rows of this bulk update are no longer kept", HttpStatus.GONE);
     const rows = await this.prisma.bulkUpdateRow.findMany({ where: { jobId: job.id, status: { in: ["ERROR", "FAILED"] } }, orderBy: { rowNumber: "asc" } });
+    const kind = kindOf(job);
+    const columns = columnsOf(kind);
     const failed = rows.map(r => ({
-      cells: r.cells as BulkCells,
+      cells: { ...(r.cells as BulkCells), template: kind },
       error: `Row ${r.rowNumber}: ${((r.errors as Problem[] | null) ?? []).map(e => `${headerOf(e.column)}: ${e.message}`).join("; ")}`,
     }));
     const base = `${job.number}-not-applied`;
     if (format === "csv") {
-      const csv = writeCsv([[...BULK_COLUMNS.map(c => c.header), "Error"], ...failed.map(f => [...BULK_COLUMNS.map(c => f.cells[c.key] ?? ""), f.error])]);
+      const csv = writeCsv([[...columns.map(c => c.header), "Error"], ...failed.map(f => [...columns.map(c => f.cells[c.key] ?? ""), f.error])]);
       return { buffer: Buffer.from(csv, "utf8"), fileName: `${base}.csv`, contentType: "text/csv; charset=utf-8" };
     }
     const settings = await this.importConfig.settings();
     const limits = this.imports.limitsFor(settings, true);
-    return { buffer: buildBulkWorkbook({ rows: failed, lists: await this.lists(actor), maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, failed: true }), fileName: `${base}.xlsx`, contentType: XLSX };
+    return { buffer: buildBulkWorkbook({ kind, rows: failed, lists: await this.lists(actor), maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, failed: true }), fileName: `${base}.xlsx`, contentType: XLSX };
   }
 
   async discard(actor: Actor, id: string, meta: RequestMeta) {
@@ -638,9 +714,11 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
   // ───────────── apply ─────────────
 
   /** Applies the rows that passed the check: up to 100 during the request, larger files in the background. */
-  async apply(actor: Actor, id: string, meta: RequestMeta) {
+  async apply(actor: Actor, id: string, meta: RequestMeta, pageKind: BulkKind = "all") {
     const job = await this.load(actor, id);
     if (actor.kind === "user" && job.createdById !== actor.userId) throw forbidden("Only the person who uploaded this file can apply it");
+    if (pageKind !== "all" && kindOf(job) !== pageKind)
+      throw new AppError("BULK_KIND_MISMATCH", `${job.number} is a ${KINDS[kindOf(job)].title}. Apply it on the ${KINDS[kindOf(job)].page} page (or All parcels).`, 422, { fileKind: job.kind, pageKind });
     if (job.status !== "VALIDATED") throw new AppError("BULK_UPDATE_SUBMITTED", `Bulk update ${job.number} was already applied`, HttpStatus.CONFLICT, { status: job.status });
     const toApply = job.readyRows + job.warningRows;
     if (!toApply) throw new AppError("NOTHING_TO_APPLY", "No row can be applied. Fix the errors and upload the file again.", 422);

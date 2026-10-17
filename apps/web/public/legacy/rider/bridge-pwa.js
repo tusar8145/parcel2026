@@ -243,8 +243,8 @@
       }
       if (discard) {
         event.stopImmediatePropagation();
-        if (!confirm("Discard this update? It won't be sent to Delivery Fast.")) return;
-        void Off.discard(Number(discard.dataset.dfQueueDiscard)).then(() => DF.riderRefresh?.().catch(() => undefined));
+        const queued = Number(discard.dataset.dfQueueDiscard);
+        void DF.confirm({ title: "Discard this update?", message: "It won't be sent to Delivery Fast.", confirm: "Discard", danger: true }).then(ok => ok && Off.discard(queued).then(() => DF.riderRefresh?.().catch(() => undefined)));
       }
       const syncNow = event.target.closest("[data-df-sync-now]");
       if (syncNow) {
@@ -273,7 +273,14 @@
     event => {
       if (!event.target.closest(".user-profile")) return;
       const pending = sync.items.length;
-      if (pending && !confirm(`${pending} update${pending === 1 ? " hasn't" : "s haven't"} synced yet. Signing out deletes ${pending === 1 ? "it" : "them"} from this phone. Continue?`)) event.stopImmediatePropagation();
+      if (!pending) return;
+      // One dialog instead of the usual "Sign out?" (shared/api.js): warn about the unsynced updates.
+      event.stopImmediatePropagation();
+      void DF.confirm({ title: "Sign out?", message: `${pending} update${pending === 1 ? " hasn't" : "s haven't"} synced yet. Signing out deletes ${pending === 1 ? "it" : "them"} from this phone.`, confirm: "Sign out anyway", danger: true }).then(async ok => {
+        if (!ok) return;
+        await DF.auth.logout();
+        location.href = "/login";
+      });
     },
     true,
   );

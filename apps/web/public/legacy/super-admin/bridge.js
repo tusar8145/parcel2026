@@ -920,8 +920,8 @@
           showToast(`No changes to ${m.name}.`);
           return;
         }
-        if (body.status === "SUSPENDED" && !confirm(`Suspend ${m.name}? Its team can't book pickups until the account is reactivated.`)) return;
-        void busy(document.getElementById("modalSubmit"), async () => {
+        const proceed = body.status === "SUSPENDED" ? DF.confirm({ title: `Suspend ${m.name}?`, message: "Its team can't book pickups until the account is reactivated.", confirm: "Suspend", danger: true }) : Promise.resolve(true);
+        void proceed.then(ok => ok && busy(document.getElementById("modalSubmit"), async () => {
           try {
             await DF.api(`/merchants/${m.id}`, { method: "PATCH", body });
             await load("merchants", "overview", "audit");
@@ -931,7 +931,7 @@
           } catch (error) {
             fail(error);
           }
-        });
+        }));
         return;
       }
 
@@ -980,8 +980,8 @@
       if (reject && !window.DFMerchantAdmin) {
         stop(event);
         const m = byCode(reject.dataset.modalReject);
-        if (!m || !confirm(`Reject ${m.name}'s application? The account will be suspended.`)) return;
-        void busy(reject, async () => {
+        if (!m) return;
+        void DF.confirm({ title: `Reject ${m.name}'s application?`, message: "The account will be suspended.", confirm: "Reject", danger: true }).then(ok => ok && busy(reject, async () => {
           try {
             await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { status: "SUSPENDED" } });
             decided.set(m.id, "Rejected");
@@ -992,7 +992,7 @@
           } catch (error) {
             fail(error);
           }
-        });
+        }));
         return;
       }
       if (event.target.closest?.('[data-toast="Platform dashboard refreshed."]')) {
@@ -1127,7 +1127,10 @@
       console.error("Super admin data could not be loaded", error);
       showToast(DF.describe(error));
     }
-    showPage("Overview");
+    // Links from other panels open a page: /super-admin?page=<menu page name> (e.g. Courier Operations › Settings).
+    const linked = new URLSearchParams(location.search).get("page");
+    const known = linked && [...document.querySelectorAll("#navigation [data-page]")].some(b => b.dataset.page === linked);
+    showPage(known ? linked : "Overview");
   })();
   DF.poll(() => refresh(), 30000);
   // Geography / catalog changes (here or by another admin): the page's district, zone and area lists follow.

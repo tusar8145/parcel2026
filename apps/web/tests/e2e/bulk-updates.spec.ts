@@ -76,9 +76,11 @@ test("filter Pending → download → accept & assign riders in Excel → upload
 
   await signIn(page, ops);
   await opsNav(page, "ecommerce");
-  await expect(page.locator("#courierBulkUpdate")).toBeVisible();
+  // All parcels: the full file with every action.
+  await expect(page.locator("#courierBulkUpdate")).toHaveText("Bulk update All parcels by Excel");
   await page.click("#courierBulkUpdate");
-  await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update by Excel");
+  await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update All parcels by Excel");
+  await expect(page.locator("#dfiKindInfo li")).toHaveCount(10);
   await expect(page.locator("#dfiExport")).toContainText("Max 10,000 parcels per file");
 
   // ── 1. The "Pending operations confirmation" preset, narrowed to this merchant ──
@@ -150,6 +152,7 @@ test("filter Pending → download → accept & assign riders in Excel → upload
   // History lists it with its download.
   await headingAction(page, "#courierBulkHistory");
   await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"]`)).toContainText("Completed");
+  await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"] td[data-col="kind"]`)).toHaveText("All parcels bulk update");
   await page.click('[data-dfi="close"]');
   fs.rmSync(filled, { force: true });
   expect(errors).toEqual([]);
@@ -219,5 +222,132 @@ test("the preview re-prices rows that change the price: before → after per row
   expect(await charge(needs.trackingId)).toBe(after.needs);
   await page.click('[data-dfi="close"]');
   fs.rmSync(filled, { force: true });
+  expect(errors).toEqual([]);
+});
+
+/** Fills in a downloaded bulk file: values per tracking ID; keeps only those rows. */
+function fill(buffer: Buffer, values: Record<string, Record<string, string>>, name: string) {
+  const sheet = readXlsx(buffer, { maxRows: 20_000, prefer: ["Parcels"] });
+  const header = sheet.rows[0];
+  const rows = sheet.rows.slice(1).map(r => header.map((_, i) => r[i] ?? ""));
+  const kept = rows.filter(r => values[r[header.indexOf("Tracking ID")]]);
+  for (const r of kept) for (const [k, v] of Object.entries(values[r[header.indexOf("Tracking ID")]])) r[header.indexOf(k)] = v;
+  expect(kept).toHaveLength(Object.keys(values).length);
+  const file = path.join(os.tmpdir(), `${name}-${fx.stamp}.xlsx`);
+  fs.writeFileSync(file, writeXlsx({ sheets: [{ name: "Parcels", rows: [header, ...kept] }] }));
+  return { file, header };
+}
+
+test("each page has its own bulk file: New orders accepts & assigns, Delivery refuses the New orders file and assigns, Problems resolves; history by page", async ({ page, api }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => {
+    if (message.type() === "error" && !/status of 401|status of 422|Failed to load resource|tile\.openstreetmap/.test(message.text())) errors.push(message.text());
+  });
+  const login = await api.post("/api/v1/auth/login", { data: { identifier: ops.login, password: ops.password } });
+  const headers = { authorization: `Bearer ${(await login.json()).accessToken}` };
+  const book = async (i: string) => {
+    const res = await api.post("/api/v1/ops/parcels", {
+      headers,
+      data: { merchantId: shop.id, recipient: { name: `Kinds E2E ${fx.stamp} ${i}`, phone: "01812000000" }, delivery: { category: "Home", street: "Road 7, Flat 3B", zone: "Dhanmondi", district: "Dhaka Central" }, serviceLevel: "Regular", weightKg: 1, codAmount: 500 },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    return (await res.json()).trackingId as string;
+  };
+  const [hub] = await sql<{ id: string }>(`SELECT id FROM hubs WHERE name = 'Gulshan Sorting Hub'`);
+  const toHub = async (id: string) => {
+    expect((await api.post(`/api/v1/parcels/${id}/assign-pickup`, { headers, data: { riderId: rider.riderId } })).status()).toBe(200);
+    expect((await api.post(`/api/v1/parcels/${id}/status`, { headers, data: { status: "PICKED_UP" } })).status()).toBe(200);
+    expect((await api.post(`/api/v1/parcels/${id}/status`, { headers, data: { status: "AT_HUB", hubId: hub.id } })).status()).toBe(200);
+  };
+  const pending = await book("new");
+  const hubbed = await book("delivery");
+  await toHub(hubbed);
+  const stuck = await book("problem");
+  await toHub(stuck);
+  expect((await api.post(`/api/v1/parcels/${stuck}/status`, { headers, data: { status: "EXCEPTION", note: "Label torn" } })).status()).toBe(200);
+  const statusOf = async (id: string) => (await sql<{ status: string; pickupRiderId: string | null; deliveryRiderId: string | null }>(`SELECT status, "pickupRiderId", "deliveryRiderId" FROM parcels WHERE "trackingId" = $1`, [id]))[0];
+  const riderLabel = `${rider.code} · ${rider.name} · Gulshan Sorting Hub`;
+  const files: string[] = [];
+
+  await signIn(page, ops);
+
+  // ── New orders: only its actions; accept & assign the pickup rider ──
+  await opsNav(page, "newOrders");
+  await expect(page.locator("#stageBulkUpdate")).toHaveText("Bulk update New orders by Excel");
+  await page.click("#stageBulkUpdate");
+  await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update New orders by Excel");
+  await expect(page.locator("#dfiKindInfo")).toContainText("New orders bulk update · what this file can do");
+  await expect(page.locator("#dfiKindInfo li")).toHaveText([/^Accept & assign pickup rider:/, /^Cancel:/, /^Change to drop-off:/, /^Change to rider pickup:/, /^Complete details:/, /^Add note:/]);
+  await page.selectOption("#dfiBMerchant", shop.id);
+  const newFile = await downloaded(page, () => page.click("#dfiBDownload"));
+  expect(newFile.name).toMatch(/^delivery-fast-new-orders-bulk-update-\d{12}\.xlsx$/);
+  const lists = readXlsx(newFile.buffer, { maxRows: 20_000, prefer: ["Lists"] });
+  expect(lists.rows.slice(1).map(r => r[lists.rows[0].indexOf("Actions")]).filter(Boolean)).toEqual(["Accept & assign pickup rider", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note"]);
+  const n = fill(newFile.buffer, { [pending]: { Action: "Accept & assign pickup rider", Rider: riderLabel } }, "kinds-new");
+  files.push(n.file);
+  expect(n.header).not.toContain("New status");
+  await page.setInputFiles("#dfiFile", n.file);
+  await page.click('[data-dfi="check"]');
+  await expect(page.locator('#dfiSummary [data-count="apply"]')).toHaveText("1 will apply");
+  await expect(page.locator("#dfImportSubtitle")).toContainText("New orders bulk update");
+  await page.click('[data-dfi="commit"]');
+  await expect(page.locator("#dfiResultText")).toHaveText("1 row applied, 0 already done (skipped), 0 not applied.");
+  expect(await statusOf(pending)).toMatchObject({ status: "PICKUP_ASSIGNED", pickupRiderId: rider.riderId });
+  await page.click('[data-dfi="close"]');
+
+  // ── Delivery: the New orders file is refused; its own file assigns the delivery rider ──
+  await opsNav(page, "delivery");
+  await expect(page.locator("#stageBulkUpdate")).toHaveText("Bulk update Delivery by Excel");
+  await page.click("#stageBulkUpdate");
+  await expect(page.locator("#dfiKindInfo li")).toHaveText([/^Assign delivery rider:/, /^Complete details:/, /^Add note:/]);
+  await page.setInputFiles("#dfiFile", n.file);
+  await page.click('[data-dfi="check"]');
+  await expect(page.locator("#dfiMessage")).toHaveText("This is the New orders file. Upload it on the New orders page (or All parcels), or download the Delivery file here and fill that in.");
+  await page.selectOption("#dfiBMerchant", shop.id);
+  const deliveryFile = await downloaded(page, () => page.click("#dfiBDownload"));
+  expect(deliveryFile.name).toMatch(/^delivery-fast-delivery-bulk-update-\d{12}\.xlsx$/);
+  const d = fill(deliveryFile.buffer, { [hubbed]: { Action: "Assign delivery rider", Rider: riderLabel } }, "kinds-delivery");
+  files.push(d.file);
+  await page.setInputFiles("#dfiFile", d.file);
+  await page.click('[data-dfi="check"]');
+  await expect(page.locator('#dfiSummary [data-count="apply"]')).toHaveText("1 will apply");
+  await page.click('[data-dfi="commit"]');
+  await expect(page.locator("#dfiResultText")).toHaveText("1 row applied, 0 already done (skipped), 0 not applied.");
+  expect(await statusOf(hubbed)).toMatchObject({ status: "ASSIGNED", deliveryRiderId: rider.riderId });
+  await page.click('[data-dfi="close"]');
+
+  // ── Problems › Exceptions: resolve back to the hub ──
+  await opsNav(page, "exceptions");
+  await expect(page.locator("#stageBulkUpdate")).toHaveText("Bulk update Problems by Excel");
+  await page.click("#stageBulkUpdate");
+  await expect(page.locator("#dfiKindInfo li")).toHaveText([/^Resolve: change status:/, /^Assign delivery rider:/, /^Schedule return:/, /^Complete details:/, /^Add note:/]);
+  await page.selectOption("#dfiBMerchant", shop.id);
+  const problemsFile = await downloaded(page, () => page.click("#dfiBDownload"));
+  const p = fill(problemsFile.buffer, { [stuck]: { Action: "Resolve: change status", "New status": "At hub" } }, "kinds-problems");
+  files.push(p.file);
+  await page.setInputFiles("#dfiFile", p.file);
+  await page.click('[data-dfi="check"]');
+  await expect(page.locator('#dfiSummary [data-count="apply"]')).toHaveText("1 will apply");
+  await page.click('[data-dfi="commit"]');
+  await expect(page.locator("#dfiResultText")).toHaveText("1 row applied, 0 already done (skipped), 0 not applied.");
+  expect((await statusOf(stuck)).status).toBe("AT_HUB");
+  const number = (await page.locator("#dfImportTitle").textContent())!.split(" ")[2];
+
+  // History starts with this page's bulk updates and can show every page's.
+  await page.click('[data-dfi="history"]');
+  await expect(page.locator("#dfiHKind")).toHaveValue("problems");
+  await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"] td[data-col="kind"]`)).toHaveText("Problems bulk update");
+  await expect(page.locator('#dfiHistory tbody tr[data-kind]:not([data-kind="problems"])')).toHaveCount(0);
+  await page.selectOption("#dfiHKind", "new_orders");
+  await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"]`)).toHaveCount(0);
+  await expect(page.locator('#dfiHistory tbody tr[data-kind="new_orders"]').first()).toBeVisible();
+  await page.click('[data-dfi="close"]');
+
+  // Transfers has no bulk file (transfers go through linehaul bags).
+  await opsNav(page, "transfers");
+  await expect(page.locator("#stageBulkUpdate")).toHaveCount(0);
+  for (const f of files) fs.rmSync(f, { force: true });
   expect(errors).toEqual([]);
 });

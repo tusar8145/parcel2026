@@ -64,15 +64,15 @@ test("operations add a hub with its zone from the district's zones and change it
   const page = await panel(browser, ops, "/courier-operation");
   await opsNav(page, "hubsZones");
   const name = `E2E Geo Hub ${stamp}`;
-  await page.selectOption('#hubConfigForm select[name="kind"]', "hub");
-  await page.fill('#hubConfigForm input[name="name"]', name);
-  await page.click('#hubConfigForm button[type="submit"]');
+  // Hub register → Add hub (the register is the one place hubs are added).
+  await page.click("#hubRegister [data-hub-add]");
   await expect(page.locator("#modalTitle")).toHaveText("Add hub");
-  await expect(page.locator("#hubName")).toHaveValue(name);
+  await page.fill("#hubName", name);
   await page.selectOption("#hubDistrict", "Cox's Bazar");
   await expect(page.locator("#hubZone option", { hasText: "Teknaf" })).toHaveCount(1);
   await expect(page.locator("#hubZone option", { hasText: "Gulshan" })).toHaveCount(0);
   await page.fill("#hubAddress", "Teknaf Sadar Road");
+  await page.fill("#hubCode", `CXB-${stamp}`.slice(0, 20));
   await page.click("#modalSubmit");
   await expect(page.locator("#modalBackdrop")).toHaveClass(/open/); // no zone chosen yet
   await page.selectOption("#hubZone", "Teknaf");
@@ -82,8 +82,8 @@ test("operations add a hub with its zone from the district's zones and change it
   hubId = hub.id;
   expect(hub).toMatchObject({ district: "Cox's Bazar", zone: "Teknaf" });
 
-  // Hub settings: the zone choices are the hub's district's zones.
-  await page.click(`[data-hub-capacity="${hub.id}"]`);
+  // Edit: the zone choices are the hub's district's zones.
+  await page.click(`[data-hub-edit="${hub.id}"]`);
   await expect(page.locator("#hubZone")).toHaveValue("Teknaf");
   await page.selectOption("#hubZone", "Ukhiya");
   await page.click("#modalSubmit");

@@ -520,34 +520,6 @@
     document.title = document.title.replace(/Northstar Store|Meridian Bank PLC/g, m.name);
   }
 
-  /** Printed documents and statements carry the real workspace, not the design's sample one. */
-  function brand(html) {
-    const m = S.merchant;
-    if (!m) return html;
-    const replacements = [
-      [/Northstar Store|Meridian Bank PLC/g, esc(m.name)],
-      [/MER-10048|MER-10124/g, esc(m.code)],
-      [/Demo shipment document|Sample document/g, "Shipment document"],
-      [/Payment terms: sample Net 15 days[^<]*/g, "Payment terms: due 15 days from the issue date. Pay by bank transfer quoting the invoice number; payments are recorded by Delivery Fast finance."],
-    ];
-    return replacements.reduce((text, [pattern, value]) => text.replace(pattern, () => value), html);
-  }
-  function withBranding(fn) {
-    const open = window.open;
-    window.open = (...args) => {
-      const popup = open.apply(window, args);
-      if (popup) {
-        const write = popup.document.write.bind(popup.document);
-        popup.document.write = html => write(brand(String(html)));
-      }
-      return popup;
-    };
-    try {
-      return fn();
-    } finally {
-      window.open = open;
-    }
-  }
 
   // ───────────── rendering ─────────────
 
@@ -867,10 +839,10 @@
 
   async function cancelParcel(id) {
     const p = byId(id);
-    const reason = prompt(`Cancel ${id}${p ? ` for ${p.recipient.name}` : ""}? Add a reason (optional):`);
+    const reason = await DF.prompt({ title: `Cancel ${id}?`, message: p ? `The pickup for ${p.recipient.name} won't be collected. This can't be undone.` : "The pickup won't be collected. This can't be undone.", label: "Reason", multiline: true, maxLength: 300, confirm: "Cancel shipment", cancel: "Keep it", danger: true });
     if (reason === null) return;
     try {
-      await DF.api(`/parcels/${encodeURIComponent(id)}/cancel`, { method: "POST", body: { reason: reason.trim() || undefined } });
+      await DF.api(`/parcels/${encodeURIComponent(id)}/cancel`, { method: "POST", body: { reason: reason || undefined } });
       closeDialog();
       await refresh({ force: true });
       showToast(`${id} cancelled. The pickup won't be collected.`);
@@ -1108,35 +1080,17 @@
       merchantId: S.merchant?.id,
       noun: S.cfg.document ? "consignments" : "orders",
       tones: IMPORT_TONES,
-      printLabels: (ids, job) => void printImportLabels(ids, job).catch(error => showToast(DF.describe(error))),
+      printLabels: (ids, job) => void printImportLabels(ids, job),
       onDone: () => refresh({ force: true }).catch(() => undefined),
       ...extra,
     };
   }
 
-  /** Labels of an import's orders, in the page's own label layout (its booking batch when not all are loaded). */
-  async function printImportLabels(ids, job) {
-    const wanted = new Set(ids);
-    let parcels = S.parcels.filter(p => wanted.has(p.trackingId));
-    if (parcels.length < wanted.size && job?.batch?.id) {
-      parcels = [];
-      let cursor = null;
-      do {
-        const page = await DF.api(`/parcels?limit=200&batchId=${job.batch.id}${q("&")}${cursor ? `&cursor=${cursor}` : ""}`);
-        parcels.push(...page.items);
-        cursor = page.nextCursor;
-      } while (cursor && parcels.length < 2000);
-    }
-    if (!parcels.length) return showToast("These orders aren't loaded yet. Refresh the page and try again.");
-    const orders = parcels.map(toOrder);
-    // merchantPrint prints merchantSelectedOrders(): the imported orders for this one print.
-    const selected = window.merchantSelectedOrders;
-    window.merchantSelectedOrders = () => orders;
-    try {
-      withBranding(() => merchantPrint("label"));
-    } finally {
-      window.merchantSelectedOrders = selected;
-    }
+  /** Labels of an import's orders as a PDF in a new tab (its booking batch when it has one). */
+  function printImportLabels(ids, job) {
+    const format = window.DFPrint.labelFormat();
+    if (job?.batch?.id) return window.DFPrint.open(`/documents/labels?batchId=${job.batch.id}&format=${format}`, { title: "Preparing labels…" });
+    return window.DFPrint.labels(ids, format);
   }
 
   /** Orders page: a "Needs info" badge, a Complete button, the status filter option and the import history button. */
@@ -1166,21 +1120,10 @@
   const unbilledParcels = (from, to) =>
     S.parcels.filter(p => p.status === "DELIVERED" && !p.cod && !billedInvoice(p) && (!from || new Date(p.deliveredAt) >= from) && (!to || new Date(p.deliveredAt) < to));
 
-  function printStatement(parcels, title, periodLabel) {
-    const m = S.merchant;
-    const total = parcels.reduce((sum, p) => sum + p.charges.total, 0);
-    const popup = window.open("", "_blank");
-    if (!popup) return showToast("Allow pop-ups to open the statement preview.");
-    const rows = parcels
-      .map(p => {
-        const o = toOrder(p);
-        return `<tr><td>${esc(p.trackingId)}</td><td>${esc(S.cfg.document ? o.documentType : o.product || o.item)}</td>${S.cfg.document ? `<td>${esc(o.branchCode || "—")}</td><td>${esc(o.referenceNo || "—")}</td>` : ""}<td>${esc(p.serviceLevelLabel)}</td><td>${taka(p.charges.base)}</td><td>${taka(p.charges.weight + p.charges.service)}</td><td>−${taka(p.charges.discount)}</td><td>${taka(p.charges.total)}</td><td>${esc(dateOnly(p.deliveredAt))}</td></tr>`;
-      })
-      .join("");
-    popup.document.write(
-      `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} · ${esc(m.name)}</title><style>body{font:13px Arial,sans-serif;color:#182230;margin:30px}h1{font-size:22px;margin:0 0 6px}table{border-collapse:collapse;width:100%;margin-top:18px}th,td{border-bottom:1px solid #dfe4eb;padding:8px;text-align:left}th{background:#f5f7fa;font-size:10px}.total{text-align:right;font-size:16px;font-weight:700;margin-top:16px}.muted{color:#718092;font-size:11px}.note{border-top:1px solid #dfe4eb;color:#647184;font-size:11px;margin-top:26px;padding-top:10px}</style></head><body><h1>${esc(m.name)} · ${esc(title)}</h1><div class="muted">${esc(m.code)} · ${esc(periodLabel)} · ${parcels.length} delivered ${S.cfg.document ? "consignment" : "parcel"}(s) · Prepared ${esc(new Date().toLocaleString())}</div><table><thead><tr><th>Tracking ID</th><th>${S.cfg.document ? "Document type" : "Product"}</th>${S.cfg.document ? "<th>Origin branch</th><th>Reference</th>" : ""}<th>Service</th><th>Base</th><th>Weight / service</th><th>Plan discount</th><th>Delivery total</th><th>Delivered</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Charges not yet invoiced: ${taka(total)}</div><div class="note">Pro-forma statement prepared from your delivery records. Delivery Fast finance issues the tax invoice for each closed month (due 15 days after issue). Charges for cash-on-delivery parcels are deducted from your COD settlement instead.</div><script>window.onload=()=>window.print()<\/script></body></html>`,
-    );
-    popup.document.close();
+  /** Pro-forma statement of delivered prepaid parcels not yet invoiced, as a PDF in a new tab. */
+  function printStatement(params) {
+    const query = new URLSearchParams(Object.entries(params).filter(([, v]) => v));
+    return window.DFPrint.open(`/documents/statement${query.size ? `?${query}` : ""}`, { title: "Preparing the statement…" });
   }
 
   async function billWithLines(bill) {
@@ -1510,20 +1453,20 @@
     if (hit(".user-profile")) {
       stop(event);
       const user = DF.auth.user;
-      if (user && confirm(`Sign out ${user.name}?`)) void DF.auth.logout().then(() => (location.href = "/#/login"));
+      if (user) void DF.confirm({ title: "Sign out?", message: `Sign out ${user.name} on this device?`, confirm: "Sign out" }).then(ok => ok && DF.auth.logout().then(() => (location.href = "/#/login")));
       return;
     }
     if (hit(".workspace-switch")) {
       stop(event);
       if (S.workspaces.length < 2) return showToast(S.merchant ? `You're viewing the ${S.merchant.name} workspace (${S.merchant.code}).` : "This account isn't a member of a merchant workspace.");
-      const list = S.workspaces.map((w, i) => `${i + 1}. ${w.name} (${w.code})`).join("\n");
-      const answer = prompt(`Switch workspace:\n${list}`, String(S.workspaces.findIndex(w => w.id === S.merchant?.id) + 1));
-      const chosen = S.workspaces[Number(answer) - 1];
-      if (!chosen || chosen.id === S.merchant?.id) return;
-      try {
-        sessionStorage.setItem("deliveryfast-merchant-workspace", chosen.id);
-      } catch {}
-      location.href = chosen.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant";
+      void DF.choose({ title: "Switch workspace", label: "Workspace", value: S.merchant?.id, confirm: "Switch", options: S.workspaces.map(w => ({ value: w.id, label: `${w.name} (${w.code})` })) }).then(id => {
+        const chosen = S.workspaces.find(w => w.id === id);
+        if (!chosen || chosen.id === S.merchant?.id) return;
+        try {
+          sessionStorage.setItem("deliveryfast-merchant-workspace", chosen.id);
+        } catch {}
+        location.href = chosen.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant";
+      });
       return;
     }
     if (hit("#notificationButton")) {
@@ -1545,8 +1488,8 @@
       if (!isOwner()) return showToast("Billing is visible to workspace owners.");
       const parcels = unbilledParcels().filter(p => p.type !== "DOCUMENT");
       if (!parcels.length) return showToast("No delivered prepaid parcels are waiting to be invoiced.");
-      withBranding(() => printStatement(parcels, "Delivery charges statement", "Not yet invoiced"));
-      return showToast(`Statement prepared for ${parcels.length} delivered parcel(s). Delivery Fast issues the invoice monthly.`);
+      void printStatement({ line: "ecommerce" });
+      return;
     }
     if (hit("#generateDocumentBill")) {
       stop(event);
@@ -1554,21 +1497,21 @@
       const month = billingMonths().find(m => m.value === $("documentBillingPeriod")?.value) || billingMonths()[0];
       const parcels = unbilledParcels(month.start, month.end);
       if (!parcels.length) return showToast(`No delivered, unbilled consignments in ${month.label.replace(" · current period", "")}.`);
-      withBranding(() => printStatement(parcels, "Unbilled delivery charges", month.label.replace(" · current period", "")));
-      return showToast(`Statement prepared for ${parcels.length} consignment(s). The invoice is issued after the month closes.`);
+      const last = new Date(month.end.getTime() - 86_400_000);
+      const day = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      void printStatement({ from: day(month.start), to: day(last) });
+      return;
     }
     if ((el = hit("[data-bill-view], [data-bill-download]"))) {
       stop(event);
       const id = el.dataset.billView || el.dataset.billDownload;
       const bill = documentBills.find(b => b.id === id);
       if (!bill) return;
+      if (el.dataset.billView) return void window.DFPrint.open(`/documents/finance-invoice/${bill._id}`, { title: "Preparing the invoice…" });
       void billWithLines(bill)
         .then(full => {
-          if (el.dataset.billView) withBranding(() => documentBillPrint(full));
-          else {
-            csvDownload(`${full.id}.csv`, documentBillCsv(full));
-            showToast(`${full.id} downloaded as CSV.`);
-          }
+          csvDownload(`${full.id}.csv`, documentBillCsv(full));
+          showToast(`${full.id} downloaded as CSV.`);
         })
         .catch(error => showToast(DF.describe(error)));
       return;
@@ -1606,17 +1549,11 @@
     if (hit("#merchantPrint")) {
       stop(event);
       const format = $("merchantPrintFormat").value;
-      if (format === "shipments" && typeof merchantPrintShipmentList === "function") return withBranding(() => merchantPrintShipmentList());
+      if (format === "shipments") return void merchantPrintShipmentList();
       // Print what the filters and selection show, not every order.
-      const selected = merchantSelectedOrders();
-      if (!selected.length) return showToast("No filtered or selected orders are available to print.");
-      const all = sampleOrders.splice(0, sampleOrders.length, ...selected);
-      try {
-        withBranding(() => merchantPrint(format));
-      } finally {
-        sampleOrders.splice(0, sampleOrders.length, ...all);
-      }
-      return;
+      const ids = merchantSelectedOrders().map(order => order.id);
+      if (!ids.length) return showToast("No filtered or selected orders are available to print.");
+      return void window.DFPrint.format(format, ids, { title: S.cfg.document ? "Consignment list" : "Order list" });
     }
     if ((el = hit("#exportButton")) && ["Pickup requests", "Customers", "Products", "Payments", "Settings"].includes(S.page)) {
       stop(event);
@@ -1642,8 +1579,8 @@
     if ((el = hit("[data-df-revoke]"))) {
       stop(event);
       const key = (S.keys || []).find(k => k.id === el.dataset.dfRevoke);
-      if (!confirm(`Revoke the API key “${key?.name}”? Integrations using it stop working immediately.`)) return;
-      return void integrationAction(() => DF.api(`/merchants/me/api-keys/${el.dataset.dfRevoke}${q()}`, { method: "DELETE" }), `API key “${key?.name}” revoked.`);
+      const keyId = el.dataset.dfRevoke;
+      return void DF.confirm({ title: `Revoke “${key?.name}”?`, message: "Integrations using this API key stop working immediately.", confirm: "Revoke key", danger: true }).then(ok => ok && integrationAction(() => DF.api(`/merchants/me/api-keys/${keyId}${q()}`, { method: "DELETE" }), `API key “${key?.name}” revoked.`));
     }
     if ((el = hit("[data-df-hook-test]"))) {
       stop(event);
@@ -1655,12 +1592,16 @@
     }
     if ((el = hit("[data-df-hook-rotate]"))) {
       stop(event);
-      if (!confirm("Rotate the signing secret? Deliveries are signed with the new secret right away.")) return;
-      return void integrationAction(async () => {
-        const result = await DF.api(`/merchants/me/webhooks/${el.dataset.dfHookRotate}/rotate-secret${q()}`, { method: "POST" });
-        S.revealed = { kind: "webhook", label: "New signing secret", value: result.secret, message: result.message };
-        return result;
-      }, "Signing secret rotated.");
+      const hookId = el.dataset.dfHookRotate;
+      return void DF.confirm({ title: "Rotate the signing secret?", message: "Deliveries are signed with the new secret right away; update your server first.", confirm: "Rotate secret", danger: true }).then(
+        ok =>
+          ok &&
+          integrationAction(async () => {
+            const result = await DF.api(`/merchants/me/webhooks/${hookId}/rotate-secret${q()}`, { method: "POST" });
+            S.revealed = { kind: "webhook", label: "New signing secret", value: result.secret, message: result.message };
+            return result;
+          }, "Signing secret rotated."),
+      );
     }
     if ((el = hit("[data-df-hook-toggle]"))) {
       stop(event);
@@ -1669,8 +1610,8 @@
     }
     if ((el = hit("[data-df-hook-delete]"))) {
       stop(event);
-      if (!confirm("Remove this webhook endpoint? Pending deliveries to it are dropped.")) return;
-      return void integrationAction(() => DF.api(`/merchants/me/webhooks/${el.dataset.dfHookDelete}${q()}`, { method: "DELETE" }), "Webhook removed.");
+      const hookId = el.dataset.dfHookDelete;
+      return void DF.confirm({ title: "Remove this webhook endpoint?", message: "Pending deliveries to it are dropped.", confirm: "Remove webhook", danger: true }).then(ok => ok && integrationAction(() => DF.api(`/merchants/me/webhooks/${hookId}${q()}`, { method: "DELETE" }), "Webhook removed."));
     }
     // Settings dialogs
     if (hit("[data-df-close]")) {
@@ -1679,8 +1620,7 @@
     }
     if (hit("[data-df-remove-payout]")) {
       stop(event);
-      if (!confirm("Remove the payout account? COD settlements can't be paid until you add one.")) return;
-      return void DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { payoutAccount: null } })
+      return void DF.confirm({ title: "Remove the payout account?", message: "COD settlements can't be paid until you add one.", confirm: "Remove account", danger: true }).then(ok => ok && DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { payoutAccount: null } })
         .then(async merchant => {
           S.merchant = merchant;
           closeDialog();
@@ -1688,13 +1628,13 @@
           renderPage(S.page);
           showToast("Payout account removed.");
         })
-        .catch(error => showToast(DF.describe(error)));
+        .catch(error => showToast(DF.describe(error))));
     }
     if ((el = hit("[data-df-member-remove]"))) {
       stop(event);
       const member = (S.members || []).find(x => x.id === el.dataset.dfMemberRemove);
-      if (!confirm(`Remove ${member?.name} from ${S.merchant.name}? They're signed out right away.`)) return;
-      return void DF.api(`/merchants/me/members/${el.dataset.dfMemberRemove}${q()}`, { method: "DELETE" })
+      const memberId = el.dataset.dfMemberRemove;
+      return void DF.confirm({ title: `Remove ${member?.name}?`, message: `They lose access to ${S.merchant.name} and are signed out right away.`, confirm: "Remove member", danger: true }).then(ok => ok && DF.api(`/merchants/me/members/${memberId}${q()}`, { method: "DELETE" })
         .then(async () => {
           await loadIntegrations();
           applyData();
@@ -1702,7 +1642,7 @@
           if (S.page === "Settings") renderPage("Settings");
           showToast(`${member?.name} was removed.`);
         })
-        .catch(error => showToast(DF.describe(error)));
+        .catch(error => showToast(DF.describe(error))));
     }
   }
 

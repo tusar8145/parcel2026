@@ -8,5 +8,6 @@ import { ReturnsService } from "./returns.service";
   imports: [ParcelsModule],
   controllers: [ReturnsController],
   providers: [ReturnsService],
+  exports: [ReturnsService],
 })
 export class ReturnsModule {}

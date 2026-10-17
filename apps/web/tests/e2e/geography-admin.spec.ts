@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, opsNav, sql, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
 
 // Geography admin (super admin → Shared catalogs & locations) and the hub register (Courier
 // Operations → Hubs & zones). Everything is created with unique names by temporary accounts and
@@ -135,6 +135,7 @@ test("super admin: districts → zones → areas: add, bulk add, rename, deactiv
   await expect(toast(page)).toContainText(`Bazar ${stamp} renamed to Bazar Road ${stamp}`);
   await expect(row(page, "area", `Bazar Road ${stamp}`)).toBeVisible();
   await row(page, "area", `South Para ${stamp}`).locator("[data-geo-toggle]").click();
+  await confirmDialog(page, { title: `Deactivate South Para ${stamp}?` });
   await expect(toast(page)).toContainText(`South Para ${stamp} deactivated.`);
   await expect(row(page, "area", `South Para ${stamp}`)).toContainText("Inactive");
   // The public catalog (booking forms) no longer offers it.
@@ -166,9 +167,11 @@ test("super admin: districts → zones → areas: add, bulk add, rename, deactiv
   // Unused again → the zone (with its areas) and then the district are deleted.
   await sql(`DELETE FROM addresses WHERE "userId" = $1`, [customer.id]);
   await row(page, "zone", ZONE).locator("[data-geo-delete]").click();
+  await confirmDialog(page, { title: new RegExp(`^Delete ${ZONE}`) });
   await expect(toast(page)).toContainText(`${ZONE} deleted.`);
   await expect(row(page, "zone", ZONE)).toHaveCount(0);
   await row(page, "district", DISTRICT).locator("[data-geo-delete]").click();
+  await confirmDialog(page, { title: new RegExp(`^Delete ${DISTRICT}`) });
   await expect(toast(page)).toContainText(`${DISTRICT} deleted.`);
   await expect(row(page, "district", DISTRICT)).toHaveCount(0);
   const actions = await sql<{ action: string }>(`SELECT action FROM audit_logs WHERE "actorId" = $1 ORDER BY "createdAt"`, [admin.id]);
@@ -208,6 +211,7 @@ test("operations: hub register: add, edit, deactivate, delete only when unused",
   await expect(page.locator("#toast")).toContainText(`${HUB} saved.`);
   await expect(hubRow).toContainText("250");
   await hubRow.locator("[data-hub-toggle]").click();
+  await confirmDialog(page, { title: `Deactivate ${HUB}?` });
   await expect(page.locator("#toast")).toContainText(`${HUB} deactivated.`);
   await expect(hubRow).toContainText("Inactive");
   const [stored] = await sql<{ id: string; active: boolean; capacity: number }>(`SELECT id, active, capacity FROM hubs WHERE name = $1`, [HUB]);
@@ -221,6 +225,7 @@ test("operations: hub register: add, edit, deactivate, delete only when unused",
   await page.click("#modalCancel");
   await sql(`UPDATE riders SET "hubId" = NULL WHERE id = $1`, [rider.riderId]);
   await hubRow.locator("[data-hub-delete]").click();
+  await confirmDialog(page, { title: new RegExp(`^Delete ${HUB}`) });
   await expect(page.locator("#toast")).toContainText(`${HUB} deleted.`);
   await expect(register.locator("tr", { hasText: HUB })).toHaveCount(0);
   expect(await sql(`SELECT 1 FROM hubs WHERE id = $1`, [stored.id])).toHaveLength(0);

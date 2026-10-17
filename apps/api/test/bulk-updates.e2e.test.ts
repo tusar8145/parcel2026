@@ -81,9 +81,9 @@ describe("bulk updates", () => {
     ]);
     return { payload, headers: { "content-type": `multipart/form-data; boundary=${boundary}` } };
   }
-  async function upload(token: string, data: Buffer, name = "bulk.xlsx") {
+  async function upload(token: string, data: Buffer, name = "bulk.xlsx", kind?: string) {
     const body = multipart({ name, data });
-    const res = await ctx.app.inject({ method: "POST", url: "/api/v1/bulk-updates/validate", payload: body.payload, headers: { ...body.headers, authorization: `Bearer ${token}` } });
+    const res = await ctx.app.inject({ method: "POST", url: `/api/v1/bulk-updates/validate${kind ? `?kind=${kind}` : ""}`, payload: body.payload, headers: { ...body.headers, authorization: `Bearer ${token}` } });
     return { status: res.statusCode, body: JSON.parse(res.body) };
   }
 
@@ -155,7 +155,9 @@ describe("bulk updates", () => {
       expect(sheet).toMatch(/<sheetProtection sheet="1"[^>]*sort="0" autoFilter="0"/);
       expect(sheet).not.toMatch(/password/i);
       expect(sheet).toMatch(/<col min="38" max="38" width="8" customWidth="1" style="8" hidden="1"\/>/);
-      expect(sheet).toContain('<autoFilter ref="A1:AL3"/>');
+      // The hidden template column (the page the file is for) follows.
+      expect(sheet).toMatch(/<col min="39" max="39" width="12" customWidth="1" style="8" hidden="1"\/>/);
+      expect(sheet).toContain('<autoFilter ref="A1:AM3"/>');
       // Read-only cells are grey and locked (style 8); action cells unlocked (10).
       expect(sheet).toContain(`<c r="A2" s="8" t="inlineStr"><is><t>${x.rows[0][0]}</t></is></c>`);
       expect(sheet).toMatch(/<col min="4" max="4" width="28" customWidth="1" style="10"\/>/);
@@ -540,6 +542,265 @@ describe("bulk updates", () => {
       expect(Number((await parcel(toDropOff)).totalCharge)).toBe(before - 20);
       expect(Number((await parcel(reweighed)).totalCharge)).toBe(reweigh.after);
       expect(applied.body.pricing).toEqual(checked.body.pricing);
+    });
+  });
+
+  describe("page templates (kinds)", () => {
+    const listOf = (buffer: Buffer, title: string) => {
+      const lists = readXlsx(buffer, { maxRows: 10_000, prefer: ["Lists"] });
+      return lists.rows.slice(1).map(r => r[lists.rows[0].indexOf(title)]).filter(Boolean);
+    };
+    const helpOf = (buffer: Buffer) => readXlsx(buffer, { maxRows: 10_000, prefer: ["Instructions"] }).rows;
+
+    it("each page downloads its own parcels with only its actions and columns, and its own title and instructions", async () => {
+      const s = await setup();
+      const pending = await book(s);
+      const dropOff = await book(s, { intake: "DROP_OFF", dropOffHubId: s.gulshan.id });
+      const assigned = await book(s);
+      await ctx.api("POST", `/parcels/${assigned}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      const hubbed = await atHub(s);
+      const exception = await atHub(s);
+      expect((await status(s.ops.token, exception, { status: "EXCEPTION", note: "Damaged box" })).status).toBe(200);
+
+      // The pages the caller can use, with what each can do.
+      const kinds = await ctx.api("GET", "/bulk-updates/kinds", { token: s.ops.token });
+      expect(kinds.status).toBe(200);
+      expect(kinds.body.map((k: { kind: string }) => k.kind)).toEqual(["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "all"]);
+      const newOrders = kinds.body[0];
+      expect(newOrders).toMatchObject({ page: "New orders", title: "New orders bulk update" });
+      expect(newOrders.actions[0]).toMatchObject({ label: "Accept & assign pickup rider", needs: "Rider (empty = the Suggested rider)" });
+
+      const expected: Record<string, { title: string; actions: string[]; header: string[]; ids: string[] }> = {
+        new_orders: {
+          title: "New orders bulk update",
+          actions: ["Accept & assign pickup rider", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note"],
+          header: [
+            "Tracking ID", "Current status", "Suggested rider", "Action", "Rider", "Hub", "Reason / note", "Priority",
+            "CN", "Merchant", "Pickup address", "Recipient name", "Recipient phone", "Recipient address", "District", "Zone", "Intake", "Drop-off hub", "COD (৳)", "Weight (kg)", "Service", "Created", "SLA due", "SLA state", "Missing fields",
+            "Set recipient name", "Set recipient phone", "Set address", "Set district", "Set zone", "Set area", "Set weight (kg)", "Set service", "version", "template",
+          ],
+          ids: [pending, dropOff],
+        },
+        pickup: {
+          title: "Pickup bulk update",
+          actions: ["Assign / reassign pickup rider", "Mark picked up", "Cancel", "Add note"],
+          header: ["Tracking ID", "Current status", "Action", "Rider", "Hub", "Reason / note", "Priority", "Pickup rider", "CN", "Merchant", "Pickup address", "Intake", "District", "Zone", "COD (৳)", "Weight (kg)", "Created", "SLA due", "SLA state", "version", "template"],
+          ids: [assigned],
+        },
+        hub_desk: {
+          title: "Hub desk bulk update",
+          actions: ["Receive at hub", "Mark exception", "Add note"],
+          header: ["Tracking ID", "Current status", "Action", "Hub", "Reason / note", "Priority", "Intake", "Drop-off hub", "Current hub", "Pickup rider", "CN", "Merchant", "Recipient name", "District", "Zone", "COD (৳)", "Weight (kg)", "Service", "Created", "SLA state", "version", "template"],
+          ids: [dropOff, hubbed],
+        },
+        delivery: {
+          title: "Delivery bulk update",
+          actions: ["Assign delivery rider", "Complete details", "Add note"],
+          header: [
+            "Tracking ID", "Current status", "Suggested rider", "Action", "Rider", "Hub", "Reason / note", "Priority",
+            "Current hub", "Delivery rider", "CN", "Merchant", "Recipient name", "Recipient phone", "Recipient address", "District", "Zone", "COD (৳)", "Weight (kg)", "Service", "SLA due", "SLA state", "Missing fields",
+            "Set recipient name", "Set recipient phone", "Set address", "Set district", "Set zone", "Set area", "Set weight (kg)", "Set service", "version", "template",
+          ],
+          ids: [hubbed],
+        },
+        problems: {
+          title: "Problems bulk update",
+          actions: ["Resolve: change status", "Assign delivery rider", "Schedule return", "Complete details", "Add note"],
+          header: [
+            "Tracking ID", "Current status", "Suggested rider", "Action", "Rider", "New status", "Hub", "Reason / note", "Priority",
+            "Current hub", "Pickup rider", "Delivery rider", "CN", "Merchant", "Recipient name", "Recipient phone", "Recipient address", "District", "Zone", "COD (৳)", "Weight (kg)", "Service", "Created", "SLA due", "SLA state", "Missing fields",
+            "Set recipient name", "Set recipient phone", "Set address", "Set district", "Set zone", "Set area", "Set weight (kg)", "Set service", "version", "template",
+          ],
+          ids: [exception],
+        },
+        returns: {
+          title: "Returns bulk update",
+          actions: ["Schedule return", "Add note"],
+          header: ["Tracking ID", "Current status", "Action", "Reason / note", "Priority", "Current hub", "Delivery rider", "CN", "Merchant", "Pickup address", "Recipient name", "District", "Zone", "COD (৳)", "Created", "SLA state", "version", "template"],
+          ids: [exception],
+        },
+      };
+      for (const [kind, want] of Object.entries(expected)) {
+        const x = await exported(s.ops.token, `?kind=${kind}`);
+        expect(x.header, kind).toEqual(want.header);
+        expect(x.ids.sort(), kind).toEqual(want.ids.sort());
+        expect(x.rows.every(r => r[x.col("template")] === kind), kind).toBe(true);
+        expect(String(x.res.headers["content-disposition"])).toMatch(new RegExp(`delivery-fast-${kind.replace("_", "-")}-bulk-update-\\d{12}\\.xlsx`));
+        expect(listOf(x.res.buffer, "Actions"), kind).toEqual(want.actions);
+        // The kinds endpoint describes the same template.
+        const def = kinds.body.find((k: { kind: string }) => k.kind === kind);
+        expect(def.actions.map((a: { label: string }) => a.label)).toEqual(want.actions);
+        expect(def.columns.map((c: { header: string }) => c.header)).toEqual(want.header.filter(h => h !== "version" && h !== "template"));
+        const help = helpOf(x.res.buffer);
+        expect(help[0][0], kind).toBe(`Delivery Fast · ${want.title}`);
+        const text = help.map(r => r.join(" | ")).join("\n");
+        expect(text).toContain(`This is the ${def.page} template`);
+        // Only this page's actions are explained.
+        const actionRows = help.filter(r => r[0] && r[1] && r[2] && !["Action", "Column"].includes(r[0]) && !want.header.includes(r[0]));
+        expect(actionRows.map(r => r[0]), kind).toEqual(want.actions);
+        const files = readZip(x.res.buffer, { maxBytes: 50_000_000 });
+        const sheet = files.get("xl/worksheets/sheet1.xml")!.toString();
+        expect(sheet).not.toContain("IFERROR");
+        // Rider follows the Hub column; Set zone follows Set district (IF / INDIRECT).
+        const letter = (h: string) => String.fromCharCode(65 + want.header.indexOf(h));
+        if (want.header.includes("Rider")) expect(sheet, kind).toContain(`IF($${letter("Hub")}2=&quot;&quot;,L_riders,INDIRECT(&quot;RD_&quot;&amp;MATCH($${letter("Hub")}2,L_hubs,0)))`);
+        if (want.header.includes("Set zone")) {
+          const i = want.header.indexOf("Set district");
+          const col = i < 26 ? String.fromCharCode(65 + i) : `A${String.fromCharCode(65 + i - 26)}`;
+          expect(sheet, kind).toContain(`IF($${col}2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($${col}2,L_districts,0)))`);
+        }
+      }
+      // Problems: Resolve offers only the statuses that resolve a problem.
+      const problems = await exported(s.ops.token, "?kind=problems");
+      expect(listOf(problems.res.buffer, "New status")).toEqual(["At hub", "Out for delivery", "Retry scheduled", "Exception"]);
+      // All parcels: every action, as before.
+      const all = await exported(s.ops.token);
+      expect(listOf(all.res.buffer, "Actions")).toHaveLength(10);
+      expect(helpOf(all.res.buffer)[0][0]).toBe("Delivery Fast · All parcels bulk update");
+      expect(all.rows.every(r => r[all.col("template")] === "all")).toBe(true);
+      expect((await download(s.ops.token, "/bulk-updates/export?kind=nope")).status).toBe(422);
+    });
+
+    it("refuses another page's file, accepts any file on All parcels, keeps the kind in history and checks each page's actions", async () => {
+      const s = await setup();
+      const a = await book(s);
+      const b = await book(s);
+      const x = await exported(s.ops.token, "?kind=new_orders");
+      x.set(a, { Action: "Accept & assign pickup rider", Rider: "R-4048" });
+      const file = x.file([a]);
+
+      // Uploaded on Delivery: refused with what to do.
+      const wrong = await upload(s.ops.token, file, "new.xlsx", "delivery");
+      expect(wrong.status).toBe(422);
+      expect(wrong.body.error).toMatchObject({ code: "BULK_KIND_MISMATCH", details: { fileKind: "new_orders", pageKind: "delivery" } });
+      expect(wrong.body.error.message).toBe("This is the New orders file. Upload it on the New orders page (or All parcels), or download the Delivery file here and fill that in.");
+      // The All parcels file on a stage page: refused too.
+      const generic = await exported(s.ops.token);
+      generic.set(a, { Action: "Add note", "Reason / note": "x" });
+      const refused = await upload(s.ops.token, generic.file([a]), "all.xlsx", "new_orders");
+      expect(refused.body.error.code).toBe("BULK_KIND_MISMATCH");
+      expect(refused.body.error.message).toContain("This is the All parcels file");
+      // Mixed templates in one file: refused.
+      const pickupFile = await exported(s.ops.token, "?kind=pickup");
+      const mixed = writeXlsx({ sheets: [{ name: "Parcels", rows: [x.header, x.row(a), [...x.row(b)].map((v, i) => (x.header[i] === "template" ? "pickup" : v))] }] });
+      expect((await upload(s.ops.token, mixed, "mixed.xlsx")).body.error.code).toBe("BULK_KIND_MIXED");
+      expect(pickupFile.ids).toEqual([]);
+
+      // On its own page (multipart field kind) and on All parcels: accepted, stored with its kind.
+      const body = multipart({ name: "new.xlsx", data: file });
+      const own = await ctx.app.inject({
+        method: "POST",
+        url: "/api/v1/bulk-updates/validate",
+        payload: Buffer.concat([Buffer.from(`--${body.headers["content-type"].split("boundary=")[1]}\r\nContent-Disposition: form-data; name="kind"\r\n\r\nnew_orders\r\n`), body.payload]),
+        headers: { ...body.headers, authorization: `Bearer ${s.ops.token}` },
+      });
+      expect(own.statusCode, own.body).toBe(201);
+      const ownJob = JSON.parse(own.body);
+      expect(ownJob).toMatchObject({ kind: "new_orders", kindTitle: "New orders bulk update", page: "New orders", counts: { toApply: 1 } });
+      expect(ownJob.columns.map((c: { key: string }) => c.key)).not.toContain("new_status");
+      await ctx.api("DELETE", `/bulk-updates/${ownJob.id}`, { token: s.ops.token });
+      const onAll = await upload(s.ops.token, file, "new.xlsx", "all");
+      expect(onAll.status).toBe(201);
+      expect(onAll.body).toMatchObject({ kind: "new_orders", counts: { toApply: 1 } });
+      // Applying it as another page is refused; on All parcels it applies.
+      expect((await ctx.api("POST", `/bulk-updates/${onAll.body.id}/apply?kind=delivery`, { token: s.ops.token })).body.error.code).toBe("BULK_KIND_MISMATCH");
+      const applied = await ctx.api("POST", `/bulk-updates/${onAll.body.id}/apply?kind=all`, { token: s.ops.token });
+      expect(applied.body).toMatchObject({ status: "COMPLETED", result: { applied: 1 } });
+      expect(await ctx.prisma.auditLog.findFirst({ where: { action: "bulk_update.validate", entityId: onAll.body.id } })).toMatchObject({ data: { kind: "new_orders" } });
+
+      // History: filtered by page, with the page's title.
+      const generalJob = await upload(s.ops.token, generic.file([a]), "all.xlsx");
+      const history = await ctx.api("GET", "/bulk-updates?kind=new_orders", { token: s.ops.token });
+      expect(history.body.items.map((j: { number: string }) => j.number)).toEqual([onAll.body.number]);
+      expect(history.body.items[0]).toMatchObject({ kind: "new_orders", kindTitle: "New orders bulk update" });
+      expect((await ctx.api("GET", "/bulk-updates?kind=all", { token: s.ops.token })).body.items.map((j: { number: string }) => j.number)).toEqual([generalJob.body.number]);
+      expect((await ctx.api("GET", "/bulk-updates", { token: s.ops.token })).body.items).toHaveLength(2);
+
+      // An action of another page typed into a page's file: that row is refused (the file is fine on All parcels).
+      const y = await exported(s.ops.token, "?kind=new_orders");
+      y.set(b, { Action: "Assign delivery rider", Rider: "R-4048" });
+      const typed = await upload(s.ops.token, y.file([b]), "typed.xlsx", "new_orders");
+      const row = (await allRows(s.ops.token, typed.body.id)).items[0];
+      expect(row.errors[0]).toMatchObject({ column: "action", message: '"Assign delivery rider" isn\'t an action of the New orders page: choose one from the list (or upload the file on All parcels)' });
+      const typedOnAll = await upload(s.ops.token, y.file([b]), "typed.xlsx", "all");
+      expect((await allRows(s.ops.token, typedOnAll.body.id)).items[0].errors[0].message).toContain("can't be assigned for delivery");
+
+      // The failed rows come back in the page's own format.
+      const dl = await download(s.ops.token, `/bulk-updates/${typed.body.id}/failed-rows`);
+      const back = readXlsx(dl.buffer, { maxRows: 100, prefer: ["Parcels"] });
+      expect(back.rows[0]).toEqual([...x.header, "Error"]);
+      expect(back.rows[1][x.col("template")]).toBe("new_orders");
+      expect(helpOf(dl.buffer)[0][0]).toBe("Delivery Fast · New orders bulk update");
+    });
+
+    it("applies each page's actions through the same services", async () => {
+      const s = await setup();
+      const pending = await book(s);
+      const assigned = await book(s);
+      await ctx.api("POST", `/parcels/${assigned}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      const pickedUp = await book(s);
+      await ctx.api("POST", `/parcels/${pickedUp}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      await status(s.ops.token, pickedUp, { status: "PICKED_UP" });
+      const hubbed = await atHub(s);
+      const stuck = await atHub(s);
+      await status(s.ops.token, stuck, { status: "EXCEPTION", note: "Label torn" });
+      const refused = await atHub(s);
+      await status(s.ops.token, refused, { status: "EXCEPTION", note: "Recipient refused" });
+      const run = async (kind: string, fill: (x: Awaited<ReturnType<typeof exported>>) => string[]) => {
+        const x = await exported(s.ops.token, `?kind=${kind}`);
+        const ids = fill(x);
+        const checked = await upload(s.ops.token, x.file(ids), `${kind}.xlsx`, kind);
+        expect(checked.status, JSON.stringify(checked.body)).toBe(201);
+        return checked.body;
+      };
+      const applyAll = async (job: { id: string }, kind: string) => (await ctx.api("POST", `/bulk-updates/${job.id}/apply?kind=${kind}`, { token: s.ops.token })).body;
+
+      // New orders: accept & assign the pickup rider (the suggestion).
+      const n = await run("new_orders", x => (x.set(pending, { Action: "Accept & assign pickup rider" }), [pending]));
+      expect(n.counts).toMatchObject({ toApply: 1, errors: 0 });
+      expect((await applyAll(n, "new_orders")).result).toMatchObject({ applied: 1 });
+      expect(await parcel(pending)).toMatchObject({ status: "PICKUP_ASSIGNED", pickupRiderId: s.rider.rider.id });
+
+      // Pickup: mark picked up (Change status → Picked up, by the lifecycle).
+      const p = await run("pickup", x => (x.set(assigned, { Action: "Mark picked up" }), [assigned]));
+      expect((await applyAll(p, "pickup")).result).toMatchObject({ applied: 1 });
+      expect(await parcel(assigned)).toMatchObject({ status: "PICKED_UP" });
+
+      // Hub desk: receive; "Mark exception" needs a reason.
+      const h = await run("hub_desk", x => {
+        x.set(pickedUp, { Action: "Receive at hub", Hub: s.gulshan.name });
+        x.set(hubbed, { Action: "Mark exception" });
+        return [pickedUp, hubbed];
+      });
+      const hubRows = await allRows(s.ops.token, h.id);
+      expect(hubRows.items.find((r: { trackingId: string }) => r.trackingId === hubbed).errors[0]).toMatchObject({ column: "note", message: 'Give the reason for "Mark exception"' });
+      expect((await applyAll(h, "hub_desk")).result).toMatchObject({ applied: 1, notApplied: 1 });
+      expect(await parcel(pickedUp)).toMatchObject({ status: "AT_HUB", currentHubId: s.gulshan.id });
+
+      // Delivery: assign the delivery rider.
+      const d = await run("delivery", x => (x.set(hubbed, { Action: "Assign delivery rider", Rider: "R-4048" }), [hubbed]));
+      expect((await applyAll(d, "delivery")).result).toMatchObject({ applied: 1 });
+      expect(await parcel(hubbed)).toMatchObject({ status: "ASSIGNED", deliveryRiderId: s.rider.rider.id });
+
+      // Problems: resolve back to the hub, schedule a return; a status Resolve doesn't offer is refused.
+      const pr = await run("problems", x => {
+        x.set(stuck, { Action: "Resolve: change status", "New status": "At hub" });
+        x.set(refused, { Action: "Schedule return", "Reason / note": "Recipient refused twice" });
+        return [stuck, refused];
+      });
+      expect(pr.counts).toMatchObject({ toApply: 2, errors: 0 });
+      const prResult = await applyAll(pr, "problems");
+      expect(prResult.result).toMatchObject({ applied: 2 });
+      expect(await parcel(stuck)).toMatchObject({ status: "AT_HUB" });
+      expect(await parcel(refused)).toMatchObject({ status: "RETURN_SCHEDULED", returnReason: "Recipient refused twice" });
+      const rows = await allRows(s.ops.token, pr.id, "applied");
+      expect(rows.items.map((r: { actionLabel: string }) => r.actionLabel).sort()).toEqual(["Resolve: change status", "Schedule return"]);
+      const audits = await ctx.prisma.auditLog.findMany({ where: { action: "parcel.status_change" } });
+      expect(audits.filter(a => (a.data as { bulkUpdate?: { number: string } }).bulkUpdate?.number === pr.number)).toHaveLength(2);
+
+      await status(s.ops.token, stuck, { status: "EXCEPTION", note: "Again" });
+      const bad = await run("problems", x => (x.set(stuck, { Action: "Resolve: change status", "New status": "Picked up" }), [stuck]));
+      expect((await allRows(s.ops.token, bad.id)).items[0].errors[0].message).toBe('"Resolve: change status" moves a parcel to "At hub", "Out for delivery", "Retry scheduled", "Exception": choose one from the list');
     });
   });
 });

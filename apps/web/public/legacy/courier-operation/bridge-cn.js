@@ -4,7 +4,7 @@
  *   Allocate a batch       POST /cn/batches (up to 1000 CNs from the tracking-ID generator)
  *   Batches / stock        GET /cn/batches, /cn/batches/:id, /cn/stock, /cn/summary
  *   Issue to hub/merchant  PATCH /cn/batches/:id
- *   Print labels           POST /cn/batches/:id/print → barcode label sheet (A4, 3 × 8)
+ *   Print labels           GET/POST /documents/cn-sheet/:id → PDF label sheet (A4, 3 × 8, Code 128) in a new tab
  *   Void lost labels       POST /cn/stock/void
  *   Check a label          GET /cn/stock/:cn (scan with the camera or a USB scanner)
  * A booking uses a label by sending its CN (New shipment → "Pre-printed CN").
@@ -121,25 +121,15 @@
 
   // ───────────── labels ─────────────
 
+  /** The batch's label sheet as a PDF (A4, 3 × 8, Code 128) in a new tab; the API counts the print. */
   async function printLabels(batchId, cns) {
-    try {
-      const result = await DF.api(`/cn/batches/${batchId}/print`, { method: "POST", body: cns ? { cns } : {} });
-      if (!result.labels.length) return void showToast("No unused labels to print in this batch.");
-      const who = [result.batch.hub?.name, result.batch.merchant?.name].filter(Boolean).join(" · ") || "Delivery Fast";
-      const labels = result.labels
-        .map(l => `<div class="label"><strong>Delivery Fast</strong><div class="barcode">${Ops.barcode(l.cn)}</div><div class="cn">${esc(l.cn)}</div><small>${esc(who)} · ${esc(result.batch.number)}${l.reprint ? " · reprint" : ""}</small></div>`)
-        .join("");
-      Ops.printPage(
-        `Labels ${result.batch.number}`,
-        `<style>@page{margin:8mm}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm}.label{border:1px dashed #98a2ae;border-radius:4px;padding:3mm;height:31mm;overflow:hidden;break-inside:avoid;text-align:center}.label .barcode svg{height:12mm;width:100%}.cn{font:700 13px Arial,sans-serif;letter-spacing:1px}.label small{color:#647184;font-size:9px}</style><div class="sheet">${labels}</div>`,
-      );
-      if (state.batch?.id === batchId) void openBatch(batchId);
-      void loadBatches();
-      void loadSummary();
-    } catch (error) {
-      showToast(DF.describe(error));
-    }
+    const done = await Ops.printPdf(`/documents/cn-sheet/${batchId}`, cns ? { method: "POST", body: { cns }, title: "Preparing CN labels…" } : { title: "Preparing CN labels…" });
+    if (!done) return;
+    if (state.batch?.id === batchId) void openBatch(batchId);
+    void loadBatches();
+    void loadSummary();
   }
+
 
   // ───────────── dialogs ─────────────
 
@@ -262,7 +252,11 @@
       DF.api(`/cn/stock/${encodeURIComponent(code)}`)
         .then(item => (state.check = item))
         .catch(error => (state.check = { error: DF.describe(error) }))
-        .finally(paint);
+        .finally(() => {
+          paint();
+          // Usable = an unused label; anything else (used, void, unknown) is an error beep.
+          DF.scanner?.feedback?.("cnCheckInput", !state.check?.error && state.check?.status === "AVAILABLE");
+        });
     },
     true,
   );

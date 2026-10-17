@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { API_ORIGIN, Fixtures, expect, opsNav, rowAction, sql, test, type TempMerchant, type TempUser } from "./support";
+import { API_ORIGIN, Fixtures, expect, opsNav, rowAction, sql, test, type TempMerchant, type TempUser, openPdf } from "./support";
 
 // Hub drop-off: a merchant brings parcels and a spreadsheet to the Gulshan hub. The hub operator
 // imports it as a drop-off, prints the labels and receives the parcel by typing its ID.
@@ -76,18 +76,15 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
 
   await page.click('[data-dfi="labels"]');
   await page.selectOption("#labelFormat", "thermal");
-  const popupPromise = context.waitForEvent("page");
-  await page.click("#modalSubmit");
-  const popup = await popupPromise;
-  await popup.waitForSelector("#labels .lbl");
-  await expect(popup.locator("#labels")).toHaveAttribute("data-format", "thermal");
-  await expect(popup.locator(".lbl")).toHaveCount(1);
-  await expect(popup.locator(".lbl .tid")).toHaveText(trackingId);
-  await expect(popup.locator(`svg.code128[data-code="${trackingId}"] path`)).toHaveCount(1);
-  await expect(popup.locator(".lbl .cod")).toContainText("1,250");
-  await expect(popup.locator(".lbl")).toContainText("Gulshan Sorting Hub");
-  await expect(popup.locator(".lbl")).toContainText(`DROP-${stamp}`);
-  await popup.close();
+  // The labels open as a PDF in a new tab: one 100 × 150 mm page per label.
+  const labels = await openPdf(page, () => page.click("#modalSubmit"));
+  expect(labels.response.url()).toContain("format=thermal");
+  expect(labels.info.pages).toBe(1);
+  expect(labels.has(trackingId)).toBe(true);
+  expect(labels.has("1,250")).toBe(true);
+  expect(labels.has("Gulshan Sorting Hub")).toBe(true);
+  expect(labels.has(`DROP-${stamp}`)).toBe(true);
+  await labels.popup.close();
 
   // The register shows it waiting for the merchant, without a pickup rider.
   await page.fill("#shipmentSearch", trackingId);
@@ -177,11 +174,11 @@ test("switches a booked pickup to hub drop-off and back from the shipment regist
   const notices = await sql<{ body: string }>(`SELECT body FROM outbox_messages WHERE template = 'parcel.changed_to_drop_off' AND body LIKE $1`, [`%${trackingId}%`]);
   expect(notices[0]?.body).toContain("Gulshan Sorting Hub");
 
-  // Parcel detail (tracking history) → back to rider pickup.
+  // Parcel detail ("Track" opens the parcel drawer: intake, history and actions) → back to rider pickup.
   await rowAction(row, "[data-track]");
-  const detail = page.locator("#courierHistoryBackdrop [data-intake-detail]");
+  const detail = page.locator("#parcelDrawer");
   await expect(detail).toContainText("Drop-off at Gulshan Sorting Hub");
-  await expect(page.locator("#courierHistoryBackdrop")).toContainText("Changed to drop-off at Gulshan Sorting Hub");
+  await expect(detail).toContainText("Changed to drop-off at Gulshan Sorting Hub");
   await detail.locator("[data-intake-change]").click();
   await expect(page.locator("#icIntake")).toHaveValue("PICKUP");
   await expect(page.locator("#icHub")).toBeDisabled();

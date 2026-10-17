@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, apiUrl, expect, opsNav, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, confirmDialog, expect, opsNav, test, type TempUser } from "./support";
 
 /**
  * Merchant panel features on the real API: product catalogue, reports, recurring pickups,
@@ -83,12 +83,14 @@ test("e-commerce merchant: products prefill orders, reports export, recurring pi
   const schedule = page.locator("#dfDialogBody tr", { hasText: `E2E pickup ${sku}` });
   await expect(schedule).toBeVisible();
   await schedule.locator("[data-dff-schedule-delete]").click();
+  await confirmDialog(page, { title: "Remove this recurring pickup?" });
   await expect(toast(page)).toContainText("removed");
   await page.click("#closeMerchantHistory");
 
   // Clean up the product.
   await nav(page, "Products");
   await page.locator("#tableBody tr", { hasText: sku }).locator("[data-dff-product-delete]").click();
+  await confirmDialog(page);
   await expect(toast(page)).toContainText("removed");
   expect(errors).toEqual([]);
 });
@@ -114,6 +116,7 @@ test("e-commerce merchant: business verification and scoped API keys", async ({ 
   const keyRow = page.locator("#mainContent tr", { hasText: name });
   await expect(keyRow).toContainText("parcels:read");
   await keyRow.locator("[data-df-revoke]").click();
+  await confirmDialog(page);
   await expect(keyRow).toContainText("Revoked");
   expect(errors).toEqual([]);
 });

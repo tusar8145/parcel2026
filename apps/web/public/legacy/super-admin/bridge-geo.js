@@ -334,9 +334,9 @@
     if (!item) return;
     const next = !item.active;
     const effect = next
-      ? `Activate ${item.name}? It appears again on booking forms, templates and imports.`
-      : `Deactivate ${item.name}? It disappears from new bookings, dropdowns, templates and imports${level === "district" ? " (with its zones and areas)" : level === "zone" ? " (with its areas)" : ""}. Existing parcels, addresses and hubs keep it.`;
-    if (!confirm(effect)) return;
+      ? { title: `Activate ${item.name}?`, message: "It appears again on booking forms, templates and imports.", confirm: "Activate" }
+      : { title: `Deactivate ${item.name}?`, message: `It disappears from new bookings, dropdowns, templates and imports${level === "district" ? " (with its zones and areas)" : level === "zone" ? " (with its areas)" : ""}. Existing parcels, addresses and hubs keep it.`, confirm: "Deactivate", danger: true };
+    if (!(await DF.confirm(effect))) return;
     button.disabled = true;
     try {
       await DF.api(path(level), { method: "PATCH", body: { ...placeOf(level, item.name), active: next } });
@@ -374,7 +374,7 @@
       const usage = await DF.api(`/geography/usage?${new URLSearchParams(placeOf(level, item.name))}`);
       if (usage.total) return showInUse(level, item, usage);
       const children = level === "district" ? ` and its ${num(item.zones.length)} zones` : level === "zone" ? ` and its ${num(item.areas.length)} areas` : "";
-      if (!confirm(`Delete ${item.name}${children}? Nothing uses it. This can't be undone (you can add it again later).`)) return;
+      if (!(await DF.confirm({ title: `Delete ${item.name}${children}?`, message: "Nothing uses it. This can't be undone (you can add it again later).", confirm: "Delete", danger: true }))) return;
       await DF.api(`${path(level)}?${new URLSearchParams(placeOf(level, item.name))}`, { method: "DELETE" });
       if (level === "district") S.district = null;
       if (level !== "area") S.zone = null;

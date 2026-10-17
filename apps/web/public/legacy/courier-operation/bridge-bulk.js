@@ -6,8 +6,15 @@
  *                             dates, "Needs info", service line; plus hub, intake and SLA state in the
  *                             dialog, and quick presets such as "Pending operations confirmation"),
  *                             then takes the filled-in file back: check → preview → apply → result.
- *   Bulk update history       past bulk updates with the rows not applied (.xlsx)
+ *   Bulk update history       past bulk updates with the rows not applied (.xlsx), filtered by page
  *   (#courierBulkHistory)
+ *
+ * Page templates: every journey page with "Bulk update <page> by Excel" (bridge-nav.js #stageBulkUpdate)
+ * downloads its own file (GET /bulk-updates/kinds: that page's parcels, only its actions and the columns
+ * they need). All parcels keeps the full file with every action and takes any page's file.
+ *   Ops.bulkKindOf(view)   the template of a journey view ("Delivery" → "delivery"), or null (none / not allowed)
+ *   Ops.bulkLabel(kind)    "Bulk update Delivery by Excel"
+ *   Ops.bulkConfig(kind)   the DFImport.bulk() config for that template
  */
 (() => {
   const DF = window.DF;
@@ -16,6 +23,23 @@
   const $ = id => document.getElementById(id);
   const LINES = { "E-commerce operations": "ecommerce", "Banking & Financial operations": "document", "Customer parcels": "customer" };
   const PAGES = ["Shipments", ...Object.keys(LINES)];
+  // Journey views with their own bulk template. Transfers has none: moving parcels between hubs goes
+  // through linehaul bags and manifests, which have no bulk action yet.
+  const STAGE_KINDS = { "New orders": "new_orders", Pickup: "pickup", "Hub desk": "hub_desk", Delivery: "delivery", Problems: "problems", Returns: "returns" };
+  const PAGE_OF = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", all: "All parcels" };
+  // The templates this person can use (a page whose actions they can't perform has no button).
+  let kinds = null;
+  (DF.bridgeReady || Promise.resolve())
+    .then(() => (Ops.can("dispatch") ? DF.api("/bulk-updates/kinds") : null))
+    .then(list => {
+      if (list) kinds = list.map(k => k.kind);
+    })
+    .catch(() => undefined);
+  Ops.bulkKindOf = view => {
+    const kind = STAGE_KINDS[view];
+    return kind && (!kinds || kinds.includes(kind)) ? kind : null;
+  };
+  Ops.bulkLabel = kind => `Bulk update ${PAGE_OF[kind] || "All parcels"} by Excel`;
   const STATUS_BY_LABEL = {
     "pending operations confirmation": "PENDING_CONFIRMATION",
     "pickup requested": "PENDING_CONFIRMATION",
@@ -39,8 +63,18 @@
     return (Ops.cache.merchants.value || []).map(m => ({ id: m.id, code: m.code, name: m.name, type: m.type }));
   }
 
-  /** The dialog starts from the page's own filters (status, merchant, created dates, "Needs info"). */
-  async function config() {
+  /** The dialog starts from the page's own filters (status, merchant, created dates, "Needs info"); a journey page's template from its own. */
+  async function config(kind = "all") {
+    if (kind !== "all")
+      return {
+        mode: "bulk",
+        bulkKind: kind,
+        filters: {},
+        merchants: await merchants(),
+        hubs: Ops.myHubs() || DF.state.hubs,
+        tones: { good: "status-good", warn: "status-warn", bad: "status-bad", info: "status-blue" },
+        onDone: () => Ops.refresh().catch(() => undefined),
+      };
     const page = Ops.page();
     const line = LINES[page];
     const list = (await merchants()).filter(m => !line || line === "customer" || (m.type === "BANKING_FINANCIAL") === (line === "document"));
@@ -58,6 +92,7 @@
     }
     return {
       mode: "bulk",
+      bulkKind: "all",
       line,
       filters,
       merchants: line === "customer" ? [] : list,
@@ -79,7 +114,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!Ops.require("dispatch", "update parcels in bulk")) return;
-      void config().then(cfg => (history ? DFImport.bulkHistory(cfg) : DFImport.bulk(cfg)));
+      void config("all").then(cfg => (history ? DFImport.bulkHistory(cfg) : DFImport.bulk(cfg)));
     },
     true,
   );
@@ -91,7 +126,7 @@
     const actions = document.querySelector("#mainContent .page-heading .heading-actions");
     if (!actions) return;
     const anchor = $("courierImportHistory") || $("courierImport");
-    const html = `<button class="button" id="courierBulkUpdate" type="button" title="Download the filtered parcels, fill in actions in Excel, upload and apply">Bulk update by Excel</button><button class="button" id="courierBulkHistory" type="button">Bulk update history</button>`;
+    const html = `<button class="button" id="courierBulkUpdate" type="button" title="Download the filtered parcels, fill in actions in Excel, upload and apply (every action; takes any page's file)">${Ops.bulkLabel("all")}</button><button class="button" id="courierBulkHistory" type="button">Bulk update history</button>`;
     if (anchor) anchor.insertAdjacentHTML("afterend", html);
     else actions.insertAdjacentHTML("afterbegin", html);
   };

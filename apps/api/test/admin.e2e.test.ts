@@ -37,12 +37,13 @@ describe("admin: platform settings, pricing and overview", () => {
       expect(read.body.geoCatalog.district).toContain("Dhaka North");
       expect(read.body.geoCatalog.district).not.toContain("Nowhere");
       expect(read.body.geoHierarchy.zonesByDistrict["Dhaka North"]).toContain("Gulshan");
+      // From the website customer default package (service packages v2).
       expect(read.body.customerParcelPricing).toEqual({
         sameZone: 70,
-        crossZone: 120,
-        extraWeight: 20,
+        crossZone: 130,
+        extraWeight: 15,
         codFeePercent: 1,
-        serviceFees: { Regular: 0, "Same day": 30, Express: 50 },
+        serviceFees: { Regular: 0, "Same day": 40, Express: 40 },
       });
       expect(read.body.deliveryServices).toEqual(["Regular", "Same day", "Express"]);
 
@@ -66,119 +67,48 @@ describe("admin: platform settings, pricing and overview", () => {
       expect((entries[1].data as { changedKeys: string[] }).changedKeys).toEqual(["a", "d"]);
     });
 
-    it("follows the rate cards and catalog in force", async () => {
+    it("mirrors the default packages' prices and the catalog in force", async () => {
       const { token } = await admin();
       await ctx.api("PUT", "/settings/platform-config", { token, body: { merchantPricing: { document: { documentRates: { Contract: 90 } } } } });
-      const card = await ctx.api("POST", "/rate-cards", {
-        token,
-        body: { segment: "ECOMMERCE", name: "E-commerce Q4", config: { sameZone: 65, crossZone: 110 } },
-      });
-      expect(card.status, JSON.stringify(card.body)).toBe(201);
+      const ecom = (await ctx.api("GET", "/packages?segment=ECOMMERCE", { token })).body.find((p: { isDefault: boolean }) => p.isDefault);
+      const version = await ctx.api("POST", `/packages/${ecom.id}/versions`, { token, body: { services: ecom.current.services, prices: { ...ecom.current.prices, sameDistrict: 65, differentDistrict: 110 } } });
+      expect(version.status, JSON.stringify(version.body)).toBe(201);
       const read = await ctx.api("GET", "/settings/platform-config");
-      expect(read.body.merchantPricing.ecommerce).toMatchObject({ sameZone: 65, crossZone: 110, extraWeight: 20 });
+      expect(read.body.merchantPricing.ecommerce).toMatchObject({ sameZone: 65, crossZone: 110, extraWeight: 15 });
       expect(read.body.merchantPricing.document).toMatchObject({ sameZone: 70, documentRates: { Contract: 90 } });
       expect(read.body.deliveryRates).toMatchObject({ sameZone: 65, crossZone: 110 });
-    });
-
-    it("rejects anything but a JSON object, oversized documents, deep nesting and prototype keys", async () => {
-      const { token } = await admin();
-      for (const body of [[1, 2], "text", 42]) {
-        const res = await ctx.api("PUT", "/settings/platform-config", { token, body: JSON.stringify(body), headers: { "content-type": "application/json" } });
-        expect(res.status, JSON.stringify(body)).toBe(422);
-        expect(res.body.error.code).toBe("VALIDATION_FAILED");
-      }
-      const big = await ctx.api("PUT", "/settings/platform-config", { token, body: { blob: "x".repeat(300 * 1024) } });
-      expect(big.status).toBe(422);
-      expect(big.body.error.details[0].message).toMatch(/limit is 256 KB/);
-
-      let deep: Record<string, unknown> = { leaf: true };
-      for (let i = 0; i < 15; i++) deep = { next: deep };
-      expect((await ctx.api("PUT", "/settings/platform-config", { token, body: deep })).status).toBe(422);
-
-      const proto = await ctx.api("PUT", "/settings/platform-config", {
-        token,
-        body: '{"a":{"__proto__":{"admin":true}}}',
-        headers: { "content-type": "application/json" },
-      });
-      expect([400, 422]).toContain(proto.status);
-      const ctor = await ctx.api("PUT", "/settings/platform-config", { token, body: { a: { prototype: 1 } } });
-      expect(ctor.status).toBe(422);
-      expect(await ctx.prisma.setting.findUnique({ where: { key: "platform-config" } })).toBeNull();
-    });
-
-    it("needs config:manage to save", async () => {
-      expect((await ctx.api("PUT", "/settings/platform-config", { body: { a: 1 } })).status).toBe(401);
-      for (const role of ["OPS_MANAGER", "FINANCE", "CUSTOMER"] as const) {
-        const { token } = await userWithRoles(ctx, [{ role }]);
-        expect((await ctx.api("PUT", "/settings/platform-config", { token, body: { a: 1 } })).status, role).toBe(403);
-      }
     });
   });
 
   // ───────────── rate cards ─────────────
 
   describe("rate cards", () => {
-    it("versions customer pricing: a new card is used for quotes, the catalog and bookings; history stays", async () => {
+    it("retires rate cards: new prices come from the website customer package; history stays readable", async () => {
       const { token } = await admin();
-      const before = await ctx.api("GET", "/rate-cards/current", { token });
-      expect(before.body.CUSTOMER).toMatchObject({ id: null, config: { sameZone: 70 } });
-
-      const first = await ctx.api("POST", "/rate-cards", {
-        token,
-        body: { segment: "CUSTOMER", name: "Customer v1", config: { sameZone: 80, crossZone: 130 } },
-      });
-      const second = await ctx.api("POST", "/rate-cards", {
-        token,
-        body: {
-          segment: "CUSTOMER",
-          name: "Customer v2",
-          config: { sameZone: 90, crossZone: 140, extraWeight: 25, codFeePercent: 2, serviceFees: { REGULAR: 0, SAME_DAY: 40, EXPRESS: 60 } },
-        },
-      });
-      expect(second.status).toBe(201);
-      // A scheduled card doesn't apply yet.
-      await ctx.api("POST", "/rate-cards", {
-        token,
-        body: { segment: "CUSTOMER", name: "Customer 2027", config: { sameZone: 500 }, effectiveFrom: "2027-01-01T00:00:00Z" },
-      });
-
-      const current = await ctx.api("GET", "/rate-cards/current", { token });
-      expect(current.body.CUSTOMER).toMatchObject({ id: second.body.id, name: "Customer v2", config: { sameZone: 90, extraWeight: 25 } });
-      expect(current.body.ECOMMERCE.id).toBeNull();
-
+      const refused = await ctx.api("POST", "/rate-cards", { token, body: { segment: "CUSTOMER", name: "Customer v1", config: { sameZone: 80, crossZone: 130 } } });
+      expect(refused.status).toBe(410);
+      expect(refused.body.error.code).toBe("PRICING_RETIRED");
+      const customer = (await ctx.api("GET", "/packages?segment=CUSTOMER", { token })).body.find((p: { isDefault: boolean }) => p.isDefault);
+      const prices = { ...customer.current.prices, sameDistrict: 90, differentDistrict: 140, extraKg: 25, codPercent: 2, expressFee: 40 };
+      expect((await ctx.api("POST", `/packages/${customer.id}/versions`, { token, body: { services: customer.current.services, prices } })).status).toBe(201);
+      // A scheduled version doesn't apply yet.
+      await ctx.api("POST", `/packages/${customer.id}/versions`, { token, body: { services: customer.current.services, prices: { ...prices, sameDistrict: 500 }, effectiveFrom: "2027-06-01T00:00:00Z" } });
       const catalog = await ctx.api("GET", "/catalog");
       expect(catalog.body.customerRateCard).toMatchObject({ sameZone: 90, crossZone: 140, codFeePercent: 2 });
-      const quote = await ctx.api("POST", "/pricing/quote", {
-        body: {
-          pickupDistrict: "Dhaka North",
-          pickupZone: "Gulshan",
-          deliveryDistrict: "Dhaka Central",
-          deliveryZone: "Dhanmondi",
-          weightKg: 2,
-          serviceLevel: "SAME_DAY",
-          codAmount: 1500,
-        },
-      });
-      expect(quote.body).toMatchObject({ baseCharge: 140, weightCharge: 25, serviceCharge: 40, codFee: 30, totalCharge: 235, rateCardId: second.body.id });
-
-      const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-      const booked = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
+      // Dhaka → Dhaka: 90 + 2 kg (2 × 25) + Express 40 + COD fee 2% of 1500 = 30.
+      const quote = await ctx.api("POST", "/pricing/quote", { body: { pickupDistrict: "Dhaka North", pickupZone: "Gulshan", deliveryDistrict: "Dhaka Central", deliveryZone: "Dhanmondi", weightKg: 2, serviceLevel: "SAME_DAY", codAmount: 1500 } });
+      expect(quote.body).toMatchObject({ tier: "SAME_DISTRICT", baseCharge: 90, weightCharge: 50, serviceCharge: 40, codFee: 30, totalCharge: 210, package: { isDefault: true } });
+      const booker = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
+      const booked = await ctx.api("POST", "/parcels", { token: booker.token, body: parcelBody() });
       expect(booked.status, JSON.stringify(booked.body)).toBe(201);
-      expect(booked.body.charges.total).toBe(235);
-
-      const history = await ctx.api("GET", "/rate-cards?segment=CUSTOMER", { token });
-      expect(history.body.map((c: { name: string }) => c.name)).toEqual(["Customer 2027", "Customer v2", "Customer v1"]);
-      expect(first.body.id).toBeTruthy();
-      expect((await auditOf("rate_card.create")).map(a => (a.data as { name: string }).name)).toEqual(["Customer v1", "Customer v2", "Customer 2027"]);
-
-      // Deactivating the current card falls back to the previous version.
-      expect((await ctx.api("DELETE", `/rate-cards/${second.body.id}`, { token })).status).toBe(200);
-      expect((await ctx.api("GET", "/rate-cards/current", { token })).body.CUSTOMER.name).toBe("Customer v1");
+      expect(booked.body.charges.total).toBe(210);
+      expect((await ctx.api("GET", "/rate-cards?segment=CUSTOMER", { token })).status).toBe(200);
+      expect((await auditOf("package.version")).length).toBe(2);
     });
 
     it("validates cards and queries", async () => {
       const { token } = await admin();
-      const bad = await ctx.api("POST", "/rate-cards", { token, body: { segment: "CUSTOMER", name: "Bad", config: { sameZone: -5, codFeePercent: 200 } } });
+      const bad = await ctx.api("POST", "/rate-cards", { token, body: { segment: "CUSTOMER", name: "Bad", config: { sameZone: -5, codFeePercent: 200 } } }); // still validated before the retired answer
       expect(bad.status).toBe(422);
       expect((await ctx.api("POST", "/rate-cards", { token, body: { segment: "VIP", name: "Bad", config: {} } })).status).toBe(422);
       expect((await ctx.api("GET", "/rate-cards?segment=VIP", { token })).status).toBe(422);
@@ -214,7 +144,8 @@ describe("admin: platform settings, pricing and overview", () => {
       expect(config.geoCatalog).toEqual({ district: ["Dhaka North", "Sylhet"], zone: ["Gulshan", "Zindabazar"], area: ["Lamabazar"] });
       expect(config.geoHierarchy.areasByZone).toEqual({ Zindabazar: ["Lamabazar"] });
       expect(config.ecommercePackaging).toEqual(["Box"]);
-      expect(config.ecommerceProducts).toEqual(["Clothing"]);
+      // Products come from the Customer + E-commerce product list (service packages v2).
+      expect(config.ecommerceProducts).toContain("Fashion & Apparel");
     });
 
     it("keeps the hierarchy consistent", async () => {

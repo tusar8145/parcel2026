@@ -1,23 +1,30 @@
 import { type Browser, type Page } from "@playwright/test";
-import { DEMO_PASSWORD, Fixtures, expect, test, type TempMerchant, type TempRider } from "./support";
+import { Fixtures, expect, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
-// Operations staff use the seeded staff accounts (*@deliveryfast.example). The merchant and the
-// rider are temporary: created in the database before the tests and deleted afterwards with the
-// parcel, its COD and the cash handover (support.ts).
-const OPS = "ops@deliveryfast.example";
-const HUB_GULSHAN = "hub.gulshan@deliveryfast.example";
+// Every account is temporary (support.ts): the operations manager, the Gulshan hub operator,
+// finance and support staff, the merchant and the rider are created in the database before the
+// tests and deleted afterwards with the parcel, its COD and the cash handover.
 
 const fx = new Fixtures();
 let shop: TempMerchant;
 let rider: TempRider;
+let OPS: TempUser;
+let HUB_GULSHAN: TempUser;
+let FINANCE: TempUser;
+let SUPPORT: TempUser;
 test.beforeAll(async () => {
   shop = await fx.merchant({ type: "ECOMMERCE", label: "Ops Shop" });
   rider = await fx.rider("Gulshan Sorting Hub");
+  OPS = await fx.staff("OPS_MANAGER");
+  HUB_GULSHAN = await fx.staff("HUB_OPERATOR", "Gulshan Sorting Hub");
+  FINANCE = await fx.staff("FINANCE");
+  SUPPORT = await fx.staff("SUPPORT_AGENT");
 });
 test.afterAll(() => fx.cleanup());
 
 /** Signs in on a fresh browser context and waits for the panel. Collects page errors. */
-async function signedIn(browser: Browser, identifier: string, panel: RegExp, errors: string[], password = DEMO_PASSWORD) {
+async function signedIn(browser: Browser, account: { login: string; password: string }, panel: RegExp, errors: string[]) {
+  const { login: identifier, password } = account;
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on("dialog", dialog => dialog.accept());
@@ -91,7 +98,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await expect(toast(ops)).toContainText(`${trackingId} assigned to ${riderLabel} for pickup`);
 
   // ── The rider collects it and hands it to Gulshan Sorting Hub ──
-  const riderPage = await signedIn(browser, rider.login, /\/rider/, errors, rider.password);
+  const riderPage = await signedIn(browser, rider, /\/rider/, errors);
   await nav(riderPage, "Pickup queue");
   await riderPage.click(`[data-pickup="${trackingId}"]`);
   await riderPage.selectOption("#pickupOutcome", { label: "Pickup collected — submit to hub" });
@@ -184,8 +191,8 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
 
 test("every operations page renders live data for each staff role", async ({ browser }) => {
   test.setTimeout(420_000);
-  const pages = ["Overview", "Shipments", "Dispatch", "Exceptions", "Customer parcels", "E-commerce operations", "Document operations", "Riders", "Hubs", "Merchants", "COD & finance", "Analytics", "Settings"];
-  for (const account of [OPS, HUB_GULSHAN, "finance@deliveryfast.example", "support@deliveryfast.example"]) {
+  const pages = ["Overview", "Shipments", "Dispatch", "Exceptions", "Customer parcels", "E-commerce operations", "Banking & Financial operations", "Riders", "Hubs", "Merchants", "COD & finance", "Analytics", "Settings"];
+  for (const account of [OPS, HUB_GULSHAN, FINANCE, SUPPORT]) {
     const errors: string[] = [];
     const page = await signedIn(browser, account, /\/courier-operation/, errors);
     for (const name of pages) {

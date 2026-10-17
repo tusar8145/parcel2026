@@ -150,7 +150,7 @@
 
   // "Print labels" on the shipment tables (the original "Print generated CNs" button): the ticked
   // rows, else the filtered rows on screen.
-  const SHIPMENT_PAGES = ["Shipments", "Customer parcels", "E-commerce operations", "Document operations"];
+  const SHIPMENT_PAGES = ["Shipments", "Customer parcels", "E-commerce operations", "Banking & Financial operations"];
   const baseEnhanceAll = Ops.enhance["*"];
   Ops.enhance["*"] = page => {
     baseEnhanceAll?.(page);

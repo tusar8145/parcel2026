@@ -36,8 +36,8 @@
     "Merchant Support": "SUPPORT_AGENT",
     "Hub Manager": "HUB_OPERATOR",
   };
-  const SEGMENT = { ecommerce: "ECOMMERCE", document: "CORPORATE_DOCUMENT" };
-  const KIND = { ECOMMERCE: "ecommerce", CORPORATE_DOCUMENT: "document" };
+  const SEGMENT = { ecommerce: "ECOMMERCE", document: "BANKING_FINANCIAL" };
+  const KIND = { ECOMMERCE: "ecommerce", BANKING_FINANCIAL: "document" };
   const LEVELS = [
     ["REGULAR", "Regular"],
     ["SAME_DAY", "Same day"],
@@ -49,7 +49,7 @@
     "Approvals",
     "Merchants",
     "E-commerce merchants",
-    "Document merchants",
+    "Banking & Financial merchants",
     "Platform activity",
     "Audit log",
     "Admin users",
@@ -170,7 +170,15 @@
   }
 
   const loaders = {
-    merchants: async () => (S.merchants = await all("/merchants")),
+    // With the service package each merchant books with (super admin → Service plans & pricing assigns them).
+    merchants: async () => {
+      const [list, ...segments] = await Promise.all([
+        all("/merchants"),
+        ...["ECOMMERCE", "BANKING_FINANCIAL"].map(segment => DF.api(`/packages/assignments?segment=${segment}`).catch(() => [])),
+      ]);
+      const packages = new Map(segments.flat().map(a => [a.merchant.id, a.package]));
+      S.merchants = list.map(m => ({ ...m, package: packages.get(m.id) ?? null }));
+    },
     plans: async () => (S.plans = await DF.api("/plans?includeInactive=true")),
     cards: async () => (S.cards = await DF.api("/rate-cards/current")),
     catalog: async () => (S.catalog = await DF.api("/catalog")),
@@ -198,15 +206,18 @@
   const plansFor = segment => S.plans.filter(p => p.segment === segment);
   const planNamed = (segment, name) => plansFor(segment).find(p => p.name.toLowerCase() === String(name).toLowerCase());
 
+  /** The merchant's service package ("E-commerce default (default)"); service packages replaced service plans. */
+  const packageLabel = m => (m.package ? `${m.package.name}${m.package.isDefault ? " (default)" : ""}` : "Default package");
+
   function legacyMerchant(m) {
-    const docs = m.type === "CORPORATE_DOCUMENT";
+    const docs = m.type === "BANKING_FINANCIAL";
     return {
       id: merchantCode(m),
       name: m.name,
       owner: m.contactName,
       email: m.contactEmail || phone(m.contactPhone),
-      plan: m.plan?.name || "No plan",
-      type: docs ? "Document merchant" : "E-commerce merchant",
+      plan: packageLabel(m),
+      type: docs ? "Banking & Financial merchant" : "E-commerce merchant",
       services: docs ? "Secure documents · OTP" : "E-commerce · COD",
       joined: date(m.createdAt),
       shipments: num(activity(m.id)?.parcelsThisMonth),
@@ -223,9 +234,9 @@
       owner: m.contactName,
       email: m.contactEmail || "—",
       phone: phone(m.contactPhone),
-      type: m.type === "CORPORATE_DOCUMENT" ? "Document merchant" : "E-commerce",
+      type: m.type === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : "E-commerce",
       city: m.pickupDistrict,
-      plan: m.plan?.name,
+      plan: packageLabel(m),
       submitted: when(m.createdAt),
       status,
       _api: m,
@@ -293,7 +304,7 @@
     const user = a.entityType === "user" && S.staff.find(u => u.id === a.entityId);
     if (user) return user.name;
     const plan = a.entityType === "service_plan" && S.plans.find(p => p.id === a.entityId);
-    if (plan) return `${plan.name} plan · ${plan.segment === "CORPORATE_DOCUMENT" ? "documents" : plan.segment.toLowerCase()}`;
+    if (plan) return `${plan.name} plan · ${plan.segment === "BANKING_FINANCIAL" ? "documents" : plan.segment.toLowerCase()}`;
     if (a.entityType === "setting") return SETTING_LABEL[a.entityId] || a.entityId;
     if (a.data?.name) return a.data.name;
     if (a.data?.code) return a.data.code;
@@ -344,7 +355,7 @@
     replaceAll(
       serviceEntitlements,
       merchants.map(m => {
-        const docs = m.type === "Document merchant";
+        const docs = m.type === "Banking & Financial merchant";
         const base = { id: m.id, name: m.name, ecommerce: !docs, document: docs, domestic: docs, cod: !docs };
         const stored = Array.isArray(saved.entitlements) ? saved.entitlements.find(e => e.id === m.id) : null;
         for (const key of ["ecommerce", "domestic", "document", "cod"]) if (typeof stored?.[key] === "boolean") base[key] = stored[key];
@@ -455,7 +466,7 @@
     if (!S.cards) return;
     const customer = S.cards.CUSTOMER.config;
     const ecommerce = S.cards.ECOMMERCE.config;
-    const documents = S.cards.CORPORATE_DOCUMENT.config;
+    const documents = S.cards.BANKING_FINANCIAL.config;
     const publicRates = {
       sameZone: customer.sameZone,
       crossZone: customer.crossZone,
@@ -545,12 +556,18 @@
       setMetric(1, num(o.merchants.approvedThisMonth), "approved", "this month");
       setText(".table-footer > span", `Showing ${registrations.length} application records`);
     }
+    // "Pricing & catalogs" → Delivery address hierarchy: the geography admin (bridge-geo.js).
     if (page === "Merchants") setText(".metrics .metric:first-child .metric-foot span:last-child", "merchant accounts");
-    if (page === "E-commerce merchants" || page === "Document merchants") {
-      const docs = page === "Document merchants";
+    // The merchant tables' plan column shows the service package.
+    if (["Overview", "Merchants", "E-commerce merchants", "Banking & Financial merchants"].includes(page)) {
+      document.querySelectorAll("#mainContent table th").forEach(th => th.textContent === "PLAN" && (th.textContent = "PACKAGE"));
+      document.querySelectorAll("#mainContent .panel-subtitle").forEach(p => p.textContent === "Account status and service plan oversight" && (p.textContent = "Account status and service packages"));
+    }
+    if (page === "E-commerce merchants" || page === "Banking & Financial merchants") {
+      const docs = page === "Banking & Financial merchants";
       setText(
         ".table-footer > span",
-        `Showing ${merchants.filter(m => merchantKind(m) === (docs ? "document" : "ecommerce")).length} ${docs ? "document" : "e-commerce"} accounts`,
+        `Showing ${merchants.filter(m => merchantKind(m) === (docs ? "document" : "ecommerce")).length} ${docs ? "Banking & Financial" : "e-commerce"} accounts`,
       );
     }
     if (page === "Platform activity" && o) {
@@ -609,6 +626,23 @@
       hint.textContent = `Saving publishes a new customer rate card version${S.cards.CUSTOMER.name ? ` (now: ${S.cards.CUSTOMER.name})` : ""}; the website quotes and bookings use it right away.`;
       publicForm.querySelector(".modal-actions")?.before(hint);
     }
+  }
+
+  // The catalog page would print every zone and area of the country as chips: render it without
+  // them; bridge-geo.js draws the geography admin (one district / zone at a time, or a search).
+  if (typeof window.pricingConfigPage === "function") {
+    const basePricingConfigPage = window.pricingConfigPage;
+    window.pricingConfigPage = function (...args) {
+      if (!S.catalog) return basePricingConfigPage.apply(this, args);
+      const zones = geoCatalog.zone.splice(0);
+      const areas = geoCatalog.area.splice(0);
+      try {
+        return basePricingConfigPage.apply(this, args);
+      } finally {
+        for (const z of zones) geoCatalog.zone.push(z);
+        for (const a of areas) geoCatalog.area.push(a);
+      }
+    };
   }
 
   // Track the page and add live figures after every render.
@@ -790,7 +824,7 @@
             const existing = planNamed(segment, tier);
             if (existing) await DF.api(`/plans/${existing.id}`, { method: "PATCH", body: existing.active ? body : { ...body, active: true } });
             else await DF.api("/plans", { method: "POST", body: { segment, name: tier, ...body } });
-            const outcome = await publishCard(segment, changes, type === "document" ? "Corporate documents" : "E-commerce");
+            const outcome = await publishCard(segment, changes, type === "document" ? "Banking & Financial" : "E-commerce");
             await load("plans", "cards", "merchants", "audit");
             if (outcome === "pending") return showPending("Plan saved. Its price changes were sent for approval to another super admin; current prices apply until then.");
             replay(form, "submit");
@@ -866,15 +900,18 @@
         stop(event);
         const m = byCode(modalState.id);
         if (!m) return;
-        const planId = document.getElementById("approvalPlan")?.value || null;
+        // Service packages replaced service plans: the choice is the merchant's package (empty = its category default).
+        const packageId = document.getElementById("approvalPlan")?.value || null;
         void busy(document.getElementById("modalSubmit"), async () => {
           try {
-            await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { status: "ACTIVE", ...(planId ? { planId } : {}) } });
+            await DF.api(`/merchants/${m.id}`, { method: "PATCH", body: { status: "ACTIVE" } });
+            let pending = false;
+            if (packageId) pending = (await DF.api(`/merchants/${m.id}/package`, { method: "PUT", body: { packageId } }))?.status === "PENDING";
             decided.set(m.id, "Approved");
             await load("merchants", "overview", "audit");
             closeModal();
             showPage("Registrations");
-            showToast(`${m.name}: approved · merchant account activated.`);
+            showToast(`${m.name}: approved · merchant account activated${pending ? " · package change sent for approval" : ""}.`);
           } catch (error) {
             fail(error);
           }
@@ -882,16 +919,14 @@
         return;
       }
 
-      // Merchant status and plan.
+      // Merchant status (the service package changes on Service plans & pricing, with maker-checker).
       if (type === "merchant") {
         stop(event);
         const m = byCode(modalState.id);
         if (!m) return;
         const status = { Active: "ACTIVE", "Under review": "PENDING_REVIEW", Suspended: "SUSPENDED" }[document.getElementById("merchantStatus").value];
-        const planId = document.getElementById("merchantPlan").value || null;
         const body = {};
         if (status !== m.status) body.status = status;
-        if (planId !== (m.plan?.id || null)) body.planId = planId;
         if (!Object.keys(body).length) {
           closeModal();
           showToast(`No changes to ${m.name}.`);
@@ -1024,19 +1059,58 @@
     true,
   );
 
-  // Real plans in the approval and account dialogs; a phone number and hubs when inviting an administrator.
+  // Account dialog → "Change" service package: the merchant's row on Service plans & pricing (bridge-packages.js).
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target instanceof Element && event.target.closest("#merchantPackageChange");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const m = byCode(button.dataset.merchantCode);
+      if (!m) return;
+      closeModal();
+      if (window.DFPackages) void window.DFPackages.openAssignment(m.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE", m.code);
+      else showPage("Service plans");
+    },
+    true,
+  );
+
+  // Service packages in the approval and account dialogs; a phone number and hubs when inviting an administrator.
   const baseOpenModal = window.openModal;
   window.openModal = openModal = function (type, id) {
     baseOpenModal(type, id);
     const m = (type === "registration" || type === "merchant") && byCode(id);
-    if (m) {
-      const select = document.getElementById(type === "registration" ? "approvalPlan" : "merchantPlan");
-      const options = plansFor(m.type).filter(p => p.active || p.id === m.plan?.id);
-      select.innerHTML = [
-        type === "merchant" || !options.length ? `<option value="">No plan</option>` : "",
-        ...options.map(p => `<option value="${p.id}">${escapeHtml(p.name)}${p.discountPct ? ` · ${p.discountPct}% off` : ""}</option>`),
-      ].join("");
-      select.value = m.plan?.id || (type === "registration" ? options[0]?.id || "" : "");
+    if (m && type === "registration") {
+      // The merchant's service package (spec v2): its category's default, or another active package.
+      const select = document.getElementById("approvalPlan");
+      const label = select.closest(".field")?.querySelector("label");
+      if (label) label.textContent = "Service package";
+      select.innerHTML = `<option value="">Default package</option>`;
+      const segment = m.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE";
+      DF.api(`/packages?segment=${segment}`)
+        .then(list => {
+          const def = list.find(p => p.isDefault);
+          select.innerHTML = [`<option value="">${escapeHtml(def ? `${def.name} (default)` : "Default package")}</option>`, ...list.filter(p => p.status === "ACTIVE" && !p.isDefault).map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)].join("");
+        })
+        .catch(() => undefined);
+    } else if (m) {
+      // The account dialog: the service package the merchant books with now (and any scheduled change),
+      // changed on Service plans & pricing where assignments go through maker-checker.
+      const field = document.getElementById("merchantPlan")?.closest(".field");
+      if (field)
+        field.outerHTML = `<div class="field" id="merchantPackageField"><label for="merchantPackage">Service package</label><div style="display:flex;gap:8px;align-items:center"><input id="merchantPackage" value="${escapeHtml(packageLabel(m))}" readonly style="flex:1;min-width:0"><button type="button" class="button button-sm" id="merchantPackageChange" data-merchant-code="${escapeHtml(m.code)}" title="Assign another package (a second super admin approves)">Change</button></div><small class="panel-subtitle" id="merchantPackageNote" style="display:block;margin-top:4px"></small></div>`;
+      document.getElementById("modalDescription").textContent = `${m.code} · account status and service package.`;
+      document.getElementById("merchantNote")?.setAttribute("placeholder", "Reason for the status change");
+      DF.api(`/merchants/${m.id}/package`)
+        .then(p => {
+          const input = document.getElementById("merchantPackage");
+          if (!input || modalState.id !== m.code) return;
+          input.value = `${p.current.name}${p.current.isDefault ? " (default)" : ""} · v${p.current.version}`;
+          const next = p.scheduled[0];
+          document.getElementById("merchantPackageNote").textContent = next ? `Changes to ${next.package?.name || "the default package"} on ${date(next.effectiveFrom)}.` : "";
+        })
+        .catch(() => undefined);
     }
     if (type === "inviteAdmin") {
       const email = document.getElementById("adminEmail").closest(".field");
@@ -1078,6 +1152,8 @@
     showPage("Overview");
   })();
   DF.poll(() => refresh(), 30000);
+  // Geography / catalog changes (here or by another admin): the page's district, zone and area lists follow.
+  DF.events.on("catalog.updated", () => void load("catalog").catch(() => undefined));
   /** For companion bridges (bridge-merchants.js): reload data sets and redraw the current page. */
   window.DFSuperAdminBridge = {
     reload: async (...names) => {

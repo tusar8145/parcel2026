@@ -53,7 +53,7 @@ type Values = typeof initial;
 
 /** Merchant, rider and franchise applications (merchant → super admin review; rider/franchise → support desk). */
 export default function PartnerView({ kind }: { kind: PartnerKind }) {
-  const isDoc = (v: Values) => v.merchantAccountType === "Document merchant";
+  const isDoc = (v: Values) => v.merchantAccountType === "Banking & Financial merchant";
   const form = useForm<Values>(initial, {
     merchantSector: (v, all) => (kind === "merchant" && isDoc(all) && !v ? "Choose the institution type" : ""),
     partnerName: rules.length(2, 120, kind === "merchant" ? "Business name" : "Name"),
@@ -92,7 +92,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
         .then(invite =>
           form.setValues(v => ({
             ...v,
-            merchantAccountType: invite.type === "CORPORATE_DOCUMENT" ? "Document merchant" : v.merchantAccountType,
+            merchantAccountType: invite.type === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : v.merchantAccountType,
             partnerName: v.partnerName || invite.businessName || "",
             partnerContact: v.partnerContact || invite.name || "",
             partnerPhone: v.partnerPhone || (invite.phone ? local10(invite.phone) : ""),
@@ -124,7 +124,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
           const result = await df().api("/merchants/applications", {
             method: "POST",
             body: {
-              type: documents ? "CORPORATE_DOCUMENT" : "ECOMMERCE",
+              type: documents ? "BANKING_FINANCIAL" : "ECOMMERCE",
               name: v.partnerName.trim(),
               contactName: v.partnerContact.trim(),
               contactPhone: e164(v.partnerPhone),
@@ -206,7 +206,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
         <>
           {select("merchantAccountType", "Merchant account type", [
             ["E-commerce merchant", "E-commerce merchant — online shop and product parcels"],
-            ["Document merchant", "Document merchant — bank, fintech, or institution"],
+            ["Banking & Financial merchant", "Banking & Financial merchant — bank, fintech, or institution"],
           ])}
           {select("merchantSector", "Institution type", ["Bank", "Fintech / payments", "Insurance / financial services", "Other institution"], "Select institution type", !isDoc(form.values))}
           {text("partnerName", "Business / institution name", "Registered business or institution name", { autoComplete: "organization" })}

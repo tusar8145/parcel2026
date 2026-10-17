@@ -21,7 +21,9 @@ import { OutboxService } from "../notifications/outbox.service";
 import { readCsv, writeCsv } from "./csv";
 import { columnsFor, kindKeyOf, KIND_ENUM, matchHeaders, type ColumnKey, type ImportKindKey } from "./columns";
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
-import { ImportEngineService, type Cells, type EngineContext, type RowResult } from "./import-engine.service";
+import { ImportEngineService, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
+import { PackagesService } from "../packages/packages.service";
+import { FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import type { importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
 import { readXlsx, type SheetData } from "./xlsx/xlsx-reader";
@@ -81,6 +83,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
     private readonly permissions: PermissionService,
     private readonly notify: NotifyService,
     private readonly outbox: OutboxService,
+    private readonly packages: PackagesService,
   ) {}
 
   // ───────────── background worker ─────────────
@@ -189,7 +192,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
 
   // ───────────── validate (dry run) ─────────────
 
-  private async withParseSlot<T>(work: () => Promise<T>): Promise<T> {
+  /** Runs a CPU-bound file parse in one of the instance's parse slots (imports and bulk updates share them). */
+  async withParseSlot<T>(work: () => Promise<T>): Promise<T> {
     if (this.parsing >= PARSE_SLOTS) {
       const wait = new Promise<void>(resolve => this.waiting.push(resolve));
       const timeout = new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), 30_000));
@@ -206,12 +210,12 @@ export class ImportJobsService implements OnApplicationBootstrap {
     }
   }
 
-  /** .xlsx or .csv → text rows. Old binary .xls files are refused with a clear message. */
-  parseFile(buffer: Buffer, fileName: string, maxRows: number, kind?: ImportKindKey): SheetData {
+  /** .xlsx or .csv → text rows. Old binary .xls files are refused with a clear message. `prefer`: the data sheet's name. */
+  parseFile(buffer: Buffer, fileName: string, maxRows: number, kind?: ImportKindKey, prefer?: string[]): SheetData {
     if (!buffer.length) throw new AppError("INVALID_FILE", "The file is empty.", 422);
     if (buffer.subarray(0, 4).toString("hex") === "d0cf11e0")
       throw new AppError("UNSUPPORTED_FILE", "Old Excel 97–2003 (.xls) files can't be read. Open it in Excel and save it as Excel Workbook (.xlsx).", 415);
-    if (buffer.subarray(0, 2).toString() === "PK") return readXlsx(buffer, { maxRows, prefer: kind ? [DATA_SHEET[kind]] : ["Orders", "Consignments"] });
+    if (buffer.subarray(0, 2).toString() === "PK") return readXlsx(buffer, { maxRows, prefer: prefer ?? (kind ? [DATA_SHEET[kind]] : ["Orders", "Consignments"]) });
     if (/\.xlsx$/i.test(fileName)) throw new AppError("INVALID_FILE", "This file is not a valid .xlsx workbook.", 422);
     if (buffer.subarray(0, 1024).includes(0) && !(buffer[0] === 0xff && buffer[1] === 0xfe) && !(buffer[0] === 0xfe && buffer[1] === 0xff))
       throw new AppError("UNSUPPORTED_FILE", "Upload an Excel workbook (.xlsx) or a CSV file.", 415);
@@ -270,16 +274,28 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const scope = this.scopeFor(actor, options.merchantId);
     const settings = await this.config.settings();
     const limits = this.limitsFor(settings, scope.forOps);
-    if ((options.intake || options.dropOffHubId) && !scope.forOps) throw forbidden("Drop-off imports are booked by operations");
-    if (options.dropOffHubId && options.intake !== "DROP_OFF") throw new AppError("VALIDATION_FAILED", "A rider pickup import has no drop-off hub", 422);
-    const dropOff = options.intake === "DROP_OFF" ? await this.dropOffHub(actor, options.dropOffHubId) : null;
+    // Drop at hub: operations (intake DROP_OFF) or the import modal's first mile (the merchant's package must offer it).
+    const dropping = options.intake === "DROP_OFF" || options.firstMile === "HUB_DROP";
+    const hubId = options.dropHubId ?? options.dropOffHubId;
+    if (hubId && !dropping) throw new AppError("VALIDATION_FAILED", "A rider pickup import has no drop-off hub", 422);
+    if (options.intake === "PICKUP" && options.firstMile === "HUB_DROP") throw new AppError("VALIDATION_FAILED", "Choose either rider pickup or drop at hub", 422);
+    // The package is checked first: a merchant without drop at hub hears that, not "choose a hub".
+    if (scope.merchantId && options.firstMile === "HUB_DROP") await this.checkServices(scope.merchantId, { firstMile: "HUB_DROP", lastMile: options.lastMile, notifications: options.notifications });
+    const dropOff = dropping ? await this.dropOffHub(actor, hubId) : null;
+    const services: ImportServiceOptions = {
+      firstMile: dropOff ? "HUB_DROP" : options.firstMile,
+      dropHubId: dropOff?.hub.id,
+      lastMile: options.lastMile,
+      notifications: options.notifications,
+    };
+    if (scope.merchantId) await this.checkServices(scope.merchantId, services);
     if (scope.merchantId) {
       const merchant = await this.prisma.merchant.findUnique({ where: { id: scope.merchantId }, select: { status: true, type: true, name: true } });
       if (!merchant) throw notFound("Merchant");
       if (merchant.status !== "ACTIVE") throw forbidden("This merchant account is not active yet");
-      const expected = options.kind === "document" ? "CORPORATE_DOCUMENT" : "ECOMMERCE";
+      const expected = options.kind === "document" ? "BANKING_FINANCIAL" : "ECOMMERCE";
       if (merchant.type !== expected)
-        throw new AppError("WRONG_TEMPLATE", `${merchant.name} is ${merchant.type === "CORPORATE_DOCUMENT" ? "a document" : "an e-commerce"} merchant: use the ${merchant.type === "CORPORATE_DOCUMENT" ? "document" : "e-commerce"} template`, 422);
+        throw new AppError("WRONG_TEMPLATE", `${merchant.name} is ${merchant.type === "BANKING_FINANCIAL" ? "a document" : "an e-commerce"} merchant: use the ${merchant.type === "BANKING_FINANCIAL" ? "document" : "e-commerce"} template`, 422);
     }
 
     const started = Date.now();
@@ -294,7 +310,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       return this.objectsToRows(options.kind, upload.rows);
     });
     if (!parsed.rows.length) throw new AppError("EMPTY_FILE", "The file has no orders below the header row.", 422);
-    const ctx = await this.engine.context({ kind: options.kind, forOps: scope.forOps, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id });
+    const ctx = await this.engine.context({ kind: options.kind, forOps: scope.forOps, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
     const results = await this.engine.validate(ctx, parsed.rows);
     const parsedMs = Date.now() - started;
 
@@ -321,7 +337,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
             validRows: counts.VALID,
             incompleteRows: counts.INCOMPLETE,
             errorRows: counts.ERROR,
-            settings: { ...settings, forOps: scope.forOps, ignoredColumns: parsed.ignoredColumns } as unknown as Prisma.InputJsonObject,
+            settings: { ...settings, forOps: scope.forOps, ignoredColumns: parsed.ignoredColumns, services } as unknown as Prisma.InputJsonObject,
             actor: stored,
             createdById: actor.kind === "user" ? actor.userId : null,
           },
@@ -338,6 +354,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
               merchantId: r.merchantId,
               dedupeKey: r.dedupeKey,
               charge: r.charge,
+              priceLines: r.lines ? (r.lines as unknown as Prisma.InputJsonArray) : Prisma.DbNull,
             })),
           });
         await this.audit.record(
@@ -359,9 +376,16 @@ export class ImportJobsService implements OnApplicationBootstrap {
     return { ...(await this.view(job)), rows: await this.rowsPage(job, { filter: "all", page: 1, pageSize: 50 }), timings: { validateMs: parsedMs } };
   }
 
-  /** The hub a drop-off import is brought to (hub operators: their own hub). */
+  /** A merchant file's choices against its package (SERVICE_NOT_IN_PACKAGE before anything is parsed). */
+  private async checkServices(merchantId: string, services: ImportServiceOptions) {
+    const pkg = await this.packages.effective({ merchantId });
+    const { problems } = resolveSelection(pkg.segment, pkg.services, { firstMile: services.firstMile, lastMile: services.lastMile, notifications: services.notifications });
+    if (problems.length) throw this.packages.selectionError(problems);
+  }
+
+  /** The hub a drop-off import is brought to (hub operators: their own hub; merchants: any operating hub). */
   private async dropOffHub(actor: Actor, hubId: string | undefined): Promise<DropOffBooking> {
-    const scope = opsHubScope(actor);
+    const scope = actor.permissions.has("parcel:dispatch") ? opsHubScope(actor) : null;
     const id = hubId ?? (scope?.length === 1 ? scope[0] : undefined);
     if (!id) throw new AppError("HUB_REQUIRED", "Choose the hub the sender will bring the parcels to", 422);
     if (scope && !scope.includes(id)) throw forbidden("You can only book drop-offs at your own hub");
@@ -385,10 +409,13 @@ export class ImportJobsService implements OnApplicationBootstrap {
       job.bookingBatchId ? this.prisma.bookingBatch.findUnique({ where: { id: job.bookingBatchId }, select: { id: true, number: true } }) : null,
       job.createdById ? this.prisma.user.findUnique({ where: { id: job.createdById }, select: { name: true } }) : null,
     ]);
-    const settings = job.settings as unknown as ImportSettings & { forOps?: boolean; ignoredColumns?: string[] };
+    const settings = job.settings as unknown as ImportSettings & { forOps?: boolean; ignoredColumns?: string[]; services?: ImportServiceOptions };
     const kind = kindKeyOf(job.kind);
     const forOps = settings.forOps ?? job.source === "OPERATIONS";
     const toBook = job.validRows + job.incompleteRows;
+    // The price of every row that will be (or was) booked: the preview total.
+    const totals = await this.prisma.importRow.aggregate({ where: { jobId: job.id, status: { in: ["VALID", "INCOMPLETE", "CREATED"] } }, _sum: { charge: true }, _count: { _all: true } });
+    const services = settings.services ?? {};
     return {
       id: job.id,
       number: job.number,
@@ -415,6 +442,16 @@ export class ImportJobsService implements OnApplicationBootstrap {
       },
       columns: columnsFor(kind, forOps).map(c => ({ key: c.key, header: c.header, required: !!settings.templates?.[kind]?.[c.key]?.required })),
       ignoredColumns: settings.ignoredColumns ?? [],
+      /** The import modal's choices (service packages) and the total delivery charge of the rows to book. */
+      services: {
+        firstMile: services.firstMile ?? null,
+        firstMileLabel: services.firstMile ? FIRST_MILE_LABEL[services.firstMile] : null,
+        lastMile: services.lastMile ?? null,
+        lastMileLabel: services.lastMile ? LAST_MILE_LABEL[services.lastMile] : null,
+        notifications: services.notifications ?? null,
+        notificationLabels: services.notifications ? PARCEL_NOTIFICATIONS.filter(n => services.notifications!.includes(n.code)).map(n => `${n.label} (${n.audience})`) : null,
+      },
+      totals: { rows: totals._count._all, charge: Number(totals._sum.charge ?? 0) },
       rowsAvailable: !job.rowsPurgedAt,
       downloads: {
         failedRows: job.errorRows + job.failedCount > 0 && !job.rowsPurgedAt ? `/api/v1/imports/${job.id}/failed-rows` : null,
@@ -448,6 +485,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
           errors: errors.map(e => ({ ...e, header: headerOf(e.column), text: `Row ${r.rowNumber} · ${headerOf(e.column)}: ${e.message}` })),
           missing: r.missing,
           charge: r.charge == null ? null : Number(r.charge),
+          lines: (r.priceLines as { code: string; label: string; amount: number }[] | null) ?? null,
           trackingId: r.trackingId,
         };
       }),
@@ -625,7 +663,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
     try {
       const actor = opts.actor ?? (await this.actorFor(job));
       const kind = kindKeyOf(job.kind);
-      const stored = job.settings as unknown as ImportSettings & { forOps?: boolean };
+      const stored = job.settings as unknown as ImportSettings & { forOps?: boolean; services?: ImportServiceOptions };
       // The required columns and defaults shown in the preview; live catalog, merchants and prices.
       const ctx = await this.engine.context({
         kind,
@@ -633,6 +671,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
         settings: { ...settings, templates: stored.templates ?? settings.templates, defaultDestination: stored.defaultDestination ?? settings.defaultDestination },
         merchantId: job.merchantId,
         dropOffHubId: job.dropOffHubId,
+        services: stored.services,
       });
       const dropOff = job.dropOffHubId ? { hub: await this.prisma.hub.findUniqueOrThrow({ where: { id: job.dropOffHubId }, select: { id: true, name: true, address: true } }) } : undefined;
       const contexts = new Map<string, BookingContext>();
@@ -711,8 +750,14 @@ export class ImportJobsService implements OnApplicationBootstrap {
               dropOff,
               // Rows without an order ref are kept idempotent by their content hash (Parcel.importKey).
               import: { jobId: job.id, key: result.dedupeKey!.startsWith("h:") ? result.dedupeKey! : undefined, missingFields: result.missing, destination: result.destination },
+              // Checked against the package and priced by the engine just now.
+              quote: result.quote,
+              product: result.product ?? null,
             });
-            await tx.importRow.update({ where: { id: row.id }, data: { status: "CREATED", trackingId: parcel.trackingId, charge: parcel.totalCharge } });
+            await tx.importRow.update({
+              where: { id: row.id },
+              data: { status: "CREATED", trackingId: parcel.trackingId, charge: parcel.totalCharge, ...(result.lines ? { priceLines: result.lines as unknown as Prisma.InputJsonArray } : {}) },
+            });
           }
           await tx.importJob.update({ where: { id: job.id }, data: { processedRows: { increment: items.length }, createdCount: { increment: items.length } } });
         },

@@ -96,6 +96,8 @@ model ImportRow {
   dedupeKey  String?
   /// Delivery charge preview at validation; the booked charge once created.
   charge     Decimal?        @db.Decimal(12, 2)
+  /// The price breakdown of the preview (service packages: [{ code, label, amount }]).
+  priceLines Json?
   trackingId String?
   job        ImportJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
 

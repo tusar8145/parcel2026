@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>html{-webkit-text-size-adjust:100%}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Delivery Fast কাজের ধারা</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tiro+Bangla&family=Hind+Siliguri:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: a field manual — narrow reading column, a sticky chapter index on wide screens, status chips that match the panels' labels. */
+:root{
+  --bg:#f4f7f5; --surface:#ffffff; --ink:#15231d; --muted:#57665f; --line:#d9e2dd;
+  --accent:#16845b; --accent-soft:#e3f2eb; --amber:#a86a08; --amber-soft:#fbf0dc;
+  --red:#b23b3b; --red-soft:#f8e4e4; --blue:#2f5fd0; --blue-soft:#e6ecfb;
+  --diagram:#fbfcfb;
+  --display:"Tiro Bangla","Noto Serif Bengali",Georgia,serif;
+  --body:"Hind Siliguri","Noto Sans Bengali","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1714; --surface:#16211c; --ink:#e4ece8; --muted:#9fb0a8; --line:#2a3832;
+  --accent:#4cc495; --accent-soft:#183428; --amber:#e3a63c; --amber-soft:#33280f;
+  --red:#ef7f7f; --red-soft:#3a1d1d; --blue:#8aa8f2; --blue-soft:#1c2540;
+  --diagram:#f3f6f4; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0f1714; --surface:#16211c; --ink:#e4ece8; --muted:#9fb0a8; --line:#2a3832;
+  --accent:#4cc495; --accent-soft:#183428; --amber:#e3a63c; --amber-soft:#33280f;
+  --red:#ef7f7f; --red-soft:#3a1d1d; --blue:#8aa8f2; --blue-soft:#1c2540;
+  --diagram:#f3f6f4; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16.5px;line-height:1.75;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+.wrap{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:220px minmax(0,1fr);gap:48px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);gap:0}.toc{display:none}}
+header.top{max-width:1120px;margin:0 auto;padding-block:48px 28px;border-bottom:1px solid var(--line);margin-bottom:32px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--display);font-weight:400;font-size:clamp(32px,5vw,48px);line-height:1.25;margin:8px 0 12px;text-wrap:balance}
+.lede{max-width:66ch;color:var(--muted);font-size:18px;margin:0}
+.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;font-size:14.5px}
+.toc ol{list-style:none;padding:0;margin:0;display:grid;gap:2px;counter-reset:c}
+.toc a{display:block;padding:5px 10px;border-radius:6px;color:var(--muted);text-decoration:none;counter-increment:c}
+.toc a::before{content:counter(c,bengali) ". ";font-family:var(--mono);font-size:12px;color:var(--accent)}
+.toc a:hover,.toc a:focus-visible{background:var(--accent-soft);color:var(--ink);outline:none}
+main{min-width:0;display:grid;gap:56px}
+section{min-width:0;scroll-margin-top:20px}
+h2{font-family:var(--display);font-weight:400;font-size:28px;line-height:1.3;margin:0 0 6px;text-wrap:balance}
+h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent);margin-right:10px;vertical-align:middle}
+h3{font-size:18px;margin:22px 0 6px;font-weight:700}
+p{margin:0 0 12px;max-width:68ch}
+.sub{color:var(--muted);margin-bottom:18px}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--ink);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.chip{display:inline-block;font-family:var(--mono);font-size:12.5px;line-height:1.5;padding:2px 9px;border-radius:999px;background:var(--blue-soft);color:var(--blue);white-space:nowrap}
+.chip.ok{background:var(--accent-soft);color:var(--accent)}
+.chip.warn{background:var(--amber-soft);color:var(--amber)}
+.chip.bad{background:var(--red-soft);color:var(--red)}
+.roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.role{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:grid;gap:6px;align-content:start}
+.role b{font-size:17px}
+.role .panel{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.role ul{margin:4px 0 0;padding-left:18px;font-size:15px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:620px}
+th,td{text-align:left;vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--line)}
+th{font-size:12.5px;font-family:var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px;counter-reset:s}
+.steps li{position:relative;padding:12px 16px 12px 52px;background:var(--surface);border:1px solid var(--line);border-radius:10px;counter-increment:s}
+.steps li::before{content:counter(s,bengali);position:absolute;left:14px;top:12px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--surface);display:grid;place-items:center;font-size:14px;font-weight:700}
+.steps .who{font-family:var(--mono);font-size:12px;color:var(--accent);display:block;letter-spacing:.03em}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+@media (max-width:700px){.two{grid-template-columns:minmax(0,1fr)}}
+.diagram{background:var(--diagram);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;margin:6px 0 14px}
+.diagram pre{margin:0;color:#15231d;font-family:var(--body)}
+.note{border-left:3px solid var(--amber);background:var(--amber-soft);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;max-width:72ch;font-size:15.5px}
+.note.green{border-color:var(--accent);background:var(--accent-soft)}
+.day{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.day .role ol{margin:4px 0 0;padding-left:20px;font-size:15px}
+footer{max-width:1120px;margin:48px auto 0;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+</head>
+<body>
+
+
+<header class="top">
+  <div class="eyebrow">Delivery Fast · প্রশিক্ষণ নির্দেশিকা</div>
+  <h1>Order থেকে delivery, return আর টাকা পর্যন্ত: কে, কখন, কী করেন</h1>
+  <p class="lede">E-commerce parcel, document আর সাধারণ customer-এর parcel কীভাবে system-এর ভেতর দিয়ে চলে, ধাপে ধাপে। Panel-এ যে নাম আর status লেখা থাকে, এখানেও হুবহু সেগুলোই ব্যবহার করা হয়েছে, যাতে screen-এর সাথে মিলিয়ে পড়া যায়।</p>
+</header>
+
+<div class="wrap">
+<nav class="toc" aria-label="অধ্যায়">
+  <ol>
+    <li><a href="#roles">কে কী করেন</a></li>
+    <li><a href="#setup">একবারের setup</a></li>
+    <li><a href="#create">Order তৈরি</a></li>
+    <li><a href="#lifecycle">Status-এর পুরো ধারা</a></li>
+    <li><a href="#intake">Parcel hub-এ আনা</a></li>
+    <li><a href="#linehaul">এক hub থেকে আরেক hub</a></li>
+    <li><a href="#delivery">Delivery</a></li>
+    <li><a href="#return">Return (RTO)</a></li>
+    <li><a href="#money">টাকার পথ</a></li>
+    <li><a href="#excel">Excel দিয়ে দ্রুত কাজ</a></li>
+    <li><a href="#always">সবসময় যা চলে</a></li>
+    <li><a href="#statuses">Status অভিধান</a></li>
+    <li><a href="#day">প্রতিদিনের চেকলিস্ট</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="roles">
+  <h2><span class="n">০১</span>কে কী করেন</h2>
+  <p class="sub">প্রতিটা ব্যবহারকারী login করলে নিজের panel-এ যান, আর শুধু নিজের কাজের অনুমতি পান।</p>
+  <div class="roles">
+    <div class="role"><b>Super admin</b><span class="panel">/super-admin</span>
+      <ul><li>দাম (rate card) আর নিয়ম ঠিক করা</li><li>SMS ও email-এর লেখা</li><li>Merchant অনুমোদন আর KYC</li><li>Role আর permission</li><li>Excel template-এর required column</li></ul></div>
+    <div class="role"><b>Operations manager</b><span class="panel">/courier-operation</span>
+      <ul><li>সব hub আর rider দেখেন</li><li>Order confirm, rider assign</li><li>Linehaul, return, SLA, report</li></ul></div>
+    <div class="role"><b>Hub manager</b><span class="panel">/courier-operation · শুধু নিজের hub</span>
+      <ul><li>Parcel scan করে receive</li><li>নিজের hub-এর rider assign</li><li>Rider-এর কাছ থেকে নগদ টাকা বুঝে নেওয়া</li></ul></div>
+    <div class="role"><b>Rider</b><span class="panel">/rider · phone-এ app</span>
+      <ul><li>Shift শুরু করা (তখনই live location যায়)</li><li>Pickup আর delivery</li><li>Proof (code, ছবি বা সই), COD আদায়</li><li>Hub-এ টাকা জমা</li></ul></div>
+    <div class="role"><b>Merchant</b><span class="panel">/ecommerce-merchant · /banking-merchant</span>
+      <ul><li>Order দেওয়া: একটা একটা, Excel বা API</li><li>Parcel track করা, return চাওয়া</li><li>Settlement আর invoice দেখা</li></ul></div>
+    <div class="role"><b>Customer</b><span class="panel">website</span>
+      <ul><li>নিজের parcel book (login করে বা guest)</li><li>Tracking, delivery-র পরে rating</li></ul></div>
+    <div class="role"><b>Finance</b><span class="panel">/courier-operation → COD &amp; finance</span>
+      <ul><li>একজন settlement তৈরি করেন, আরেকজন অনুমোদন দেন</li><li>VAT invoice, ব্যাংক বা bKash-এর হিসাব মেলানো</li><li>Claim বা dispute</li></ul></div>
+    <div class="role"><b>Support</b><span class="panel">সব panel-এর support</span>
+      <ul><li>Ticket-এর উত্তর (প্রতিটার উত্তর দেওয়ার শেষ সময় থাকে)</li><li>সংরক্ষিত উত্তর ব্যবহার</li><li>Rider আর franchise-এর আবেদন</li></ul></div>
+  </div>
+</section>
+
+<section id="setup">
+  <h2><span class="n">০২</span>একবারের setup</h2>
+  <p class="sub">কাজ শুরুর আগে একবার করতে হয়। পরে দরকার হলে বদলানো যায়।</p>
+  <ol class="steps">
+    <li><span class="who">Super admin</span>Rate card আর দাম, SMS/Email gateway-র key, notification-এর লেখা, Excel template-এর required column।</li>
+    <li><span class="who">আগে থেকেই আছে</span>৬৪টা জেলা, ৬০১টা zone আর ৪,৯৩৫টা এলাকা, আর ৩০টা hub। প্রতিটা zone কোনো না কোনো hub-এর আওতায়। <b>কোন hub কোন এলাকায় deliver করবে, তা এখান থেকেই ঠিক হয়।</b></li>
+    <li><span class="who">Operations</span>Rider যোগ করা আর তার hub ঠিক করা। Rider NID আর licence upload করে, Operations যাচাই করে (KYC)।</li>
+    <li><span class="who">Merchant → Super admin</span>Merchant আবেদন করে (অথবা invitation পায়)। তারপর trade license, NID আর ব্যাংকের তথ্য দেয়, super admin যাচাই করেন। Merchant হয় <span class="chip ok">ACTIVE</span>।</li>
+  </ol>
+</section>
+
+<section id="create">
+  <h2><span class="n">০৩</span>Order তৈরি: চারটা পথ</h2>
+  <p class="sub">যে পথেই আসুক, প্রতিটা order পায় নিজস্ব tracking ID (যেমন <code>PP-261016-B54GG</code>), আর শুরু হয় <span class="chip">Pending operations confirmation</span> থেকে।</p>
+  <div class="tbl"><table>
+    <thead><tr><th>পথ</th><th>কে করেন</th><th>কোথায়</th><th>খেয়াল রাখুন</th></tr></thead>
+    <tbody>
+      <tr><td><b>ক.</b> Merchant নিজে</td><td>Merchant</td><td>Panel-এ order form, <b>Excel import</b>, বা API</td><td>Excel-এ preview দেখে তারপর তৈরি; ভুল সারি বাদ যায়</td></tr>
+      <tr><td><b>খ.</b> Merchant Excel পাঠায়</td><td>Operations</td><td>E-commerce বা Document operations → Import → <b>Rider pickup</b></td><td>প্রতিটা সারিতে merchant-এর নাম বা code লাগবে</td></tr>
+      <tr><td><b>গ.</b> Hub-এ সরাসরি জমা (drop-off)</td><td>Operations বা Hub manager</td><td>Import → <b>Drop-off at hub</b> + hub</td><td>Upload-এর পরে <b>label print</b> করে parcel-এ লাগাতে হয়</td></tr>
+      <tr><td><b>ঘ.</b> সাধারণ customer</td><td>Customer</td><td>Website → Send a parcel</td><td>Guest হলে ফোনে SMS code দিয়ে যাচাই</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>Needs info:</b> তথ্য কম থাকলেও order তৈরি হয়, default ধরে charge সহ। কিন্তু প্রাপকের নাম, ফোন, ঠিকানা, জেলা আর zone পূরণ না হওয়া পর্যন্ত <b>delivery rider assign করা যায় না</b>। Merchant বা Operations <b>Complete</b> button দিয়ে পূরণ করেন।</div>
+  <div class="note green">Operations confirm করার আগ পর্যন্ত merchant বা customer নিজে order cancel করতে পারেন। Confirm হওয়ার পরে শুধু Operations পারে।</div>
+</section>
+
+<section id="lifecycle">
+  <h2><span class="n">০৪</span>Status-এর পুরো ধারা</h2>
+  <p class="sub">প্রতিটা parcel এই পথেই চলে। কোন status থেকে কোনটায় যাওয়া যাবে, তা system-এ বাঁধা; ভুল ধাপে যাওয়া যায় না।</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A([Pending operations confirmation]) -->|Ops: Accept &amp; assign rider| B[Pickup assigned]
+  A -->|Drop-off: hub-এ scan| E
+  A -->|Cancel| X([Pickup cancelled])
+  B --> C[Pickup confirmed]
+  B --> D[Picked up]
+  C --> D
+  D -->|Hub scan| E[At hub]
+  E -->|অন্য জেলা: linehaul| T[In transit]
+  T -->|গন্তব্যের hub-এ scan| E2[At hub · গন্তব্যে]
+  E -->|একই hub-এর এলাকা| F
+  E2 -->|Ops: delivery rider| F[Assigned]
+  F --> G[Out for delivery]
+  G -->|Code / ছবি / সই| H([Delivered])
+  G -->|প্রাপক পাওয়া যায়নি| R[Retry scheduled]
+  R --> G
+  R -->|বারবার ব্যর্থ| RS[Return scheduled]
+  E -->|Merchant return চাইলে| RS
+  RS --> RT([Returned])
+  classDef done fill:#dff3e9,stroke:#16845b,color:#15231d;
+  classDef stop fill:#f8e4e4,stroke:#b23b3b,color:#15231d;
+  classDef wait fill:#fbf0dc,stroke:#a86a08,color:#15231d;
+  class H done;
+  class X,RT stop;
+  class R,RS wait;
+  </pre></div>
+  <p>যেকোনো ধাপে সমস্যা হলে (ঠিকানা ভুল, parcel ক্ষতিগ্রস্ত) Operations status দেন <span class="chip bad">Exception</span>, পরে সমাধান করে আবার ঠিক ধাপে ফেরান।</p>
+</section>
+
+<section id="intake">
+  <h2><span class="n">০৫</span>Parcel hub-এ আনা</h2>
+  <div class="two">
+    <div>
+      <h3>Rider pickup</h3>
+      <ol class="steps">
+        <li><span class="who">Operations / Hub manager</span>Shipments → <b>Accept &amp; assign rider</b>। অনেক order হলে <b>Dispatch → Create dispatch</b> (system rider প্রস্তাব করে), অথবা <b>Excel bulk update</b>। Status: <span class="chip">Pickup assigned</span></li>
+        <li><span class="who">Rider</span>App-এ pickup দেখে, merchant-এর কাছে গিয়ে parcel নেয়। Status: <span class="chip">Picked up</span></li>
+        <li><span class="who">Rider</span>Parcel hub-এ নিয়ে আসে।</li>
+        <li><span class="who">Hub manager</span>Hub console-এ scan করেন। Status: <span class="chip">At hub</span></li>
+      </ol>
+    </div>
+    <div>
+      <h3>Hub-এ drop-off</h3>
+      <ol class="steps">
+        <li><span class="who">Operations</span>Excel import → <b>Drop-off at hub</b>। Tracking-এ দেখায় "Awaiting drop-off at …"। কোনো rider লাগে না।</li>
+        <li><span class="who">Operations</span><b>Print labels</b>: A4 sheet-এ ৪টা, অথবা 100×150 mm thermal। Barcode, প্রাপক আর COD-এর পরিমাণ বড় করে লেখা থাকে।</li>
+        <li><span class="who">Hub-এর কর্মী</span>প্রতিটা parcel-এ label লাগান।</li>
+        <li><span class="who">Hub manager</span><b>Hubs → receive desk</b>-এ scanner, camera বা টাইপ করে receive। "আসার কথা / এসেছে / বাকি" দেখা যায়। Status: <span class="chip">At hub</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="note">Pickup হওয়ার আগে পর্যন্ত Operations order-কে <b>Change to drop-off</b> বা <b>Change to rider pickup</b> করতে পারে। দাম নতুন করে হিসাব হয়, আর sender SMS পায়।</div>
+</section>
+
+<section id="linehaul">
+  <h2><span class="n">০৬</span>এক hub থেকে আরেক hub (linehaul)</h2>
+  <p class="sub">System প্রাপকের zone দেখে ঠিক করে কোন hub deliver করবে। প্রথম hub আর সেই hub এক না হলে parcel গাড়িতে যায়, যেমন Gulshan থেকে Chattogram।</p>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  P[At hub · প্রথম hub] --> B1[Bag বানানো, parcel scan করে ঢোকানো]
+  B1 --> S[Bag seal]
+  S --> TR[Trip: গাড়ি, manifest, bag load]
+  TR -->|গাড়ি ছাড়ল| IT[In transit]
+  IT --> RC[গন্তব্যের hub: bag scan করে receive]
+  RC --> OK[At hub · গন্তব্যে]
+  RC -.->|কম বা বেশি parcel, seal ভাঙা| DS[Discrepancy চিহ্নিত]
+  </pre></div>
+  <ol class="steps">
+    <li><span class="who">Hub manager · প্রথম hub</span>Courier Operations → <b>Linehaul</b>-এ bag তৈরি করে parcel scan করে ঢোকান, তারপর seal করেন।</li>
+    <li><span class="who">Hub manager</span>Trip তৈরি করে গাড়ি বাছেন, manifest print করেন, bag load করেন। গাড়ি ছাড়লে সব parcel হয় <span class="chip">In transit</span>।</li>
+    <li><span class="who">Hub manager · গন্তব্যের hub</span>Bag scan করে receive করেন। কোনো parcel কম বা বেশি থাকলে system নিজেই discrepancy হিসেবে চিহ্নিত করে।</li>
+  </ol>
+</section>
+
+<section id="delivery">
+  <h2><span class="n">০৭</span>Delivery</h2>
+  <ol class="steps">
+    <li><span class="who">Operations / Hub manager</span><b>Dispatch</b>: map, route planner আর rider-এর প্রস্তাব দেখে delivery rider assign। Status: <span class="chip">Assigned</span></li>
+    <li><span class="who">Rider</span>App-এ delivery শুরু করে। প্রাপক SMS-এ <b>delivery code</b> পান। Status: <span class="chip">Out for delivery</span></li>
+    <li><span class="who">Rider</span>প্রাপকের code দেয়, অথবা ছবি বা সই নেয়। Proof-এ সময় আর location-এর ছাপ পড়ে। COD থাকলে টাকা নেয়। Status: <span class="chip ok">Delivered</span></li>
+    <li><span class="who">Rider · না পারলে</span>কারণ লিখে <span class="chip warn">Retry scheduled</span>, পরের দিন আবার চেষ্টা।</li>
+  </ol>
+  <div class="note green"><b>Delivered শুধু rider-ই করতে পারে</b>, proof দিয়ে। Operations বা Excel থেকে Delivered করা যায় না, যাতে প্রমাণ আর COD ছাড়া কোনো parcel "delivered" না হয়। Internet না থাকলেও rider কাজ চালিয়ে যেতে পারে; network এলে সব sync হয়।</div>
+</section>
+
+<section id="return">
+  <h2><span class="n">০৮</span>Return (RTO)</h2>
+  <ol class="steps">
+    <li><span class="who">Operations</span>বারবার ব্যর্থ হলে, অথবা merchant return চাইলে, status দেন <span class="chip warn">Return scheduled</span>। Return charge হিসাব হয় rate card অনুযায়ী।</li>
+    <li><span class="who">Operations</span><b>Returns (RTO)</b> page-এ return run তৈরি করে rider দেন।</li>
+    <li><span class="who">Rider</span>Parcel merchant-কে ফেরত দেয়। Status: <span class="chip bad">Returned</span></li>
+    <li><span class="who">Merchant</span>Panel-এ "received" নিশ্চিত করে। Return charge invoice-এ বা পরের settlement-এ যোগ হয়।</li>
+  </ol>
+</section>
+
+<section id="money">
+  <h2><span class="n">০৯</span>টাকার পথ: COD থেকে merchant-এর হাতে</h2>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant R as Rider
+  participant H as Hub manager
+  participant F1 as Finance (তৈরিকারী)
+  participant F2 as Finance (অনুমোদনকারী)
+  participant M as Merchant
+  R->>H: Cash handover request + নগদ টাকা
+  H->>H: COD & finance → Receive
+  F1->>F1: Draft settlement (COD − charge ± adjustment)
+  F1->>F2: অনুমোদনের জন্য
+  F2->>F2: Approve (অন্য একজনকেই করতে হয়)
+  F1->>M: bKash বা ব্যাংকে টাকা, reference দিয়ে Mark paid
+  M-->>M: SMS আর panel-এ settlement দেখা
+  </pre></div>
+  <ol class="steps">
+    <li><span class="who">Rider</span>দিনের শেষে app-এ <b>Request cash handover</b> দেয়, তারপর hub-এর cashier-কে টাকা দেয়।</li>
+    <li><span class="who">Hub manager</span>COD &amp; finance → Cash handover requests → <b>Receive</b>। টাকার হিসাব rider-এর ঘর থেকে hub-এর ঘরে চলে যায়।</li>
+    <li><span class="who">Finance (তৈরিকারী)</span><b>Draft settlement</b>। দৈনিক বা সাপ্তাহিক নিয়ম ঠিক করা থাকলে system নিজেই draft তৈরি করে।</li>
+    <li><span class="who">Finance (অনুমোদনকারী)</span><b>Approve</b>। যিনি তৈরি করেছেন, তিনি নিজে অনুমোদন দিতে পারেন না।</li>
+    <li><span class="who">Finance</span>টাকা পাঠিয়ে transaction reference দিয়ে <b>Mark paid</b>। Merchant SMS পায়।</li>
+  </ol>
+  <div class="note">পাওনা ঋণাত্মক হলে (charge বেশি, COD কম) টাকা যায় না; ঘাটতি পরের settlement থেকে কাটা হয়। হিসাবের entry বদলানো বা মোছা যায় না, ভুল হলে উল্টো একটা entry দিয়ে ঠিক করতে হয়।</div>
+</section>
+
+<section id="excel">
+  <h2><span class="n">১০</span>Excel দিয়ে দ্রুত কাজ</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>কাজ</th><th>কোথায়</th><th>কীভাবে</th></tr></thead>
+    <tbody>
+      <tr><td><b>নতুন order</b></td><td>Merchant panel, অথবা Operations → E-commerce / Document operations</td><td>Template download (dropdown সহ) → পূরণ → upload → preview → <b>Create</b> → ব্যর্থ সারি Error column সহ download</td></tr>
+      <tr><td><b>Bulk update</b></td><td>Operations → Shipments → <b>Bulk update by Excel</b></td><td>Filter (যেমন Pending) → download → <b>Action</b> column বাছাই → upload → preview → <b>Apply</b></td></tr>
+      <tr><td><b>Label print</b></td><td>Import-এর পরে, অথবা Shipments-এ বাছাই করে</td><td>A4 (৪টা) বা thermal 100×150 mm</td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:14px">Bulk update-এ যা করা যায়: Accept &amp; assign pickup rider, Assign delivery rider, Change status, Receive at hub, Cancel, Change to drop-off বা rider pickup, Schedule return, Complete details, Add note। Action ফাঁকা থাকলে সেই সারি বাদ যায়। "Suggested rider" column-এ system-এর প্রস্তাব থাকে।</p>
+  <div class="note">Excel-এ district বাছলে zone-এর dropdown শুধু সেই district-এর zone দেখায়। এটা Microsoft Excel আর LibreOffice-এ কাজ করে, Google Sheets-এ করে না। Download করার পরে কেউ parcel বদলে থাকলে সেই সারি আটকে যায়, যাতে পুরনো তথ্যের উপর কাজ না হয়।</div>
+</section>
+
+<section id="always">
+  <h2><span class="n">১১</span>পুরো সময় যা চলতে থাকে</h2>
+  <div class="roles">
+    <div class="role"><b>SLA</b><span>প্রতিটা parcel-এর pickup আর delivery-র শেষ সময় থাকে। দেরির ঝুঁকি হলে <span class="chip warn">At risk</span>, দেরি হয়ে গেলে <span class="chip bad">Breached</span>, আর manager email পান।</span></div>
+    <div class="role"><b>Live tracking</b><span>Merchant আর customer প্রতিটা ধাপ সাথে সাথে দেখেন। প্রধান ধাপে SMS যায়।</span></div>
+    <div class="role"><b>Rider-এর location</b><span>শুধু shift চালু থাকলে, app খোলা থাকলে আর browser location-এর অনুমতি দিলে Operations-এর map-এ দেখা যায়।</span></div>
+    <div class="role"><b>Support</b><span>Ticket-এর উত্তর দেওয়ার শেষ সময় থাকে, দেরি হলে ticket উপরের স্তরে যায়। সমাধান হলে customer ১ থেকে ৫ rating দেন।</span></div>
+    <div class="role"><b>Audit</b><span>কে, কখন, কী বদলেছেন, সব লেখা থাকে। Bulk কাজের প্রতিটা সারিতে তার নম্বর থাকে।</span></div>
+  </div>
+</section>
+
+<section id="statuses">
+  <h2><span class="n">১২</span>Status অভিধান</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Status (panel-এ যেমন)</th><th>মানে</th><th>কে পরের ধাপে নেন</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip">Pending operations confirmation</span></td><td>নতুন order, এখনো দেখা হয়নি (SLA: Awaiting review)</td><td>Operations</td></tr>
+      <tr><td><span class="chip">Pickup assigned</span></td><td>Pickup rider ঠিক হয়েছে</td><td>Rider</td></tr>
+      <tr><td><span class="chip">Pickup confirmed</span></td><td>Rider pickup নিশ্চিত করেছে</td><td>Rider</td></tr>
+      <tr><td><span class="chip">Picked up</span></td><td>Parcel rider-এর হাতে</td><td>Rider → Hub</td></tr>
+      <tr><td><span class="chip">At hub</span></td><td>Parcel hub-এ পৌঁছেছে</td><td>Hub manager / Operations</td></tr>
+      <tr><td><span class="chip">In transit</span></td><td>গাড়িতে, অন্য hub-এর পথে</td><td>গন্তব্যের hub</td></tr>
+      <tr><td><span class="chip">Assigned</span></td><td>Delivery rider ঠিক হয়েছে</td><td>Rider</td></tr>
+      <tr><td><span class="chip">Out for delivery</span></td><td>Rider প্রাপকের পথে</td><td>Rider</td></tr>
+      <tr><td><span class="chip ok">Delivered</span></td><td>পৌঁছে গেছে, proof সহ</td><td>শেষ (তারপর টাকার হিসাব)</td></tr>
+      <tr><td><span class="chip warn">Retry scheduled</span></td><td>আবার চেষ্টা হবে</td><td>Rider / Operations</td></tr>
+      <tr><td><span class="chip warn">Return scheduled</span></td><td>Merchant-কে ফেরত যাবে</td><td>Operations → Rider</td></tr>
+      <tr><td><span class="chip bad">Returned</span></td><td>Merchant-কে ফেরত দেওয়া হয়েছে</td><td>শেষ</td></tr>
+      <tr><td><span class="chip bad">Pickup cancelled</span></td><td>Pickup-এর আগে বাতিল</td><td>শেষ</td></tr>
+      <tr><td><span class="chip bad">Exception</span></td><td>সমস্যা, সমাধান দরকার</td><td>Operations</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="day">
+  <h2><span class="n">১৩</span>প্রতিদিনের চেকলিস্ট</h2>
+  <div class="day">
+    <div class="role"><b>Operations / Hub manager</b>
+      <ol><li>সকালে <span class="chip">Pending operations confirmation</span> filter করে confirm, rider assign (একটা একটা বা Excel-এ)</li><li>Drop-off parcel receive desk-এ scan</li><li>At hub parcel: অন্য জেলার জন্য linehaul, নিজের এলাকার জন্য delivery rider</li><li>SLA-র At risk আর Exception দেখা</li><li>সন্ধ্যায় rider-দের cash handover receive</li></ol></div>
+    <div class="role"><b>Rider</b>
+      <ol><li>App খুলে <b>shift শুরু</b> (location-এর অনুমতি দিন)</li><li>Pickup task শেষ করে parcel hub-এ জমা</li><li>Delivery: code, ছবি বা সই, COD</li><li>না পারলে কারণ লিখে retry</li><li>দিনের শেষে cash handover request, hub-এ টাকা জমা, shift শেষ</li></ol></div>
+    <div class="role"><b>Merchant</b>
+      <ol><li>Order দেওয়া (Excel হলে preview দেখে)</li><li>"Needs info" order পূরণ করা</li><li>Return parcel received নিশ্চিত করা</li><li>Settlement আর invoice মিলিয়ে দেখা</li></ol></div>
+    <div class="role"><b>Finance</b>
+      <ol><li>Hub-এর নগদ টাকা ব্যাংকে জমার হিসাব</li><li>Settlement draft (বা automatic draft দেখা)</li><li>দ্বিতীয়জন approve, তারপর reference দিয়ে Mark paid</li><li>ব্যাংক বা bKash statement upload করে হিসাব মেলানো</li></ol></div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>Delivery Fast · অভ্যন্তরীণ প্রশিক্ষণের জন্য। Panel-এর নাম আর status হুবহু system থেকে নেওয়া।</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:"default",securityLevel:"strict",fontFamily:"Hind Siliguri, Noto Sans Bengali, sans-serif"});</script>
+</body>
+</html>

@@ -238,6 +238,71 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `bulk-bookings` pg-boss queue rows left in the `pgboss` schema. Dropping them needs an explicit
   owner decision and a migration; no data was removed.
 
+## Bulk operations by Excel (modules/bulk-updates, web: shared/importer.js bulk mode)
+Courier Operations changes many parcels from one spreadsheet: download the filtered parcels, choose
+an action per row in Excel, upload, check the preview, apply. Built on the import engine (xlsx
+writer/reader, parse slots, `ImportConfigService` limits); `ParcelsService`, `IntakeChangeService`,
+`CompleteDetailsService` and `RoutingService` do the work. All endpoints need `parcel:dispatch` +
+`parcel:read:any` (no API keys); every action is then checked by the service the single action uses.
+- Export: `GET /bulk-updates/export?preset=pending_review|at_hub_unassigned|needs_info&status=&merchantId=
+  &hubId=&dropOffHubId=&intake=&incomplete=&sla=AWAITING_REVIEW|ON_TRACK|AT_RISK|BREACHED&line=ecommerce|
+  document|customer&from=&to=&q=` → .xlsx (headers `X-Row-Count`, `X-Matched`, `X-Row-Limit`; at most the
+  operations import row limit, oldest first; the Instructions sheet says when the file was cut). Hub
+  operators get their hubs' work only: parcels at / bound for / to be dropped off at their hubs, with
+  their hubs' riders, and pickup requests in zones their hubs serve. Audited `bulk_update.export`.
+- Sheet `Parcels` (`bulk-columns.ts`): Tracking ID, Current status, Suggested rider (`RoutingService.
+  suggestFor`, the GET /routing/suggestions rules) and the parcel's data are read-only (grey, locked);
+  Action, Rider, New status, Hub, Reason / note, Priority and the "Set …" completion columns are editable
+  with dropdowns from live data (riders `code · name · hub` in the caller's scope, per-hub lists `RD_<n>`
+  following the Hub column; Set zone/area follow Set district/zone; all as `IF($X2="",all,INDIRECT(…))`,
+  never IFERROR). A hidden `version` column carries `Parcel.version`. The sheet is protected without a
+  password (filter allowed; Review → Unprotect Sheet for anything else). Sheets `Instructions` and hidden
+  `Lists`. Writer additions: `STYLE.readonly/headerReadonly/editable/editableText`, `Sheet.protect`,
+  `Sheet.hiddenColumns`; `writeListsSheet()` / `dependentListFormula()` are shared with import templates.
+- Actions: Accept & assign pickup rider (`assignPickup`; empty Rider = the suggestion), Assign delivery
+  rider (`assignDelivery`; Set … columns in the same row complete a "Needs info" order first), Change
+  status (`setStatus`; PICKUP_CONFIRMED, PICKED_UP, AT_HUB, IN_TRANSIT, OUT_FOR_DELIVERY, RETRY_SCHEDULED,
+  RETURNED, EXCEPTION — never DELIVERED), Receive at hub (`setStatus` AT_HUB; drop-offs at their hub),
+  Cancel (`cancel`, reason required), Change to drop-off / rider pickup (`IntakeChangeService`), Schedule
+  return (`setStatus` RETURN_SCHEDULED, reason required), Complete details (`CompleteDetailsService`), Add
+  note (`addNote`). `assignPickup`, `assignDelivery` and `cancel` take `opts.expectedVersion`.
+- Dry run: `POST /bulk-updates/validate` (multipart `file`, .xlsx or .csv) → `BulkUpdateJob` (number
+  `BLK-YYMMDD-NNN`, status VALIDATED) with a `BulkUpdateRow` per row that has an Action (rows without one
+  are only counted as `ignored`): READY, WARNING (applies: rider off shift / on a break / over capacity,
+  rider of another hub, ignored cells, no version), ERROR (`[{ column, message }]`, text "Row N · Column:
+  message": lifecycle via `canTransition` with intake, hub scope, rider active and in scope, details needed
+  before delivery, unknown or duplicate tracking ID, "changed since you downloaded it" when the version
+  differs) or ALREADY_DONE (the parcel is already in the requested state). `GET /bulk-updates/:id/rows?
+  filter=all|apply|warning|error|applied|already_done|failed|not_applied&page&pageSize`.
+- Apply: `POST /bulk-updates/:id/apply` (only the uploader; one running bulk update per person) → up to
+  100 rows during the request, more through the pg-boss queue `bulk-updates` (progress `bulk_update.
+  progress` / `bulk_update.completed` `{ id, data: { number, status, processed, total, applied,
+  alreadyDone, failed } }` to the uploader). High-priority rows first. Each row: skipped as ALREADY_DONE
+  when the parcel already is in the target state or the same change (parcel, version, request: row
+  `dedupeKey`) was applied by an earlier upload; else the service runs with the row's version (its own
+  transaction; a refusal marks only that row FAILED). Resumable (rows not yet handled). Every audit record
+  the services write carries `data.bulkUpdate = { id, number, row }` (`withAuditContext`, common/audit.service.ts);
+  the job writes `bulk_update.validate / apply / complete / discard`. Notifications, webhooks and realtime
+  are those of the single actions.
+- Re-pricing preview: rows that change what the price depends on (Complete details / Assign delivery rider with
+  Set district, zone, area, weight or service; Change to drop-off / rider pickup) get `plan.price = { before,
+  after, difference }` at validate time from `CompleteDetailsService.previewCharge` / `IntakeChangeService.
+  previewCharge`: the same engine and package frozen at booking that applying uses, so the charge applied equals
+  the preview. A change the package refuses (`SERVICE_NOT_IN_PACKAGE`, e.g. no drop at hub) makes the row an
+  ERROR. The job view has `pricing: { rows, before, after, difference }` over the rows that will apply (or were
+  applied); the preview shows a PRICE column (old → new, difference) and a "Re-priced" total before Apply. There
+  is no bulk last-mile change or re-weigh action (no single action to reuse yet).
+- After: `GET /bulk-updates/:id` (counts, progress, result `{ applied, alreadyDone, failed, notApplied }`),
+  `GET /bulk-updates/:id/failed-rows?format=xlsx|csv` (the same sheet plus an Error column; upload it again
+  after fixing), `GET /bulk-updates?mine=` (history: your own; operations managers everyone's),
+  `DELETE /bulk-updates/:id` (drop a checked file), `GET /bulk-updates/limits`. Checked files nobody applies
+  are discarded after a day; rows of finished bulk updates are kept 90 days.
+- Web: Shipments and the E-commerce / Document / Customer operations pages have "Bulk update by Excel"
+  and "Bulk update history" (courier-operation/bridge-bulk.js) → `DFImport.bulk(cfg)` /
+  `DFImport.bulkHistory(cfg)`: step 1 downloads with the page's filters plus hub, intake, SLA state and
+  quick presets; then the import dialog's upload → preview (All / Will apply / Warnings / Errors, the cell
+  in error highlighted) → apply → progress → result steps.
+
 ## Incomplete orders ("Needs info", parcels/incomplete.ts)
 - Data model: imports may book a parcel with `recipientName`, `recipientPhone`, `deliveryStreet`,
   `deliveryDistrict`, `deliveryZone` null (nullable since the import migration); `incomplete = true`
@@ -262,3 +327,151 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   cell; re-priced with the tariff frozen at booking; a public "Order details updated/completed" event and
   an internal "Details changed" event; audited `parcel.complete_details`; published as `parcel.updated`.
   The operations price-neutral correction (`PATCH /parcels/:id`) also clears what it fills in.
+
+## Geography admin (modules/geography; web: super-admin/bridge-geo.js, courier-operation/bridge-hubs.js)
+Districts → zones → areas live in the service catalog (Setting `catalog`, read by every booking path
+through `PricingService.catalog()`); the geography state next to it is Setting `catalog-meta`
+(`geography/geo-catalog.ts`): deactivated places, optional map points and tombstones.
+- Identity: places are referenced BY NAME on every record (parcels pickup/delivery, addresses,
+  merchant pickup addresses and schedules, pickup requests, hubs, riders' zone, delivery zones and
+  their areas, SLA policies, the import settings' fixed default destination, pricing snapshots).
+  Stable ids would mean migrating all of them, so a **rename updates every reference in the same
+  transaction** as the catalog (case-insensitive match; audited with the row counts per column,
+  `references`). Zone names are unique in the whole country (the catalog keys areas by zone;
+  "Kaliganj (Gazipur)" style for repeats), area names within their zone, district names overall.
+- `PricingService.catalog(db?, { includeInactive? })`: without the flag (bookings, `/catalog`,
+  dropdowns, templates, imports, bulk updates) deactivated places are left out — a district hides its
+  zones and areas, a zone its areas. Code that checks or prices an EXISTING record passes
+  `includeInactive: true` (hub drop-off origin, delivery-zone config, hub editor for the hub's current
+  zone). New bookings (`ParcelsService.book`, all channels; imports per row) refuse a deactivated place
+  with 422 `PLACE_INACTIVE` `{ field, name, address }`.
+- Read (`hub:read`): `GET /geography` (tree with `active`, `lat/lng`, the zone's serving hubs
+  `servedBy` and hubs standing in it), `GET /geography/counts?district=&zone=` (usage totals of the
+  districts / a district's zones / a zone's areas), `GET /geography/usage?district=&zone=&area=`
+  (`{ total, items: [{ key, label, count }] }`).
+- Change (`config:manage`; audited `geo.<district|zone|area>.<create|update|delete>`,
+  `geo.area.bulk_create`): `POST/PATCH /geography/districts`, `POST/PATCH /geography/zones`
+  (`hubId` on create also creates its delivery zone), `POST /geography/areas { district, zone,
+  names[] }` (pasted lines → `{ added, skipped: [{ line, name, reason }] }`), `PATCH /geography/areas`;
+  PATCH takes `{ name?, active?, lat?, lng? }`. `DELETE /geography/{districts|zones|areas}?district=
+  &zone=&area=` only when unused, else 409 `IN_USE` with `details.usage` and a message offering
+  deactivation. Places are named in body/query (names may contain "/"), matched case-insensitively.
+- `PUT /catalog` (packaging/products lists) keeps deactivated places the client can't see and refuses
+  removing a used place (409 `IN_USE`); both writers serialise on `lockGeography(tx)`.
+- Every change publishes `catalog.updated` (staffPermission `support:create`, i.e. every signed-in
+  panel): `shared/api.js` reloads the catalog and the platform-config overlay, merchant panels, the
+  courier console, the importer and super admin refresh their lists. There is no server-side catalog
+  cache; the next request reads the new catalog.
+- Hubs (`hub:manage`): `POST/PATCH /hubs` validate the district (catalog; deactivated refused unless
+  already the hub's) and zone (of that district), unique names (409 `HUB_NAME_TAKEN`); a PATCH without
+  `active` no longer reactivates a hub. Deactivate with `PATCH { active: false }` (audited
+  `hub.deactivate`; hidden from `GET /hubs`). `GET /hubs/:id/usage` and `DELETE /hubs/:id` (only when
+  unused: every foreign key to `hubs` plus uuid columns named `*hubId` / `*HubId` / `*hubIds` are
+  counted, so new tables are covered; 409 `IN_USE` otherwise). Hub changes publish `network.updated`.
+- The BD seed (`npm run db:seed:geo`) skips tombstoned places and hub codes (deleted or renamed away),
+  so it never brings them back.
+
+## Banking & Financial merchants (renamed from "Document / corporate", 2026-10-17)
+- Enum values: `MerchantType.BANKING_FINANCIAL` and `Segment.BANKING_FINANCIAL` (was `CORPORATE_DOCUMENT`),
+  renamed in place by migration `20261017073103_banking_financial_rename` (`ALTER TYPE … RENAME VALUE`;
+  no rows rewritten). Use `BANKING_FINANCIAL` in code, zod schemas and the API; `CORPORATE_DOCUMENT` is
+  no longer accepted. JSON written before the rename (e.g. old approval payloads, audit data) keeps the
+  old string.
+- Panel: `/banking-merchant` (route group `app/(banking-merchant)`, `src/features/banking-merchant`,
+  `public/legacy/banking-merchant`, `<body data-app="banking-merchant">`, `api.js` guard). `/document-merchant`
+  and `/document-merchant.html` redirect permanently (`next.config.ts`). Sign-in sends a Banking &
+  Financial merchant's members to `/banking-merchant` (`auth.service.ts`).
+- Labels: "Banking & Financial merchant(s)" in the panels, super admin ("Banking & Financial merchants"
+  page), Courier Operations ("Banking & Financial operations" page), the website and import templates
+  ("Banking & Financial consignment import"). The import template key stays `document` (`/imports/templates/document`).
+
+## Hub groups (modules/packages)
+No longer used for pricing (spec v2 prices by district). The `HubGroup` model and its endpoints
+(`GET/POST/PATCH/DELETE /hub-groups`, `PUT /hub-groups/:id/hubs`, `GET/PUT /hubs/:id/hub-group`) are kept
+because they are harmless and may be used for reporting; nothing reads them for prices.
+
+## Service packages & pricing (modules/packages, packages/shared/src/packages.ts) — spec v2
+The owner's spec "Service packages & pricing v2" (2026-10-17).
+
+### Categories, products, routes
+- **Categories** = the Prisma `Segment`: `CUSTOMER` (website senders, walk-ins), `ECOMMERCE`, `BANKING_FINANCIAL`.
+  A merchant's category comes from its `MerchantType` (`segmentOfMerchantType`).
+- **Products** (`ParcelProduct { segment, name, type, active, mutedNotifications[] }`): two lists — `ECOMMERCE`
+  (shared by Customer and E-commerce) and `BANKING_FINANCIAL`; each product has one of the three fixed types
+  `REGULAR | DOCUMENT | BOOKS` (`PRODUCT_TYPES`). Super admin: `GET/POST/PATCH/DELETE /parcel-products`
+  (delete only if unused, else deactivate). `mutedNotifications` lists the parcel messages that are never sent
+  for it (the editor shows one "may be sent" checkbox per message). The product is optional in every booking
+  surface; none = type Regular. Seed: `SEED_PRODUCTS` (owner's lists), idempotent.
+- **Routes** (district only, never zone): `normalizeDistrict()` maps Dhaka North / Central / South to "Dhaka";
+  `DHAKA_SUBURBAN_DISTRICTS` = Gazipur, Narayanganj, Dhaka (Sub-urban) (a constant). `routeTier(pickup, delivery)`:
+  `DHAKA_SUBURBAN` (Dhaka ↔ a sub-urban district, either way) → `SAME_DISTRICT` → `DIFFERENT_DISTRICT`.
+  Pickup district: the pickup address's (rider / on-demand pickup) or the drop hub's (drop at hub). Delivery
+  district: the recipient's (home delivery) or the collection hub's (Hub Pickup).
+
+### Data model
+- Service catalog in code (`SERVICES`): first mile (`first.rider_pickup|hub_drop|on_demand_pickup`), last mile
+  (`last.doorstep` = Home delivery, `last.hub_collect` = Hub Pickup), service (`speed.regular` core,
+  `speed.express`; Banking also `speed.on_demand`, `handling.b2b|trade|urgent`), `payment.cod` (Customer /
+  E-com), `option.open_box` (E-com), 16 parcel notifications (`notify.*`; guest verification Customer only, never
+  in the merchant modal), 4 support notifications, proof (`proof.photo|otp|signature`), tracking & support
+  (`tracking.website` core, `tracking.live_location`, `tracking.rider_phone`, `support.tickets`), integrations
+  (`integration.api|webhooks`, merchants only).
+- `ServicePackage { segment, name, defaultFor, status ACTIVE|ARCHIVED, source }`, `ServicePackageVersion
+  { services[], prices (packagePricesSchema), effectiveFrom }`, `PackageAssignment { merchantId, packageId|null,
+  effectiveFrom }`. Three defaults (one per category); no assignment = the category default.
+- Parcel columns: `packageVersionId`, `firstMile`, `lastMile`, `speedOption`, `openBox`, `onDemand`, `productId`,
+  `productName`, `productType`, `services[]`, `notifications[]` (package ∩ booking choice − product mutes),
+  `collectHubId`, `collectionCodeEncrypted`, `readyForCollectionAt`, `collectionDueAt`, `collectionReminderAt`,
+  `reattemptCharge`. `pricingSnapshot` (engine `package-v2`): package/version, prices, services, tier, pickup and
+  delivery districts, drop / collection hub, selection, `lines`, delivery charge, COD fee, total (older `package`
+  and rate-card snapshots stay as booked).
+
+### Price fields and the engine
+`packagePricesSchema` (initial values: same district 70, Dhaka ↔ Sub-urban 100, different district 130, extra kg
+15, Express 40, COD 1% min 10, return 50%, free re-attempts 2, others 0). Customer & E-com: route · product type
+(Regular / Document / Books) · weight (0.5 kg included, each started kg above) · service (Regular / Express) ·
+last mile (Home delivery / Hub Pickup, may be negative) · first mile (−drop at hub / +on-demand pickup) · open box
+(E-com) · COD fee. Banking: route · service (Regular / Express / On-demand / B2B / Trade / Corporate Urgent; B2B
+and Trade add to Regular, Corporate Urgent without a speed fee) · last mile · first mile — no weight, no COD, no
+product-type charge. `priceParcel()` is the one pure function (packages/shared); `PackagesService.quote()` wraps
+it (package in force, defaults, enforcement, hubs, route tier). Delivery charge never below 0 (a `floor` line),
+whole taka, VAT-inclusive. Customer & E-com **Express = same day, SAME_DISTRICT only** (else 422
+`EXPRESS_SAME_DISTRICT_ONLY`; an import row is an error).
+
+### Booking rules and surfaces
+`resolveSelection()` applies the defaults (rider pickup else drop at hub; home delivery else Hub Pickup; Regular;
+every package notification) and refuses what the package lacks: 422 `SERVICE_NOT_IN_PACKAGE: <name>` (Banking COD
+is refused too). Old fields still work: `serviceLevel` (SAME_DAY → Express), `documentType` ("B2B Document" →
+B2B…), operations `intake`/`dropOffHubId`. Views: `GET /packages/me`, `GET /packages/effective?merchantId=|
+segment=`. Quotes: `POST /pricing/quote` (customer), `POST /merchants/me/quote`, `POST /packages/quote`,
+`POST /packages/simulate` (all return `lines`, `tier`, the old flat fields). Imports: the modal sends `firstMile`,
+`dropHubId` (or `intake`/`dropOffHubId`), `lastMile`, `notifications`; template columns follow the package
+(Product optional, Service when the package has more than Regular, COD only with COD, Open box only with open
+box, Weight only for Customer / E-com); the preview shows each row's `lines` and `totals`. Forms: both merchant
+panels and Courier Operations booking (`shared/order-services.js`), the website booking (React).
+
+### Behaviour
+Notifications (`NotifyService.notify({ parcel | pkg })`: global toggle ∧ package ∧ not unticked ∧ product allows ∧
+recipient preference), proof methods (`proofMethodsFor`; no OTP without the delivery code;
+`PROOF_METHOD_NOT_ALLOWED`), Hub Pickup (`READY_FOR_COLLECTION` at the collection hub, code SMS, `GET
+/ops/collections`, `POST /parcels/:id/collect`, `POST /parcels/:id/collection-code`, hold period and reminder in
+`GET/PUT /packages/settings`, job `collect-from-hub`; Courier Operations → Hubs → Hub Pickup counter), on-demand
+priority (dispatch and rider lists sort it first; no instant-dispatch engine yet — a later phase), open box flag
+(rider app), live rider location / phone on tracking (`liveDelivery`), support / API / webhook gating
+(`SERVICE_NOT_IN_PACKAGE`), re-attempt fee (`reattemptCharge`), return charge (`returnPercent` of the delivery fee).
+
+### Administration
+Super admin → Service plans & pricing (`super-admin/bridge-packages.js`): packages per category, checkboxes, price
+fields in the owner's groups, version with effective date, default, archive, assignment to merchants, simulator,
+products, Hub Pickup hold period. Create / version / default / archive / assign are maker-checker
+(`package.*`). Everything is audited. The merchant lists (super admin, Courier Operations → Merchants:
+`GET /ops/merchants` `package`) show each merchant's package; the super-admin account dialog shows it read-only
+(`GET /merchants/:id/package`) with "Change", which opens the merchant's row in the assignments table
+(`window.DFPackages.openAssignment(segment, code)`). There is no plan select any more.
+
+### Retired pricing (one-time set-up, marker Setting `service-packages-v2`)
+Old rate cards and service plans are deactivated (rows kept); `POST /rate-cards` and `PUT /merchants/:id/tariff`
+answer 410 `PRICING_RETIRED`; merchant tariffs and platform-config plan entitlements are no longer read. v1
+packages are archived and their merchants moved back to their default. v1 products are deleted if unused, else
+deactivated. Ledger entries, audit logs and parcel history are never touched.
+

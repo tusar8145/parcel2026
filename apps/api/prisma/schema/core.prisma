@@ -158,7 +158,8 @@ model Address {
 
 enum MerchantType {
   ECOMMERCE
-  CORPORATE_DOCUMENT
+  /// Banking & Financial merchants (formerly "Document / corporate"; value renamed 2026-10-17).
+  BANKING_FINANCIAL
 }
 
 enum MerchantStatus {
@@ -214,6 +215,7 @@ model Merchant {
   adjustments        MerchantAdjustment[]
   settlementSchedule SettlementSchedule?
   disputes           Dispute[]
+  packageAssignments PackageAssignment[]
 
   @@map("merchants")
 }
@@ -285,6 +287,8 @@ model Hub {
   code             String                @unique // DHK-TEJ
   name             String
   district         String
+  /// The catalog zone (of `district`) the hub stands in: drop-offs are priced from it.
+  zone             String?
   address          String
   active           Boolean               @default(true)
   /// Most parcels the hub can hold at once (null = not set); planning location (WGS84).
@@ -309,7 +313,12 @@ model Hub {
   // hub drop-off bookings (operations.prisma: BookingBatch)
   dropOffParcels   Parcel[]              @relation("ParcelDropOffHub")
   bookingBatches   BookingBatch[]
+  // service packages (packages.prisma): pricing city group, collect-from-hub parcels
+  hubGroupId       String?               @db.Uuid
+  hubGroup         HubGroup?             @relation(fields: [hubGroupId], references: [id], onDelete: SetNull)
+  collectParcels   Parcel[]              @relation("ParcelCollectHub")
 
+  @@index([hubGroupId])
   @@map("hubs")
 }
 
@@ -383,6 +392,7 @@ enum ParcelStatus {
   RETURN_SCHEDULED
   RETURNED
   EXCEPTION
+  READY_FOR_COLLECTION
 }
 
 /// How a parcel enters the network (packages/shared PARCEL_INTAKES).
@@ -524,6 +534,35 @@ model Parcel {
   importJobId      String?      @db.Uuid
   importKey        String?
 
+  /// Service package (packages.prisma; docs/architecture-contracts.md "Service packages & pricing"): the
+  /// version that priced it (null = booked before packages), the choices and the services frozen at booking.
+  packageVersionId        String?   @db.Uuid
+  /// RIDER_PICKUP | HUB_DROP | ON_DEMAND_PICKUP
+  firstMile               String?
+  /// DOORSTEP | HUB_COLLECT
+  lastMile                String?
+  /// Speed + handling: REGULAR | EXPRESS | ON_DEMAND | SECURITY | PERISHABLE | B2B | TRADE | URGENT
+  speedOption             String?
+  openBox                 Boolean   @default(false)
+  /// On-demand pickup or delivery: top dispatch priority.
+  onDemand                Boolean   @default(false)
+  productId               String?   @db.Uuid
+  productName             String?
+  /// REGULAR | DOCUMENT | BOOKS: the product's type at booking (no product = REGULAR).
+  productType             String?
+  /// The package's services at booking.
+  services                String[]  @default([])
+  /// Parcel notifications that may be sent (package ∩ booking choice − product mutes).
+  notifications           String[]  @default([])
+  /// Collect from hub: the collection hub, the code the recipient shows, and the hold period.
+  collectHubId            String?   @db.Uuid
+  collectionCodeEncrypted String?
+  readyForCollectionAt    DateTime?
+  collectionDueAt         DateTime?
+  collectionReminderAt    DateTime?
+  /// Re-attempt fees charged so far (included in totalCharge).
+  reattemptCharge         Decimal   @default(0) @db.Decimal(12, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -545,6 +584,9 @@ model Parcel {
   cnStock       CnStock?
   dropOffHub    Hub?              @relation("ParcelDropOffHub", fields: [dropOffHubId], references: [id])
   bookingBatch  BookingBatch?     @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
+  packageVersion ServicePackageVersion? @relation(fields: [packageVersionId], references: [id])
+  product        ParcelProduct?         @relation(fields: [productId], references: [id])
+  collectHub     Hub?                   @relation("ParcelCollectHub", fields: [collectHubId], references: [id])
 
   @@unique([merchantId, merchantOrderRef])
   @@unique([merchantId, importKey])
@@ -565,6 +607,10 @@ model Parcel {
   @@index([pickupWindowStart])
   @@index([dropOffHubId, status])
   @@index([bookingBatchId])
+  @@index([status, collectionDueAt])
+  @@index([collectHubId, status])
+  @@index([packageVersionId])
+  @@index([productId])
   @@map("parcels")
 }
 
@@ -616,6 +662,8 @@ enum ProofMethod {
   SIGNATURE
   OTP
   PHOTO
+  /// Collect from hub: the recipient showed the collection code at the hub counter.
+  COLLECTION_CODE
 }
 
 model DeliveryProof {
@@ -649,19 +697,23 @@ enum CodState {
 model CodCollection {
   id           String              @id @default(uuid(7)) @db.Uuid
   parcelId     String              @unique @db.Uuid
-  riderId      String              @db.Uuid
+  /// The rider who collected it; null when the recipient paid at a hub counter (collect from hub, hubId).
+  riderId      String?             @db.Uuid
+  hubId        String?             @db.Uuid
+  collectedById String?            @db.Uuid
   amount       Decimal             @db.Decimal(12, 2)
   state        CodState            @default(WITH_RIDER)
   collectedAt  DateTime            @default(now())
   handoverId   String?             @db.Uuid
   settlementId String?             @db.Uuid
   parcel       Parcel              @relation(fields: [parcelId], references: [id])
-  rider        Rider               @relation(fields: [riderId], references: [id])
+  rider        Rider?              @relation(fields: [riderId], references: [id])
   handover     CashHandover?       @relation(fields: [handoverId], references: [id])
   settlement   MerchantSettlement? @relation(fields: [settlementId], references: [id])
 
   @@index([riderId, state])
   @@index([state])
+  @@index([hubId, state])
   @@map("cod_collections")
 }
 
@@ -755,7 +807,7 @@ model Invoice {
 enum Segment {
   CUSTOMER
   ECOMMERCE
-  CORPORATE_DOCUMENT
+  BANKING_FINANCIAL
 }
 
 /// Versioned pricing. The active card with the latest effectiveFrom wins.

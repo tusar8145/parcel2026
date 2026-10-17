@@ -5,6 +5,8 @@ export const hubSchema = z.object({
   code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{2,20}$/, "Use 2–20 letters, digits or dashes"),
   name: z.string().trim().min(2).max(120),
   district: z.string().trim().min(2).max(80),
+  /** The catalog zone of `district` the hub stands in (drop-offs are priced from it); null = not set. */
+  zone: z.string().trim().min(1).max(80).nullable().optional(),
   address: z.string().trim().min(2).max(300),
   active: z.boolean().default(true),
   /** Most parcels the hub can hold at once (planning); null = not set. */
@@ -13,7 +15,8 @@ export const hubSchema = z.object({
   lat: z.number().min(20).max(27).nullable().optional(),
   lng: z.number().min(88).max(93).nullable().optional(),
 });
-export const updateHubSchema = hubSchema.partial();
+/** Every field optional; `active` has no default here (a PATCH without it must not reactivate a hub). */
+export const updateHubSchema = hubSchema.extend({ active: z.boolean() }).partial();
 
 const vehicle = z.enum(["BICYCLE", "MOTORBIKE", "VAN", "ON_FOOT"]);
 

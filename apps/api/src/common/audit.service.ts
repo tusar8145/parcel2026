@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Global, Injectable, Module } from "@nestjs/common";
 import { PrismaService, type Db } from "./prisma.service";
 import { actorLabel, type Actor } from "./auth/actor";
@@ -10,6 +11,14 @@ export interface AuditEntry {
   entityId?: string;
   data?: Prisma.InputJsonValue;
 }
+
+const auditContext = new AsyncLocalStorage<Record<string, Prisma.InputJsonValue>>();
+
+/**
+ * Runs `work` with extra facts merged into the data of every audit record it writes, e.g.
+ * `{ bulkUpdate: { id, number, row } }` while a bulk update applies a row through the normal services.
+ */
+export const withAuditContext = <T>(extra: Record<string, Prisma.InputJsonValue>, work: () => Promise<T>): Promise<T> => auditContext.run(extra, work);
 
 /** Append-only record of security- and business-relevant changes. */
 @Injectable()
@@ -24,7 +33,14 @@ export class AuditService {
         : "kind" in actor
           ? { actorType: actor.kind === "api_key" ? ("API_KEY" as const) : ("USER" as const), actorId: actor.kind === "api_key" ? actor.apiKeyId : actor.userId, actorLabel: actorLabel(actor) }
           : { actorType: "USER" as const, actorId: actor.userId, actorLabel: actor.name };
-    await db.auditLog.create({ data: { ...who, ...entry, ip: meta?.ip, requestId: meta?.requestId } });
+    const extra = auditContext.getStore();
+    const data =
+      extra === undefined
+        ? entry.data
+        : entry.data && typeof entry.data === "object" && !Array.isArray(entry.data)
+          ? { ...(entry.data as Prisma.InputJsonObject), ...extra }
+          : { ...(entry.data === undefined ? {} : { value: entry.data }), ...extra };
+    await db.auditLog.create({ data: { ...who, ...entry, data, ip: meta?.ip, requestId: meta?.requestId } });
   }
 }
 

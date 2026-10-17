@@ -16,6 +16,7 @@ import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-w
 import { opsHubScope } from "./ops-scope";
 import { trackingUrl } from "./parcel-access";
 import { pricedDestination } from "./incomplete";
+import { PackagesService } from "../packages/packages.service";
 
 export const changeIntakeSchema = z
   .object({
@@ -29,7 +30,7 @@ export const changeIntakeSchema = z
   })
   .refine(v => v.intake === "DROP_OFF" || !v.dropOffHubId, { message: "A rider pickup has no drop-off hub", path: ["dropOffHubId"] });
 
-type Snapshot = { config?: unknown; discountPercent?: number; segment?: Segment; origin?: PricingOrigin } & Record<string, unknown>;
+type Snapshot = { config?: unknown; discountPercent?: number; segment?: Segment; origin?: PricingOrigin; destination?: { district: string; zone: string } } & Record<string, unknown>;
 const money = (n: number) => n.toLocaleString("en-BD", { maximumFractionDigits: 2 });
 
 /**
@@ -50,6 +51,7 @@ export class IntakeChangeService {
 
   @Inject(NotifyService) private readonly notify!: NotifyService;
   @Inject(WebhooksService) private readonly webhooks!: WebhooksService;
+  @Inject(PackagesService) private readonly packages!: PackagesService;
 
   async change(actor: Actor, trackingId: string, input: z.infer<typeof changeIntakeSchema>, meta: RequestMeta) {
     const after = this.workflow.newAfterCommit();
@@ -96,11 +98,11 @@ export class IntakeChangeService {
     } else if (parcel.intake === "PICKUP") throw new AppError("INTAKE_UNCHANGED", `${parcel.trackingId} is already booked for rider pickup`, HttpStatus.CONFLICT);
 
     // Re-price from the new origin with the tariff frozen at booking.
-    const snap = (parcel.pricingSnapshot ?? {}) as Snapshot;
-    const origin = hub ? await this.pricing.hubOrigin(hub.id, tx) : null;
-    const price = await this.reprice(tx, parcel, snap, origin);
+    const { snap, origin, packaged, price } = await this.priceFrom(tx, parcel, hub?.id ?? null);
     const { origin: _old, ...rest } = snap;
-    const pricingSnapshot = { ...rest, ...(origin ? { origin: { ...origin } } : {}) } as Prisma.InputJsonObject;
+    const pricingSnapshot = (
+      packaged ? this.packages.snapshot(packaged, snap.destination ? { destination: snap.destination } : {}) : { ...rest, ...(origin ? { origin: { ...origin } } : {}) }
+    ) as Prisma.InputJsonObject;
     const oldCharge = Number(parcel.totalCharge);
     const priceChanged = oldCharge !== price.totalCharge;
 
@@ -130,6 +132,7 @@ export class IntakeChangeService {
       discount: price.discount,
       totalCharge: price.totalCharge,
       pricingSnapshot,
+      ...(packaged ? { firstMile: packaged.selection.firstMile } : {}),
     } satisfies Prisma.ParcelUncheckedUpdateManyInput;
 
     const hubChange = parcel.intake === "DROP_OFF" && !!hub;
@@ -185,6 +188,7 @@ export class IntakeChangeService {
         event: hub ? "parcel.changed_to_drop_off" : "parcel.changed_to_pickup",
         to: { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName },
         vars: { trackingId: parcel.trackingId, charge: money(price.totalCharge), trackingUrl: track, ...(hub ? { hub: hub.name, hubAddress: hub.address } : {}) },
+        parcel,
       })),
     );
     after.webhooks.push(
@@ -220,6 +224,26 @@ export class IntakeChangeService {
       meta,
       tx,
     );
+  }
+
+  /**
+   * The charge switching to drop-off at `dropOffHubId` (or to rider pickup: null) would give the
+   * parcel, without changing it (the bulk update preview). Same engine as `change`; throws what it
+   * would throw for the price (e.g. SERVICE_NOT_IN_PACKAGE when the package lacks that first mile).
+   */
+  async previewCharge(parcel: Parcel, dropOffHubId: string | null, db: Db = this.prisma) {
+    const { price } = await this.priceFrom(db, parcel, dropOffHubId);
+    return { before: Number(parcel.totalCharge), after: price.totalCharge };
+  }
+
+  /** Re-prices from the new origin (the drop-off hub, else the pickup address) with the package / rate card frozen at booking. */
+  private async priceFrom(db: Db, parcel: Parcel, dropOffHubId: string | null) {
+    const snap = (parcel.pricingSnapshot ?? {}) as Snapshot;
+    const origin = dropOffHubId ? await this.pricing.hubOrigin(dropOffHubId, db) : null;
+    // Service packages: the package frozen at booking must offer the new first mile (SERVICE_NOT_IN_PACKAGE).
+    const packaged = await this.packages.reprice(parcel, { firstMile: dropOffHubId ? "HUB_DROP" : "RIDER_PICKUP", dropHubId: dropOffHubId }, db);
+    const price = packaged ? { ...packaged.columns, totalCharge: packaged.totalCharge + Number(parcel.reattemptCharge) } : await this.reprice(db, parcel, snap, origin);
+    return { snap, origin, packaged, price };
   }
 
   /** The parcel's price from `origin` (or its pickup address), with the rate card frozen on it at booking. */

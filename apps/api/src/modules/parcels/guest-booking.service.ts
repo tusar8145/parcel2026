@@ -1,4 +1,5 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { PackagesService } from "../packages/packages.service";
 import { createHmac } from "node:crypto";
 import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
@@ -50,7 +51,13 @@ export class GuestBookingService {
     private readonly workflow: ParcelWorkflowService,
   ) {}
 
+  /** The website customer package decides whether guests get a verification code (global module). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
   async requestCode(phone: string, meta: RequestMeta) {
+    const pkg = await this.packages.effective({ segment: "CUSTOMER" });
+    if (!pkg.services.includes("notify.guest_verification"))
+      throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: Guest booking verification. Sign in or create an account to book.", HttpStatus.FORBIDDEN);
     await this.enforceLimits(phone, meta.ip);
     const code = randomDigits(6);
     const verification = await this.prisma.guestVerification.create({
@@ -62,6 +69,7 @@ export class GuestBookingService {
       to: { phone },
       vars: { code, minutes: CODE_TTL_SECONDS / 60 },
       channels: ["sms"],
+      pkg,
     });
     await this.outbox.flush(ids);
     return {
@@ -132,6 +140,7 @@ export class GuestBookingService {
     const view = parcelView(parcel, { internal: false });
     return {
       ...view,
+      liveDelivery: await this.parcels.liveDelivery(parcel),
       // Only the guest who booked may cancel with a link; a feedback link is read-only.
       canCancel: scope === "owner" && view.canCancel,
       access: scope,

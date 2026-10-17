@@ -1,15 +1,14 @@
 import { type Browser, type Page } from "@playwright/test";
-import { DEMO_PASSWORD as PASSWORD, Fixtures, expect, test } from "./support";
+import { Fixtures, expect, test, type TempUser } from "./support";
 
 /**
  * Support tickets across the website, Courier Operations and the rider app, partner applications,
  * and the customer's orders/addresses pages, through the real UI against the running stack.
- * Operations uses the seeded staff account; the rider is temporary, and the customers, the
- * merchant application and the tickets created here are deleted afterwards (support.ts).
+ * The operations manager and the rider are temporary, and the customers, the merchant application
+ * and the tickets created here are deleted afterwards (support.ts).
  */
-const OPS = "ops@deliveryfast.example";
-
 const fx = new Fixtures();
+let opsUser: TempUser | undefined;
 test.afterAll(() => fx.cleanup());
 // 1x1 PNG
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -34,7 +33,7 @@ async function open(browser: Browser, path: string) {
   return Object.assign(page, { errors });
 }
 
-async function signIn(page: Page, identifier: string, password = PASSWORD) {
+async function signIn(page: Page, identifier: string, password: string) {
   await page.goto("/login");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.fill("#loginIdentity", identifier);
@@ -58,7 +57,8 @@ async function completeSignup(page: Page, name: string, phone = freshPhone()) {
 
 async function opsPanel(browser: Browser) {
   const ops = await open(browser, "/login");
-  await signIn(ops, OPS);
+  opsUser ??= await fx.staff("OPS_MANAGER");
+  await signIn(ops, opsUser.login, opsUser.password);
   await expect(ops).toHaveURL(/\/courier-operation/);
   await ops.waitForSelector("html.legacy-ready", { state: "attached" });
   return ops;

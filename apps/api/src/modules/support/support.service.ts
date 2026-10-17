@@ -10,6 +10,7 @@ import { merchantIdsOf, type Actor, type UserActor } from "../../common/auth/act
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { Prisma, Role, SupportTicket, TicketStatus } from "../../generated/prisma/client";
 import { ParcelsService } from "../parcels/parcels.service";
+import { PackagesService } from "../packages/packages.service";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
 import { RealtimeService } from "../../common/realtime.service";
@@ -119,6 +120,17 @@ export class SupportService {
   @Inject(NotifyService) private readonly notify!: NotifyService;
   @Inject(OutboxService) private readonly outbox!: OutboxService;
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
+  /**
+   * The service package that governs a ticket's requester (service packages): the merchant's, or
+   * the website customer package for customers; null for staff, riders and partner applicants.
+   */
+  async requesterPackage(db: Db, ticket: { merchantId: string | null; requesterId: string }): Promise<{ services: string[] } | null> {
+    if (ticket.merchantId) return this.packages.effective({ merchantId: ticket.merchantId }, db);
+    const roles = await db.userRole.findMany({ where: { userId: ticket.requesterId }, select: { role: true } });
+    return roles.some(r => r.role === "CUSTOMER") && roles.every(r => r.role === "CUSTOMER") ? this.packages.effective({ segment: "CUSTOMER" }, db) : null;
+  }
 
   // ───────────── reads ─────────────
 
@@ -163,6 +175,12 @@ export class SupportService {
       }
       const merchants = merchantIdsOf(actor);
       const merchantId = parcel?.merchantId && merchants.includes(parcel.merchantId) ? parcel.merchantId : (merchants[0] ?? null);
+      // Service packages: merchants and customers whose package has no support tickets can't open one.
+      if (!isSupportStaff(actor)) {
+        const pkg = await this.requesterPackage(tx, { merchantId, requesterId: actor.userId });
+        if (pkg && !pkg.services.includes("support.tickets"))
+          throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: Support tickets. Your service package doesn't include support tickets; call or email Delivery Fast instead.", HttpStatus.FORBIDDEN, { service: "support.tickets" });
+      }
       const { ticket, messageId } = await this.openTicket(
         actor,
         { category: input.category, subject: input.subject, priority: input.priority, message: input.message, merchantId, parcelId: parcel?.id },
@@ -217,6 +235,7 @@ export class SupportService {
       return this.notify.notify(tx, {
         event: "support.ticket_reply",
         to: { userId: ticket.requesterId },
+        pkg: await this.requesterPackage(tx, ticket),
         vars: { ticketNumber: ticket.number, subject: ticket.subject, link: supportLink() },
       });
     });
@@ -312,16 +331,18 @@ export class SupportService {
   private async afterStatusChange(tx: Db, ticket: SupportTicket, to: TicketStatus | undefined, actor: UserActor): Promise<string[]> {
     if (!to || to === ticket.status || actor.userId === ticket.requesterId) return [];
     if (APPLICATION_CATEGORY_SET.has(ticket.category)) return []; // applications send their own updates
+    const pkg = await this.requesterPackage(tx, ticket);
     const ids = await this.notify.notify(tx, {
       event: "support.ticket_status",
       to: { userId: ticket.requesterId },
+      pkg,
       vars: { ticketNumber: ticket.number, subject: ticket.subject, status: STATUS_LABELS[to], link: supportLink() },
     });
     if (to === "RESOLVED") {
       const existing = await tx.ticketSurvey.findUnique({ where: { ticketId: ticket.id } });
       if (!existing) {
         await tx.ticketSurvey.create({ data: { ticketId: ticket.id, agentId: ticket.assigneeId ?? actor.userId } });
-        ids.push(...(await this.notify.notify(tx, { event: "support.csat_request", to: { userId: ticket.requesterId }, vars: { ticketNumber: ticket.number, link: supportLink() } })));
+        ids.push(...(await this.notify.notify(tx, { event: "support.csat_request", to: { userId: ticket.requesterId }, vars: { ticketNumber: ticket.number, link: supportLink() }, pkg })));
       }
     }
     return ids;

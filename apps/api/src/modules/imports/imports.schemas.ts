@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PARCEL_INTAKES } from "@delivery-fast/shared";
+import { firstMileSchema, lastMileSchema, PARCEL_INTAKES } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { IMPORT_KINDS } from "./columns";
 
@@ -10,9 +10,17 @@ export const importOptionsSchema = z.object({
   kind: importKindSchema,
   /** The merchant of every row. Merchants with one workspace may leave it out; operations may choose one or use the Merchant column. */
   merchantId: z.uuid("merchantId must be a valid id").optional(),
-  /** Operations: PICKUP (default, a pickup rider collects them) or DROP_OFF at dropOffHubId. */
+  /** Operations: PICKUP (default, a pickup rider collects them) or DROP_OFF at dropOffHubId (same as firstMile HUB_DROP). */
   intake: z.enum(PARCEL_INTAKES).optional(),
   dropOffHubId: z.uuid().optional(),
+  /** Service package choices for the whole file (import modal): first mile, its drop hub, last mile. Defaults: the package's. */
+  firstMile: firstMileSchema.optional(),
+  dropHubId: z.uuid().optional(),
+  lastMile: lastMileSchema.optional(),
+  /** Parcel notifications to send for these orders (codes; a JSON array or comma-separated; "none" for no messages). Default: every one in the package. */
+  notifications: z
+    .preprocess(v => (v === "none" ? [] : typeof v === "string" ? (v.trim().startsWith("[") ? JSON.parse(v) : v.split(",").map(x => x.trim()).filter(Boolean)) : v), z.array(z.string().trim().min(1).max(60)).max(40))
+    .optional(),
   fileName: z.string().trim().max(200).optional(),
 });
 

@@ -1,67 +1,32 @@
-import { randomUUID } from "node:crypto";
 import { type Page } from "@playwright/test";
-import { API_ORIGIN, expect, test } from "./support";
-import pg from "pg";
+import { API_ORIGIN, Fixtures, expect, sql, test, type TempMerchant, type TempUser } from "./support";
 
 // Hub drop-off: a merchant brings parcels and a spreadsheet to the Gulshan hub. The hub operator
 // imports it as a drop-off, prints the labels and receives the parcel by typing its ID.
-// A temporary merchant is created in the database and deleted afterwards with its parcels.
-const PASSWORD = "DeliveryFast2026"; // seeded demo accounts
-const HUB_GULSHAN = "hub.gulshan@deliveryfast.example";
-const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
-
-const stamp = Date.now().toString(36).toUpperCase();
-const MERCHANT = { id: randomUUID(), code: `E2E-DROP-${stamp}`, name: `E2E Drop-off Shop ${stamp}` };
-
-async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []) {
-  const db = new pg.Client({ connectionString: DATABASE_URL });
-  await db.connect();
-  try {
-    return (await db.query(text, values)).rows as T[];
-  } finally {
-    await db.end();
-  }
-}
+// The merchant, its owner and the hub operator are temporary (support.ts Fixtures) and deleted
+// afterwards with their parcels, imports and messages.
+const fx = new Fixtures();
+const stamp = fx.stamp;
+let MERCHANT: TempMerchant;
+let hubOp: TempUser;
 
 test.beforeAll(async () => {
-  await sql(
-    `INSERT INTO merchants (id, code, type, name, status, "contactName", "contactPhone", "pickupAddress", "pickupArea", "pickupDistrict", "updatedAt")
-     VALUES ($1, $2, 'ECOMMERCE', $3, 'ACTIVE', 'E2E Owner', '+8801911000000', 'House 5 Road 2', 'Gulshan 1', 'Dhaka North', now())`,
-    [MERCHANT.id, MERCHANT.code, MERCHANT.name],
-  );
+  MERCHANT = await fx.merchant({ label: "Drop-off Shop" });
+  hubOp = await fx.staff("HUB_OPERATOR", "Gulshan Sorting Hub");
 });
+test.afterAll(() => fx.cleanup());
 
-test.afterAll(async () => {
-  const parcels = await sql<{ id: string; trackingId: string; bookingBatchId: string | null }>(`SELECT id, "trackingId", "bookingBatchId" FROM parcels WHERE "merchantId" = $1`, [MERCHANT.id]);
-  const ids = parcels.map(p => p.id);
-  // Messages about the temporary merchant's parcels (sent or not).
-  for (const p of parcels) await sql(`DELETE FROM outbox_messages WHERE body LIKE $1`, [`%${p.trackingId}%`]);
-  const batches = [...new Set(parcels.map(p => p.bookingBatchId).filter(Boolean))];
-  if (ids.length) {
-    await sql(`DELETE FROM scan_events WHERE "parcelId" = ANY($1::uuid[])`, [ids]);
-    await sql(`DELETE FROM sla_alerts WHERE "parcelId" = ANY($1::uuid[])`, [ids]);
-    await sql(`DELETE FROM tracking_events WHERE "parcelId" = ANY($1::uuid[])`, [ids]);
-    await sql(`DELETE FROM parcels WHERE id = ANY($1::uuid[])`, [ids]);
-  }
-  // Imports (modules/imports) that booked them; their rows go with them.
-  const jobs = await sql<{ number: string }>(`SELECT number FROM import_jobs WHERE "bookingBatchId" = ANY($1::uuid[]) OR "merchantId" = $2`, [batches, MERCHANT.id]);
-  for (const j of jobs) await sql(`DELETE FROM outbox_messages WHERE template = 'import.completed' AND body LIKE $1`, [`%${j.number}%`]);
-  await sql(`DELETE FROM import_jobs WHERE "bookingBatchId" = ANY($1::uuid[]) OR "merchantId" = $2`, [batches, MERCHANT.id]);
-  await sql(`DELETE FROM booking_batches WHERE id = ANY($1::uuid[]) OR "merchantId" = $2`, [batches, MERCHANT.id]);
-  await sql(`DELETE FROM merchants WHERE id = $1`, [MERCHANT.id]);
-});
-
-async function signIn(page: Page, identifier: string) {
+async function signIn(page: Page, user: TempUser) {
   for (let attempt = 0; ; attempt++) {
     await page.goto("/login");
     await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.fill("#loginIdentity", identifier);
-    await page.fill("#loginPassword", PASSWORD);
+    await page.fill("#loginIdentity", user.login);
+    await page.fill("#loginPassword", user.password);
     await page.click('form[data-form="login"] button[type="submit"]');
     const ok = await page.waitForURL(url => !url.pathname.startsWith("/login"), { timeout: 15_000 }).then(() => true, () => false);
     if (ok) break;
     // Sign-in is rate limited per IP (shared with other suites on this machine).
-    if (attempt >= 2 || !/too many/i.test(await page.content())) throw new Error(`Couldn't sign in as ${identifier}`);
+    if (attempt >= 2 || !/too many/i.test(await page.content())) throw new Error(`Couldn't sign in as ${user.login}`);
     await page.waitForTimeout(61_000);
   }
   if (!/courier-operation/.test(page.url())) await page.goto("/courier-operation");
@@ -77,7 +42,7 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   });
   const nav = (name: string) => page.click(`#navigation [data-page="${name}"]`);
   // E2E_API_ORIGIN: the page's API calls are forwarded by `test` from support.ts.
-  await signIn(page, HUB_GULSHAN);
+  await signIn(page, hubOp);
 
   // ── Import with "Drop-off at hub" (a hub operator's own hub is preselected; shared/importer.js) ──
   await nav("E-commerce operations");
@@ -90,7 +55,7 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   // The old CSV headers are still recognised.
   const csv = [
     "merchant,recipient_name,phone,district,zone,area,address,service_level,weight_kg,cod_amount,contents,order_ref",
-    `${MERCHANT.code},${recipient},01812000000,Dhaka Central,Dhanmondi,,"Road 7, Flat 3B",Same day,1.5,1250,Clothing,DROP-${stamp}`,
+    `${MERCHANT.code},${recipient},01812000000,Dhaka Central,Dhanmondi,,"Road 7, Flat 3B",Same day,1.5,1250,Fashion & Apparel,DROP-${stamp}`,
     `${MERCHANT.code},Bad Phone,12345,Dhaka Central,Dhanmondi,,"Road 9",Regular,1,0,Books,DROP-${stamp}-2`,
   ].join("\r\n");
   await page.setInputFiles("#dfiFile", { name: `dropoff-${stamp}.csv`, mimeType: "text/csv", buffer: Buffer.from(csv) });
@@ -173,7 +138,7 @@ test("switches a booked pickup to hub drop-off and back from the shipment regist
   page.on("console", message => {
     if (message.type() === "error" && !/status of 401|Failed to load resource|tile\.openstreetmap/.test(message.text())) errors.push(message.text());
   });
-  await signIn(page, HUB_GULSHAN);
+  await signIn(page, hubOp);
 
   // A rider-pickup booking for the temporary merchant (booked through the API as the hub operator).
   const booked = await page.evaluate(
@@ -231,61 +196,49 @@ test("switches a booked pickup to hub drop-off and back from the shipment regist
 
 test("merchant dashboards show drop-offs as awaiting drop-off, not awaiting pickup", async ({ page, context }) => {
   test.setTimeout(180_000);
-  const { hash } = await import("@node-rs/argon2");
-  const phone = `+88019${String(Date.now()).slice(-8)}`;
-  const ownerPassword = `Mo-${randomUUID().slice(0, 12)}`;
-  const [owner] = await sql<{ id: string }>(
-    `INSERT INTO users (id, name, phone, "passwordHash", "phoneVerifiedAt", "updatedAt") VALUES (gen_random_uuid(), 'E2E Drop-off Owner', $1, $2, now(), now()) RETURNING id`,
-    [phone, await hash(ownerPassword, { memoryCost: 19456, timeCost: 2, parallelism: 1 })],
-  );
-  await sql(`INSERT INTO user_roles (id, "userId", role, "merchantId") VALUES (gen_random_uuid(), $1, 'MERCHANT_OWNER', $2)`, [owner.id, MERCHANT.id]);
-  try {
-    const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
-    const apiOrigin = API_ORIGIN;
-    // A drop-off booked by the Gulshan hub for this merchant.
-    const hubLogin = await (await page.request.post(`${apiOrigin}/api/v1/auth/login`, { data: { identifier: HUB_GULSHAN, password: PASSWORD } })).json();
-    const drop = await page.request.post(`${apiOrigin}/api/v1/ops/parcels`, {
-      headers: { authorization: `Bearer ${hubLogin.accessToken}` },
-      data: {
-        merchantId: MERCHANT.id,
-        intake: "DROP_OFF",
-        recipient: { name: "Dashboard Drop E2E", phone: "01812000000" },
-        delivery: { category: "Office", street: "Road 7, Flat 3B", zone: "Dhanmondi", district: "Dhaka Central" },
-        serviceLevel: "Same day",
-        weightKg: 1,
-        packaging: "Small carton",
-        contents: "Clothing",
-        codAmount: 300,
-      },
-    });
-    expect(drop.ok(), await drop.text()).toBe(true);
-    const ownerLogin = await (await page.request.post(`${apiOrigin}/api/v1/auth/login`, { data: { identifier: phone, password: ownerPassword } })).json();
-    const stats = await (await page.request.get(`${apiOrigin}/api/v1/merchants/me/stats`, { headers: { authorization: `Bearer ${ownerLogin.accessToken}` } })).json();
-    expect(stats.parcels.awaitingDropOff).toBeGreaterThanOrEqual(1);
+  const owner = await fx.member(MERCHANT, "MERCHANT_OWNER");
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const apiOrigin = API_ORIGIN;
+  // A drop-off booked by the Gulshan hub for this merchant.
+  const hubLogin = await (await page.request.post(`${apiOrigin}/api/v1/auth/login`, { data: { identifier: hubOp.phone, password: hubOp.password } })).json();
+  const drop = await page.request.post(`${apiOrigin}/api/v1/ops/parcels`, {
+    headers: { authorization: `Bearer ${hubLogin.accessToken}` },
+    data: {
+      merchantId: MERCHANT.id,
+      intake: "DROP_OFF",
+      recipient: { name: "Dashboard Drop E2E", phone: "01812000000" },
+      delivery: { category: "Office", street: "Road 7, Flat 3B", zone: "Dhanmondi", district: "Dhaka Central" },
+      serviceLevel: "Same day",
+      weightKg: 1,
+      packaging: "Small carton",
+      contents: "Clothing",
+      codAmount: 300,
+    },
+  });
+  expect(drop.ok(), await drop.text()).toBe(true);
+  const ownerLogin = await (await page.request.post(`${apiOrigin}/api/v1/auth/login`, { data: { identifier: owner.phone, password: owner.password } })).json();
+  const stats = await (await page.request.get(`${apiOrigin}/api/v1/merchants/me/stats`, { headers: { authorization: `Bearer ${ownerLogin.accessToken}` } })).json();
+  expect(stats.parcels.awaitingDropOff).toBeGreaterThanOrEqual(1);
 
-    await page.goto("/login");
-    await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.fill("#loginIdentity", phone.replace("+880", "0"));
-    await page.fill("#loginPassword", ownerPassword);
-    await page.click('form[data-form="login"] button[type="submit"]');
-    await expect(page).toHaveURL(/\/ecommerce-merchant/);
-    await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    // Overview pipeline: "Awaiting drop-off" next to "Pickup scheduled" (which counts rider pickups only).
-    const dropRow = page.locator(".dispatch-list [data-df-dropoff]");
-    await expect(dropRow).toContainText("Awaiting drop-off");
-    await expect(dropRow.locator("strong")).toHaveText(String(stats.parcels.awaitingDropOff), { timeout: 20_000 });
-    await expect(page.locator(".dispatch-list .dispatch-row:not([data-df-dropoff]) strong").nth(2)).toHaveText(String(stats.parcels.awaitingPickup));
-    // Pickup requests: its own counter, and the nav badge counts pickups only.
-    await page.click('#navigation [data-page="Pickup requests"]');
-    await expect(page.locator(".metrics")).toContainText("Awaiting drop-off");
-    const badge = page.locator('#navigation [data-page="Pickup requests"] .nav-count');
-    if (stats.parcels.awaitingPickup) await expect(badge).toHaveText(String(stats.parcels.awaitingPickup));
-    else await expect(badge).toBeHidden();
-    await expect(page.locator("#tableBody")).toContainText("Awaiting drop-off at Gulshan Sorting Hub");
-    expect(errors).toEqual([]);
-  } finally {
-    await sql(`DELETE FROM outbox_messages WHERE "to" = $1 OR "userId" = $2`, [phone, owner.id]);
-    await sql(`DELETE FROM users WHERE id = $1`, [owner.id]);
-  }
+  await page.goto("/login");
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await page.fill("#loginIdentity", owner.login);
+  await page.fill("#loginPassword", owner.password);
+  await page.click('form[data-form="login"] button[type="submit"]');
+  await expect(page).toHaveURL(/\/ecommerce-merchant/);
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  // Overview pipeline: "Awaiting drop-off" next to "Pickup scheduled" (which counts rider pickups only).
+  const dropRow = page.locator(".dispatch-list [data-df-dropoff]");
+  await expect(dropRow).toContainText("Awaiting drop-off");
+  await expect(dropRow.locator("strong")).toHaveText(String(stats.parcels.awaitingDropOff), { timeout: 20_000 });
+  await expect(page.locator(".dispatch-list .dispatch-row:not([data-df-dropoff]) strong").nth(2)).toHaveText(String(stats.parcels.awaitingPickup));
+  // Pickup requests: its own counter, and the nav badge counts pickups only.
+  await page.click('#navigation [data-page="Pickup requests"]');
+  await expect(page.locator(".metrics")).toContainText("Awaiting drop-off");
+  const badge = page.locator('#navigation [data-page="Pickup requests"] .nav-count');
+  if (stats.parcels.awaitingPickup) await expect(badge).toHaveText(String(stats.parcels.awaitingPickup));
+  else await expect(badge).toBeHidden();
+  await expect(page.locator("#tableBody")).toContainText("Awaiting drop-off at Gulshan Sorting Hub");
+  expect(errors).toEqual([]);
 });

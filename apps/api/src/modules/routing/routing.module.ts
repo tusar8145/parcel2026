@@ -4,5 +4,5 @@ import { RoutingController } from "./routing.controller";
 import { RoutingService } from "./routing.service";
 
 /** Dispatch map, geocoding, route optimisation (OSRM) and assignment suggestions. */
-@Module({ imports: [ParcelsModule], controllers: [RoutingController], providers: [RoutingService] })
+@Module({ imports: [ParcelsModule], controllers: [RoutingController], providers: [RoutingService], exports: [RoutingService] })
 export class RoutingModule {}

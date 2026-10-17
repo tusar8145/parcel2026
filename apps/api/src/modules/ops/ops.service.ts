@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
@@ -10,6 +10,8 @@ import { Prisma } from "../../generated/prisma/client";
 import { ParcelsService, type BookingOptions } from "../parcels/parcels.service";
 import { addDays, dhakaDateRange, dhakaDayStart, dhakaMonthStart, opsHubScope } from "../parcels/ops-scope";
 import { PricingService } from "../pricing/pricing.service";
+import { PackagesService } from "../packages/packages.service";
+import { zoneForArea } from "../parcels/places";
 import { cashHubScope, isFinanceStaff } from "../finance/finance.scope";
 import type { opsBookingSchema, riderReportQuerySchema, transfersQuerySchema } from "./ops.schemas";
 import { NEEDS_PICKUP_RIDER } from "./ops-common";
@@ -26,7 +28,7 @@ const AT_RISK_STATUSES = ACTIVE_STATUSES.filter(s => s !== "PENDING_CONFIRMATION
 
 type ServiceLine = "customer" | "ecommerce" | "documents";
 const lineOf = (merchantType: string | null | undefined): ServiceLine =>
-  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "CORPORATE_DOCUMENT" ? "documents" : "customer";
+  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "BANKING_FINANCIAL" ? "documents" : "customer";
 
 /** Timestamps are stored as UTC `timestamp(3)`; compare against an explicit UTC literal. */
 const ts = (d: Date) => Prisma.sql`${d.toISOString()}::timestamp`;
@@ -43,6 +45,9 @@ export class OpsService {
     private readonly pricing: PricingService,
     private readonly audit: AuditService,
   ) {}
+
+  /** Service packages (global module; property injection keeps the constructor stable). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
 
   // ───────────── live overview ─────────────
 
@@ -309,7 +314,7 @@ export class OpsService {
         where: {
           AND: [
             scope ? { OR: [NEEDS_PICKUP_RIDER, { status: { in: ["AT_HUB", "IN_TRANSIT"] }, deliveryRiderId: null, ...hubFilter }] } : UNASSIGNED_WHERE,
-            { OR: [{ serviceLevel: { in: ["SAME_DAY", "EXPRESS"] } }, { estimatedDeliveryAt: { lt: now } }] },
+            { OR: [{ onDemand: true }, { serviceLevel: { in: ["SAME_DAY", "EXPRESS"] } }, { estimatedDeliveryAt: { lt: now } }] },
           ],
         },
       }),
@@ -524,14 +529,17 @@ export class OpsService {
 
   // ───────────── merchants ─────────────
 
-  /** Merchant accounts with this month's volume. */
+  /** Merchant accounts with this month's volume and the service package they book with. */
   async merchants() {
     const month = dhakaMonthStart();
-    const [merchants, mtd, active] = await Promise.all([
-      this.prisma.merchant.findMany({ include: { plan: { select: { name: true } } }, orderBy: { name: "asc" }, take: 1000 }),
+    const [merchants, mtd, active, ecommerce, banking] = await Promise.all([
+      this.prisma.merchant.findMany({ orderBy: { name: "asc" }, take: 1000 }),
       this.prisma.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, createdAt: { gte: month } }, _count: { _all: true }, _sum: { codAmount: true } }),
       this.prisma.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, status: { in: ACTIVE_STATUSES } }, _count: { _all: true } }),
+      this.packages.assignments("ECOMMERCE"),
+      this.packages.assignments("BANKING_FINANCIAL"),
     ]);
+    const packages = new Map([...ecommerce, ...banking].map(a => [a.merchant.id, a.package]));
     return merchants.map(m => {
       const month = mtd.find(r => r.merchantId === m.id);
       return {
@@ -540,10 +548,13 @@ export class OpsService {
         name: m.name,
         type: m.type,
         status: m.status,
-        plan: m.plan?.name ?? null,
+        /** The service package's name (service packages replaced service plans). */
+        plan: packages.get(m.id)?.name ?? null,
+        package: packages.get(m.id) ?? null,
         contactName: m.contactName,
         contactPhone: m.contactPhone,
         pickupDistrict: m.pickupDistrict,
+        pickupArea: m.pickupArea,
         parcelsThisMonth: month?._count._all ?? 0,
         codThisMonth: Number(month?._sum.codAmount ?? 0),
         activeParcels: active.find(r => r.merchantId === m.id)?._count._all ?? 0,
@@ -594,16 +605,11 @@ export class OpsService {
     return { hub: { id: hub.id, name: hub.name, address: hub.address } };
   }
 
-  /** The catalog zone a merchant's pickup area belongs to (pricing compares zones). */
+  /**
+   * The catalog zone a merchant's pickup area belongs to (pricing compares zones). The merchant's
+   * address is an existing record: a deactivated zone is still found (and the booking then refuses it).
+   */
   private async zoneFor(district: string, area: string) {
-    const catalog = await this.pricing.catalog();
-    const zones = catalog.zonesByDistrict[district] ?? [];
-    const lower = area.toLowerCase();
-    return (
-      zones.find(z => lower.startsWith(z.toLowerCase()) || lower.includes(z.toLowerCase())) ??
-      zones.find(z => (catalog.areasByZone[z] ?? []).some(a => a.toLowerCase() === lower)) ??
-      zones[0] ??
-      area
-    );
+    return zoneForArea(await this.pricing.catalog(undefined, { includeInactive: true }), district, area);
   }
 }

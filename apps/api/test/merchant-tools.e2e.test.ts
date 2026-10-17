@@ -11,7 +11,7 @@ describe("merchant tools", () => {
   afterAll(() => ctx.app.close());
 
   let seq = 0;
-  async function workspace(type: "ECOMMERCE" | "CORPORATE_DOCUMENT" = "ECOMMERCE") {
+  async function workspace(type: "ECOMMERCE" | "BANKING_FINANCIAL" = "ECOMMERCE") {
     const m = await ctx.prisma.merchant.create({
       data: {
         code: `MR-W${++seq}`,
@@ -72,8 +72,8 @@ describe("merchant tools", () => {
 
   describe("receiver relation and branch code", () => {
     it("stores them as fields and returns them on the parcel", async () => {
-      const { owner } = await workspace("CORPORATE_DOCUMENT");
-      const res = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ type: "DOCUMENT", receiverRelation: "Reception", originBranchCode: "DHK-01", instructions: "Call first" }) });
+      const { owner } = await workspace("BANKING_FINANCIAL");
+      const res = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ type: "DOCUMENT", codAmount: 0, receiverRelation: "Reception", originBranchCode: "DHK-01", instructions: "Call first" }) });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body).toMatchObject({ receiverRelation: "Reception", originBranchCode: "DHK-01", instructions: "Call first" });
     });

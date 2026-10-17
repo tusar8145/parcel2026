@@ -69,7 +69,7 @@
       p.name,
       p.sku,
       p.category || "—",
-      doc() && !p.price ? "Per rate card" : taka(p.price),
+      doc() && !p.price ? "Per service package" : taka(p.price),
       [p.weightKg ? `${p.weightKg} kg` : "", p.packaging || ""].filter(Boolean).join(" · ") || "—",
       p.active ? "Active" : "Inactive",
     ]);

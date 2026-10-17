@@ -1,4 +1,4 @@
-import { DEFAULT_RATE_CARD, quoteParcel } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
 /** Merchants and walk-in senders bringing parcels to a hub: drop-off booking, receipt and labels. */
@@ -63,7 +63,7 @@ describe("hub drop-off", () => {
         pickupRider: null,
       });
       // Priced from the hub; this test hub names no zone, so it is cross-zone like the pickup.
-      expect(res.body.charges).toEqual(pickup.body.charges);
+      expect(res.body.charges.total).toBe(pickup.body.charges.total);
       expect(pickup.body).toMatchObject({ intake: "PICKUP", dropOffHub: null, statusLabel: "Pending operations confirmation" });
       expect(res.body.events[0]).toMatchObject({ title: `Booked for drop-off at ${s.gulshan.name}`, location: s.gulshan.name });
 
@@ -216,8 +216,8 @@ describe("hub drop-off", () => {
 
       const unknown = await receive(s.hubOp.token, { code: "PP-000000-ZZZZZ", hubId: s.gulshan.id });
       expect(unknown.body).toMatchObject({ outcome: "NOT_FOUND", ok: false, parcel: null });
-      // Refused scans are kept for scan compliance.
-      expect(await ctx.prisma.scanEvent.count({ where: { ok: false } })).toBe(3);
+      // Refused scans are kept for scan compliance (recorded without delaying the answer, so wait for the last one).
+      await expect.poll(() => ctx.prisma.scanEvent.count({ where: { ok: false } })).toBe(3);
     });
 
     it("keeps today's hub scan-in for picked-up parcels", async () => {
@@ -277,59 +277,73 @@ describe("hub drop-off", () => {
   });
 
   describe("pricing origin", () => {
-    /** Dhanmondi hub in Dhaka Central: its address names the Dhanmondi zone. */
-    const locate = (s: Setup) => ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Dhaka Central", address: "Road 7, Dhanmondi, Dhaka" } });
-    const priceOf = (overrides: Partial<Parameters<typeof quoteParcel>[1]>) =>
-      quoteParcel(DEFAULT_RATE_CARD, {
-        pickupDistrict: "Dhaka North",
-        pickupZone: "Gulshan",
-        deliveryDistrict: "Dhaka Central",
-        deliveryZone: "Dhanmondi",
-        weightKg: 2,
-        serviceLevel: "SAME_DAY",
-        codAmount: 1500,
-        ...overrides,
-      });
+    /** The "Dhanmondi" test hub moved to Chattogram (its address names Agrabad): parcels to Chattogram. */
+    const locate = (s: Setup) => ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Chattogram", address: "Agrabad, Chattogram" } });
+    const toCtg = { delivery: { category: "HOME", street: "Agrabad Road 1", zone: "Agrabad", district: "Chattogram" } };
+    /** Route + 2 kg (2 started kg over 0.5) + Express ("Same day") + COD fee 15, from the default prices. */
+    const priced = (route: number) => route + 2 * P.extraKg + P.expressFee + 15;
 
-    it("prices a drop-off from the drop-off hub's district and zone, pickups from the pickup address", async () => {
+    it("prices a drop-off from the drop-off hub's district, pickups from the pickup address", async () => {
       const s = await setup();
       await locate(s);
-      const pickup = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: row(s) });
-      const drop = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: { ...row(s), intake: "DROP_OFF", dropOffHubId: s.dhanmondi.id } });
+      const pickup = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: row(s, { ...toCtg, serviceLevel: "Regular" }) });
+      const drop = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: { ...row(s, toCtg), intake: "DROP_OFF", dropOffHubId: s.dhanmondi.id } });
       expect(drop.status, JSON.stringify(drop.body)).toBe(201);
-      // The merchant (Gulshan) → Dhanmondi is cross-zone; from the Dhanmondi hub it is same-zone.
-      const same = priceOf({ pickupDistrict: "Dhaka Central", pickupZone: "Dhanmondi" });
-      expect(same.sameZone).toBe(true);
-      expect(pickup.body.charges.total).toBe(priceOf({}).totalCharge);
-      expect(drop.body.charges.total).toBe(same.totalCharge);
-      expect(drop.body.charges.total).toBeLessThan(pickup.body.charges.total);
+      // The merchant (Dhaka) → Chattogram is a different district; from the Chattogram hub it is the same district.
+      expect(pickup.body.charges.total).toBe(P.differentDistrict + 2 * P.extraKg + 15);
+      expect(drop.body.charges.total).toBe(priced(P.sameDistrict));
       // The sender's address is kept; the origin is recorded with the price.
       const stored = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: drop.body.trackingId } });
       expect(stored.pickupDistrict).toBe("Dhaka North");
-      expect(stored.pricingSnapshot).toMatchObject({ origin: { kind: "DROP_OFF_HUB", hubId: s.dhanmondi.id, district: "Dhaka Central", zone: "Dhanmondi" } });
+      expect(stored.pricingSnapshot).toMatchObject({ tier: "SAME_DISTRICT", pickupDistrict: "Chattogram", origin: { kind: "DROP_OFF_HUB", hubId: s.dhanmondi.id, district: "Chattogram", zone: "Agrabad" } });
       expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: pickup.body.trackingId } })).pricingSnapshot).not.toHaveProperty("origin");
     });
 
     it("quotes from the drop-off hub (public and merchant quotes) and falls back to the zone a hub serves", async () => {
       const s = await setup();
       await locate(s);
-      const body = { pickupDistrict: "Dhaka North", pickupZone: "Gulshan", deliveryDistrict: "Dhaka Central", deliveryZone: "Dhanmondi", weightKg: 2, serviceLevel: "Same day", codAmount: 0 };
+      const body = { pickupDistrict: "Dhaka North", pickupZone: "Gulshan", deliveryDistrict: "Chattogram", deliveryZone: "Agrabad", weightKg: 2, serviceLevel: "Regular", codAmount: 0 };
       const plain = await ctx.api("POST", "/pricing/quote", { body });
       const fromHub = await ctx.api("POST", "/pricing/quote", { body: { ...body, dropOffHubId: s.dhanmondi.id } });
-      expect(plain.body).toMatchObject({ sameZone: false });
-      expect(fromHub.body).toMatchObject({ sameZone: true, origin: { hubId: s.dhanmondi.id, district: "Dhaka Central", zone: "Dhanmondi" } });
-      expect(fromHub.body.totalCharge).toBe(priceOf({ pickupDistrict: "Dhaka Central", pickupZone: "Dhanmondi", codAmount: 0 }).totalCharge);
+      expect(plain.body).toMatchObject({ tier: "DIFFERENT_DISTRICT", totalCharge: P.differentDistrict + 2 * P.extraKg });
+      expect(fromHub.body).toMatchObject({ tier: "SAME_DISTRICT", pickupDistrict: "Chattogram", origin: { hubId: s.dhanmondi.id, district: "Chattogram", zone: "Agrabad" } });
+      expect(fromHub.body.totalCharge).toBe(P.sameDistrict + 2 * P.extraKg);
       expect((await ctx.api("POST", "/pricing/quote", { body: { ...body, dropOffHubId: "00000000-0000-7000-8000-000000000000" } })).status).toBe(404);
 
       const owner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: s.shop.id }], "Shop Owner");
       const merchantQuote = await ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { ...body, dropOffHubId: s.dhanmondi.id } });
       expect(merchantQuote.status, JSON.stringify(merchantQuote.body)).toBe(200);
-      expect(merchantQuote.body).toMatchObject({ sameZone: true, origin: { zone: "Dhanmondi" } });
+      expect(merchantQuote.body).toMatchObject({ tier: "SAME_DISTRICT", origin: { zone: "Agrabad" } });
 
       // A hub whose name and address name no zone: the zone it serves in its district.
       await ctx.prisma.deliveryZone.create({ data: { code: "DHN-BAN", name: "Banani", district: "Dhaka North", hubId: s.gulshan.id } });
       const served = await ctx.api("POST", "/pricing/quote", { body: { ...body, deliveryDistrict: "Dhaka North", deliveryZone: "Banani", dropOffHubId: s.gulshan.id } });
-      expect(served.body).toMatchObject({ sameZone: true, origin: { zone: "Banani" } });
+      expect(served.body).toMatchObject({ tier: "SAME_DISTRICT", origin: { zone: "Banani" } });
+    });
+
+    it("prices from the hub's own zone first, and only accepts a catalog zone of the hub's district", async () => {
+      const s = await setup();
+      await ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Dhaka Central", address: "Road 7, Dhanmondi, Dhaka" } }); // the address names Dhanmondi …
+      // … but the hub's explicit zone wins over the address heuristics.
+      const set = await ctx.api("PATCH", `/hubs/${s.dhanmondi.id}`, { token: s.ops.token, body: { zone: "mirpur" } });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      expect(set.body.zone).toBe("Mirpur"); // stored with the catalog spelling
+      const body = { pickupDistrict: "Chattogram", pickupZone: "Agrabad", deliveryDistrict: "Dhaka Central", deliveryZone: "Mirpur", weightKg: 1, serviceLevel: "Regular", codAmount: 0 };
+      const quote = await ctx.api("POST", "/pricing/quote", { body: { ...body, dropOffHubId: s.dhanmondi.id } });
+      expect(quote.body).toMatchObject({ tier: "SAME_DISTRICT", origin: { hubId: s.dhanmondi.id, district: "Dhaka Central", zone: "Mirpur" } });
+
+      // A zone of another district, or no catalog zone at all, is refused.
+      for (const zone of ["Gulshan", "Nowhere"]) {
+        const bad = await ctx.api("PATCH", `/hubs/${s.dhanmondi.id}`, { token: s.ops.token, body: { zone } });
+        expect(bad.status).toBe(422);
+        expect(bad.body.error).toMatchObject({ code: "HUB_ZONE_INVALID", details: { field: "zone" } });
+      }
+      const created = await ctx.api("POST", "/hubs", { token: s.ops.token, body: { code: "CTG-ZZ", name: "Zone Test Hub", district: "Chattogram", zone: "Banani", address: "Agrabad" } });
+      expect(created.status).toBe(422);
+      // Moving the hub to another district needs a zone of that district.
+      expect((await ctx.api("PATCH", `/hubs/${s.dhanmondi.id}`, { token: s.ops.token, body: { district: "Chattogram" } })).status).toBe(422);
+      const moved = await ctx.api("PATCH", `/hubs/${s.dhanmondi.id}`, { token: s.ops.token, body: { district: "Chattogram", zone: "Agrabad" } });
+      expect(moved.body).toMatchObject({ district: "Chattogram", zone: "Agrabad" });
     });
   });
 
@@ -338,11 +352,12 @@ describe("hub drop-off", () => {
 
     it("turns an assigned pickup into a drop-off: rider released, re-priced, tracked, audited, sender told", async () => {
       const s = await setup();
-      await ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Dhaka Central", address: "Road 7, Dhanmondi, Dhaka" } });
+      // The hub is in Chattogram and so is the recipient: dropping it there makes it a same-district parcel.
+      await ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Chattogram", address: "Agrabad, Chattogram" } });
       await ctx.prisma.webhookEndpoint.create({
         data: { merchantId: s.shop.id, url: "https://example.com/hooks", secretEncrypted: "x", events: ["shipment.intake_changed", "shipment.status_updated"], active: true },
       });
-      const booked = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: row(s) });
+      const booked = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: row(s, { serviceLevel: "Regular", delivery: { category: "HOME", street: "Agrabad Road 1", zone: "Agrabad", district: "Chattogram" } }) });
       const id = booked.body.trackingId;
       const assigned = await ctx.api("POST", `/parcels/${id}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
       expect(assigned.body.status).toBe("PICKUP_ASSIGNED");

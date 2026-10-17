@@ -19,7 +19,7 @@ export type ListKey =
   | "addressTypes"
   | "parcelTypes"
   | "products"
-  | "serviceLevels"
+  | "speeds"
   | "weights"
   | "yesNo"
   | "packaging"
@@ -48,6 +48,7 @@ export type ColumnKey =
   | "cod"
   | "cod_amount"
   | "declared_value"
+  | "open_box"
   | "packaging"
   | "branch_code"
   | "instructions";
@@ -77,6 +78,19 @@ export interface ColumnDef {
   width: number;
   /** Only in operations templates (merchant per row). */
   opsOnly?: boolean;
+  /** Shown only when the merchant's service package offers it (service packages); still read when present. */
+  needs?: PackageNeed;
+}
+
+/** What a package must offer for a column to be in its template (see packageOptions in packages/shared). */
+export type PackageNeed = "cod" | "speeds" | "openBox" | "weight";
+export interface PackageColumnOptions {
+  cod: boolean;
+  /** More than Regular. */
+  speeds: boolean;
+  openBox: boolean;
+  /** Customer & E-commerce only (Banking & Financial has no weight). */
+  weight: boolean;
 }
 
 const c = (def: Omit<ColumnDef, "configurable" | "defaultable" | "aliases"> & Partial<Pick<ColumnDef, "configurable" | "defaultable" | "aliases">>): ColumnDef => ({
@@ -162,15 +176,41 @@ const addressType = (example: string, dflt: string) =>
 const serviceLevel = c({
   key: "service_level",
   header: "Service",
-  aliases: ["service_level", "delivery_service", "service", "service_type", "delivery_speed"],
-  description: "Delivery speed from your rate card.",
+  aliases: ["service_level", "delivery_service", "service", "service_type", "delivery_speed", "speed", "handling", "speed_+_handling", "speed_handling", "document_type", "doc_type", "document_category"],
+  description: "The service from your package (one choice). Empty = Regular. E-commerce Express is same day, inside the same district only.",
   example: "Regular",
   required: false,
   defaultable: true,
   default: "Regular",
-  list: "serviceLevels",
+  list: "speeds",
   strictList: true,
-  width: 14,
+  width: 22,
+  needs: "speeds",
+});
+const product = (example: string) =>
+  c({
+    key: "product_type",
+    header: "Product",
+    aliases: ["product", "product_type", "product_name", "category", "product_category"],
+    description: "Product from your list (optional): its type (Regular, Document or Books) prices the parcel. Empty = Regular.",
+    example,
+    required: false,
+    defaultable: true,
+    list: "products",
+    strictList: true,
+    width: 20,
+  });
+const openBox = c({
+  key: "open_box",
+  header: "Open box",
+  aliases: ["open_box", "check_before_pay", "open_box_/_check_before_pay"],
+  description: "Yes lets the customer open the box and check before paying. Empty = No.",
+  example: "No",
+  required: false,
+  list: "yesNo",
+  strictList: true,
+  width: 10,
+  needs: "openBox",
 });
 const weight = (dflt: string, example: string) =>
   c({
@@ -185,6 +225,7 @@ const weight = (dflt: string, example: string) =>
     list: "weights",
     number: { min: 0.01, max: 50 },
     width: 12,
+    needs: "weight",
   });
 const packaging = (example: string) =>
   c({ key: "packaging", header: "Packaging", aliases: ["packaging", "package", "packaging_type"], description: "Packaging from the list.", example, required: false, defaultable: true, list: "packaging", strictList: true, width: 18 });
@@ -216,10 +257,10 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
       strictList: true,
       width: 18,
     }),
-    c({ key: "product_type", header: "Product type", aliases: ["product_type", "product", "category", "product_category"], description: "Product category from the list.", example: "Clothing", required: false, defaultable: true, list: "products", strictList: true, width: 20 }),
+    product("Dress"),
     c({ key: "item_description", header: "Item description", aliases: ["item_description", "item", "items", "contents", "description", "product_name"], description: "What is inside (free text).", example: "Everyday tote bag", required: false, maxLength: 120, width: 24 }),
     serviceLevel,
-    weight("1", "1"),
+    weight("0.5", "0.5"),
     c({
       key: "cod",
       header: "Cash on delivery",
@@ -231,6 +272,7 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
       list: "yesNo",
       strictList: true,
       width: 14,
+      needs: "cod",
     }),
     c({
       key: "cod_amount",
@@ -241,8 +283,10 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
       required: false,
       number: { min: 0, max: 1_000_000 },
       width: 14,
+      needs: "cod",
     }),
     declaredValue("Product value (৳)", "The value of the goods, in taka (for claims).", "2450"),
+    openBox,
     packaging("Poly mailer"),
     instructions,
   ],
@@ -256,18 +300,7 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
     zone,
     area,
     addressType("Office", "Office"),
-    c({
-      key: "document_type",
-      header: "Document type",
-      aliases: ["document_type", "doc_type", "document_category"],
-      description: "Document type from the list (priced by your document rate card).",
-      example: "Corporate Urgent Document",
-      required: true,
-      defaultable: true,
-      list: "documentTypes",
-      strictList: true,
-      width: 26,
-    }),
+    product("Credit card"),
     c({ key: "document_item", header: "Document description", aliases: ["document_item", "document_description", "item", "description", "contents"], description: "What the envelope holds (free text; the list has suggestions).", example: "Contract", required: false, list: "documentItems", maxLength: 120, width: 22 }),
     c({
       key: "receiver_relationship",
@@ -282,10 +315,9 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
       width: 24,
     }),
     serviceLevel,
-    weight("0.5", "0.5"),
     packaging("Security pouch"),
     c({ key: "branch_code", header: "Origin branch code", aliases: ["branch_code", "branch", "origin_branch", "origin_branch_code"], description: "Your branch the document comes from.", example: "MBP-DHK-01", required: false, text: true, maxLength: 40, width: 16 }),
-    declaredValue("Declared value (৳)", "Declared value of the documents, in taka.", "0"),
+    declaredValue("Declared value (৳)", "Declared value of the documents, in taka (for claims).", "0"),
     instructions,
   ],
 };
@@ -303,7 +335,8 @@ export const normalizeHeader = (h: string) =>
     .replace(/^_+|_+$/g, "");
 
 /** Columns of a template for merchants or operations (operations have the merchant column). */
-export const columnsFor = (kind: ImportKindKey, forOps: boolean) => COLUMNS[kind].filter(col => forOps || !col.opsOnly);
+export const columnsFor = (kind: ImportKindKey, forOps: boolean, pkg?: PackageColumnOptions | null) =>
+  COLUMNS[kind].filter(col => (forOps || !col.opsOnly) && (!pkg || !col.needs || pkg[col.needs]));
 
 /** Maps each header cell to a column (or null when unknown / ignored); duplicates map once. */
 export function matchHeaders(kind: ImportKindKey, headers: string[]): { map: (ColumnKey | "__cod" | null)[]; unknown: string[]; forbidden: string[] } {

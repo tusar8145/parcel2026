@@ -17,7 +17,7 @@
   const $ = id => document.getElementById(id);
   const esc = Ops.esc;
   const NEEDS = "Needs info";
-  const SHIPMENT_PAGES = ["Shipments", "Customer parcels", "E-commerce operations", "Document operations"];
+  const SHIPMENT_PAGES = ["Shipments", "Customer parcels", "E-commerce operations", "Banking & Financial operations"];
   const TONES = { good: "status-good", warn: "status-warn", bad: "status-bad", info: "status-blue" };
 
   async function merchants() {
@@ -27,7 +27,7 @@
 
   async function config() {
     const page = Ops.page();
-    const kind = page === "Document operations" ? "document" : "ecommerce";
+    const kind = page === "Banking & Financial operations" ? "document" : "ecommerce";
     const hubs = Ops.myHubs() || DF.state.hubs;
     return {
       kind,
@@ -55,7 +55,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (Ops.page() === "Customer parcels" && !history)
-        return void showToast("Customer parcels are booked by senders on the website. Import merchant orders from E-commerce or Document operations.");
+        return void showToast("Customer parcels are booked by senders on the website. Import merchant orders from E-commerce or Banking & Financial operations.");
       if (!Ops.require("dispatch", "import shipments")) return;
       void config().then(cfg => (template ? DFImport.template(cfg) : history ? DFImport.history(cfg) : DFImport.open(cfg)));
     },

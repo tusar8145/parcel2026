@@ -23,6 +23,32 @@ export function catalog(): Catalog {
 export const zonesOf = (district: string) => catalog().zonesByDistrict[district] ?? [];
 export const areasOf = (zone: string) => catalog().areasByZone[zone] ?? [];
 
+/** "Kaliganj (Gazipur)" → "kaliganj": zone names shared by several districts carry the district. */
+const bare = (s: string) => s.toLowerCase().replace(/\s*\([^)]*\)$/, "").trim();
+
+/**
+ * The catalog district and zone of a found place: a zone named like the place's suburb / area in
+ * a district matching the place's district ("Dhaka" also means Dhaka North / Central / South).
+ */
+export function placeInCatalog(place: Pick<Place, "district" | "zone" | "area">): { district: string; zone: string } | null {
+  const c = catalog();
+  const d = place.district?.trim().toLowerCase();
+  const districts = d ? c.districts.filter(x => x.toLowerCase() === d || x.toLowerCase().startsWith(`${d} `)) : c.districts;
+  for (const name of [place.zone, place.area]) {
+    const n = name?.trim().toLowerCase();
+    if (!n) continue;
+    for (const district of districts) {
+      const zone = (c.zonesByDistrict[district] ?? []).find(z => z.toLowerCase() === n || bare(z) === n);
+      if (zone) return { district, zone };
+    }
+    for (const district of districts) {
+      const zone = (c.zonesByDistrict[district] ?? []).find(z => (c.areasByZone[z] ?? []).some(a => a.toLowerCase() === n));
+      if (zone) return { district, zone };
+    }
+  }
+  return null;
+}
+
 /** Field names for one address block, e.g. { category: "requestPickupCategory", … }. */
 export interface AddressNames {
   category: string;
@@ -56,9 +82,10 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
   const applyPlace = (place: Place, movePin: boolean) => {
     form.setValues((current: Record<string, string>) => {
       const next = { ...current };
-      const district = matchOption(catalog().districts, place.district, place.zone);
+      const found = placeInCatalog(place);
+      const district = found?.district || matchOption(catalog().districts, place.district, place.zone);
       if (district) next[names.district] = district;
-      const zone = matchOption(zonesOf(next[names.district]), place.zone, place.area);
+      const zone = found?.zone || matchOption(zonesOf(next[names.district]), place.zone, place.area);
       if (zone) next[names.zone] = zone;
       if (names.area) {
         const area = matchOption(areasOf(next[names.zone]), place.area, place.street);

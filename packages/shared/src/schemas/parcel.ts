@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PARCEL_INTAKES, PARCEL_STATUSES, parseParcelStatus } from "../parcel-status";
 import { SERVICE_LEVELS } from "../pricing";
+import { serviceSelectionSchema } from "../packages";
 import { phoneSchema } from "./auth";
 
 export const ADDRESS_CATEGORIES = ["HOME", "OFFICE", "OTHER"] as const;
@@ -49,11 +50,12 @@ export const pickupWindowSchema = z
   .refine(w => w.end.getTime() - w.start.getTime() <= 12 * 3600_000, { message: "A pickup window can be at most 12 hours", path: ["end"] });
 
 export const quoteRequestSchema = z.object({
+  /** Prices depend on the districts only (route tiers); zones find the Hub Pickup hub. */
   pickupDistrict: text(80),
-  pickupZone: text(80),
+  pickupZone: optionalText(80),
   deliveryDistrict: text(80),
-  deliveryZone: text(80),
-  weightKg: z.coerce.number().positive().max(50),
+  deliveryZone: optionalText(80),
+  weightKg: z.coerce.number().positive("Enter the weight").max(50, "At most 50 kg").default(0.5),
   serviceLevel: serviceLevelSchema,
   codAmount: amount.default(0),
   /** DOCUMENT parcels: the document type, priced by the rate card's documentTypeRates. */
@@ -61,7 +63,12 @@ export const quoteRequestSchema = z.object({
   documentType: optionalText(80),
   /** Hub drop-off: priced from this hub's location (district / zone) instead of the pickup address. */
   dropOffHubId: z.uuid().optional(),
-});
+  /** Areas find the hubs' delivery zones more precisely (optional). */
+  pickupArea: optionalText(120),
+  deliveryArea: optionalText(120),
+  /** Ops / API: quote for this merchant's package (staff only; merchants always get their own). */
+  merchantId: z.uuid().optional(),
+}).extend(serviceSelectionSchema.omit({ notifications: true }).shape);
 
 export const createParcelSchema = z.object({
   sender: z.object({ name: text(120), phone: phoneSchema }),
@@ -72,7 +79,7 @@ export const createParcelSchema = z.object({
   /** DOCUMENT parcels: the document type (e.g. "B2B Document"), priced by the rate card's documentTypeRates. */
   documentType: optionalText(80),
   serviceLevel: serviceLevelSchema,
-  weightKg: z.coerce.number().positive().max(50),
+  weightKg: z.coerce.number().positive("Enter the weight").max(50, "At most 50 kg"),
   packaging: optionalText(80),
   contents: optionalText(120),
   declaredValue: amount.optional(),
@@ -81,7 +88,7 @@ export const createParcelSchema = z.object({
   merchantOrderRef: optionalText(80),
   /** Who may receive it for the recipient, e.g. "Self", "Reception", "Authorized representative". */
   receiverRelation: optionalText(60),
-  /** Corporate merchants: the branch the consignment originates from, e.g. "MBP-DHK-01". */
+  /** Banking & Financial merchants: the branch the consignment originates from, e.g. "MBP-DHK-01". */
   originBranchCode: optionalText(40),
   /** Save sender/recipient to the customer's address book. */
   saveAddresses: z.boolean().default(true),
@@ -94,7 +101,7 @@ export const createParcelSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{2,4}-\d{6}-[0-9A-Z]{4,8}$/, "Enter the consignment number printed on the label")
     .optional(),
-});
+}).extend(serviceSelectionSchema.shape);
 export type CreateParcelInput = z.infer<typeof createParcelSchema>;
 
 export const listParcelsQuerySchema = z.object({

@@ -93,11 +93,11 @@ export default function Sidebar() {
             </svg>
             E-commerce operations
           </button>{" "}
-          <button className="nav-item" data-page="Document operations">
+          <button className="nav-item" data-page="Banking & Financial operations">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-pin" />
             </svg>
-            Document operations
+            Banking & Financial operations
           </button>{" "}
           <button className="nav-item" data-page="CN stock">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

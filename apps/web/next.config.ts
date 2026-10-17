@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
-const pages = ["courier-operation", "rider", "ecommerce-merchant", "document-merchant", "super-admin"];
+const pages = ["courier-operation", "rider", "ecommerce-merchant", "banking-merchant", "super-admin"];
 
 // The API runs separately (apps/api). Proxying it under /api keeps the browser on one
 // origin, so the refresh-token cookie is first-party and no CORS is needed.
@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       { source: "/website.html", destination: "/", permanent: true },
       { source: "/courier.html", destination: "/courier-operation", permanent: true },
       ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),
+      // The document merchant panel became the Banking & Financial merchant panel.
+      { source: "/document-merchant", destination: "/banking-merchant", permanent: true },
+      { source: "/document-merchant.html", destination: "/banking-merchant", permanent: true },
     ];
   },
 };

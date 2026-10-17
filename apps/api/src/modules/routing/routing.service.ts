@@ -7,7 +7,7 @@ import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import { env } from "../../config/env";
-import type { Prisma } from "../../generated/prisma/client";
+import type { Parcel, Prisma } from "../../generated/prisma/client";
 import { GeoService } from "../geo/geo.service";
 import { ParcelsService } from "../parcels/parcels.service";
 import { opsHubScope } from "../parcels/ops-scope";
@@ -349,15 +349,42 @@ export class RoutingService {
     const scope = opsHubScope(actor);
     if (scope && query.hubId && !scope.includes(query.hubId)) throw forbidden("You can only plan your own hub's work");
     const hubs = query.hubId ? [query.hubId] : scope;
-    const [deliveries, pickups, riders] = await Promise.all([
+    const [deliveries, pickups] = await Promise.all([
       query.kind === "pickup"
         ? []
         : this.prisma.parcel.findMany({
-            where: { status: "AT_HUB", deliveryRiderId: null, ...(hubs ? { currentHubId: { in: hubs } } : {}) },
-            orderBy: [{ deliveryDueAt: "asc" }, { id: "asc" }],
+            // Collect-from-hub parcels get no delivery rider; on-demand work first (service packages).
+            where: { status: "AT_HUB", deliveryRiderId: null, OR: [{ lastMile: null }, { lastMile: { not: "HUB_COLLECT" } }], ...(hubs ? { currentHubId: { in: hubs } } : {}) },
+            orderBy: [{ onDemand: "desc" }, { deliveryDueAt: "asc" }, { id: "asc" }],
             take: query.limit,
           }),
-      query.kind === "delivery" ? [] : this.prisma.parcel.findMany({ where: NEEDS_PICKUP_RIDER, orderBy: [{ pickupDueAt: "asc" }, { id: "asc" }], take: query.limit * 3 }),
+      query.kind === "delivery" ? [] : this.prisma.parcel.findMany({ where: NEEDS_PICKUP_RIDER, orderBy: [{ onDemand: "desc" }, { pickupDueAt: "asc" }, { id: "asc" }], take: query.limit * 3 }),
+    ]);
+    const work = [...deliveries.map(p => ({ p, kind: "delivery" as const })), ...pickups.map(p => ({ p, kind: "pickup" as const }))];
+    return this.rank(scope, hubs, work, query.limit);
+  }
+
+  /**
+   * A suggested rider for each of these parcels that waits for one (a pickup request, or a parcel at
+   * a hub without a delivery rider), by the same rules as GET /routing/suggestions. Bulk updates
+   * pre-fill their "Suggested rider" column with it.
+   */
+  async suggestFor(actor: Actor, parcels: Parcel[]) {
+    const scope = opsHubScope(actor);
+    const work = parcels.flatMap((p): { p: Parcel; kind: "pickup" | "delivery" }[] =>
+      p.status === "PENDING_CONFIRMATION" && p.intake === "PICKUP"
+        ? [{ p, kind: "pickup" as const }]
+        : p.status === "AT_HUB" && !p.deliveryRiderId && (!scope || (!!p.currentHubId && scope.includes(p.currentHubId)))
+          ? [{ p, kind: "delivery" as const }]
+          : [],
+    );
+    if (!work.length) return { suggestions: [], unmatched: [] };
+    return this.rank(scope, scope, work, Number.MAX_SAFE_INTEGER);
+  }
+
+  /** Scores the riders (route, zone, load, distance, shift) for each parcel; each pick counts towards that rider's load. */
+  private async rank(scope: string[] | null, hubs: string[] | null, work: { p: Parcel; kind: "pickup" | "delivery" }[], limit: number) {
+    const [riders] = await Promise.all([
       this.prisma.rider.findMany({
         where: { active: true, user: { status: "ACTIVE" }, ...(hubs ? { hubId: { in: hubs } } : {}) },
         include: {
@@ -391,12 +418,8 @@ export class RoutingService {
     }[] = [];
     const unmatched: { trackingId: string; kind: "pickup" | "delivery"; reason: string }[] = [];
 
-    const work = [
-      ...deliveries.map(p => ({ p, kind: "delivery" as const })),
-      ...pickups.map(p => ({ p, kind: "pickup" as const })),
-    ];
     for (const { p, kind } of work) {
-      if (suggestions.length + unmatched.length >= query.limit) break;
+      if (suggestions.length + unmatched.length >= limit) break;
       const district = kind === "pickup" ? p.pickupDistrict : p.deliveryDistrict;
       const zoneName = kind === "pickup" ? p.pickupZone : p.deliveryZone;
       // Incomplete orders can't go out for delivery until the recipient and destination are known.

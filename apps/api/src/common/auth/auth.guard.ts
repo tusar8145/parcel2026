@@ -10,6 +10,7 @@ import { API_KEY_PERMISSIONS, type Actor, type UserActor } from "./actor";
 import { ALLOW_API_KEY, PERMISSIONS_KEY, PUBLIC_KEY } from "./decorators";
 import { TokenService } from "./token.service";
 import { API_KEY_SCOPE_METADATA, apiKeyScopeAllows, scopeToPermissions } from "../../modules/merchants/api-key-scopes";
+import { merchantHasService } from "../../modules/packages/package-resolver";
 
 export const API_KEY_PREFIX = "df_live_";
 
@@ -97,6 +98,9 @@ export class AuthGuard implements CanActivate {
     if (!key.lastUsedAt || now.getTime() - key.lastUsedAt.getTime() > 60_000) {
       void this.prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: now } }).catch(() => undefined);
     }
+    // Service packages: a merchant whose package has no API integration can't use its keys.
+    if (!(await merchantHasService(this.prisma, key.merchantId, "integration.api")))
+      throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: API integration. Your service package doesn't include API access; contact Delivery Fast to change it.", 403);
     // Keys without scopes (created before scopes existed) keep the original access.
     const scopes = key.scopes ?? [];
     const permissions = scopes.length ? scopeToPermissions(scopes) : API_KEY_PERMISSIONS;

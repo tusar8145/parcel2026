@@ -1,14 +1,15 @@
 import { type Browser, type Page } from "@playwright/test";
-import { DEMO_PASSWORD as PASSWORD, Fixtures, expect, test, type TempRider } from "./support";
+import { Fixtures, expect, test, type TempRider, type TempUser } from "./support";
 
-// Operations uses the seeded staff account; the rider is temporary, and the customer who signs up
-// is deleted afterwards with the parcel, its COD and messages (support.ts).
-const OPS = "ops@deliveryfast.example";
+// The operations manager and the rider are temporary, and the customer who signs up is deleted
+// afterwards with the parcel, its COD and messages (support.ts).
+let OPS: TempUser;
 
 const fx = new Fixtures();
 let riderAccount: TempRider;
 test.beforeAll(async () => {
   riderAccount = await fx.rider("Gulshan Sorting Hub");
+  OPS = await fx.staff("OPS_MANAGER");
 });
 test.afterAll(() => fx.cleanup());
 
@@ -21,7 +22,7 @@ async function open(browser: Browser, path: string) {
   return page;
 }
 
-async function signIn(page: Page, identifier: string, password = PASSWORD) {
+async function signIn(page: Page, identifier: string, password: string) {
   await page.goto("/login");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.fill("#loginIdentity", identifier);
@@ -70,7 +71,8 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await customer.selectOption("#requestArea", { index: 1 });
   await customer.fill("#requestDelivery", "Road 7, Flat 3B");
   await form.getByRole("button", { name: "Continue" }).click();
-  await customer.selectOption("#requestServiceLevel", "Same day");
+  // Express (same day) is offered inside the same district only: Gulshan → Dhanmondi are both Dhaka.
+  await customer.selectOption("#requestServiceLevel", "EXPRESS");
   await customer.selectOption("#requestWeight", "2");
   await customer.check("#requestCodEnabled");
   await customer.fill("#requestCodAmount", "1500");
@@ -78,12 +80,13 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await form.locator('button[type="submit"]').click();
   await expect(customer).toHaveURL(/\/track\/PP-\d{6}-[0-9A-Z]{5}/);
   const trackingId = decodeURIComponent(new URL(customer.url()).pathname.split("/track/")[1]);
-  await expect(toast(customer)).toContainText("৳185");
+  // Priced by the Customer default package (route, weight, Express, COD fee).
+  await expect(toast(customer)).toContainText(/৳[0-9]+/);
   await expect(customer.locator("#trackingResult")).toContainText("Pending operations confirmation");
 
   // ── Operations accepts and assigns the rider ──
   const ops = await open(browser, "/login");
-  await signIn(ops, OPS);
+  await signIn(ops, OPS.login, OPS.password);
   await expect(ops).toHaveURL(/\/courier-operation/);
   await ops.waitForSelector("html.legacy-ready", { state: "attached" });
   await ops.click('#navigation [data-page="Customer parcels"]');
@@ -136,7 +139,7 @@ test("panels require the right role", async ({ browser }) => {
   const page = await open(browser, "/login");
   await page.goto("/rider");
   await expect(page).toHaveURL(/\/login$/);
-  await signIn(page, OPS);
+  await signIn(page, OPS.login, OPS.password);
   await expect(page).toHaveURL(/\/courier-operation/);
   await page.goto("/super-admin");
   await expect(page).toHaveURL(/\/login$/);

@@ -17,7 +17,8 @@ const FIXED_NOW = new Date("2026-10-15T10:00:00+06:00");
 const DIFF_DIR = path.join(__dirname, "__diff__");
 
 // Links between pages were rewritten on purpose: "rider.html" -> "/rider" (and the dead "courier.html" -> "/courier-operation").
-const ROUTES: Record<string, string> = { website: "/", courier: "/courier-operation" };
+// The document merchant panel is now the Banking & Financial merchant panel (/banking-merchant).
+const ROUTES: Record<string, string> = { website: "/", courier: "/courier-operation", "document-merchant": "/banking-merchant" };
 const rewritePageLinks = (html: string) =>
   html.replace(
     /href="(website|courier-operation|courier|rider|ecommerce-merchant|document-merchant|super-admin)\.html/g,
@@ -47,7 +48,8 @@ const websiteRoutes: string[] = [];
 /**
  * Intended changes to the original website, applied to it before comparing: links use real
  * URLs instead of hash routes ("#/pricing" -> "/pricing", "#/tracking" -> "/track"), and the
- * footer links to the Privacy Policy, Terms of Service and cookie settings.
+ * footer links to the Privacy Policy, Terms of Service and cookie settings, and the document merchant is
+ * now the Banking & Financial merchant.
  */
 const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider" };
 async function applyIntendedWebsiteChanges(page: Page) {
@@ -56,6 +58,9 @@ async function applyIntendedWebsiteChanges(page: Page) {
       const route = a.getAttribute("href")!.slice(2);
       a.setAttribute("href", paths[route] ?? `/${route}`);
     }
+    // "Document merchants" are now "Banking & Financial merchants".
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue?.includes("document merchant")) n.nodeValue = n.nodeValue.replace(/document merchant/g, "Banking & Financial merchant");
     const col = document.querySelectorAll(".footer .footer-col")[2];
     if (col)
       col.insertAdjacentHTML(

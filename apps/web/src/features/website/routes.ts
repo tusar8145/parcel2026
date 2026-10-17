@@ -83,7 +83,7 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
     legacy: "merchant",
     path: "merchant",
     title: "Delivery Fast — Choose the right merchant account",
-    description: "Ship your online shop's orders or your institution's documents with Delivery Fast. Apply for an e-commerce or document merchant account.",
+    description: "Ship your online shop's orders or your institution's documents with Delivery Fast. Apply for an e-commerce or Banking & Financial merchant account.",
     index: true,
     changeFrequency: "monthly",
     priority: 0.7,

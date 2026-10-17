@@ -23,7 +23,7 @@ export default function PartnersSection() {
             </div>
             <h3>Become a merchant</h3>
             <p>
-              Choose an e-commerce merchant account for shop parcels, or a document merchant account for secure
+              Choose an e-commerce merchant account for shop parcels, or a Banking & Financial merchant account for secure
               deliveries from banks, fintechs, and other organizations.
             </p>
             <button className="button" data-open="merchant">

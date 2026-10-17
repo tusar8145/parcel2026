@@ -55,7 +55,7 @@ const MERCHANTS = [
   },
   {
     code: "MR-1002",
-    type: "CORPORATE_DOCUMENT",
+    type: "BANKING_FINANCIAL",
     name: "Meridian Bank PLC",
     owner: { name: "Kamal Hossain", phone: "+8801800001002", email: "ops@meridianbank.example" },
     pickup: { address: "Meridian Tower, Dilkusha", area: "Motijheel", district: "Dhaka South" },
@@ -67,8 +67,8 @@ const PLANS = [
   { segment: "ECOMMERCE", name: "Starter", monthlyFee: 0, discountPct: 0 },
   { segment: "ECOMMERCE", name: "Growth", monthlyFee: 1500, discountPct: 8 },
   { segment: "ECOMMERCE", name: "Business", monthlyFee: 4500, discountPct: 16 },
-  { segment: "CORPORATE_DOCUMENT", name: "Business", monthlyFee: 6000, discountPct: 10 },
-  { segment: "CORPORATE_DOCUMENT", name: "Enterprise", monthlyFee: 15000, discountPct: 18 },
+  { segment: "BANKING_FINANCIAL", name: "Business", monthlyFee: 6000, discountPct: 10 },
+  { segment: "BANKING_FINANCIAL", name: "Enterprise", monthlyFee: 15000, discountPct: 18 },
 ] as const;
 
 async function user(input: { name: string; phone: string; email?: string }, passwordHash: string) {
@@ -139,10 +139,10 @@ async function main() {
   for (const [segment, name] of [
     ["CUSTOMER", "Customer parcels 2026"],
     ["ECOMMERCE", "E-commerce standard 2026"],
-    ["CORPORATE_DOCUMENT", "Corporate documents 2026"],
+    ["BANKING_FINANCIAL", "Corporate documents 2026"],
   ] as const) {
     if (!(await prisma.rateCard.findFirst({ where: { segment } }))) {
-      const config = segment === "CORPORATE_DOCUMENT" ? { ...DEFAULT_RATE_CARD, sameZone: 60, crossZone: 100 } : DEFAULT_RATE_CARD;
+      const config = segment === "BANKING_FINANCIAL" ? { ...DEFAULT_RATE_CARD, sameZone: 60, crossZone: 100 } : DEFAULT_RATE_CARD;
       await prisma.rateCard.create({ data: { segment, name, config, effectiveFrom: new Date("2026-01-01T00:00:00Z") } });
     }
   }

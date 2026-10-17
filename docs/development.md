@@ -28,10 +28,31 @@ Requirements:
 npm install
 cp apps/api/.env.example apps/api/.env   # then set JWT_ACCESS_SECRET and ENCRYPTION_KEY (commands are in the file)
 npm run db:deploy -w @delivery-fast/api   # create the tables
+npm run db:seed:geo -w @delivery-fast/api # Bangladesh districts/zones/areas, 30 hubs, delivery zones (config)
 npm run db:seed -w @delivery-fast/api     # demo hubs, riders, merchants and one account per role
 npm run dev:api                           # terminal 1: API on http://localhost:4000 (docs: /api/docs)
 npm run dev                               # terminal 2: website and panels on http://localhost:3000
 ```
+
+### Geography, hubs and data resets
+- `npm run db:seed:geo` merges the whole country into the service catalog (Setting `catalog`):
+  67 districts (the 64 districts, with Dhaka's city thanas under the operating districts Dhaka
+  North / Central / South), 601 zones (494 upazilas + 107 city thanas) and ~4,900 areas (unions
+  and city neighbourhoods); creates the 30-hub network (`src/seed/geo-bd.ts`) and one delivery
+  zone per catalog zone with its serving hub. Idempotent; it never removes or reorders catalog
+  entries and only fills empty hub fields. Data: `prisma/data/bd-geo.json`, built by
+  `npm run db:build:geo -- <dir>` from [nuhil/bangladesh-geocode](https://github.com/nuhil/bangladesh-geocode)
+  (MIT) plus the curated city zones in `prisma/data/bd-geo-metro.json`. Zone names shared by
+  several districts carry the district, e.g. `Kaliganj (Gazipur)`; imports accept `Kaliganj`
+  with the district given.
+- Super admin → Shared catalogs & locations edits the geography afterwards (add, rename, deactivate,
+  delete when unused; hubs in Courier Operations → Hubs & zones). Places deleted or renamed there are
+  remembered (Setting `catalog-meta`), so running `db:seed:geo` again doesn't bring them back.
+- `npm run db:seed:users -- --out <file outside the repo>` creates one demo account per role on
+  that network (generated passwords, or `DEMO_PASSWORD_<GROUP>`), and writes the credentials
+  table to the file. The super admin sets up two-step verification at first sign-in.
+- `scripts/reset-data-keep-config.sql` deletes every user, merchant, parcel and all other data
+  and keeps configuration (back up first; see the comments in the file).
 
 ### Demo accounts
 Every seeded account uses the password `DeliveryFast2026`. Sign in at

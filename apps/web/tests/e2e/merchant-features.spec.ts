@@ -1,13 +1,12 @@
 import { type Browser, type Page } from "@playwright/test";
-import { DEMO_PASSWORD, Fixtures, apiUrl, expect, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, expect, test, type TempUser } from "./support";
 
 /**
  * Merchant panel features on the real API: product catalogue, reports, recurring pickups,
  * business verification (KYC) and API key scopes; operations returns and scheduled pickups.
  * The merchant and its owner are temporary (created before, deleted after: support.ts);
- * operations uses the seeded staff account.
+ * so is the operations manager.
  */
-const OPS = { login: process.env.E2E_OPS_LOGIN ?? "ops@deliveryfast.example", password: DEMO_PASSWORD };
 
 const fx = new Fixtures();
 let owner: TempUser;
@@ -120,7 +119,7 @@ test("e-commerce merchant: business verification and scoped API keys", async ({ 
 });
 
 test("operations: returns and scheduled pickups pages", async ({ browser }) => {
-  const { page, errors } = await signIn(browser, OPS, /\/courier-operation/);
+  const { page, errors } = await signIn(browser, await fx.staff("OPS_MANAGER"), /\/courier-operation/);
   await page.click('#navigation [data-page="Returns"]');
   await expect(page.locator("#mainContent h1")).toContainText("Returns (RTO)");
   await expect(page.locator("#mainContent")).toContainText("Return runs");

@@ -96,6 +96,8 @@
       email.placeholder = "name@company.example (optional if a mobile number is given)";
     }
     email?.closest(".field")?.insertAdjacentHTML("afterend", `<div class="field"><label for="dfmInvitePhone">Mobile number</label><input id="dfmInvitePhone"></div><div class="field full"><label for="dfmInviteMessage">Personal message (optional)</label><textarea id="dfmInviteMessage" maxlength="500" placeholder="Shown on the invitation"></textarea></div>`);
+    // Service plans are retired: the merchant books with its category's default package until one is assigned.
+    $("invitePlan")?.closest(".field")?.remove();
     const phone = $("dfmInvitePhone");
     DF.phoneInput(phone);
     phone.required = false;
@@ -111,7 +113,7 @@
     if (!name || name.length < 2) return toast("Enter the primary contact's name.");
     if (!phone && !email) return toast("Enter a mobile number or an email address.");
     if (phone && DF.phoneProblem(phone)) return toast(DF.phoneProblem(phone));
-    const type = /document/i.test($("inviteType")?.value || "") ? "CORPORATE_DOCUMENT" : "ECOMMERCE";
+    const type = /banking|document/i.test($("inviteType")?.value || "") ? "BANKING_FINANCIAL" : "ECOMMERCE";
     try {
       const invite = await DF.api("/merchants/invites", {
         method: "POST",
@@ -152,7 +154,7 @@
     try {
       const page = await DF.api("/merchants?kycStatus=PENDING&limit=100");
       const rows = page.items
-        .map(m => `<tr><td><strong>${esc(m.name)}</strong><div style="color:#64748b;font-size:12px">${esc(m.code)} · ${m.type === "CORPORATE_DOCUMENT" ? "Document merchant" : "E-commerce"}</div></td><td>${esc(when(m.kyc?.submittedAt))}</td><td>${pill(m.status === "ACTIVE" ? "Active" : m.status.replace("_", " ").toLowerCase(), m.status === "ACTIVE" ? "status-good" : "status-warn")}</td><td><button type="button" class="button button-sm button-primary" data-dfm-kyc="${esc(m.id)}">Review documents</button></td></tr>`)
+        .map(m => `<tr><td><strong>${esc(m.name)}</strong><div style="color:#64748b;font-size:12px">${esc(m.code)} · ${m.type === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : "E-commerce"}</div></td><td>${esc(when(m.kyc?.submittedAt))}</td><td>${pill(m.status === "ACTIVE" ? "Active" : m.status.replace("_", " ").toLowerCase(), m.status === "ACTIVE" ? "status-good" : "status-warn")}</td><td><button type="button" class="button button-sm button-primary" data-dfm-kyc="${esc(m.id)}">Review documents</button></td></tr>`)
         .join("");
       dialog(
         "KYC reviews",
@@ -349,7 +351,7 @@
   const baseShowPage = window.showPage;
   window.showPage = showPage = function (page) {
     baseShowPage(page);
-    if (!["Registrations", "Approvals", "Merchants", "E-commerce merchants", "Document merchants"].includes(page)) return;
+    if (!["Registrations", "Approvals", "Merchants", "E-commerce merchants", "Banking & Financial merchants"].includes(page)) return;
     const actions = document.querySelector("#mainContent .page-heading .heading-actions");
     if (actions && !$("dfmKycQueue")) actions.insertAdjacentHTML("afterbegin", `<button class="button" id="dfmKycQueue">KYC reviews</button><button class="button" id="dfmInvites">Invitations</button>`);
   };

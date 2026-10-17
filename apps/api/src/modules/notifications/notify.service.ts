@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { NOTIFICATION_SERVICE_OF_EVENT } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { env } from "../../config/env";
 import { OutboxService } from "./outbox.service";
@@ -15,6 +16,13 @@ export interface NotifyInput {
   vars?: Record<string, string | number | null | undefined>;
   /** Restrict to these channels (default: whatever the event and settings allow). */
   channels?: ("sms" | "email")[];
+  /**
+   * Parcel messages: the parcel's package gating (`Parcel.packageVersionId`, `Parcel.notifications`:
+   * package ∩ booking choice − product mutes). Parcels booked before packages (no version) aren't gated.
+   */
+  parcel?: { packageVersionId: string | null; notifications: readonly string[] } | null;
+  /** Package-level messages (support, guest verification): the services of the recipient's package. */
+  pkg?: { services: readonly string[] } | null;
 }
 
 export interface RenderedMessage {
@@ -46,6 +54,11 @@ export class NotifyService {
       this.logger.warn(`Unknown notification event ${input.event}`);
       return [];
     }
+    // Service packages (docs: "Service packages & pricing"): the package must include it, it wasn't
+    // unticked at booking and the product allows it. Messages outside packages (sign-in codes…) pass.
+    const service = NOTIFICATION_SERVICE_OF_EVENT[input.event];
+    if (service && input.parcel?.packageVersionId && !input.parcel.notifications.includes(service)) return [];
+    if (service && input.pkg && !input.pkg.services.includes(service)) return [];
     const snapshot = await this.settings.snapshot();
     const wanted = channelsOf(def).filter(c => (!input.channels || input.channels.includes(c)) && this.settings.resolve(snapshot, input.event, c)?.enabled);
     if (!wanted.length) return [];

@@ -17,6 +17,8 @@ export const PARCEL_STATUSES = [
   "RETURN_SCHEDULED",
   "RETURNED",
   "EXCEPTION",
+  /** Collect from hub: waiting at the collection hub for the recipient (appended). */
+  "READY_FOR_COLLECTION",
 ] as const;
 export type ParcelStatus = (typeof PARCEL_STATUSES)[number];
 
@@ -36,6 +38,7 @@ export const PARCEL_STATUS_LABEL: Record<ParcelStatus, string> = {
   RETURN_SCHEDULED: "Return scheduled",
   RETURNED: "Returned",
   EXCEPTION: "Exception",
+  READY_FOR_COLLECTION: "Ready for collection",
 };
 
 const BY_LABEL = new Map<string, ParcelStatus>([
@@ -96,6 +99,8 @@ const TRANSITIONS: Record<ParcelStatus, Record<TransitionActor, ParcelStatus[]>>
   DELIVERED: T([]),
   PICKUP_CANCELLED: T([]),
   RETURNED: T([]),
+  // Collect from hub (lastMile HUB_COLLECT only, see collectRules): hub staff hand it over (DELIVERED) or it goes back.
+  READY_FOR_COLLECTION: T(["DELIVERED", "RETURN_SCHEDULED", "AT_HUB", "EXCEPTION"]),
 };
 
 /**
@@ -110,6 +115,8 @@ export interface TransitionContext {
   intake?: ParcelIntake;
   /** Operations switching a pickup to hub drop-off before pickup: the pickup assignment is released. */
   intakeChange?: boolean;
+  /** DOORSTEP (default) or HUB_COLLECT: collected parcels wait "Ready for collection" and get no delivery rider. */
+  lastMile?: string | null;
 }
 
 /** Statuses in which operations may switch a parcel between rider pickup and hub drop-off (before pickup). */
@@ -120,10 +127,22 @@ export const INTAKE_CHANGEABLE_STATUSES: readonly ParcelStatus[] = ["PENDING_CON
  * (PENDING_CONFIRMATION -> AT_HUB; the API checks the hub) instead of assigning a pickup.
  */
 function rulesFor(from: ParcelStatus, actor: TransitionActor, context: TransitionContext): readonly ParcelStatus[] {
-  const base = TRANSITIONS[from][actor];
+  const base = collectRules(from, actor, context.lastMile === "HUB_COLLECT", TRANSITIONS[from][actor]);
   if (context.intakeChange && actor === "ops" && (from === "PICKUP_ASSIGNED" || from === "PICKUP_CONFIRMED")) return [...base, "PENDING_CONFIRMATION"];
   if (context.intake !== "DROP_OFF" || from !== "PENDING_CONFIRMATION" || actor !== "ops") return base;
   return ["AT_HUB", ...base.filter(s => s !== "PICKUP_ASSIGNED")];
+}
+
+/**
+ * Collect from hub: the collection hub marks it READY_FOR_COLLECTION and hands it over (DELIVERED by
+ * operations, only from there); no delivery rider is assigned. Other parcels never use that status.
+ */
+function collectRules(from: ParcelStatus, actor: TransitionActor, collect: boolean, base: readonly ParcelStatus[]): readonly ParcelStatus[] {
+  if (!collect) return from === "READY_FOR_COLLECTION" ? base.filter(s => s !== "DELIVERED") : base;
+  if (actor !== "ops") return base.filter(s => s !== "OUT_FOR_DELIVERY" && s !== "DELIVERED");
+  const allowed = base.filter(s => s !== "ASSIGNED" && s !== "OUT_FOR_DELIVERY");
+  if (from === "AT_HUB" || from === "EXCEPTION") allowed.push("READY_FOR_COLLECTION");
+  return allowed;
 }
 
 export function canTransition(from: ParcelStatus, to: ParcelStatus, actor: TransitionActor, context: TransitionContext = {}): boolean {
@@ -151,6 +170,8 @@ export function trackingStage(status: ParcelStatus): number {
       return 4;
     case "OUT_FOR_DELIVERY":
     case "RETRY_SCHEDULED":
+      return 3;
+    case "READY_FOR_COLLECTION":
       return 3;
     case "AT_HUB":
     case "ASSIGNED":

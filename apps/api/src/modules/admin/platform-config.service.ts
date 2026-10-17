@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { SERVICE_LEVEL_LABEL, SERVICE_LEVELS, type RateCardConfig } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -8,23 +8,12 @@ import type { RequestMeta } from "../../common/auth/decorators";
 import type { Prisma } from "../../generated/prisma/client";
 import { PricingService, type Catalog, type CurrentCard } from "../pricing/pricing.service";
 import type { PlatformConfig } from "./admin.schemas";
+import { PackagesService } from "../packages/packages.service";
+import { DERIVED_KEYS } from "./derived-keys";
 
 export const PLATFORM_CONFIG_KEY = "platform-config";
 
-/**
- * Settings that only mirror server data (PUT /catalog and the rate cards in force). They are
- * filled in from that data on every read and never stored, so no page can show places or
- * prices other than the ones bookings are validated and priced with.
- */
-export const DERIVED_KEYS: readonly string[] = [
-  "deliveryServices",
-  "geoCatalog",
-  "geoHierarchy",
-  "ecommercePackaging",
-  "ecommerceProducts",
-  "customerParcelPricing",
-  "serviceLevelFees",
-];
+export { DERIVED_KEYS };
 
 const unique = (items: string[]) => [...new Set(items)];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -40,15 +29,20 @@ export class PlatformConfigService {
     private readonly pricing: PricingService,
   ) {}
 
+  /** Prices shown on the pages come from the service packages (global module). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
   /** The stored configuration with the server-owned settings filled in; 404 until first saved. */
   async get(): Promise<PlatformConfig> {
-    const [setting, catalog, cards] = await Promise.all([
+    const [setting, catalog, cards, products] = await Promise.all([
       this.prisma.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } }),
       this.pricing.catalog(),
-      this.pricing.currentCards(),
+      this.packages.legacyCards(),
+      this.packages.products("ECOMMERCE"),
     ]);
     if (!setting || !isObject(setting.value)) throw notFound("Platform configuration");
-    return withServerData(setting.value, catalog, cards);
+    // Website customers use the e-commerce product list once super admins set one up (service packages).
+    return withServerData(setting.value, products.length ? { ...catalog, products: products.map(p => p.name) } : catalog, cards);
   }
 
   /** Replaces the stored configuration (server-owned settings are dropped, see DERIVED_KEYS). */
@@ -80,11 +74,11 @@ export class PlatformConfigService {
 function withServerData(
   stored: Record<string, unknown>,
   catalog: Catalog,
-  cards: Record<"CUSTOMER" | "ECOMMERCE" | "CORPORATE_DOCUMENT", CurrentCard>,
+  cards: Record<"CUSTOMER" | "ECOMMERCE" | "BANKING_FINANCIAL", CurrentCard>,
 ): PlatformConfig {
   const customer = cards.CUSTOMER.config;
   const ecommerce = cards.ECOMMERCE.config;
-  const document = cards.CORPORATE_DOCUMENT.config;
+  const document = cards.BANKING_FINANCIAL.config;
   const merchantPricing = objectAt(stored.merchantPricing);
   const hasDocumentRates = Object.keys(document.documentTypeRates ?? {}).length > 0;
   // Follow the district order (JSONB doesn't keep object key order).
@@ -104,7 +98,7 @@ function withServerData(
       serviceFees: feesByLabel(customer),
     },
     serviceLevelFees: feesByLabel(ecommerce),
-    // Merchant tariffs follow the e-commerce and corporate-document rate cards.
+    // Merchant tariffs follow the e-commerce and banking & financial rate cards.
     merchantPricing: {
       ...merchantPricing,
       ecommerce: {
@@ -120,7 +114,7 @@ function withServerData(
         sameZone: document.sameZone,
         crossZone: document.crossZone,
         returnPercent: document.returnPercent,
-        // Per-type document rates are priced from the corporate-document rate card once it has them.
+        // Per-type document rates are priced from the banking & financial rate card once it has them.
         ...(hasDocumentRates ? { documentRates: document.documentTypeRates } : {}),
       },
     },

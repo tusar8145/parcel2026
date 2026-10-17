@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
+import { Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";
@@ -32,6 +32,20 @@ export class NetworkController {
   @ApiZodBody(updateHubSchema)
   updateHub(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(updateHubSchema) body: z.infer<typeof updateHubSchema>, @ReqMeta() meta: RequestMeta) {
     return this.network.updateHub(actor, id, body, meta);
+  }
+
+  /** What references the hub (and how many records), e.g. before deleting it. */
+  @RequirePermissions("hub:manage")
+  @Get("hubs/:id/usage")
+  hubUsage(@Param("id", ParseUUIDPipe) id: string) {
+    return this.network.hubUsage(id);
+  }
+
+  /** Only a hub nothing references (409 IN_USE with the usage otherwise); deactivate it with PATCH { active: false }. */
+  @RequirePermissions("hub:manage")
+  @Delete("hubs/:id")
+  deleteHub(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
+    return this.network.deleteHub(actor, id, meta);
   }
 
   @RequirePermissions("rider:read")

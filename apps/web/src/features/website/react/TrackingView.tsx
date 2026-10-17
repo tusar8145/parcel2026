@@ -36,6 +36,10 @@ interface Item {
   full: boolean;
   feedback?: { rating: number; comment?: string | null } | null;
   canGiveFeedback?: boolean;
+  /** Service packages: the rider's live position / phone while out for delivery. */
+  live?: { rider: { name: string; phone: string | null }; location: { lat: number; lng: number; at: string } | null } | null;
+  /** Hub Pickup: where the receiver collects it, and by when. */
+  collect?: { hub: { name: string; address: string } | null; dueAt?: string | null } | null;
 }
 
 function toItem(p: any, full: boolean): Item {
@@ -68,6 +72,8 @@ function toItem(p: any, full: boolean): Item {
     full: isFull,
     feedback: p.feedback,
     canGiveFeedback: p.canGiveFeedback,
+    live: p.liveDelivery ?? null,
+    collect: p.collect ?? null,
   };
 }
 
@@ -287,6 +293,32 @@ function Result({ item, proof, owner, token, onChange }: { item: Item; proof: Pr
             <span data-pickup-window="1">
               {"Pickup time "}
               <strong>{item.pickupWindow}</strong>
+            </span>
+          ) : null}
+          {item.collect?.hub ? (
+            <span data-collect-hub="1">
+              {"Hub Pickup at "}
+              <strong>{`${item.collect.hub.name}, ${item.collect.hub.address}`}</strong>
+              {item.collect.dueAt ? ` · collect by ${new Date(item.collect.dueAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
+            </span>
+          ) : null}
+          {item.live ? (
+            <span data-live-rider="1">
+              {`Rider ${item.live.rider.name} `}
+              {item.live.rider.phone ? (
+                <a href={`tel:${item.live.rider.phone}`} style={{ fontWeight: 700 }}>
+                  {item.live.rider.phone}
+                </a>
+              ) : null}
+              {item.live.location ? (
+                <>
+                  {" · "}
+                  <a href={`https://www.openstreetmap.org/?mlat=${item.live.location.lat}&mlon=${item.live.location.lng}#map=16/${item.live.location.lat}/${item.live.location.lng}`} target="_blank" rel="noreferrer">
+                    {"Live location"}
+                  </a>
+                  {` (${when(item.live.location.at)})`}
+                </>
+              ) : null}
             </span>
           ) : null}
         </div>

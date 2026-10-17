@@ -104,7 +104,7 @@ export class MerchantReviewService {
         ...(await this.notify.notify(tx, {
           event: "merchant.info_requested",
           to: { phone: m.contactPhone, email: m.contactEmail, name: m.contactName },
-          vars: { businessName: m.name, details: input.message, link: `${env().APP_URL}/${m.type === "CORPORATE_DOCUMENT" ? "document-merchant" : "ecommerce-merchant"}` },
+          vars: { businessName: m.name, details: input.message, link: `${env().APP_URL}/${m.type === "BANKING_FINANCIAL" ? "banking-merchant" : "ecommerce-merchant"}` },
         })),
       );
       await this.audit.record(actor, { action: "merchant.request_info", entityType: "merchant", entityId: id, data: { previousStatus: m.status } }, meta, tx);

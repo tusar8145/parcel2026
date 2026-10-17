@@ -71,11 +71,11 @@ export default function Sidebar() {
             </svg>
             E-commerce merchants
           </button>{" "}
-          <button className="nav-item" data-page="Document merchants">
+          <button className="nav-item" data-page="Banking & Financial merchants">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-building" />
             </svg>
-            Document merchants
+            Banking & Financial merchants
           </button>{" "}
         </div>{" "}
         <div className="nav-group">

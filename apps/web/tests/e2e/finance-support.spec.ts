@@ -1,14 +1,16 @@
 import { type Browser } from "@playwright/test";
-import { expect, test } from "./support";
+import { Fixtures, expect, test, type TempUser } from "./support";
 
 /**
  * Finance tools on the "COD & finance" page and the support desk extras, through the real UI.
- * Read-only against the shared stack: nothing is created (bank statements and ledger entries are
- * immutable), so the API e2e tests cover the money flows themselves.
+ * Read-only against the shared stack apart from the temporary staff accounts (deleted afterwards):
+ * bank statements and ledger entries are immutable, so the API e2e tests cover the money flows.
  */
-const PASSWORD = "DeliveryFast2026"; // seeded demo accounts (apps/api/src/seed/demo.ts)
+const fx = new Fixtures();
+test.afterAll(() => fx.cleanup());
 
-async function signedIn(browser: Browser, identifier: string, errors: string[]) {
+async function signedIn(browser: Browser, account: TempUser, errors: string[]) {
+  const identifier = account.name;
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on("pageerror", error => errors.push(`${identifier}: ${error.message}`));
@@ -18,8 +20,8 @@ async function signedIn(browser: Browser, identifier: string, errors: string[]) 
   for (let attempt = 0; ; attempt++) {
     await page.goto("/login");
     await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.fill("#loginIdentity", identifier);
-    await page.fill("#loginPassword", PASSWORD);
+    await page.fill("#loginIdentity", account.login);
+    await page.fill("#loginPassword", account.password);
     await page.click('form[data-form="login"] button[type="submit"]');
     const ok = await page.waitForURL(/\/courier-operation/, { timeout: 10_000 }).then(() => true, () => false);
     if (ok) break;
@@ -33,7 +35,7 @@ async function signedIn(browser: Browser, identifier: string, errors: string[]) 
 test("finance staff see approvals, invoices, disputes, reconciliation, ledger and schedules", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const page = await signedIn(browser, "finance@deliveryfast.example", errors);
+  const page = await signedIn(browser, await fx.staff("FINANCE"), errors);
   await page.click('#navigation [data-page="COD & finance"]');
   const main = page.locator("#mainContent");
   for (const id of ["#finSettlements", "#finInvoices", "#finDisputes", "#finRecon", "#finLedger", "#finSchedules"]) await expect(main.locator(id)).toBeVisible();
@@ -51,13 +53,13 @@ test("finance staff see approvals, invoices, disputes, reconciliation, ledger an
 test("operations without finance rights don't get the finance tools; support agents get SLA and canned responses", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const ops = await signedIn(browser, "ops@deliveryfast.example", errors);
+  const ops = await signedIn(browser, await fx.staff("OPS_MANAGER"), errors);
   await ops.click('#navigation [data-page="COD & finance"]');
   await expect(ops.locator("#mainContent")).toBeVisible();
   await expect(ops.locator("#finSettlements")).toHaveCount(0);
   await ops.context().close();
 
-  const agent = await signedIn(browser, "support@deliveryfast.example", errors);
+  const agent = await signedIn(browser, await fx.staff("SUPPORT_AGENT"), errors);
   await agent.click('#navigation [data-page="Support"]');
   await expect(agent.locator("#mainContent")).toContainText("Support inbox");
   const first = agent.locator("[data-support-open]").first();

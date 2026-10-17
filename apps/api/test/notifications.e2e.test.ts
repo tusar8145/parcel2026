@@ -159,7 +159,7 @@ describe("notifications (e2e)", () => {
     const c = await customer();
     const booked = await ctx.api("POST", "/parcels", { token: c.token, body: parcelBody() });
     expect(booked.status).toBe(201);
-    expect((await bookedSms())[0].body).toBe(`Booked ${booked.body.trackingId} for Tk 185.`);
+    expect((await bookedSms())[0].body).toBe(`Booked ${booked.body.trackingId} for Tk ${booked.body.charges.total}.`);
 
     const reset = await ctx.api("POST", "/notifications/templates/parcel.booked/sms/reset", { token: a.token });
     expect(reset.body.channels.sms.customized).toBe(false);

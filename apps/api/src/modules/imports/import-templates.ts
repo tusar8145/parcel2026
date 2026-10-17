@@ -3,7 +3,7 @@ import type { ColumnDef, ColumnKey, ImportKindKey, ListKey } from "./columns";
 import type { EngineContext } from "./import-engine.service";
 
 export const DATA_SHEET: Record<ImportKindKey, string> = { ecommerce: "Orders", document: "Consignments" };
-const TITLE: Record<ImportKindKey, string> = { ecommerce: "E-commerce order import", document: "Document consignment import" };
+const TITLE: Record<ImportKindKey, string> = { ecommerce: "E-commerce order import", document: "Banking & Financial consignment import" };
 const LIST_SHEET = "Lists";
 const LIST_TITLES: Record<ListKey, string> = {
   merchants: "Merchants",
@@ -12,8 +12,8 @@ const LIST_TITLES: Record<ListKey, string> = {
   areas: "Areas",
   addressTypes: "Address types",
   parcelTypes: "Parcel types",
-  products: "Product types",
-  serviceLevels: "Services",
+  products: "Products",
+  speeds: "Speed + handling",
   weights: "Weights (kg)",
   yesNo: "Yes / No",
   packaging: "Packaging",
@@ -34,7 +34,7 @@ const listName = (key: ListKey) => `L_${key}`;
 
 /** Built from live data: Lists sheet columns with names (L_districts, ZN_<n> zones of district n, AR_<n> areas of zone n). */
 function listsSheet(ctx: EngineContext, used: Set<ListKey>) {
-  const columns: { title: string; values: string[]; name?: string }[] = [];
+  const columns: ListColumn[] = [];
   for (const key of used) if (ctx.lists[key].length) columns.push({ title: LIST_TITLES[key], values: ctx.lists[key], name: listName(key) });
   const dependentZones = used.has("zones") && used.has("districts");
   if (dependentZones)
@@ -48,13 +48,34 @@ function listsSheet(ctx: EngineContext, used: Set<ListKey>) {
       const areas = ctx.catalog.areasByZone[zone] ?? [];
       if (areas.length) columns.push({ title: `Areas · ${zone}`, values: areas, name: `AR_${i + 1}` });
     });
+  return { ...writeListsSheet(columns), dependentZones, dependentAreas };
+}
+
+/** A column of the hidden lists sheet; `name` becomes a workbook name for dropdowns (e.g. L_districts). */
+export interface ListColumn {
+  title: string;
+  values: string[];
+  name?: string;
+}
+
+/** The hidden "Lists" sheet that dropdowns read, and the workbook names of its columns. */
+export function writeListsSheet(columns: ListColumn[], sheetName = LIST_SHEET) {
   const longest = Math.max(1, ...columns.map(c => c.values.length));
   const rows: Cell[][] = [columns.map(c => ({ value: c.title, style: STYLE.bold }))];
   for (let r = 0; r < longest; r++) rows.push(columns.map(c => c.values[r] ?? null));
-  const names = columns.flatMap((c, i) => (c.name ? [{ name: c.name, ref: sheetRef(LIST_SHEET, i, 2, c.values.length + 1) }] : []));
-  const sheet: Sheet = { name: LIST_SHEET, rows, hidden: true, widths: columns.map(() => 26) };
-  return { sheet, names, dependentZones, dependentAreas };
+  // An empty list still gets a (blank) one-cell range, so INDIRECT() of its name is a range.
+  const names = columns.flatMap((c, i) => (c.name ? [{ name: c.name, ref: sheetRef(sheetName, i, 2, Math.max(1, c.values.length) + 1) }] : []));
+  const sheet: Sheet = { name: sheetName, rows, hidden: true, widths: columns.map(() => 26) };
+  return { sheet, names };
 }
+
+/**
+ * A list that depends on another cell: `IF($B2="",<all>,INDIRECT("<prefix>"&MATCH($B2,<parents>,0)))`.
+ * IF, not IFERROR: a list source must evaluate to a range, and Excel's IFERROR returns a value,
+ * so IFERROR(INDIRECT(…), …) shows no dropdown at all.
+ */
+export const dependentListFormula = (parentColumn: string, allName: string, prefix: string, parentsName: string) =>
+  `IF($${parentColumn}2="",${allName},INDIRECT("${prefix}"&MATCH($${parentColumn}2,${parentsName},0)))`;
 
 function allowedText(col: ColumnDef, ctx: EngineContext) {
   if (col.key === "recipient_phone") return "Bangladeshi mobile number: 17XXXXXXXX or 017XXXXXXXX (+880 is added)";
@@ -85,11 +106,11 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     const range = `${columnLetter(i)}2:${columnLetter(i)}${last}`;
     const prompt = { promptTitle: col.header, prompt: col.description };
     if (col.list && ctx.lists[col.list].length) {
+      // Dependent lists use IF, not IFERROR: a list source must evaluate to a range, and Excel's
+      // IFERROR returns a value, so IFERROR(INDIRECT(…), …) shows no dropdown at all.
       let formula = listName(col.list);
-      if (col.key === "zone" && lists.dependentZones && cols.some(c => c.key === "district"))
-        formula = `IFERROR(INDIRECT("ZN_"&MATCH($${letter("district")}2,${listName("districts")},0)),${listName("zones")})`;
-      if (col.key === "area" && lists.dependentAreas && cols.some(c => c.key === "zone"))
-        formula = `IFERROR(INDIRECT("AR_"&MATCH($${letter("zone")}2,${listName("zones")},0)),${listName("areas")})`;
+      if (col.key === "zone" && lists.dependentZones && cols.some(c => c.key === "district")) formula = dependentListFormula(letter("district"), listName("zones"), "ZN_", listName("districts"));
+      if (col.key === "area" && lists.dependentAreas && cols.some(c => c.key === "zone")) formula = dependentListFormula(letter("zone"), listName("areas"), "AR_", listName("zones"));
       validations.push({
         sqref: range,
         type: "list",

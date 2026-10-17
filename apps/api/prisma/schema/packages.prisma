@@ -1,0 +1,101 @@
+// ───────────── Service packages & pricing ─────────────
+// docs/architecture-contracts.md "Service packages & pricing"; the service catalog and price fields
+// are in packages/shared/src/packages.ts.
+
+enum PackageStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// A service plan for one segment: which services its merchants / customers may use and its prices (versions).
+model ServicePackage {
+  id          String                  @id @default(uuid(7)) @db.Uuid
+  segment     Segment
+  name        String
+  description String?
+  /// Set on the segment's Default package (one per segment): used by everyone without an assignment.
+  defaultFor  Segment?                @unique
+  status      PackageStatus           @default(ACTIVE)
+  /// Converted from the old pricing: "rate-card:<segment>", "plan:<id>", "tariff:<merchantId>".
+  source      String?                 @unique
+  createdById String?                 @db.Uuid
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  versions    ServicePackageVersion[]
+  assignments PackageAssignment[]
+
+  @@unique([segment, name])
+  @@map("service_packages")
+}
+
+/// Immutable services and prices of a package from `effectiveFrom` (the latest one not in the future applies).
+model ServicePackageVersion {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  packageId       String         @db.Uuid
+  version         Int
+  /// Enabled service codes (SERVICES in packages/shared).
+  services        String[]
+  /// packagePricesSchema (packages/shared).
+  prices          Json
+  effectiveFrom   DateTime       @default(now())
+  note            String?
+  createdById     String?        @db.Uuid
+  /// The maker-checker change request that made it, if any.
+  changeRequestId String?        @db.Uuid
+  createdAt       DateTime       @default(now())
+  package         ServicePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  parcels         Parcel[]
+
+  @@unique([packageId, version])
+  @@index([packageId, effectiveFrom])
+  @@map("service_package_versions")
+}
+
+/// A merchant's package from `effectiveFrom` (packageId null = back to the segment default).
+model PackageAssignment {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  merchantId    String          @db.Uuid
+  packageId     String?         @db.Uuid
+  effectiveFrom DateTime        @default(now())
+  note          String?
+  createdById   String?         @db.Uuid
+  createdAt     DateTime        @default(now())
+  merchant      Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  package       ServicePackage? @relation(fields: [packageId], references: [id])
+
+  @@index([merchantId, effectiveFrom])
+  @@index([packageId])
+  @@map("package_assignments")
+}
+
+/// Hubs that count as one city for pricing (same-city tier), e.g. "Dhaka City".
+model HubGroup {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hubs        Hub[]
+
+  @@map("hub_groups")
+}
+
+/// Products merchants book (required when the segment has any): e-commerce (dress, toy…) or document (credit card…).
+model ParcelProduct {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  segment            Segment
+  name               String
+  /// Fixed product type: REGULAR | DOCUMENT | BOOKS (packages/shared PRODUCT_TYPES); it prices the parcel.
+  type               String   @default("REGULAR")
+  active             Boolean  @default(true)
+  /// Parcel notification codes this product never sends (products can only switch messages off).
+  mutedNotifications String[] @default([])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  parcels            Parcel[]
+
+  @@unique([segment, name])
+  @@map("parcel_products")
+}

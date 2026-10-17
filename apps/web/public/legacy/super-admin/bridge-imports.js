@@ -10,7 +10,7 @@
   if (!DF) return;
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const toast = message => (typeof showToast === "function" ? showToast(message) : DF.toast?.(message));
-  const KINDS = { ecommerce: "E-commerce order template", document: "Document consignment template" };
+  const KINDS = { ecommerce: "E-commerce order template", document: "Banking & Financial consignment template" };
   const LIMITS = [
     ["merchantMaxRows", "Rows per file · merchants", "rows"],
     ["opsMaxRows", "Rows per file · operations", "rows"],
@@ -29,6 +29,9 @@
     current = page;
     if (page === "Service catalog") void load();
   };
+
+  // The default-destination dropdowns follow geography changes.
+  DF.events?.on("catalog.updated", () => (catalog = null));
 
   async function load() {
     try {
@@ -68,7 +71,7 @@
       "beforeend",
       `<section class="panel" id="importSettings" style="margin-top:14px">
         <div class="panel-heading"><div><h2 class="panel-title">Spreadsheet imports</h2><p class="panel-subtitle">Required columns and defaults for the merchant and operations Excel imports. Rows that have every required column and only valid values are created; missing delivery details make them “Needs info”.</p></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="button button-sm" data-import-template="ecommerce">E-commerce template</button><button type="button" class="button button-sm" data-import-template="document">Document template</button></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="button button-sm" data-import-template="ecommerce">E-commerce template</button><button type="button" class="button button-sm" data-import-template="document">Banking &amp; Financial template</button></div></div>
         <div style="display:flex;gap:6px;margin:12px 0" role="tablist">${Object.entries(KINDS)
           .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${tab === k ? " button-primary" : ""}" data-import-tab="${k}" aria-selected="${tab === k}">${esc(label)}</button>`)
           .join("")}</div>

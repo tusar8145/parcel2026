@@ -16,7 +16,7 @@ export default function robots(): MetadataRoute.Robots {
         "/courier-operation",
         "/rider",
         "/ecommerce-merchant",
-        "/document-merchant",
+        "/banking-merchant",
         "/super-admin",
       ],
     },

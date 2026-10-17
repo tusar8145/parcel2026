@@ -33,19 +33,20 @@ export class CodService {
     const hubIds = scopedHubIds(actor, query.hubId);
     const groups = await this.prisma.codCollection.groupBy({
       by: ["riderId"],
-      where: { state: "WITH_RIDER", ...(hubIds ? { rider: { hubId: { in: hubIds } } } : {}) },
+      where: { state: "WITH_RIDER", riderId: { not: null }, ...(hubIds ? { rider: { hubId: { in: hubIds } } } : {}) },
       _sum: { amount: true },
       _count: { _all: true },
       _min: { collectedAt: true },
     });
     const riders = await this.prisma.rider.findMany({
-      where: { id: { in: groups.map(g => g.riderId) } },
+      where: { id: { in: groups.flatMap(g => (g.riderId ? [g.riderId] : [])) } },
       include: { user: { select: { name: true, phone: true } }, hub: { select: { id: true, code: true, name: true } } },
     });
     const byId = new Map(riders.map(r => [r.id, r]));
     return groups
+      .filter(g => g.riderId && byId.has(g.riderId))
       .map(g => {
-        const r = byId.get(g.riderId)!;
+        const r = byId.get(g.riderId!)!;
         return {
           riderId: r.id,
           code: r.code,

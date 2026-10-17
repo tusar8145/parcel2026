@@ -166,9 +166,9 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     label: "Out for delivery",
     group: "Parcel",
     audience: "Recipient",
-    vars: ["trackingId", "riderName", "trackingUrl"],
-    sample: { ...track, riderName: "Jordan Rivera" },
-    sms: "Parcel {{trackingId}} is out for delivery today. Track: {{trackingUrl}}",
+    vars: ["trackingId", "riderName", "riderPhone", "trackingUrl"],
+    sample: { ...track, riderName: "Jordan Rivera", riderPhone: "+8801710002048" },
+    sms: "Parcel {{trackingId}} is out for delivery today.{{#riderPhone}} Rider: {{riderPhone}}.{{/riderPhone}} Track: {{trackingUrl}}",
     email: {
       subject: "Parcel {{trackingId}} is out for delivery",
       text: "Hi {{name}},\n\nParcel {{trackingId}} is out for delivery today.\n\nTrack it: {{trackingUrl}}",
@@ -606,6 +606,30 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     email: {
       subject: "Import {{number}} finished: {{created}} orders created",
       text: "Hi {{name}},\n\nYour import {{number}} ({{fileName}}, {{rows}} rows) has finished.\n\nCreated: {{created}}{{#incomplete}}, of which {{incomplete}} need more information before delivery{{/incomplete}}.\n{{#notCreated}}Not created: {{notCreated}}. Download them from the import history with the reason for each row, fix them and upload again.\n{{/notCreated}}\nPrint the labels of the new orders from the import history.",
+    },
+  },
+  "parcel.ready_for_collection": {
+    label: "Ready for collection",
+    group: "Parcel",
+    audience: "Recipient",
+    vars: ["trackingId", "hub", "hubAddress", "code", "codAmount", "until", "trackingUrl"],
+    sample: { ...track, hub: "Gulshan Sorting Hub", hubAddress: "Plot 12, Gulshan Avenue", code: "482913", codAmount: "2,450", until: "23 Oct" },
+    sms: "Parcel {{trackingId}} is ready for collection at {{hub}}, {{hubAddress}}. Collection code {{code}}.{{#codAmount}} Pay Tk {{codAmount}} at the counter.{{/codAmount}} Collect by {{until}}.",
+    email: {
+      subject: "Parcel {{trackingId}} is ready for collection at {{hub}}",
+      text: "Hi {{name}},\n\nParcel {{trackingId}} is waiting for you at {{hub}} ({{hubAddress}}).\n\nShow this collection code at the counter: {{code}}{{#codAmount}}\nAmount to pay: Tk {{codAmount}}{{/codAmount}}\n\nPlease collect it by {{until}}; after that it goes back to the sender.\n\nTrack it: {{trackingUrl}}",
+    },
+  },
+  "parcel.collection_reminder": {
+    label: "Collection reminder",
+    group: "Parcel",
+    audience: "Recipient",
+    vars: ["trackingId", "hub", "hubAddress", "code", "until", "trackingUrl"],
+    sample: { ...track, hub: "Gulshan Sorting Hub", hubAddress: "Plot 12, Gulshan Avenue", code: "482913", until: "23 Oct" },
+    sms: "Reminder: parcel {{trackingId}} is waiting at {{hub}}, {{hubAddress}}. Code {{code}}. Collect by {{until}} or it returns to the sender.",
+    email: {
+      subject: "Reminder: collect parcel {{trackingId}} by {{until}}",
+      text: "Hi {{name}},\n\nParcel {{trackingId}} is still waiting for you at {{hub}} ({{hubAddress}}). Show the collection code {{code}} at the counter.\n\nPlease collect it by {{until}}; after that it goes back to the sender.\n\nTrack it: {{trackingUrl}}",
     },
   },
 };

@@ -1,3 +1,4 @@
+import { assertMerchantService } from "../packages/package-resolver";
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
@@ -43,6 +44,7 @@ export class MerchantIntegrationsService {
 
   async createApiKey(actor: Actor, merchantId: string | undefined, input: z.infer<typeof createApiKeySchema>, meta: RequestMeta) {
     const m = await this.activeOwnMerchant(actor, merchantId);
+    await assertMerchantService(this.prisma, m.id, "integration.api");
     const now = new Date();
     const { record, key } = await this.prisma.$transaction(async tx => {
       await advisoryLock(tx, `merchant-api-keys:${m.id}`);
@@ -98,6 +100,7 @@ export class MerchantIntegrationsService {
 
   async createWebhook(actor: Actor, merchantId: string | undefined, input: z.infer<typeof createWebhookSchema>, meta: RequestMeta) {
     const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true });
+    await assertMerchantService(this.prisma, m.id, "integration.webhooks");
     await this.webhooks.assertDeliverableUrl(input.url);
     const secret = newWebhookSecret();
     const endpoint = await this.prisma.$transaction(async tx => {

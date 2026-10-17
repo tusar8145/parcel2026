@@ -1,10 +1,12 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import type { ParcelStatus, QuoteInput } from "@delivery-fast/shared";
+import type { ParcelStatus, quoteRequestSchema } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { Prisma } from "../../generated/prisma/client";
 import { PricingService } from "../pricing/pricing.service";
+import { PackagesService, quoteResponse } from "../packages/packages.service";
+import { quoteRequestOf } from "../packages/packages.controller";
 import { MerchantsService } from "./merchants.service";
 import type { merchantStatsQuerySchema } from "./merchants.schemas";
 
@@ -45,6 +47,9 @@ export class MerchantStatsService {
     private readonly merchants: MerchantsService,
     private readonly pricing: PricingService,
   ) {}
+
+  /** Service packages (global module). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
 
   /**
    * Counters and the orders chart for the merchant dashboards, computed over every parcel
@@ -112,18 +117,18 @@ export class MerchantStatsService {
   }
 
   /** The merchant's price for a parcel: its segment's rate card less the plan discount. */
-  async quote(actor: Actor, merchantId: string | undefined, input: QuoteInput) {
+  /**
+   * The merchant's price with its package (service packages): the breakdown (`lines`), the old flat
+   * fields, and the return charge it would add if the parcel came back.
+   */
+  async quote(actor: Actor, merchantId: string | undefined, input: z.infer<typeof quoteRequestSchema>) {
     const merchant = await this.merchants.resolveOwn(actor, merchantId);
-    const segment = merchant.type === "CORPORATE_DOCUMENT" ? "CORPORATE_DOCUMENT" : "ECOMMERCE";
-    const discountPercent = merchant.plan ? Number(merchant.plan.discountPct) : 0;
-    const { rateCard, rateCardId: _id, ...quote } = await this.pricing.quote(segment, { ...input, discountPercent }, undefined, { merchantId: merchant.id });
+    const quote = quoteResponse(await this.packages.quote({ merchantId: merchant.id }, quoteRequestOf(input)));
     return {
       ...quote,
-      discountPercent,
+      // Plan discounts are part of the package prices now.
+      discountPercent: 0,
       plan: merchant.plan ? { id: merchant.plan.id, name: merchant.plan.name } : null,
-      // Charged on top if the parcel comes back (the rate card's return percentage).
-      returnCharge: Math.ceil((quote.totalCharge * rateCard.returnPercent) / 100),
-      returnPercent: rateCard.returnPercent,
     };
   }
 

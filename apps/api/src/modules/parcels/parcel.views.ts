@@ -1,4 +1,8 @@
 import {
+  FIRST_MILE_LABEL,
+  LAST_MILE_LABEL,
+  proofMethodsFor,
+  SPEED_LABEL,
   SERVICE_LEVEL_LABEL,
   TRACKING_STAGES,
   isCustomerCancellable,
@@ -14,6 +18,7 @@ export const parcelInclude = {
   deliveryRider: { select: { id: true, code: true, user: { select: { name: true, phone: true } } } },
   currentHub: { select: { id: true, code: true, name: true } },
   dropOffHub: { select: { id: true, code: true, name: true, address: true } },
+  collectHub: { select: { id: true, code: true, name: true, address: true } },
   bookingBatch: { select: { id: true, number: true } },
   merchant: { select: { id: true, code: true, name: true, type: true } },
   proof: { select: { method: true, receivedBy: true, fileId: true, otpVerified: true, createdAt: true } },
@@ -42,6 +47,42 @@ export function pickupWindowOf(p: { pickupWindowStart: Date | null; pickupWindow
     label: `${fmt(p.pickupWindowStart, { weekday: "short", day: "numeric", month: "short" })}, ${time(p.pickupWindowStart)} – ${time(p.pickupWindowEnd)}`,
   };
 }
+
+type Snapshot = { engine?: string; packageName?: string; version?: number; lines?: { code: string; label: string; amount: number }[]; tier?: string; deliveryCharge?: number } | null;
+
+/**
+ * The service package side of a parcel (null for parcels booked before packages): the choices made
+ * at booking, the proof methods the rider may use and the frozen price lines.
+ */
+export function serviceView(p: ParcelWithRelations) {
+  if (!p.packageVersionId) return null;
+  const snap = p.pricingSnapshot as Snapshot;
+  const has = new Set(p.services);
+  return {
+    package: snap?.packageName ? { name: snap.packageName, version: snap.version ?? null } : null,
+    firstMile: p.firstMile,
+    firstMileLabel: p.firstMile ? (FIRST_MILE_LABEL as Record<string, string>)[p.firstMile] ?? p.firstMile : null,
+    lastMile: p.lastMile,
+    lastMileLabel: p.lastMile ? (LAST_MILE_LABEL as Record<string, string>)[p.lastMile] ?? p.lastMile : null,
+    speed: p.speedOption,
+    speedLabel: p.speedOption ? (SPEED_LABEL as Record<string, string>)[p.speedOption] ?? p.speedOption : null,
+    openBox: p.openBox,
+    onDemand: p.onDemand,
+    product: p.productName,
+    notifications: p.notifications,
+    tier: snap?.tier ?? null,
+    lines: snap?.lines ?? [],
+    tracking: { liveLocation: has.has("tracking.live_location"), riderPhone: has.has("tracking.rider_phone") },
+  };
+}
+
+/** Methods the delivery rider may use (all three for parcels booked before packages). */
+export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications">) =>
+  p.packageVersionId ? proofMethodsFor(p.services, p.notifications) : (["OTP", "SIGNATURE", "PHOTO"] as const).slice();
+
+/** Collect from hub: the collection hub, when it became ready and the last day to collect. */
+const collectView = (p: ParcelWithRelations) =>
+  p.lastMile === "HUB_COLLECT" ? { hub: p.collectHub, readyAt: p.readyForCollectionAt, dueAt: p.collectionDueAt } : null;
 
 /** Full detail for the owner (customer/merchant), the assigned rider and staff. */
 export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) {
@@ -100,8 +141,18 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
       service: num(p.serviceCharge),
       codFee: num(p.codFee),
       discount: num(p.discount),
+      reattempt: num(p.reattemptCharge),
       total: num(p.totalCharge),
+      /** Itemised price frozen at booking (service packages). */
+      lines: (p.pricingSnapshot as Snapshot)?.lines ?? null,
     },
+    /** Service package choices (null: booked before packages). */
+    service: serviceView(p),
+    proofMethods: proofMethodsOf(p),
+    openBox: p.openBox,
+    onDemand: p.onDemand,
+    product: p.productName,
+    collect: collectView(p),
     codAmount: num(p.codAmount),
     cod: p.codCollection ? { amount: num(p.codCollection.amount), state: p.codCollection.state, collectedAt: p.codCollection.collectedAt } : null,
     pickupRider: p.pickupRider ? { id: p.pickupRider.id, code: p.pickupRider.code, name: p.pickupRider.user.name, label: riderLabel(p.pickupRider) } : null,
@@ -170,6 +221,9 @@ export function publicTrackingView(p: ParcelWithRelations) {
     intake: p.intake,
     /** Where the sender hands a drop-off parcel over (hub name and address are public). */
     dropOffHub: p.dropOffHub ? { name: p.dropOffHub.name, address: p.dropOffHub.address } : null,
+    /** Collect from hub: where the recipient collects it (hub name and address are public). */
+    lastMile: p.lastMile,
+    collect: p.lastMile === "HUB_COLLECT" ? { hub: p.collectHub ? { name: p.collectHub.name, address: p.collectHub.address } : null, readyAt: p.readyForCollectionAt, dueAt: p.collectionDueAt } : null,
     pickupWindow: pickupWindowOf(p),
     estimatedDeliveryAt: p.estimatedDeliveryAt,
     deliveredAt: p.deliveredAt,

@@ -14,14 +14,13 @@ import pg from "pg";
  *
  * Temporary accounts: `Fixtures` creates merchants, owners, staff and riders directly in the
  * database (E2E_DATABASE_URL) and `cleanup()` deletes them with everything they produced, so
- * the tests never depend on (or change) the seeded demo merchants or riders.
+ * the tests never depend on (or change) seeded demo accounts: staff (`staff(role)`), super admins
+ * (`user(name, [{ role: "SUPER_ADMIN" }])`), merchants and riders are all temporary.
  */
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 export const API_ORIGIN = (process.env.E2E_API_ORIGIN ?? "").replace(/\/$/, "");
 export const API_BASE = API_ORIGIN || BASE_URL;
 export const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
-/** Password of the seeded staff accounts (*@deliveryfast.example). */
-export const DEMO_PASSWORD = "DeliveryFast2026";
 
 /** An absolute URL on the API (`apiUrl("/api/v1/auth/login")`). */
 export const apiUrl = (path: string) => `${API_BASE}${path}`;
@@ -78,7 +77,7 @@ export async function sql<T = Record<string, unknown>>(text: string, values: unk
 }
 
 export type TempUser = { id: string; name: string; phone: string; /** 01XXXXXXXXX, for the sign-in form */ login: string; password: string };
-export type TempMerchant = { id: string; code: string; name: string; contactPhone: string; type: "ECOMMERCE" | "CORPORATE_DOCUMENT"; pickupAddress: string; pickupArea: string; pickupDistrict: string; plan: { name: string; discountPct: number } | null };
+export type TempMerchant = { id: string; code: string; name: string; contactPhone: string; type: "ECOMMERCE" | "BANKING_FINANCIAL"; pickupAddress: string; pickupArea: string; pickupDistrict: string; plan: { name: string; discountPct: number } | null };
 export type TempRider = TempUser & { riderId: string; code: string; hub: string };
 
 const used = new Set<string>();
@@ -103,7 +102,7 @@ export class Fixtures {
   private seq = 0;
 
   /** An active, verified merchant; `plan` picks an active service plan with a discount for its segment. */
-  async merchant(opts: { type?: "ECOMMERCE" | "CORPORATE_DOCUMENT"; label?: string; plan?: boolean } = {}): Promise<TempMerchant> {
+  async merchant(opts: { type?: "ECOMMERCE" | "BANKING_FINANCIAL"; label?: string; plan?: boolean } = {}): Promise<TempMerchant> {
     const type = opts.type ?? "ECOMMERCE";
     const n = ++this.seq;
     const [plan] = opts.plan
@@ -147,6 +146,17 @@ export class Fixtures {
   /** A merchant owner or staff member of `merchant`. */
   member(merchant: TempMerchant, role: "MERCHANT_OWNER" | "MERCHANT_STAFF" = "MERCHANT_OWNER") {
     return this.user(`E2E-${role === "MERCHANT_OWNER" ? "Owner" : "Staff"}-${this.stamp}-${++this.seq} Test`, [{ role, merchantId: merchant.id }]);
+  }
+
+  /** A staff account with one role (OPS_MANAGER, FINANCE…); `hubName` scopes a HUB_OPERATOR to that hub. */
+  async staff(role: "OPS_MANAGER" | "HUB_OPERATOR" | "FINANCE" | "SUPPORT_AGENT", hubName?: string): Promise<TempUser> {
+    let hubId: string | undefined;
+    if (hubName) {
+      const [hub] = await sql<{ id: string }>(`SELECT id FROM hubs WHERE name = $1`, [hubName]);
+      if (!hub) throw new Error(`No hub named ${hubName}`);
+      hubId = hub.id;
+    }
+    return this.user(`E2E-${role}-${this.stamp}-${++this.seq} Test`, [{ role, hubId }]);
   }
 
   /** An active rider at a hub (by name), with a unique code. */
@@ -204,14 +214,8 @@ export class Fixtures {
       // Messages to the temporary accounts and about their parcels.
       await q(`DELETE FROM outbox_messages WHERE "userId" = ANY($1::uuid[]) OR "to" = ANY($2::text[]) OR body LIKE ANY($3::text[])`, [U, phones, T.map(t => `%${t}%`)]);
       await q(`DELETE FROM otp_challenges WHERE phone = ANY($1::text[])`, [phones]);
-      // Money: ledger postings, COD, cash handovers, settlements, invoices.
-      const handovers = (await q(`SELECT id FROM cash_handovers WHERE "riderId" = ANY($1::uuid[])`, [R])).rows.map(r => r.id);
-      const settlements = (await q(`SELECT id, reference FROM merchant_settlements WHERE "merchantId" = ANY($1::uuid[])`, [M])).rows;
-      const invoices = (await q(`SELECT id, number FROM invoices WHERE "merchantId" = ANY($1::uuid[])`, [M])).rows;
-      const refs = [...T, ...handovers, ...settlements.flatMap(s => [s.id, s.reference]), ...invoices.flatMap(i => [i.id, i.number])].filter(Boolean);
-      const entries = `SELECT id FROM journal_entries WHERE "merchantId" = ANY($1::uuid[]) OR "riderId" = ANY($2::uuid[]) OR reference = ANY($3::text[])`;
-      await q(`DELETE FROM journal_lines WHERE "entryId" IN (${entries})`, [M, R, refs]);
-      await q(`DELETE FROM journal_entries WHERE id IN (${entries})`, [M, R, refs]);
+      // Money: COD, cash handovers, settlements, invoices. Ledger postings stay: journal rows are
+      // append-only (database triggers) and only name merchants/riders by id, without foreign keys.
       await q(`DELETE FROM cod_collections WHERE "parcelId" = ANY($1::uuid[]) OR "riderId" = ANY($2::uuid[])`, [P, R]);
       await q(`DELETE FROM cash_handover_requests WHERE "riderId" = ANY($1::uuid[])`, [R]);
       await q(`DELETE FROM cash_handovers WHERE "riderId" = ANY($1::uuid[])`, [R]);
@@ -241,6 +245,8 @@ export class Fixtures {
       await q(`DELETE FROM import_jobs WHERE id IN (${jobs})`, [M, U, batches]);
       await q(`DELETE FROM booking_batches WHERE id = ANY($1::uuid[]) OR "merchantId" = ANY($2::uuid[]) OR "createdById" = ANY($3::uuid[])`, [[...batches, ...jobBatches], M, U]);
       await q(`DELETE FROM merchant_invites WHERE "merchantId" = ANY($1::uuid[])`, [M]);
+      // Bulk updates (Excel) the temporary staff uploaded; their rows cascade.
+      await q(`DELETE FROM bulk_update_jobs WHERE "createdById" = ANY($1::uuid[])`, [U]);
       // The accounts (sessions, roles, keys, webhooks, schedules, products… cascade).
       await q(`DELETE FROM riders WHERE id = ANY($1::uuid[])`, [R]);
       await q(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [U]);

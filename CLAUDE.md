@@ -36,6 +36,9 @@ Setup and run instructions: `docs/development.md`.
   customerId, riderIds, hubIds, userIds, staffPermission })` (`common/realtime.service.ts`).
   Parcel changes are published automatically by `ParcelWorkflowService`. Clients receive them
   on `GET /events` (SSE), filtered by `RealtimeService.canSee`.
+- Geography (districts → zones → areas) is the service catalog, referenced by name everywhere:
+  read it with `PricingService.catalog()` (active places only; `{ includeInactive: true }` for
+  existing records), change it only through `modules/geography` (renames update every reference).
 - Phone numbers: country code fixed (+880); accept 1XXXXXXXXX / 01XXXXXXXXX / +8801… via
   `phoneSchema` (packages/shared); store E.164.
 - Tests are e2e against a real database (`apps/api/test`, helpers in `test/helpers.ts`).
@@ -53,6 +56,9 @@ Setup and run instructions: `docs/development.md`.
 - Excel/CSV imports in every panel: `shared/importer.js` (`DFImport.open/history/template/complete`) on the
   one import engine (`modules/imports`, `/imports`); see docs/architecture-contracts.md. Downloads and
   uploads that aren't JSON: `DF.apiRaw(path, { method, body: FormData })`, `DF.download(path)`.
+- Bulk operations by Excel in Courier Operations: `DFImport.bulk/bulkHistory` (the same dialog in bulk mode)
+  on `modules/bulk-updates` (`/bulk-updates`: export with action columns → validate → apply through the
+  parcel services); see docs/architecture-contracts.md.
 - Forms in panels: `DF.phoneInput(input)` (fixed +880 prefix, 17…/017… accepted) and
   `DF.validate(form, { fieldId: value => message || "" })` for inline errors. Website forms
   are React components with the same rules.

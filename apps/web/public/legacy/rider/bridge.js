@@ -48,7 +48,7 @@
 
   // ───────────── the rider's tasks as the page's rows ─────────────
 
-  const lineOf = p => (!p.merchant ? "Customer parcel" : p.merchant.type === "CORPORATE_DOCUMENT" ? "Document delivery" : "E-commerce parcel");
+  const lineOf = p => (!p.merchant ? "Customer parcel" : p.merchant.type === "BANKING_FINANCIAL" ? "Document delivery" : "E-commerce parcel");
   const windowOf = p => {
     if (!p.estimatedDeliveryAt) return "As assigned";
     return sameDay(p.estimatedDeliveryAt) ? `By ${time(p.estimatedDeliveryAt)}` : `By ${when(p.estimatedDeliveryAt)}`;
@@ -57,14 +57,15 @@
 
   /** Fills the page's delivery list (overview, route, earnings) from the API. */
   function syncDeliveries() {
-    const rows = [...DF.rider.tasks.deliveries].sort(byPromise).map(p => ({
+    // On-demand first (service packages), then by promise.
+    const rows = [...DF.rider.tasks.deliveries].sort((a, b) => Number(!!b.onDemand) - Number(!!a.onDemand) || byPromise(a, b)).map(p => ({
       id: p.trackingId,
       recipient: p.recipient.name || "Recipient",
       phone: DF.localPhone(p.recipient.phone),
       address: p.delivery.label,
       street: [p.delivery.street, p.delivery.area].filter(Boolean).join(", "),
       zone: p.delivery.zone,
-      type: lineOf(p),
+      type: [lineOf(p), p.onDemand ? "On-demand" : "", p.openBox ? "Open box allowed" : ""].filter(Boolean).join(" · "),
       time: windowOf(p),
       status: p.status === "ASSIGNED" ? "Ready for delivery" : p.statusLabel,
       cod: Number(p.codAmount) > 0 ? money(p.codAmount) : "Prepaid",
@@ -448,11 +449,24 @@
   // Real hubs and the real delivery-code hint in the dialogs.
   const originalOpenModal = window.openModal;
   window.openModal = function (type, id) {
+    document.querySelectorAll("[data-parcel-flags]").forEach(el => el.remove());
     originalOpenModal(type, id);
     const hubSelect = $("pickupHub");
     if (hubSelect && DF.state.hubs.length) {
       hubSelect.innerHTML = DF.state.hubs.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
       if (state.summary?.rider.hub) hubSelect.value = state.summary.rider.hub.id;
+    }
+    // Service packages: only the proof methods active for this parcel (OTP needs the delivery code
+    // message), and the parcel's flags (open box, on-demand).
+    const parcel = apiParcel(id);
+    const method = $("proofMethod");
+    if (type === "delivery" && parcel && method && Array.isArray(parcel.proofMethods)) {
+      const label = { OTP: "OTP", SIGNATURE: "Signature", PHOTO: "Photo" };
+      const allowed = parcel.proofMethods.map(m => label[m]).filter(Boolean);
+      for (const option of [...method.options]) if (!allowed.includes(option.value || option.textContent)) option.remove();
+      method.dispatchEvent(new Event("change"));
+      const flags = [parcel.openBox ? "Open box allowed: the recipient may open and check before paying." : "", parcel.onDemand ? "On-demand: top priority." : ""].filter(Boolean);
+      if (flags.length) $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags style="color:#0f7a4f;font-weight:600">${esc(flags.join(" "))}</p>`);
     }
     const otp = $("deliveryOtp");
     if (otp && apiParcel(id)) {

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import fs from "node:fs";
 import { type BrowserContext, type Page } from "@playwright/test";
-import { API_BASE, expect, test } from "./support";
+import { API_BASE, Fixtures, expect, test, type TempUser } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -17,8 +17,9 @@ const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 /** E2E_API_ORIGIN: an API on another port than the web app's proxy target (support.ts forwards the page's calls). */
 const API = API_BASE;
-const PASSWORD = "DeliveryFast2026"; // seeded demo accounts
-const HUB_GULSHAN = "hub.gulshan@deliveryfast.example";
+/** The operations test signs in as a temporary hub operator of the Gulshan hub (deleted afterwards). */
+const fx = new Fixtures();
+let hubOp: TempUser;
 const WEB = { "x-df-client": "web" };
 
 const stamp = Date.now().toString(36).toUpperCase();
@@ -57,6 +58,7 @@ test.beforeAll(async () => {
     await sql(`INSERT INTO user_roles (id, "userId", role, "merchantId") VALUES (gen_random_uuid(), $1, $2, $3)`, [row.id, role, role === "MERCHANT_OWNER" ? MERCHANT.id : null]);
   }
   previousImportConfig = (await sql<{ value: unknown }>(`SELECT value FROM settings WHERE key = 'import-config'`))[0]?.value;
+  hubOp = await fx.staff("HUB_OPERATOR", "Gulshan Sorting Hub");
 });
 
 test.afterAll(async () => {
@@ -80,6 +82,7 @@ test.afterAll(async () => {
   await sql(`DELETE FROM outbox_messages WHERE "to" = ANY($1::text[]) OR "userId" = ANY($2::uuid[])`, [[OWNER.phone, ADMIN.phone], [OWNER.id, ADMIN.id].filter(Boolean)]);
   await sql(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [[OWNER.id, ADMIN.id].filter(Boolean)]);
   await sql(`DELETE FROM merchants WHERE id = $1`, [MERCHANT.id]);
+  await fx.cleanup();
 });
 
 /** Collects page errors (E2E_API_ORIGIN routing: support.ts). */
@@ -156,10 +159,10 @@ test.describe.serial("spreadsheet imports", () => {
     // ── Upload: 55 valid, 3 incomplete (no address or destination; the first also no name), 2 invalid ──
     const tag = stamp.slice(-5);
     const rows = [
-      ...Array.from({ length: 55 }, (_, i) => `IMP-${tag}-${i},Valid ${i},0181${String(3000000 + i)},House ${i},Dhaka Central,Dhanmondi,Regular,1,500,Clothing`),
+      ...Array.from({ length: 55 }, (_, i) => `IMP-${tag}-${i},Valid ${i},0181${String(3000000 + i)},House ${i},Dhaka Central,Dhanmondi,Regular,1,500,Fashion & Apparel`),
       ...Array.from({ length: 3 }, (_, i) => `INC-${tag}-${i},${i ? `Needs Info ${i}` : ""},0171${String(4000000 + i)},,,,,,,`),
-      `BAD-${tag}-1,Bad Phone,12345,House 1,Dhaka Central,Dhanmondi,Regular,1,0,Clothing`,
-      `BAD-${tag}-2,Bad District,01812000000,House 2,Atlantis,Dhanmondi,Regular,1,0,Clothing`,
+      `BAD-${tag}-1,Bad Phone,12345,House 1,Dhaka Central,Dhanmondi,Regular,1,0,Fashion & Apparel`,
+      `BAD-${tag}-2,Bad District,01812000000,House 2,Atlantis,Dhanmondi,Regular,1,0,Fashion & Apparel`,
     ];
     await page.click("#merchantBulkImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 5,000 rows and 10 MB per file");
@@ -237,7 +240,7 @@ test.describe.serial("spreadsheet imports", () => {
   test("operations: drop-off import with a merchant per row, then labels", async ({ page, context }) => {
     test.setTimeout(240_000);
     const errors = await prepare(context, page);
-    await signIn(page, HUB_GULSHAN, PASSWORD, /\/courier-operation/);
+    await signIn(page, hubOp.login, hubOp.password, /\/courier-operation/);
     await page.click('#navigation [data-page="E-commerce operations"]');
     await page.click("#courierImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 10,000 rows");
@@ -246,7 +249,7 @@ test.describe.serial("spreadsheet imports", () => {
     await expect(page.locator("#dfiHub option:checked")).toHaveText("Gulshan Sorting Hub");
     const tag = `${stamp.slice(-5)}O`;
     const file = Buffer.from(
-      `﻿Merchant,${HEADER}\r\n${MERCHANT.code},DROP-${tag}-1,Drop One,01812000011,Road 7,Dhaka Central,Dhanmondi,Same day,1.5,1250,Clothing\r\n${MERCHANT.code},DROP-${tag}-2,,01812000012,,,,,,,\r\nNO-SUCH-MERCHANT,DROP-${tag}-3,Drop Three,01812000013,Road 9,Dhaka Central,Dhanmondi,Regular,1,0,Clothing`,
+      `﻿Merchant,${HEADER}\r\n${MERCHANT.code},DROP-${tag}-1,Drop One,01812000011,Road 7,Dhaka Central,Dhanmondi,Same day,1.5,1250,Fashion & Apparel\r\n${MERCHANT.code},DROP-${tag}-2,,01812000012,,,,,,,\r\nNO-SUCH-MERCHANT,DROP-${tag}-3,Drop Three,01812000013,Road 9,Dhaka Central,Dhanmondi,Regular,1,0,Fashion & Apparel`,
       "utf8",
     );
     await page.setInputFiles("#dfiFile", { name: `dropoff-${tag}.csv`, mimeType: "text/csv", buffer: file });

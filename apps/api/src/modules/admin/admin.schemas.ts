@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DERIVED_KEYS } from "./derived-keys";
 
 /** Limits for the platform configuration document (Setting "platform-config"). */
 export const PLATFORM_CONFIG_MAX_BYTES = 256 * 1024;
@@ -31,7 +32,9 @@ export const platformConfigSchema = z
   .superRefine((config, ctx) => {
     if (Object.keys(config).length > PLATFORM_CONFIG_MAX_KEYS)
       ctx.addIssue({ code: "custom", message: `Use at most ${PLATFORM_CONFIG_MAX_KEYS} top-level settings` });
-    const bytes = Buffer.byteLength(JSON.stringify(config), "utf8");
+    // Server-owned settings (the geography and prices) are dropped before storing: they don't count.
+    const stored = Object.fromEntries(Object.entries(config).filter(([key]) => !DERIVED_KEYS.includes(key)));
+    const bytes = Buffer.byteLength(JSON.stringify(stored), "utf8");
     if (bytes > PLATFORM_CONFIG_MAX_BYTES)
       ctx.addIssue({ code: "custom", message: `The configuration is ${Math.ceil(bytes / 1024)} KB; the limit is ${PLATFORM_CONFIG_MAX_BYTES / 1024} KB` });
     const { depth, badKey } = inspect(config);

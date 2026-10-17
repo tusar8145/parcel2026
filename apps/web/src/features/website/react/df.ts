@@ -80,6 +80,16 @@ export interface Catalog {
   products: string[];
   weightsKg: number[];
   serviceLevels: Record<string, string>;
+  /** The website customer package (service packages): the choices it offers, labels, messages and hubs. */
+  customerPackage?: CustomerPackage;
+}
+
+export interface CustomerPackage {
+  options: { firstMiles: string[]; lastMiles: string[]; speeds: string[]; cod: boolean; defaultFirstMile?: string; defaultLastMile?: string };
+  labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string> };
+  notifications: { code: string; title: string }[];
+  dropHubs: { id: string; name: string; address: string }[];
+  collectHubs: { id: string; name: string; address: string }[];
 }
 
 interface WebsiteBridge {

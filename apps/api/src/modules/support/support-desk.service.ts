@@ -238,11 +238,13 @@ export class SupportDeskService implements OnApplicationBootstrap {
       managers.forEach(m => recipients.add(m.id));
     }
     const ids: string[] = [];
+    const pkg = await this.support.requesterPackage(tx, t);
     for (const userId of recipients) {
       ids.push(
         ...(await this.notify.notify(tx, {
           event: "support.sla_escalation",
           to: { userId },
+          pkg,
           vars: { ticketNumber: t.number, subject: t.subject, breach, priority: PRIORITY_LABEL[t.priority], link: `${env().APP_URL}/courier-operation` },
         })),
       );

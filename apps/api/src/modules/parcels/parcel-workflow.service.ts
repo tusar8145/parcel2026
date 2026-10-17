@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
-import { canTransition, PARCEL_STATUS_LABEL, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
+import { canTransition, packagePricesSchema, PARCEL_STATUS_LABEL, reattemptFeeFor, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { OutboxService } from "../notifications/outbox.service";
@@ -16,6 +16,10 @@ import { NotifyService, type NotifyInput } from "../notifications/notify.service
 import type { NotificationEvent } from "../notifications/events";
 import { signParcelAccess, trackingUrl } from "./parcel-access";
 import { assertDetailsFor, pricedDestination } from "./incomplete";
+import { PackagesService } from "../packages/packages.service";
+
+/** "23 Oct" in Dhaka time (collection deadlines). */
+const dhakaDate = (d: Date) => d.toLocaleDateString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short" });
 
 /** Default customer-facing text for each status. */
 const EVENT_TEXT: Record<ParcelStatus, { title: string; description: string; location?: string }> = {
@@ -33,6 +37,7 @@ const EVENT_TEXT: Record<ParcelStatus, { title: string; description: string; loc
   RETURN_SCHEDULED: { title: "Return scheduled", description: "The parcel will be returned to the sender.", location: "Courier operations" },
   RETURNED: { title: "Returned to sender", description: "The parcel was returned to the sender." },
   EXCEPTION: { title: "Needs attention", description: "Operations is reviewing an issue with this parcel.", location: "Courier operations" },
+  READY_FOR_COLLECTION: { title: "Ready for collection", description: "The parcel is waiting at the hub for the recipient to collect it." },
 };
 
 const WEBHOOK_FOR: Partial<Record<ParcelStatus, WebhookEvent>> = {
@@ -102,15 +107,24 @@ export class ParcelWorkflowService {
 
   /** Return-to-merchant notices (property injection keeps the constructor stable for parallel edits). */
   @Inject(NotifyService) private readonly returnNotices!: NotifyService;
+  /** Collect-from-hub hold period (service packages settings; global module). */
+  @Inject(PackagesService) private readonly packageSettings!: PackagesService;
 
   /**
    * The only way a parcel's status changes. Checks the lifecycle rules, applies
    * optimistic locking, writes tracking events, SMS and webhooks in one transaction.
    */
-  async transition(db: Db, parcel: Parcel, input: TransitionInput, actor: Actor | "system", meta: Partial<RequestMeta> | undefined, after: AfterCommit) {
+  async transition(db: Db, parcel: Parcel, input: TransitionInput, actor: Actor | "system", meta: Partial<RequestMeta> | undefined, after: AfterCommit): Promise<Parcel> {
     const from = parcel.status as ParcelStatus;
     if (input.expectedVersion !== undefined && input.expectedVersion !== parcel.version) throw this.changedError();
-    if (!canTransition(from, input.to, input.actorRole, { intake: parcel.intake, ...input.context })) {
+    if (!canTransition(from, input.to, input.actorRole, { intake: parcel.intake, lastMile: parcel.lastMile, ...input.context })) {
+      if (parcel.lastMile === "HUB_COLLECT" && (input.to === "ASSIGNED" || input.to === "OUT_FOR_DELIVERY"))
+        throw new AppError(
+          "COLLECT_FROM_HUB",
+          `${parcel.trackingId} is collected by the recipient at the hub: no delivery rider is assigned. Hand it over at the collection hub.`,
+          HttpStatus.CONFLICT,
+          { from, to: input.to },
+        );
       if (parcel.intake === "DROP_OFF" && from === "PENDING_CONFIRMATION" && input.to === "PICKUP_ASSIGNED")
         throw new AppError(
           "DROP_OFF_PARCEL",
@@ -180,7 +194,76 @@ export class ParcelWorkflowService {
       meta,
       db,
     );
+    // Collect from hub: arriving at the collection hub makes it ready for the recipient.
+    if (input.to === "AT_HUB" && updated.lastMile === "HUB_COLLECT" && updated.collectHubId && updated.currentHubId === updated.collectHubId)
+      return this.readyForCollection(db, updated, after);
     return updated;
+  }
+
+  /**
+   * Collect from hub: READY_FOR_COLLECTION with a collection code, the hold period (super admin →
+   * Service plans & pricing → Collect from hub) and the recipient's SMS (hub address, code).
+   */
+  async readyForCollection(db: Db, parcel: Parcel, after: AfterCommit): Promise<Parcel> {
+    const hub = await db.hub.findUniqueOrThrow({ where: { id: parcel.collectHubId! }, select: { id: true, name: true, address: true } });
+    const settings = await this.packageSettings.settings(db);
+    const now = new Date();
+    const code = randomDigits(6);
+    const dueAt = new Date(now.getTime() + settings.collectHoldDays * 86_400_000);
+    const ready = await this.transition(
+      db,
+      parcel,
+      {
+        to: "READY_FOR_COLLECTION",
+        actorRole: "ops",
+        data: { readyForCollectionAt: now, collectionDueAt: dueAt, collectionReminderAt: null, collectionCodeEncrypted: encrypt(code), deliveryRiderId: null },
+        title: `Ready for collection at ${hub.name}`,
+        description: `The parcel is waiting at ${hub.name} (${hub.address}). The recipient collects it with the collection code by ${dhakaDate(dueAt)}.`,
+        location: hub.name,
+        metadata: { hubId: hub.id, kind: "ready_for_collection", dueAt: dueAt.toISOString() },
+      },
+      "system",
+      undefined,
+      after,
+    );
+    after.outbox.push(
+      ...(await this.returnNotices.notify(db, {
+        event: "parcel.ready_for_collection",
+        to: { phone: parcel.recipientPhone, name: parcel.recipientName },
+        vars: { trackingId: parcel.trackingId, hub: hub.name, hubAddress: hub.address, code, codAmount: Number(parcel.codAmount) > 0 ? Number(parcel.codAmount).toLocaleString("en-BD") : "", until: dhakaDate(dueAt), trackingUrl: trackingUrl(parcel.trackingId) },
+        parcel,
+      })),
+    );
+    return ready;
+  }
+
+  /**
+   * Re-attempt fee (service packages): after the n-th failed delivery attempt, a parcel whose package
+   * charges re-attempts beyond its free ones gets the fee added to `reattemptCharge` and `totalCharge`.
+   */
+  async chargeReattempt(db: Db, parcel: Parcel, actor: Actor | "system", meta: Partial<RequestMeta> | undefined) {
+    const snap = parcel.pricingSnapshot as { engine?: string; prices?: unknown } | null;
+    if (snap?.engine !== "package-v2" && snap?.engine !== "package") return 0;
+    const prices = packagePricesSchema.parse(snap.prices ?? {});
+    const failed = await db.deliveryAttempt.count({ where: { parcelId: parcel.id, outcome: "FAILED" } });
+    const fee = reattemptFeeFor(prices, failed);
+    if (!fee) return 0;
+    await db.parcel.update({ where: { id: parcel.id }, data: { reattemptCharge: { increment: fee }, totalCharge: { increment: fee } } });
+    const label = actor === "system" ? "System" : actorLabel(actor);
+    await db.trackingEvent.create({
+      data: {
+        parcelId: parcel.id,
+        status: parcel.status,
+        title: "Re-attempt fee",
+        description: `Delivery attempt ${failed} failed; the package includes ${prices.freeReattempts} free re-attempt${prices.freeReattempts === 1 ? "" : "s"}, so ৳${fee} is added to the delivery charge.`,
+        visibility: "INTERNAL",
+        actorUserId: actor !== "system" && actor.kind === "user" ? actor.userId : null,
+        actorLabel: label,
+        metadata: { kind: "reattempt_fee", fee, failedAttempts: failed },
+      },
+    });
+    await this.audit.record(actor, { action: "parcel.reattempt_fee", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, fee, failedAttempts: failed } }, meta, db);
+    return fee;
   }
 
   /** Queue SMS and webhooks written in a committed transaction. */
@@ -191,17 +274,22 @@ export class ParcelWorkflowService {
 
   newAfterCommit = (): AfterCommit => ({ outbox: [], webhooks: [], realtime: [] });
 
-  /** A fresh delivery code for the recipient, sent by SMS. Returns the encrypted value to store. */
-  async issueDeliveryCode(db: Db, parcel: Pick<Parcel, "trackingId" | "recipientPhone" | "codAmount">, after: AfterCommit) {
+  /**
+   * A fresh delivery code for the recipient, sent by SMS. Returns the encrypted value to store. A
+   * parcel whose package (or booking) left out the "Delivery code" message gets no SMS, and OTP
+   * isn't one of its proof methods (proofMethodsFor).
+   */
+  async issueDeliveryCode(db: Db, parcel: Pick<Parcel, "trackingId" | "recipientPhone" | "codAmount"> & Partial<Pick<Parcel, "packageVersionId" | "notifications">>, after: AfterCommit) {
     const code = randomDigits(4);
     const cod = Number(parcel.codAmount) > 0 ? Number(parcel.codAmount).toLocaleString("en-BD") : "";
-    // A security message: always sent (can't be switched off), skips per-recipient SMS spacing.
+    // A security message: can't be switched off by recipients, skips per-recipient SMS spacing.
     after.outbox.push(
       ...(await this.returnNotices.notify(db, {
         event: "parcel.delivery_code",
         to: { phone: parcel.recipientPhone },
         vars: { trackingId: parcel.trackingId, code, codAmount: cod },
         channels: ["sms"],
+        parcel: { packageVersionId: parcel.packageVersionId ?? null, notifications: parcel.notifications ?? [] },
       })),
     );
     return encrypt(code);
@@ -229,7 +317,12 @@ export class ParcelWorkflowService {
     // Merchants ship in bulk and follow progress in their panel / webhooks: only the final outcome reaches them.
     const merchantQuiet: ParcelStatus[] = ["PICKUP_ASSIGNED", "PICKED_UP", "RETRY_SCHEDULED"];
     const notice = from !== to && !(parcel.merchantId && merchantQuiet.includes(to)) ? STATUS_EVENTS[to] : undefined;
-    if (notice) after.outbox.push(...(await this.returnNotices.notify(db, { ...notice, vars: { trackingId: parcel.trackingId, trackingUrl: track } })));
+    // Share rider phone number (package): in the out-for-delivery message, on the delivery day only.
+    const riderPhone =
+      to === "OUT_FOR_DELIVERY" && parcel.deliveryRiderId && parcel.services.includes("tracking.rider_phone")
+        ? ((await db.rider.findUnique({ where: { id: parcel.deliveryRiderId }, select: { user: { select: { phone: true } } } }))?.user.phone ?? "")
+        : "";
+    if (notice) after.outbox.push(...(await this.returnNotices.notify(db, { ...notice, vars: { trackingId: parcel.trackingId, trackingUrl: track, ...(riderPhone ? { riderPhone } : {}) }, parcel })));
     if (to === "DELIVERED") {
       // Ask customers (not merchants, who ship in bulk) to rate the delivery; the signed link works without signing in.
       if (!parcel.merchantId) after.outbox.push(
@@ -237,6 +330,7 @@ export class ParcelWorkflowService {
           event: "parcel.feedback_request",
           to: { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName },
           vars: { trackingId: parcel.trackingId, link: trackingUrl(parcel.trackingId, signParcelAccess(parcel.trackingId, "feedback"), "feedback") },
+          parcel,
         })),
       );
     }
@@ -254,6 +348,7 @@ export class ParcelWorkflowService {
           event: to === "RETURNED" ? "parcel.returned" : "parcel.return_scheduled",
           to: { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName },
           vars: { trackingId: parcel.trackingId, reason: parcel.returnReason, returnCharge: charge, trackingUrl: track },
+          parcel,
         })),
       );
     }

@@ -446,4 +446,35 @@ describe("finance: ledger, carry-forward, schedules, reconciliation, disputes, V
     expect(balance(accounts, "1100")).toBe(0);
     expect(balance(accounts, "2030")).toBe(0);
   });
+
+  it("enforces ledger integrity in the database: append-only, balanced, one side per line", async () => {
+    const ledger = ctx.app.get(LedgerService);
+    await ledger.record(ctx.prisma, { type: "CLAIM_PAID", amount: 75, reference: "INTEGRITY-1" });
+    const entry = await ctx.prisma.journalEntry.findFirstOrThrow({ where: { reference: "INTEGRITY-1" }, include: { lines: true } });
+    expect(entry.lines).toHaveLength(2);
+
+    // Posted rows can't be changed or removed, not even by raw SQL.
+    await expect(ctx.prisma.$executeRaw`UPDATE journal_entries SET memo = 'edited' WHERE id = ${entry.id}::uuid`).rejects.toThrow(/immutable/);
+    await expect(ctx.prisma.$executeRaw`UPDATE journal_lines SET debit = 1 WHERE id = ${entry.lines[0].id}::uuid`).rejects.toThrow(/immutable/);
+    await expect(ctx.prisma.$executeRaw`DELETE FROM journal_lines WHERE id = ${entry.lines[0].id}::uuid`).rejects.toThrow(/immutable/);
+    await expect(ctx.prisma.$executeRaw`DELETE FROM journal_entries WHERE id = ${entry.id}::uuid`).rejects.toThrow(/immutable/);
+    expect(await ctx.prisma.journalLine.count({ where: { entryId: entry.id } })).toBe(2);
+
+    // An entry whose lines don't balance is refused when the transaction commits.
+    const accounts = await ledger.accountIds();
+    const unbalanced = ctx.prisma.$transaction(async tx => {
+      const e = await tx.journalEntry.create({ data: { number: "JE-TEST-UNBAL", eventType: "MANUAL", reference: "UNBAL-1", period: entry.period, occurredAt: new Date() } });
+      await tx.journalLine.create({ data: { entryId: e.id, accountId: accounts.get("BANK")!, debit: 100, credit: 0 } });
+      await tx.journalLine.create({ data: { entryId: e.id, accountId: accounts.get("OWNER_EQUITY")!, debit: 0, credit: 90 } });
+    });
+    await expect(unbalanced).rejects.toThrow(/not balanced/);
+    expect(await ctx.prisma.journalEntry.count({ where: { reference: "UNBAL-1" } })).toBe(0);
+
+    // A line is either a debit or a credit.
+    const twoSided = ctx.prisma.$transaction(async tx => {
+      const e = await tx.journalEntry.create({ data: { number: "JE-TEST-2SIDE", eventType: "MANUAL", reference: "TWOSIDE-1", period: entry.period, occurredAt: new Date() } });
+      await tx.journalLine.create({ data: { entryId: e.id, accountId: accounts.get("BANK")!, debit: 10, credit: 10 } });
+    });
+    await expect(twoSided).rejects.toThrow(/journal_lines_one_side/);
+  });
 });

@@ -7,7 +7,7 @@ import type { UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import { decrypt, safeEqual } from "../../common/crypto";
-import { parcelInclude, parcelView } from "./parcel.views";
+import { parcelInclude, parcelView, proofMethodsOf } from "./parcel.views";
 import { ParcelWorkflowService, type AfterCommit } from "./parcel-workflow.service";
 import { ParcelsService } from "./parcels.service";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
@@ -18,7 +18,7 @@ import { LedgerService } from "../finance/ledger.service";
 /** Service lines riders are paid for (rider plans in the platform settings use these keys). */
 type ServiceLine = "ecommerce" | "document" | "parcel";
 const lineOf = (merchantType: string | null | undefined): ServiceLine =>
-  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "CORPORATE_DOCUMENT" ? "document" : "parcel";
+  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "BANKING_FINANCIAL" ? "document" : "parcel";
 
 const PICKUP_STATUSES = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] as const;
 const DELIVERY_STATUSES = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"] as const;
@@ -49,8 +49,9 @@ export class RiderTasksService {
   async tasks(actor: UserActor) {
     const riderId = this.riderId(actor);
     const [pickups, deliveries] = await Promise.all([
-      this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: { in: [...PICKUP_STATUSES] } }, include: parcelInclude, orderBy: { createdAt: "asc" } }),
-      this.prisma.parcel.findMany({ where: { deliveryRiderId: riderId, status: { in: [...DELIVERY_STATUSES] } }, include: parcelInclude, orderBy: { createdAt: "asc" } }),
+      // On-demand pickups / deliveries first (service packages), then oldest first.
+      this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: { in: [...PICKUP_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
+      this.prisma.parcel.findMany({ where: { deliveryRiderId: riderId, status: { in: [...DELIVERY_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
     ]);
     return {
       pickups: pickups.map(p => parcelView(p, { internal: false })),
@@ -151,6 +152,10 @@ export class RiderTasksService {
         const cod = Number(parcel.codAmount);
         if (cod > 0 && input.codCollected !== cod)
           throw new AppError("COD_MISMATCH", `Collect exactly ৳${cod.toLocaleString("en-BD")} before completing the delivery`, 422, { expected: cod });
+        // Service packages: only the proof methods active for this parcel (OTP needs the delivery code message).
+        const allowed = proofMethodsOf(parcel);
+        if (!allowed.includes(input.proof.method))
+          throw new AppError("PROOF_METHOD_NOT_ALLOWED", `This parcel takes ${allowed.map(m => (m === "OTP" ? "the recipient's code" : m === "PHOTO" ? "a photo of the signed invoice" : "the recipient's signature")).join(" or ")} as proof`, 422, { allowed });
         let fileId: string | undefined;
         let otpVerified = false;
         if (input.proof.method === "OTP") {
@@ -185,8 +190,9 @@ export class RiderTasksService {
         return;
       }
 
-      // Failed attempt
+      // Failed attempt (re-attempts beyond the package's free ones carry its re-attempt fee).
       await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "FAILED", reason: input.reason, nextAction: input.nextAction, note: input.note } });
+      await this.workflow.chargeReattempt(tx, parcel, actor, meta);
       if (input.nextAction === "RETRY") {
         await this.workflow.transition(
           tx,

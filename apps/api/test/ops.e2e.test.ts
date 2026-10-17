@@ -10,7 +10,7 @@ describe("courier operations console", () => {
   afterAll(() => ctx.app.close());
 
   let merchantSeq = 2000;
-  const merchant = (type: "ECOMMERCE" | "CORPORATE_DOCUMENT" = "ECOMMERCE", name = "Shop BD") =>
+  const merchant = (type: "ECOMMERCE" | "BANKING_FINANCIAL" = "ECOMMERCE", name = "Shop BD") =>
     ctx.prisma.merchant.create({
       data: {
         code: `MR-${++merchantSeq}`,
@@ -29,7 +29,7 @@ describe("courier operations console", () => {
     const gulshan = await hub(ctx, "HUB-GUL");
     const dhanmondi = await hub(ctx, "HUB-DHN");
     const shop = await merchant("ECOMMERCE", "Northstar Test");
-    const bank = await merchant("CORPORATE_DOCUMENT", "Meridian Test");
+    const bank = await merchant("BANKING_FINANCIAL", "Meridian Test");
     const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops Manager");
     const hubOp = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: gulshan.id }], "Gulshan Operator");
     const otherHubOp = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: dhanmondi.id }], "Dhanmondi Operator");
@@ -222,7 +222,7 @@ describe("courier operations console", () => {
       expect(tooLong.status).toBe(422);
 
       const merchants = await ctx.api("GET", "/ops/merchants", { token: s.support.token });
-      expect(merchants.body.find((m: { id: string }) => m.id === s.shop.id)).toMatchObject({ parcelsThisMonth: 1, codThisMonth: 500, activeParcels: 1 });
+      expect(merchants.body.find((m: { id: string }) => m.id === s.shop.id)).toMatchObject({ parcelsThisMonth: 1, codThisMonth: 500, activeParcels: 1, plan: "E-commerce default", package: { name: "E-commerce default", isDefault: true } });
     });
   });
 

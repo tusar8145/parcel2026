@@ -62,6 +62,9 @@ export const NOTIFICATION_EVENTS = [
   "parcel.changed_to_pickup",
   // spreadsheet imports (appended)
   "import.completed",
+  // collect from hub (service packages, appended)
+  "parcel.ready_for_collection",
+  "parcel.collection_reminder",
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];

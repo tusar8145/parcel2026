@@ -9,6 +9,7 @@ export const scripts = [
   "/legacy/ecommerce-merchant/04.js",
   "/legacy/shared/support.js",
   "/legacy/shared/importer.js",
+  "/legacy/shared/order-services.js",
   "/legacy/shared/merchant-bridge.js",
   "/legacy/ecommerce-merchant/bridge.js",
   "/legacy/shared/merchant-features.js"

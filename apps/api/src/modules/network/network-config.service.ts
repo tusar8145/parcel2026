@@ -177,7 +177,7 @@ export class NetworkConfigService {
       const arriving = inbound.find(r => r.currentHubId === h.id)?._count._all ?? 0;
       const utilisation = h.capacity ? Math.round((load / h.capacity) * 1000) / 10 : null;
       return {
-        hub: { id: h.id, code: h.code, name: h.name, district: h.district, lat: h.lat, lng: h.lng },
+        hub: { id: h.id, code: h.code, name: h.name, district: h.district, zone: h.zone, lat: h.lat, lng: h.lng },
         capacity: h.capacity,
         load,
         inbound: arriving,
@@ -193,7 +193,8 @@ export class NetworkConfigService {
   // ── checks ──
 
   private async checkCatalog(district: string, zone: string, areas: string[]) {
-    const catalog = await this.pricing.catalog();
+    // Deactivated places stay valid here: their delivery zones keep serving existing parcels.
+    const catalog = await this.pricing.catalog(undefined, { includeInactive: true });
     const zones = catalog.zonesByDistrict[district];
     if (!zones) throw new AppError("UNKNOWN_DISTRICT", `${district} isn't a district in the service catalog`, 422);
     if (!zones.includes(zone)) throw new AppError("UNKNOWN_ZONE", `${zone} isn't a ${district} zone in the service catalog`, 422);

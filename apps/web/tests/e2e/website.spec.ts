@@ -66,7 +66,7 @@ test("sign-in and sign-up validate inline with the API's rules", async ({ browse
   await page.fill("#loginIdentity", "1612");
   await page.locator("#loginIdentity").blur();
   await expect(form.locator("#loginIdentity-error")).toContainText("10 digits after +880");
-  await page.fill("#loginIdentity", "customer@deliveryfast.example");
+  await page.fill("#loginIdentity", (await fx.staff("OPS_MANAGER")).login);
   await page.fill("#loginPassword", "WrongPassword1");
   await form.locator('button[type="submit"]').click();
   await expect(form.locator("#loginPassword-error")).not.toBeEmpty();
@@ -192,9 +192,10 @@ test("customer signs up, verifies email from the profile, and manages saved addr
 
 test("staff signing in on the website form open their panel (role → panel)", async ({ browser }) => {
   // Merchant owners: merchant-panels.spec.ts; super admins with first-time MFA enrolment: super-admin.spec.ts.
+  const ops = await fx.staff("OPS_MANAGER");
   const page = await open(browser, "/login");
-  await page.fill("#loginIdentity", "ops@deliveryfast.example");
-  await page.fill("#loginPassword", "DeliveryFast2026");
+  await page.fill("#loginIdentity", ops.login);
+  await page.fill("#loginPassword", ops.password);
   await page.click('form[data-form="login"] button[type="submit"]');
   await expect(page).toHaveURL(/\/courier-operation/);
   await page.waitForSelector("html.legacy-ready", { state: "attached" });

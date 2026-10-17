@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * End-to-end tests through the real UI against a running stack (API + web), e.g.
- *   npm run db:up && npm run dev:api   (apps/api, seeded with `npm run db:seed` for the staff accounts)
+ *   npm run db:up && npm run dev:api   (apps/api, seeded with `npm run db:seed` for the geography and hubs)
  *   npm run dev                        (apps/web)
  *   npx playwright test -c playwright.e2e.config.ts
  *
@@ -13,8 +13,8 @@ import { defineConfig, devices } from "@playwright/test";
  *                     calls there, the live event stream included
  *   E2E_DATABASE_URL  the database the specs create their temporary accounts in and clean up
  *                     (default postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast)
- * The specs need only the seeded staff accounts (*@deliveryfast.example, password DeliveryFast2026);
- * merchants, riders and customers are temporary and deleted afterwards.
+ * The specs use no seeded accounts: staff, super admins, merchants, riders and customers are temporary
+ * (tests/e2e/support.ts `Fixtures`) and deleted afterwards.
  */
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 

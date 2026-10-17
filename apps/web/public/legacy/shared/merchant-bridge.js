@@ -1,5 +1,5 @@
 /*
- * Connects the two merchant panels (ecommerce-merchant, document-merchant) to the API.
+ * Connects the two merchant panels (ecommerce-merchant, banking-merchant) to the API.
  * Loaded after the original page scripts; each panel's bridge.js calls
  * DFMerchantPanel.start({...}) with its differences.
  *
@@ -284,7 +284,9 @@
 
   function settingsRows() {
     const m = S.merchant;
-    const plan = m.plan ? `${m.plan.name} plan · ${m.plan.discountPct}% discount · ${taka(m.plan.monthlyFee)}/month` : "No plan assigned yet";
+    // The service package in force (GET /packages/me); prices and services come from it.
+    const pk = S.pkg?.package;
+    const plan = pk ? `${pk.name} · version ${pk.version}${pk.isDefault ? " (default)" : ""}` : "Your service package";
     const payout = m.payoutAccount
       ? `${PAYOUT_LABEL[m.payoutAccount.method] || m.payoutAccount.method} · ••••${String(m.payoutAccount.accountNumber).slice(-4)} · ${m.payoutAccount.accountName}`
       : "Not set · add one to receive COD payouts";
@@ -295,7 +297,7 @@
     const rows = [profile];
     if (S.cfg.document) rows.push(["Billing profile", "Monthly consolidated invoices · due 15 days after issue", "—", "Manage"]);
     else rows.push(["Payout account", payout, "—", "Manage"]);
-    rows.push(["Service plan", plan, "—", "Manage"]);
+    rows.push(["Service package", plan, "—", "Manage"]);
     rows.push(["Business verification", `${KYC_STATUS[m.kyc?.status] || "Not submitted"}${m.kyc?.status === "REJECTED" && m.kyc.rejectionReason ? ` · ${m.kyc.rejectionReason}` : " · trade license, owner NID and payout proof"}`, dateOnly(m.kyc?.reviewedAt || m.kyc?.submittedAt), "Manage"]);
     rows.push(["Notification settings", `SMS updates to ${phone(m.contactPhone)} · choose which messages you get`, "—", "Manage"]);
     rows.push(["Team & permissions", team, "—", "Manage"]);
@@ -453,9 +455,17 @@
     S.members = results[2].status === "fulfilled" ? results[2].value.items : S.members;
   }
 
+  /** The service package in force, for Settings (the order form loads it too). */
+  async function loadPackage() {
+    const key = () => (S.pkg?.package ? `${S.pkg.package.versionId}` : "");
+    const before = key();
+    S.pkg = window.DFOrderServices ? await window.DFOrderServices.load("/packages/me") : await DF.api("/packages/me");
+    return key() !== before;
+  }
+
   /** Reloads everything and re-renders the current page if anything changed. */
   async function refresh({ force = false } = {}) {
-    const results = await Promise.allSettled([loadParcels(), loadStats(), loadFinance()]);
+    const results = await Promise.allSettled([loadParcels(), loadStats(), loadFinance(), loadPackage()]);
     const changed = results.some(r => r.status === "fulfilled" && r.value);
     if (changed || force) {
       applyData();
@@ -873,6 +883,15 @@
   // ───────────── booking ─────────────
 
   const option = (value, label = value, selected = false) => `<option value="${esc(value)}"${selected ? " selected" : ""}>${esc(label)}</option>`;
+  /** Order form start lists: the merchant's own district (prepareOrderForm narrows them as the form changes). */
+  function narrowRegions() {
+    const c = S.catalog;
+    if (!c || typeof merchantRegions === "undefined") return;
+    const home = S.merchant?.pickupDistrict && c.zonesByDistrict[S.merchant.pickupDistrict] ? S.merchant.pickupDistrict : c.districts[0];
+    merchantRegions.district = c.districts;
+    merchantRegions.zone = c.zonesByDistrict[home] || [];
+    merchantRegions.area = c.areasByZone[merchantRegions.zone[0]] || [];
+  }
   const zonesOf = district => S.catalog?.zonesByDistrict?.[district] || [];
   const areasOf = zone => S.catalog?.areasByZone?.[zone] || [];
   /** The catalog zone of the merchant's pickup address. */
@@ -924,6 +943,46 @@
       weight.dataset.df = "1";
     }
     for (const id of ["customerPhone"]) $(id)?.setAttribute("autocomplete", "tel");
+    void prepareServices();
+    void updateQuote();
+  }
+
+  /**
+   * The service package's choices on the order form (shared/order-services.js): only what the
+   * merchant's package offers. The Service choice replaces the old service level (and, for
+   * documents, the document type); the product list is the package's products.
+   */
+  async function prepareServices() {
+    const services = window.DFOrderServices;
+    if (!services) return;
+    try {
+      S.pkg = await services.load("/packages/me");
+    } catch {
+      return;
+    }
+    const hint = $("merchantPriceHint");
+    if (!hint || !S.pkg) return;
+    if (!$("dfOrderServices")) {
+      const box = document.createElement("div");
+      box.id = "dfOrderServices";
+      box.style.display = "contents";
+      box.innerHTML = services.block(S.pkg, { prefix: "merchantSvc" });
+      hint.before(box);
+    }
+    for (const id of ["merchantServiceLevel", "merchantDocumentType"]) {
+      const f = $(id)?.closest(".form-field");
+      if (f) f.hidden = true;
+    }
+    const product = $("merchantProduct");
+    if (product && S.pkg.products.length && product.dataset.pkg !== S.pkg.package.versionId) {
+      // Optional: the product's type (Regular, Document, Books) prices the order; none = Regular.
+      product.innerHTML = `<option value="">No product (Regular)</option>${S.pkg.products.map(p => option(p.name, `${p.name} · ${S.pkg.labels.productType?.[p.type] || p.type}`)).join("")}`;
+      product.dataset.pkg = S.pkg.package.versionId;
+      product.dataset.catalog = "package";
+      product.required = false;
+      product.closest(".form-field").querySelector("label").textContent = "Product";
+    }
+    services.sync("merchantSvc");
     void updateQuote();
   }
 
@@ -936,7 +995,11 @@
     const documentType = $("merchantDocumentType")?.value || "";
     const product = $("merchantProduct")?.value || "";
     const area = $("merchantArea")?.value || undefined;
+    // Service package choices (first / last mile, speed + handling, COD, open box, messages).
+    const svc = S.pkg ? window.DFOrderServices.read(S.pkg, "merchantSvc") : null;
+    const { cod, ...choices } = svc || {};
     return {
+      ...(svc ? { ...choices, product: product || undefined } : {}),
       sender: { name: m.name, phone: m.contactPhone },
       pickup: { category: "Office", street: m.pickupAddress, area: m.pickupArea || undefined, zone: $("merchantPickupZone")?.value || pickupZone(), district: m.pickupDistrict },
       recipient: { name: $("customerName").value.trim(), phone: $("customerPhone").value.trim() },
@@ -947,8 +1010,8 @@
       packaging: $("merchantPackaging")?.value || undefined,
       contents: (doc ? [documentType, product && product !== documentType ? product : ""].filter(Boolean).join(" — ") : product) || undefined,
       declaredValue: value || undefined,
-      // E-commerce orders collect the order value as cash on delivery.
-      codAmount: type === "ECOMMERCE" ? value : 0,
+      // E-commerce orders collect the order value as cash on delivery (when the package offers COD and it is ticked).
+      codAmount: type === "ECOMMERCE" && (!svc || cod) ? value : 0,
       receiverRelation: $("merchantRelation")?.value || undefined,
       originBranchCode: $("merchantBranchCode")?.value.trim() || undefined,
       merchantOrderRef: $("merchantReferenceNo")?.value.trim() || undefined,
@@ -970,18 +1033,36 @@
       try {
         const quote = await DF.api(`/merchants/me/quote${q()}`, {
           method: "POST",
-          body: { pickupDistrict: body.pickup.district, pickupZone: body.pickup.zone, deliveryDistrict: body.delivery.district, deliveryZone: body.delivery.zone, weightKg: body.weightKg, serviceLevel: body.serviceLevel, codAmount: body.codAmount },
+          body: {
+            pickupDistrict: body.pickup.district,
+            pickupZone: body.pickup.zone,
+            pickupArea: body.pickup.area,
+            deliveryDistrict: body.delivery.district,
+            deliveryZone: body.delivery.zone,
+            deliveryArea: body.delivery.area,
+            weightKg: body.weightKg,
+            serviceLevel: body.serviceLevel,
+            codAmount: body.codAmount,
+            ...(body.declaredValue ? { declaredValue: body.declaredValue } : {}),
+            ...(S.pkg ? { firstMile: body.firstMile, dropHubId: body.dropHubId, lastMile: body.lastMile, collectHubId: body.collectHubId, speed: body.speed, openBox: body.openBox } : {}),
+          },
         });
         if (seq !== quoteSeq) return;
         S.returnPercent = quote.returnPercent;
+        // Live breakdown from the package (service packages): every price line and the total.
+        if (quote.lines) {
+          hint.innerHTML = window.DFOrderServices.breakdown(quote);
+          return;
+        }
         const parts = [`base ${taka(quote.baseCharge)}`];
         if (quote.weightCharge) parts.push(`weight ${taka(quote.weightCharge)}`);
         if (quote.serviceCharge) parts.push(`${body.serviceLevel.toLowerCase()} ${taka(quote.serviceCharge)}`);
         if (quote.codFee) parts.push(`COD fee ${taka(quote.codFee)}`);
         if (quote.discount) parts.push(`${quote.plan?.name || "plan"} discount −${taka(quote.discount)}`);
         hint.textContent = `Estimated delivery charge ${taka(quote.totalCharge)} (${parts.join(" · ")}). Return charge if returned: ${taka(quote.returnCharge)}. Final price is confirmed on booking.`;
-      } catch {
-        if (seq === quoteSeq) hint.textContent = "Delivery charges use your assigned service plan and are confirmed when you create the order.";
+      } catch (error) {
+        // A choice the package doesn't allow (e.g. Security without a declared value) explains itself.
+        if (seq === quoteSeq) hint.textContent = error instanceof DF.ApiError && error.status === 422 ? DF.describe(error) : "Delivery charges use your service package and are confirmed when you create the order.";
       }
     }, 250);
   }
@@ -1139,7 +1220,7 @@
       <section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">Invoices & statements</h2><p class="panel-subtitle">Invoices consolidate delivered document consignments; billed consignments are excluded from future bills.</p></div><div class="table-tools"><input class="table-search" id="documentBillSearch" placeholder="Search invoice ID..." aria-label="Search invoices"><button class="button button-sm" id="exportDocumentBills">${icon("download")} Export</button></div></div>
       <div class="table-scroll"><table><thead><tr><th>INVOICE</th><th>BILLING PERIOD</th><th>ISSUED</th><th>DUE DATE</th><th>DOCUMENTS</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody id="documentBillRows">${body}</tbody></table></div>
       <div class="table-footer"><span>${S.invoices.length} invoice(s) · Live billing data</span><span>Payments are recorded by Delivery Fast finance when your transfer arrives.</span></div></section>
-      <div class="layout billing-lower"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">How monthly billing works</h2><p class="panel-subtitle">A predictable finance workflow for multi-branch institutions</p></div></div><ol class="billing-steps"><li>Delivery Fast issues one invoice per closed month for delivered consignments not previously invoiced.</li><li>Review each tracking ID, document type, origin branch, and internal reference.</li><li>Print or download the statement and route it through your finance approval process.</li><li>Pay by bank transfer quoting the invoice number; the status changes to Paid once finance records it.</li></ol></section><section class="panel"><h2 class="panel-title">Billing controls</h2><div class="billing-controls"><span>Billing frequency<strong>Monthly, consolidated</strong></span><span>Payment terms<strong>Due 15 days from issue</strong></span><span>Invoice currency<strong>BDT · ৳</strong></span><span>Service plan<strong>${esc(m?.plan ? `${m.plan.name} · ${m.plan.discountPct}% discount` : "Standard corporate rates")}</strong></span></div></section></div>`;
+      <div class="layout billing-lower"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">How monthly billing works</h2><p class="panel-subtitle">A predictable finance workflow for multi-branch institutions</p></div></div><ol class="billing-steps"><li>Delivery Fast issues one invoice per closed month for delivered consignments not previously invoiced.</li><li>Review each tracking ID, document type, origin branch, and internal reference.</li><li>Print or download the statement and route it through your finance approval process.</li><li>Pay by bank transfer quoting the invoice number; the status changes to Paid once finance records it.</li></ol></section><section class="panel"><h2 class="panel-title">Billing controls</h2><div class="billing-controls"><span>Billing frequency<strong>Monthly, consolidated</strong></span><span>Payment terms<strong>Due 15 days from issue</strong></span><span>Invoice currency<strong>BDT · ৳</strong></span><span>Service package<strong>${esc(S.pkg?.package?.name || "Banking & Financial default")}</strong></span></div></section></div>`;
   }
 
   // ───────────── API & webhooks ─────────────
@@ -1203,7 +1284,7 @@
       <section class="panel" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">API keys</h2><p class="panel-subtitle">Server-to-server credentials for ${esc(m?.name)} · ${esc(m?.code)}</p></div>${statusPill(m?.status === "ACTIVE" ? "Active" : "Pending account approval")}</div>${keysPanel}</section>
       <div class="api-layout"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">API reference</h2><p class="panel-subtitle">REST over HTTPS · JSON request and response bodies · <a href="/api/docs" target="_blank" rel="noopener">full OpenAPI reference ↗</a></p></div><span class="status status-blue">Base URL · ${esc(base)}</span></div>
         <div class="form-grid" style="margin-top:16px"><div class="form-field full"><label>Authentication</label><pre class="api-code">Authorization: Bearer YOUR_API_KEY&#10;Content-Type: application/json&#10;Idempotency-Key: unique-request-id</pre></div>
-        <div class="form-field full"><label>Book a ${doc ? "document consignment" : "parcel"} <span class="status status-good">POST /parcels · 201 Created</span></label><pre class="api-code">${esc(example.create)}</pre><small>The server prices the parcel from your rate card and plan. Keep the Idempotency-Key stable when retrying: a repeat returns the original parcel. merchantOrderRef must be unique (409 if it was already booked).</small></div>
+        <div class="form-field full"><label>Book a ${doc ? "document consignment" : "parcel"} <span class="status status-good">POST /parcels · 201 Created</span></label><pre class="api-code">${esc(example.create)}</pre><small>The server prices the parcel from your service package. Keep the Idempotency-Key stable when retrying: a repeat returns the original parcel. merchantOrderRef must be unique (409 if it was already booked).</small></div>
         <div class="form-field full"><label>Get status and tracking history <span class="status status-blue">GET /parcels/{trackingId}</span></label><pre class="api-code">${esc(example.status)}</pre><small>Includes status, charges, COD and the full event history.</small></div>
         <div class="form-field full"><label>List parcels <span class="status status-blue">GET /parcels</span></label><pre class="api-code">${esc(example.list)}</pre><small>Newest first. Filter by status, q (tracking ID, order reference, name or phone), from and to; pass the returned nextCursor for the next page.</small></div>
         <div class="form-field full"><label>Cancel before pickup is confirmed <span class="status status-blue">POST /parcels/{trackingId}/cancel</span></label><pre class="api-code">${esc(example.cancel)}</pre></div></div><div style="margin-top:14px"><h3 style="font-size:14px;margin:0 0 10px">Example responses</h3><div class="form-grid">
@@ -1296,7 +1377,7 @@
       return void loadIntegrations().then(openTeam);
     }
     if (/api/i.test(name)) return renderPage("API & Webhooks");
-    if (/plan/i.test(name)) return showToast("Service plans are assigned by Delivery Fast. Contact your account manager to change plans.");
+    if (/plan|package/i.test(name)) return showToast("Service packages are assigned by Delivery Fast. Contact your account manager to change your package.");
     if (/verification/i.test(name)) return window.DFMerchantFeatures ? window.DFMerchantFeatures.openKyc() : showToast("Business verification is loading. Try again in a moment.");
     if (/notification/i.test(name)) return window.DFMerchantFeatures ? window.DFMerchantFeatures.openNotifications() : showToast(`Delivery SMS go to ${phone(S.merchant.contactPhone)}.`);
   }
@@ -1442,7 +1523,7 @@
       try {
         sessionStorage.setItem("deliveryfast-merchant-workspace", chosen.id);
       } catch {}
-      location.href = chosen.type === "CORPORATE_DOCUMENT" ? "/document-merchant" : "/ecommerce-merchant";
+      location.href = chosen.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant";
       return;
     }
     if (hit("#notificationButton")) {
@@ -1671,6 +1752,7 @@
     }
     if (t.id === "merchantDistrict") cascadeZones();
     if (t.id === "merchantZone") cascadeAreas();
+    if (t.closest?.("#dfOrderServices")) window.DFOrderServices?.sync("merchantSvc");
     if (t.closest?.("#orderForm")) updateQuote();
     if (t.id === "chartPeriod") {
       S.period = { "Last 7 days": "7d", "Last 30 days": "30d", "This year": "year" }[t.value] || "7d";
@@ -1712,18 +1794,35 @@
       if (error.status !== 403) console.error("Merchant workspace could not be loaded", error);
     }
     if (S.merchant && S.merchant.type !== S.cfg.type) {
-      location.replace(S.merchant.type === "CORPORATE_DOCUMENT" ? "/document-merchant" : "/ecommerce-merchant");
+      location.replace(S.merchant.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant");
       return new Promise(() => {}); // stay hidden while navigating
     }
     showIdentity();
     S.catalog = await DF.api("/catalog").catch(() => null);
     if (S.catalog) {
-      merchantRegions.district = S.catalog.districts;
-      merchantRegions.zone = [...new Set(Object.values(S.catalog.zonesByDistrict).flat())];
-      merchantRegions.area = [...new Set(Object.values(S.catalog.areasByZone).flat())];
+      // The order form starts from these lists and prepareOrderForm() narrows zone and area to the
+      // chosen district / zone; starting from the merchant's own district keeps the dialog light
+      // (the whole country has hundreds of zones and thousands of areas).
+      narrowRegions();
+      if (typeof window.applyMerchantConfig === "function" && !window.applyMerchantConfig.dfNarrowed) {
+        // The page re-reads the full lists from the platform config whenever a dialog opens.
+        const original = window.applyMerchantConfig;
+        window.applyMerchantConfig = Object.assign(function (...args) {
+          const result = original.apply(this, args);
+          narrowRegions();
+          return result;
+        }, { dfNarrowed: true });
+      }
       if (S.catalog.packaging?.length) merchantCatalogs.ecommercePackaging = S.catalog.packaging;
       if (S.catalog.products?.length) merchantCatalogs.ecommerceProducts = S.catalog.products;
     }
+    // Geography changes in super admin (new / renamed / deactivated places) reach the order form at once.
+    DF.events.on("catalog.updated", async () => {
+      const fresh = await DF.api("/catalog").catch(() => null);
+      if (!fresh) return;
+      S.catalog = fresh;
+      narrowRegions();
+    });
     if (!S.merchant) {
       S.stats = emptyStats();
       applyEmpty();
@@ -1731,7 +1830,7 @@
       showToast("This account isn't a member of a merchant workspace.");
       return;
     }
-    await Promise.allSettled([loadParcels(), loadStats(), loadFinance(), loadIntegrations()]);
+    await Promise.allSettled([loadParcels(), loadStats(), loadFinance(), loadIntegrations(), loadPackage()]);
     applyData();
     renderPage("Overview");
     if (S.merchant.status !== "ACTIVE")

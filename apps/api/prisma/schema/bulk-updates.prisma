@@ -1,0 +1,103 @@
+// ─────────────────────── Bulk operations by Excel (modules/bulk-updates) ───────────────────────
+// Courier Operations downloads the parcels it filtered as an .xlsx, fills in an action per row
+// (assign riders, change status, cancel, receive, complete details…), and uploads it. The upload
+// is checked into a BulkUpdateJob with one BulkUpdateRow per row that has an action (dry run);
+// applying runs each row through the normal parcel services, each row in its own transaction.
+
+enum BulkUpdateStatus {
+  /// Checked; nothing applied yet (the preview).
+  VALIDATED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  /// Never applied (or replaced by a new upload); its rows are purged.
+  DISCARDED
+}
+
+enum BulkUpdateRowStatus {
+  /// Valid: will be applied.
+  READY
+  /// Valid with warnings (e.g. rider off shift or over capacity): will be applied.
+  WARNING
+  /// Invalid: never applied.
+  ERROR
+  /// Applied through the parcel services.
+  APPLIED
+  /// The parcel was already in the requested state (or this row was applied by an earlier upload): skipped.
+  ALREADY_DONE
+  /// Valid at the preview but refused when applied (e.g. the parcel changed meanwhile).
+  FAILED
+}
+
+model BulkUpdateJob {
+  id               String           @id @default(uuid(7)) @db.Uuid
+  /// BLK-YYMMDD-NNN.
+  number           String           @unique
+  status           BulkUpdateStatus @default(VALIDATED)
+  fileName         String?
+  fileSha256       String?
+  fileBytes        Int              @default(0)
+  /// Rows with an action (rows without one are ignored and only counted).
+  totalRows        Int              @default(0)
+  ignoredRows      Int              @default(0)
+  readyRows        Int              @default(0)
+  warningRows      Int              @default(0)
+  errorRows        Int              @default(0)
+  /// Already done when checked.
+  skippedRows      Int              @default(0)
+  /// Rows handled by the apply job so far (progress).
+  processedRows    Int              @default(0)
+  appliedCount     Int              @default(0)
+  alreadyDoneCount Int              @default(0)
+  failedCount      Int              @default(0)
+  /// Who uploaded it, to act as them in the background: { kind: "user", userId, name }.
+  actor            Json
+  createdById      String?          @db.Uuid
+  error            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  queuedAt         DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  rowsPurgedAt     DateTime?
+  rows             BulkUpdateRow[]
+
+  @@index([createdById, createdAt])
+  @@index([status, updatedAt])
+  @@map("bulk_update_jobs")
+}
+
+model BulkUpdateRow {
+  id              String              @id @default(uuid(7)) @db.Uuid
+  jobId           String              @db.Uuid
+  /// Spreadsheet row number (the header is row 1).
+  rowNumber       Int
+  status          BulkUpdateRowStatus
+  /// ACCEPT_PICKUP, ASSIGN_DELIVERY, SET_STATUS, RECEIVE_AT_HUB, CANCEL, TO_DROP_OFF, TO_PICKUP, SCHEDULE_RETURN, COMPLETE_DETAILS, ADD_NOTE.
+  action          String?
+  trackingId      String?
+  parcelId        String?             @db.Uuid
+  /// The parcel version in the downloaded file (optimistic locking).
+  expectedVersion Int?
+  /// High-priority rows are applied first.
+  priority        Int                 @default(0)
+  /// The row as uploaded: { columnKey: text }.
+  cells           Json
+  /// What the row resolved to (rider id, hub id, status…), so applying uses exactly what was previewed.
+  plan            Json?
+  /// [{ column, message }] for ERROR / FAILED rows.
+  errors          Json?
+  /// [{ column, message }]: the row still applies.
+  warnings        Json?
+  /// What happened ("Pickup assigned to R-2048 · Jordan"; "already done: …").
+  result          String?
+  /// Hash of the parcel, its version and the requested change: an upload of the same file doesn't apply a row twice.
+  dedupeKey       String?
+  job             BulkUpdateJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, rowNumber])
+  @@index([jobId, status, rowNumber])
+  @@index([dedupeKey, status])
+  @@map("bulk_update_rows")
+}

@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { quoteParcel, type RateCardConfig, type ServiceLevel } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -19,6 +19,7 @@ import { money } from "./finance.scope";
 import { LedgerService, type LedgerVia } from "./ledger.service";
 import type { approveDisputeSchema, createDisputeSchema, disputeNoteSchema, listDisputesQuerySchema, rejectDisputeSchema } from "./disputes.schemas";
 import { pricedDestination } from "../parcels/incomplete";
+import { PackagesService, SNAPSHOT_ENGINE } from "../packages/packages.service";
 
 const STATUS_LABEL: Record<DisputeStatus, string> = { OPEN: "Received", UNDER_REVIEW: "Under review", APPROVED: "Approved", REJECTED: "Rejected" };
 const KIND_LABEL: Record<string, string> = { DAMAGED: "Damaged parcel", LOST: "Lost parcel", OVERCHARGE: "Overcharge", WEIGHT_DISCREPANCY: "Weight discrepancy", OTHER: "Other" };
@@ -86,6 +87,22 @@ export class DisputesService {
     private readonly realtime: RealtimeService,
   ) {}
 
+  /** Service packages (global module; property injection keeps the constructor stable). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
+  /**
+   * Re-weighing: package-priced parcels are re-priced with their frozen package (Banking & Financial
+   * parcels have no weight in their price and keep it); older parcels with their frozen rate card.
+   */
+  private async reweigh(parcel: ParcelForPricing & { reattemptCharge?: Prisma.Decimal; services?: string[] } & Parameters<PackagesService["reprice"]>[0], weightKg: number, db: Db) {
+    const snap = (parcel.pricingSnapshot ?? {}) as { engine?: string; segment?: string };
+    if (snap.engine === "package") return new Prisma.Decimal(parcel.totalCharge); // v1 package snapshot: kept as booked
+    if (snap.engine !== SNAPSHOT_ENGINE) return repriceWithWeight(parcel, weightKg);
+    if (snap.segment === "BANKING_FINANCIAL") return new Prisma.Decimal(parcel.totalCharge);
+    const q = await this.packages.reprice(parcel, { weightKg }, db);
+    return new Prisma.Decimal((q?.totalCharge ?? Number(parcel.totalCharge)) + Number(parcel.reattemptCharge ?? 0));
+  }
+
   async create(actor: UserActor, input: z.infer<typeof createDisputeSchema>, meta: RequestMeta) {
     const { number, outboxIds } = await this.prisma.$transaction(
       async tx => {
@@ -98,7 +115,7 @@ export class DisputesService {
 
         const weight =
           input.kind === "WEIGHT_DISCREPANCY"
-            ? { bookedWeightKg: parcel.weightKg, actualWeightKg: new Prisma.Decimal(input.actualWeightKg!), originalCharge: parcel.totalCharge, repricedCharge: repriceWithWeight(parcel, input.actualWeightKg!) }
+            ? { bookedWeightKg: parcel.weightKg, actualWeightKg: new Prisma.Decimal(input.actualWeightKg!), originalCharge: parcel.totalCharge, repricedCharge: await this.reweigh(parcel, input.actualWeightKg!, tx) }
             : {};
         const dispute = await tx.dispute.create({
           data: {
@@ -207,7 +224,7 @@ export class DisputesService {
 
         if (d.kind === "WEIGHT_DISCREPANCY") {
           const actual = input.actualWeightKg ?? Number(d.actualWeightKg);
-          const repriced = repriceWithWeight(parcel, actual);
+          const repriced = await this.reweigh(parcel, actual, tx);
           const diff = repriced.minus(parcel.totalCharge);
           Object.assign(data, { actualWeightKg: new Prisma.Decimal(actual), repricedCharge: repriced, approvedAmount: diff.abs() });
           if (diff.isZero()) details = "The re-priced charge is the same; no adjustment.";

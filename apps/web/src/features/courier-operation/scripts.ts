@@ -9,9 +9,11 @@ export const scripts = [
   "/legacy/shared/support.js",
   "/legacy/shared/scanner.js",
   "/legacy/shared/mfa.js",
+  "/legacy/shared/order-services.js",
   "/legacy/courier-operation/bridge.js",
   "/legacy/courier-operation/bridge-pages.js",
   "/legacy/courier-operation/bridge-network.js",
+  "/legacy/courier-operation/bridge-hubs.js",
   "/legacy/courier-operation/bridge-maps.js",
   "/legacy/courier-operation/bridge-sla.js",
   "/legacy/courier-operation/bridge-linehaul.js",
@@ -19,10 +21,13 @@ export const scripts = [
   "/legacy/courier-operation/bridge-shifts.js",
   "/legacy/courier-operation/bridge-reports.js",
   "/legacy/courier-operation/bridge-rider-kyc.js",
-  "/legacy/courier-operation/bridge-rider-pay.js",
+  "/legacy/courier-operation/bridge-rider-pay.js"
+,
   "/legacy/courier-operation/bridge-returns.js",
   "/legacy/courier-operation/bridge-finance.js",
   "/legacy/courier-operation/bridge-intake.js",
+  "/legacy/courier-operation/bridge-collect.js",
   "/legacy/shared/importer.js",
-  "/legacy/courier-operation/bridge-imports.js"
+  "/legacy/courier-operation/bridge-imports.js",
+  "/legacy/courier-operation/bridge-bulk.js"
 ];

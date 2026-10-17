@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Res } from "@nestjs/common";
+import { HttpStatus, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Res } from "@nestjs/common";
 import type { FastifyReply } from "fastify";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
@@ -9,6 +9,12 @@ import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { catalogSchema, createRateCardSchema, listRateCardsQuerySchema, merchantRateSchema, PricingService } from "./pricing.service";
 import type { SubmitResult } from "../approvals/approvals.service";
+import { AppError } from "../../common/errors";
+import { legacyCardOf, PackagesService, quoteResponse } from "../packages/packages.service";
+import { quoteRequestOf } from "../packages/packages.controller";
+
+/** Rate cards and merchant tariffs are retired (service packages v2): prices are set per package. */
+const retired = () => new AppError("PRICING_RETIRED", "Rate cards and merchant tariffs are retired: set prices in Service plans & pricing (service packages)", HttpStatus.GONE);
 
 /** Applied at once → the result (as before); waiting for a second super admin → 202 { status: "PENDING", changeRequest }. */
 function changeResponse(reply: FastifyReply, result: SubmitResult) {
@@ -22,21 +28,33 @@ function changeResponse(reply: FastifyReply, result: SubmitResult) {
 export class PricingController {
   constructor(private readonly pricing: PricingService) {}
 
+  /** Service packages (global module; property injection keeps the constructor stable). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
   /** Everything the public booking form needs: places, options and the customer rate card. */
   @Public()
   @Get("catalog")
   async catalog() {
-    const [catalog, card] = await Promise.all([this.pricing.catalog(), this.pricing.activeCard("CUSTOMER")]);
-    return { ...catalog, serviceLevels: SERVICE_LEVEL_LABEL, customerRateCard: card.config };
+    // Prices and choices come from the website customer package (service packages).
+    const [catalog, view] = await Promise.all([this.pricing.catalog(), this.packages.bookingView({ segment: "CUSTOMER" })]);
+    return {
+      ...catalog,
+      // Website customers use the e-commerce product list once super admins set one up.
+      products: view.products.length ? view.products.map(p => p.name) : catalog.products,
+      serviceLevels: SERVICE_LEVEL_LABEL,
+      customerRateCard: legacyCardOf(view.prices),
+      customerPackage: { options: view.options, labels: view.labels, notifications: view.notifications, collectHubs: view.collectHubs, dropHubs: view.dropHubs, package: view.package },
+    };
   }
 
+  /** The website customer price with its breakdown (`lines`), from the website customer package. */
   @Public()
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @Post("pricing/quote")
   @HttpCode(200)
   @ApiZodBody(quoteRequestSchema)
-  quote(@ZBody(quoteRequestSchema) body: z.infer<typeof quoteRequestSchema>) {
-    return this.pricing.quote("CUSTOMER", body);
+  async quote(@ZBody(quoteRequestSchema) body: z.infer<typeof quoteRequestSchema>) {
+    return quoteResponse(await this.packages.quote({ segment: "CUSTOMER" }, quoteRequestOf(body)));
   }
 
   @RequirePermissions("config:manage")
@@ -54,7 +72,7 @@ export class PricingController {
     return this.pricing.listCards(query.segment);
   }
 
-  /** The card in force now for each segment (CUSTOMER, ECOMMERCE, CORPORATE_DOCUMENT); id is null while the defaults apply. */
+  /** The card in force now for each segment (CUSTOMER, ECOMMERCE, BANKING_FINANCIAL); id is null while the defaults apply. */
   @RequirePermissions("config:manage")
   @Get("rate-cards/current")
   currentCards() {
@@ -70,7 +88,8 @@ export class PricingController {
     @ReqMeta() meta: RequestMeta,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    return changeResponse(reply, await this.pricing.createCard(actor, body, meta));
+    void [actor, body, meta, reply];
+    throw retired();
   }
 
   @RequirePermissions("config:manage")
@@ -97,6 +116,7 @@ export class PricingController {
     @ReqMeta() meta: RequestMeta,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    return changeResponse(reply, await this.pricing.setMerchantTariff(actor, id, body, meta));
+    void [actor, id, body, meta, reply];
+    throw retired();
   }
 }

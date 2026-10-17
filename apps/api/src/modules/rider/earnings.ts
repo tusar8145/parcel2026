@@ -10,7 +10,7 @@ import type { RiderPayMode } from "../../generated/prisma/client";
 export type ServiceLine = "ecommerce" | "document" | "parcel";
 export const SERVICE_LINES: ServiceLine[] = ["ecommerce", "document", "parcel"];
 export const lineOf = (merchantType: string | null | undefined): ServiceLine =>
-  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "CORPORATE_DOCUMENT" ? "document" : "parcel";
+  merchantType === "ECOMMERCE" ? "ecommerce" : merchantType === "BANKING_FINANCIAL" ? "document" : "parcel";
 
 export interface ResolvedPlan {
   /** null when the plan comes straight from the platform settings (no stored plan yet). */

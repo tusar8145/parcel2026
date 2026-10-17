@@ -281,7 +281,32 @@
 
   // ───────────── Hubs & zones: network configuration ─────────────
 
-  const loadZones = () => lazyLoad("zones", "/zones?limit=200");
+  // Zones table filter (the country has hundreds of zones): district and/or name search.
+  const zoneFilter = { district: "", q: "" };
+  const loadZones = () => {
+    const params = new URLSearchParams({ limit: "200" });
+    if (zoneFilter.district) params.set("district", zoneFilter.district);
+    if (zoneFilter.q) params.set("q", zoneFilter.q);
+    return lazyLoad("zones", `/zones?${params}`);
+  };
+  const zoneFilterBar = count => {
+    const districts = Ops.catalog?.districts || [];
+    const total = Ops.catalog ? Object.values(Ops.catalog.zonesByDistrict).flat().length : 0;
+    return `<div class="filter-row" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px">
+      <label style="display:grid;gap:4px">District<select id="zoneFilterDistrict"><option value="">All districts</option>${districts.map(d => `<option value="${esc(d)}"${d === zoneFilter.district ? " selected" : ""}>${esc(d)}</option>`).join("")}</select></label>
+      <label style="display:grid;gap:4px">Zone<input id="zoneFilterQ" type="search" value="${esc(zoneFilter.q)}" placeholder="Search zones, press Enter"></label>
+      <span class="subcell">${count >= 200 ? "Showing the first 200 matching zones: choose a district or search to narrow." : `${count} zone${count === 1 ? "" : "s"} shown`}${total ? ` · ${total} catalog zones in ${districts.length} districts` : ""}</span></div>`;
+  };
+  const setZoneFilter = (key, value) => {
+    if (zoneFilter[key] === value) return;
+    zoneFilter[key] = value;
+    Ops.invalidate("zones");
+    Ops.rerender(true);
+  };
+  window.addEventListener("change", event => {
+    if (event.target.id === "zoneFilterDistrict") setZoneFilter("district", event.target.value);
+    if (event.target.id === "zoneFilterQ") setZoneFilter("q", event.target.value.trim());
+  });
   const loadRoutes = () => lazyLoad("routes", "/routes?limit=200");
   const loadCapacity = () => lazyLoad("hub-capacity", "/hubs/capacity", 30000);
 
@@ -290,7 +315,12 @@
     basePrepareHubs?.(page);
     const zones = loadZones()?.items;
     const routes = loadRoutes()?.items;
-    if (zones?.length) zoneList.splice(0, zoneList.length, ...zones.filter(z => z.active).map(z => `${z.name} (${z.district}${z.hub ? ` → ${z.hub.name}` : ""})`));
+    const active = zones?.filter(z => z.active) || [];
+    if (active.length > 20 || zoneFilter.district || zoneFilter.q) {
+      // A summary instead of hundreds of names; the Delivery zones table below lists them.
+      const total = Ops.catalog ? Object.values(Ops.catalog.zonesByDistrict).flat().length : active.length;
+      zoneList.splice(0, zoneList.length, `${total} zones in ${Ops.catalog?.districts.length ?? "all"} districts (Delivery zones below)`);
+    } else if (active.length) zoneList.splice(0, zoneList.length, ...active.map(z => `${z.name} (${z.district}${z.hub ? ` → ${z.hub.name}` : ""})`));
     if (routes?.length) routeList.splice(0, routeList.length, ...routes.filter(r => r.active).map(r => `${r.code} · ${r.name}`));
     loadCapacity();
   };
@@ -303,7 +333,7 @@
     const capRows = capacity
       .map(
         c =>
-          `<tr><td><strong>${esc(c.hub.name)}</strong><span class="subcell">${esc(c.hub.code)} · ${esc(c.hub.district)}${c.hub.lat != null ? ` · ${c.hub.lat.toFixed(4)}, ${c.hub.lng.toFixed(4)}` : " · no map location"}</span></td><td>${c.capacity ?? "—"}</td><td>${c.load}</td><td>${c.inbound}</td><td>${c.utilisation == null ? "—" : `${c.utilisation}%`}</td><td>${ui.pill(c.state === "OK" ? "Healthy" : c.state === "Near capacity" ? "Monitor" : c.state === "Over capacity" ? "At capacity" : c.state)}</td><td>${c.zones} zones · ${c.routes} routes</td><td>${manage ? `<button class="button button-sm" data-hub-capacity="${c.hub.id}">Edit</button>` : ""}</td></tr>`,
+          `<tr><td><strong>${esc(c.hub.name)}</strong><span class="subcell">${esc(c.hub.code)} · ${esc(c.hub.zone ? `${c.hub.zone}, ${c.hub.district}` : `${c.hub.district} · no zone set`)}${c.hub.lat != null ? ` · ${c.hub.lat.toFixed(4)}, ${c.hub.lng.toFixed(4)}` : " · no map location"}</span></td><td>${c.capacity ?? "—"}</td><td>${c.load}</td><td>${c.inbound}</td><td>${c.utilisation == null ? "—" : `${c.utilisation}%`}</td><td>${ui.pill(c.state === "OK" ? "Healthy" : c.state === "Near capacity" ? "Monitor" : c.state === "Over capacity" ? "At capacity" : c.state)}</td><td>${c.zones} zones · ${c.routes} routes</td><td>${manage ? `<button class="button button-sm" data-hub-capacity="${c.hub.id}">Edit</button>` : ""}</td></tr>`,
       )
       .join("");
     const zoneRows = zones
@@ -319,7 +349,7 @@
       )
       .join("");
     const add = (kind, label) => (manage ? `<button class="button button-sm" type="button" data-config-add="${kind}">${icon("plus")} ${label}</button>` : "");
-    return `<div id="networkConfig">${ui.panel("Hub capacity", "Parcels held at each hub against its capacity, plus parcels on the way in", ui.table(["Hub", "Capacity", "Held now", "Inbound", "Utilisation", "State", "Coverage", ""], capRows, Ops.lazyError("hub-capacity") ? DF.describe(Ops.lazyError("hub-capacity")) : "Loading hub capacity…"))}${ui.panel("Delivery zones", "Catalog areas → zone → hub · used by assignment suggestions, SLA and maps", ui.table(["Zone", "Areas", "Hub", "Route", "Map centre", "Status", ""], zoneRows, Ops.cache.zones ? "No zones configured yet." : "Loading zones…"), add("zone", "Add zone"))}${ui.panel("Operating routes", "Zones a hub serves together, with a default rider for assignment suggestions", ui.table(["Route", "Hub", "Default rider", "Zones", "Note", "Status", ""], routeRows, Ops.cache.routes ? "No routes configured yet." : "Loading routes…"), add("route", "Add route"))}</div>`;
+    return `<div id="networkConfig">${ui.panel("Hub capacity", "Parcels held at each hub against its capacity, plus parcels on the way in", ui.table(["Hub", "Capacity", "Held now", "Inbound", "Utilisation", "State", "Coverage", ""], capRows, Ops.lazyError("hub-capacity") ? DF.describe(Ops.lazyError("hub-capacity")) : "Loading hub capacity…"))}${ui.panel("Delivery zones", "Catalog areas → zone → hub · used by assignment suggestions, SLA and maps", zoneFilterBar(zones.length) + ui.table(["Zone", "Areas", "Hub", "Route", "Map centre", "Status", ""], zoneRows, Ops.cache.zones ? "No zones configured yet." : "Loading zones…"), add("zone", "Add zone"))}${ui.panel("Operating routes", "Zones a hub serves together, with a default rider for assignment suggestions", ui.table(["Route", "Hub", "Default rider", "Zones", "Note", "Status", ""], routeRows, Ops.cache.routes ? "No routes configured yet." : "Loading routes…"), add("route", "Add route"))}</div>`;
   }
 
   const baseHubs = Ops.enhance.Hubs;
@@ -434,16 +464,74 @@
     showToast(`Route ${route.code} ${id ? "saved" : "added"}.`);
   };
 
+  // Hub zone: the catalog zone (of the hub's district) the hub stands in; drop-offs are priced from it.
+  const hubZoneOptions = (district, current) => {
+    const zones = Ops.catalog?.zonesByDistrict?.[district] || [];
+    return [{ value: "", label: zones.length ? "Choose the hub's zone" : "No zones in the catalog for this district" }, ...zones, ...(current && !zones.includes(current) ? [current] : [])];
+  };
+  const fillHubZones = (district, keep) => {
+    $("hubZone").innerHTML = hubZoneOptions(district, keep)
+      .map(o => (typeof o === "string" ? `<option>${esc(o)}</option>` : `<option value="${esc(o.value)}">${esc(o.label)}</option>`))
+      .join("");
+    if (keep) $("hubZone").value = keep;
+  };
+
+  // New hub (Network setup → Add, kind "hub"): district → zone, street address.
+  Ops.modals.hubCreate = name => {
+    if (!Ops.require("manageHubs", "add hubs")) return;
+    const districts = Ops.catalog?.districts || [...new Set(DF.state.hubs.map(h => h.district))];
+    Ops.dialog("hubCreate", {
+      title: "Add hub",
+      description: "The hub's district and zone are where drop-offs there are priced from; the address is shown to senders.",
+      submit: "Add hub",
+      fields:
+        ui.field("hubName", "Hub name", ui.input("hubName", `required maxlength="120" value="${esc(name || "")}"`), true) +
+        ui.field("hubDistrict", "District", ui.select("hubDistrict", districts, districts[0])) +
+        ui.field("hubZone", "Zone", ui.select("hubZone", hubZoneOptions(districts[0]), "")) +
+        ui.field("hubAddress", "Street address", ui.input("hubAddress", `required maxlength="300" placeholder="Road, area"`), true),
+    });
+    $("hubDistrict").addEventListener("change", () => fillHubZones($("hubDistrict").value));
+  };
+  Ops.submitters.hubCreate = async () => {
+    const valid = DF.validate($("modalForm"), {
+      hubName: v => (v.trim().length < 2 ? "Enter the hub's name" : DF.state.hubs.some(h => h.name.toLowerCase() === v.trim().toLowerCase()) ? "A hub with this name exists" : ""),
+      hubZone: v => (v ? "" : "Choose the zone the hub is in"),
+      hubAddress: v => (v.trim().length < 2 ? "Enter the hub's street address" : ""),
+    });
+    if (!valid()) return;
+    const name = $("hubName").value.trim();
+    const district = $("hubDistrict").value;
+    const letters = s => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const base = `${letters(district).slice(0, 3)}-${letters(name).slice(0, 3)}`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = attempt ? `${base}${attempt + 1}` : base;
+      try {
+        const hub = await DF.api("/hubs", { method: "POST", body: { code, name, district, zone: $("hubZone").value, address: $("hubAddress").value.trim() } });
+        closeModal();
+        DF.state.hubs = await DF.api("/hubs");
+        await Ops.loadOverview?.().catch(() => undefined);
+        Ops.invalidate("hub-capacity", "map");
+        Ops.rerender(true);
+        showToast(`Hub “${hub.name}” (${hub.code}) added to the network.`);
+        return;
+      } catch (error) {
+        if (error.code !== "HUB_CODE_TAKEN") throw error;
+      }
+    }
+    showToast("Couldn't find a free hub code. Try a more specific name.");
+  };
+
   Ops.modals.hubCapacity = hubId => {
     if (!Ops.require("manageHubs", "change hub capacity")) return;
     const hub = Ops.hubById(hubId);
     if (!hub) return;
     Ops.dialog("hubCapacity", {
-      title: `Hub capacity · ${hub.name}`,
-      description: "Capacity drives the hub load warnings; the location places the hub on maps and starts route plans.",
+      title: `Hub settings · ${hub.name}`,
+      description: "The zone is where drop-offs at this hub are priced from. Capacity drives the hub load warnings; the location places the hub on maps and starts route plans.",
       submit: "Save hub",
       context: { hubId },
       fields:
+        ui.field("hubZone", `Zone · ${hub.district}`, ui.select("hubZone", hubZoneOptions(hub.district, hub.zone), hub.zone || ""), true) +
         ui.field("hubCap", "Capacity (parcels held at once)", ui.input("hubCap", `type="number" min="1" step="1" value="${hub.capacity ?? ""}" placeholder="Not set"`), true) +
         ui.field("hubLat", "Latitude", ui.input("hubLat", `type="number" step="0.000001" min="20" max="27" value="${hub.lat ?? ""}"`)) +
         ui.field("hubLng", "Longitude", ui.input("hubLng", `type="number" step="0.000001" min="88" max="93" value="${hub.lng ?? ""}"`)),
@@ -453,7 +541,7 @@
     const valid = DF.validate($("modalForm"), { hubLat: v => (!!v !== !!$("hubLng").value ? "Give both latitude and longitude, or neither" : "") });
     if (!valid()) return;
     const num = id => ($(id).value === "" ? null : Number($(id).value));
-    const hub = await DF.api(`/hubs/${modalContext.hubId}`, { method: "PATCH", body: { capacity: num("hubCap"), lat: num("hubLat"), lng: num("hubLng") } });
+    const hub = await DF.api(`/hubs/${modalContext.hubId}`, { method: "PATCH", body: { zone: $("hubZone").value || null, capacity: num("hubCap"), lat: num("hubLat"), lng: num("hubLng") } });
     closeModal();
     DF.state.hubs = await DF.api("/hubs").catch(() => DF.state.hubs);
     Ops.invalidate("hub-capacity", "map");

@@ -1,9 +1,14 @@
-import { expect, test } from "./support";
+import { Fixtures, expect, test, type TempUser } from "./support";
 
 // Read-only smoke test of the courier-operations additions (linehaul, CN stock, reports, maps,
-// SLA, shifts, Add rider / Create dispatch dialogs). Nothing is created in the database.
-const PASSWORD = "DeliveryFast2026";
-const OPS = "ops@deliveryfast.example";
+// SLA, shifts, Add rider / Create dispatch dialogs). Signs in as a temporary operations manager
+// (deleted afterwards); nothing else is created in the database.
+const fx = new Fixtures();
+let ops: TempUser;
+test.beforeAll(async () => {
+  ops = await fx.staff("OPS_MANAGER");
+});
+test.afterAll(() => fx.cleanup());
 
 test("operations pages added for linehaul, CN stock, reports, SLA, shifts and maps render", async ({ page }) => {
   const errors: string[] = [];
@@ -14,8 +19,8 @@ test("operations pages added for linehaul, CN stock, reports, SLA, shifts and ma
   page.on("dialog", dialog => dialog.dismiss());
   await page.goto("/login");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
-  await page.fill("#loginIdentity", OPS);
-  await page.fill("#loginPassword", PASSWORD);
+  await page.fill("#loginIdentity", ops.login);
+  await page.fill("#loginPassword", ops.password);
   await page.click('form[data-form="login"] button[type="submit"]');
   // The website may land on the account page first; the operations panel is a direct link.
   await page.waitForURL(url => !url.pathname.startsWith("/login"), { timeout: 30_000 });

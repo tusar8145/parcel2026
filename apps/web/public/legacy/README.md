@@ -26,7 +26,8 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
 
 Shared UI modules loaded before the bridges that use them: `shared/importer.js` (`window.DFImport`:
 the Excel/CSV import dialog, history and "Needs info" completion form for the merchant panels and
-Courier Operations, drawn with each panel's own modal/table/status classes) and
+Courier Operations, drawn with each panel's own modal/table/status classes; in bulk mode, `DFImport.bulk`, the same
+steps run Courier Operations' "Bulk update by Excel" on /bulk-updates, see courier-operation/bridge-bulk.js) and
 `shared/scanner.js` (barcode scanning).
 
 As a feature is rebuilt in React, delete its code here and from `scripts.ts`.

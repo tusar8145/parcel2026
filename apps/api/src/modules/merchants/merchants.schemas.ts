@@ -6,12 +6,12 @@ import { apiKeyScopesSchema } from "./api-key-scopes";
 
 const text = (min: number, max: number) => z.string().trim().min(min, `Use at least ${min} characters`).max(max, `Use at most ${max} characters`);
 
-export const merchantTypeSchema = z.enum(["ECOMMERCE", "CORPORATE_DOCUMENT"], "Choose ECOMMERCE or CORPORATE_DOCUMENT");
+export const merchantTypeSchema = z.enum(["ECOMMERCE", "BANKING_FINANCIAL"], "Choose ECOMMERCE or BANKING_FINANCIAL");
 export const MERCHANT_STATUSES = ["PENDING_REVIEW", "INFO_REQUESTED", "ACTIVE", "SUSPENDED", "REJECTED"] as const;
 export const merchantStatusSchema = z.enum(MERCHANT_STATUSES, `Choose ${MERCHANT_STATUSES.join(", ")}`);
 /** Statuses set with PATCH; rejecting and asking for information have their own endpoints (they need a message). */
 export const adminStatusSchema = z.enum(["PENDING_REVIEW", "ACTIVE", "SUSPENDED"], "Choose PENDING_REVIEW, ACTIVE or SUSPENDED (use /reject or /request-info for the others)");
-export const segmentSchema = z.enum(["CUSTOMER", "ECOMMERCE", "CORPORATE_DOCUMENT"], "Choose CUSTOMER, ECOMMERCE or CORPORATE_DOCUMENT");
+export const segmentSchema = z.enum(["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"], "Choose CUSTOMER, ECOMMERCE or BANKING_FINANCIAL");
 
 const contactFields = {
   contactName: text(2, 120),

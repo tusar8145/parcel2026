@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import {
   ADDRESS_CATEGORIES,
@@ -6,6 +6,7 @@ import {
   SERVICE_LEVELS,
   TERMINAL_STATUSES,
   phoneSchema,
+  parseSpeedOption,
   quoteParcel,
   rateCardConfigSchema,
   type ParcelStatus,
@@ -16,7 +17,7 @@ import { AuditService } from "../../common/audit.service";
 import { actorLabel, merchantIdsOf, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError, forbidden } from "../../common/errors";
-import type { Prisma, Segment } from "../../generated/prisma/client";
+import type { Parcel, Prisma, Segment } from "../../generated/prisma/client";
 import { PricingService, type PricingOrigin } from "../pricing/pricing.service";
 import { slaDueDates } from "../sla/sla-policy";
 import { ParcelsService } from "./parcels.service";
@@ -24,6 +25,7 @@ import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-w
 import { opsHubScope } from "./ops-scope";
 import { describeMissing, missingFieldsOf } from "./incomplete";
 import { resolvePlace } from "./places";
+import { PackagesService } from "../packages/packages.service";
 
 const optionalText = (max: number) => z.string().trim().max(max, `Use at most ${max} characters`).optional();
 const upper = (values: readonly string[], message: string) =>
@@ -73,11 +75,67 @@ export class CompleteDetailsService {
     private readonly audit: AuditService,
   ) {}
 
+  /** Service packages (global module; property injection keeps the constructor stable). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
+
   async complete(actor: Actor, trackingId: string, input: z.infer<typeof completeParcelSchema>, meta: RequestMeta) {
     const after = this.workflow.newAfterCommit();
     await this.prisma.$transaction(tx => this.apply(tx, actor, trackingId, input, meta, after));
     await this.workflow.flush(after);
     return this.parcels.detail(actor, trackingId);
+  }
+
+  /**
+   * The charge a completion would give the parcel, without changing it (the bulk update preview):
+   * the same engine and frozen package / rate card as `complete`. `input` holds resolved values
+   * (district / zone already checked against the catalog). Throws what `complete` would throw for
+   * the price (e.g. SERVICE_NOT_IN_PACKAGE).
+   */
+  async previewCharge(parcel: Parcel, input: { delivery?: { area?: string; district?: string; zone?: string }; weightKg?: number; serviceLevel?: ServiceLevel }, db: Db = this.prisma) {
+    const district = input.delivery?.district ?? parcel.deliveryDistrict;
+    const zone = input.delivery?.zone ?? (input.delivery?.district && input.delivery.district !== parcel.deliveryDistrict ? null : parcel.deliveryZone);
+    const { price } = await this.priceOf(db, parcel, {
+      deliveryArea: input.delivery?.area !== undefined ? input.delivery.area || null : parcel.deliveryArea,
+      deliveryDistrict: district,
+      deliveryZone: zone,
+      weightKg: input.weightKg ?? Number(parcel.weightKg),
+      serviceLevel: input.serviceLevel ?? (parcel.serviceLevel as ServiceLevel),
+    });
+    return { before: Number(parcel.totalCharge), after: price.totalCharge };
+  }
+
+  /** The parcel's price with the given details: the package frozen at booking (speed follows a changed service level); older parcels their rate card. */
+  private async priceOf(
+    db: Db,
+    parcel: Parcel,
+    next: { deliveryArea: string | null; deliveryDistrict: string | null; deliveryZone: string | null; weightKg: number; serviceLevel: ServiceLevel },
+  ) {
+    const snap = (parcel.pricingSnapshot ?? {}) as Snapshot;
+    const dest = { district: next.deliveryDistrict ?? (snap.destination as { district?: string } | undefined)?.district ?? parcel.pickupDistrict, zone: next.deliveryZone ?? (snap.destination as { zone?: string } | undefined)?.zone ?? parcel.pickupZone };
+    const quoteInput = {
+      pickupDistrict: snap.origin?.district ?? parcel.pickupDistrict,
+      pickupZone: snap.origin?.zone ?? parcel.pickupZone,
+      deliveryDistrict: dest.district,
+      deliveryZone: dest.zone,
+      weightKg: next.weightKg,
+      serviceLevel: next.serviceLevel,
+      codAmount: Number(parcel.codAmount),
+      discountPercent: snap.discountPercent ?? 0,
+      parcelType: parcel.type,
+      documentType: parcel.documentType ?? undefined,
+    };
+    const packaged = await this.packages.reprice(
+      { ...parcel, deliveryArea: next.deliveryArea ?? parcel.deliveryArea },
+      { delivery: { district: dest.district, zone: dest.zone, area: next.deliveryArea }, weightKg: next.weightKg, ...(next.serviceLevel !== parcel.serviceLevel ? { speed: parseSpeedOption(next.serviceLevel) ?? "REGULAR" } : {}) },
+      db,
+    );
+    const frozen = rateCardConfigSchema.safeParse(snap.config);
+    const price = packaged
+      ? { ...packaged.columns, totalCharge: packaged.totalCharge + Number(parcel.reattemptCharge) }
+      : frozen.success
+        ? quoteParcel(frozen.data, quoteInput)
+        : await this.pricing.quote(snap.segment ?? "ECOMMERCE", quoteInput, db, { merchantId: parcel.merchantId });
+    return { price, packaged, dest, snap };
   }
 
   private async apply(tx: Db, actor: Actor, trackingId: string, input: z.infer<typeof completeParcelSchema>, meta: RequestMeta, after: AfterCommit) {
@@ -131,26 +189,11 @@ export class CompleteDetailsService {
     const missing = missingFieldsOf(next);
 
     // Re-price to the (now known) destination with the tariff frozen at booking.
-    const snap = (parcel.pricingSnapshot ?? {}) as Snapshot;
-    const dest = { district: next.deliveryDistrict ?? (snap.destination as { district?: string } | undefined)?.district ?? parcel.pickupDistrict, zone: next.deliveryZone ?? (snap.destination as { zone?: string } | undefined)?.zone ?? parcel.pickupZone };
-    const quoteInput = {
-      pickupDistrict: snap.origin?.district ?? parcel.pickupDistrict,
-      pickupZone: snap.origin?.zone ?? parcel.pickupZone,
-      deliveryDistrict: dest.district,
-      deliveryZone: dest.zone,
-      weightKg: next.weightKg,
-      serviceLevel: next.serviceLevel,
-      codAmount: Number(parcel.codAmount),
-      discountPercent: snap.discountPercent ?? 0,
-      parcelType: parcel.type,
-      documentType: parcel.documentType ?? undefined,
-    };
-    const frozen = rateCardConfigSchema.safeParse(snap.config);
-    const price = frozen.success
-      ? quoteParcel(frozen.data, quoteInput)
-      : await this.pricing.quote(snap.segment ?? "ECOMMERCE", quoteInput, tx, { merchantId: parcel.merchantId });
+    const { price, packaged, dest, snap } = await this.priceOf(tx, parcel, next);
     const { destination: _default, ...restSnap } = snap;
-    const pricingSnapshot = (missing.includes("district") || missing.includes("zone") ? { ...restSnap, destination: dest } : restSnap) as Prisma.InputJsonObject;
+    const needsDefault = missing.includes("district") || missing.includes("zone");
+    const pricingSnapshot = (packaged ? this.packages.snapshot(packaged, needsDefault ? { destination: dest } : {}) : needsDefault ? { ...restSnap, destination: dest } : restSnap) as Prisma.InputJsonObject;
+    if (packaged) Object.assign(next, { serviceLevel: packaged.serviceLevel });
     const oldCharge = Number(parcel.totalCharge);
 
     // A pickup booking that hasn't been collected gets SLA due times for its real destination.
@@ -170,6 +213,7 @@ export class CompleteDetailsService {
       discount: price.discount,
       totalCharge: price.totalCharge,
       pricingSnapshot,
+      ...(packaged ? { speedOption: packaged.selection.speed } : {}),
       ...(due ? { pickupDueAt: due.pickupDueAt, deliveryDueAt: due.deliveryDueAt } : {}),
       version: { increment: 1 },
     };

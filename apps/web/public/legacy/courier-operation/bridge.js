@@ -156,7 +156,7 @@
 
   // ───────────── API parcels → the page's shipment rows ─────────────
 
-  const lineOf = p => (!p.merchant ? "Customer parcels" : p.merchant.type === "CORPORATE_DOCUMENT" ? "Documents" : "E-commerce");
+  const lineOf = p => (!p.merchant ? "Customer parcels" : p.merchant.type === "BANKING_FINANCIAL" ? "Documents" : "E-commerce");
   function serviceOf(p, line) {
     if (line === "Customer parcels") return "Customer parcel";
     if (line === "Documents") return `Document ${p.serviceLevelLabel.toLowerCase()}`;
@@ -305,6 +305,13 @@
     if (page === "Hubs & zones") page = "Hubs";
     if (page === "Live overview") page = "Overview";
     Ops.rendering = page; // the breadcrumb still names the previous page until baseRender runs
+    // A redraw of the page on screen (e.g. a live parcel update) keeps the field being typed or
+    // scanned into: its text, caret and focus (the receive desk's scan box, searches…).
+    const active = document.activeElement;
+    const typing =
+      page === Ops.page() && active?.id && $("mainContent").contains(active) && /^(INPUT|TEXTAREA)$/.test(active.tagName) && !/^(checkbox|radio|file)$/.test(active.type)
+        ? { id: active.id, value: active.value, caret: active.selectionStart }
+        : null;
     try {
       Ops.prepare[page]?.(page);
     } catch (error) {
@@ -319,6 +326,14 @@
       console.error(`Delivery Fast: ${page} could not be updated`, error);
     }
     Ops.rendering = null;
+    const again = typing && $(typing.id);
+    if (again && again !== active && document.activeElement !== again) {
+      if (again.value !== typing.value) again.value = typing.value;
+      again.focus();
+      try {
+        again.setSelectionRange(typing.caret, typing.caret);
+      } catch {}
+    }
   };
 
   function updateNavCounts() {
@@ -719,7 +734,7 @@
   // and dates also go to GET /parcels so parcels outside the working set are found, and
   // "Load more" pages through the full result with the API's cursor.
 
-  const SHIPMENT_PAGES = { Shipments: null, Exceptions: null, "Customer parcels": "Customer parcels", "E-commerce operations": "E-commerce", "Document operations": "Documents" };
+  const SHIPMENT_PAGES = { Shipments: null, Exceptions: null, "Customer parcels": "Customer parcels", "E-commerce operations": "E-commerce", "Banking & Financial operations": "Documents" };
   const server = { key: "", cursor: null, loading: false, timer: null };
 
   function serverQuery() {
@@ -873,4 +888,6 @@
     render(Ops.page());
   })();
   Ops.liveParcels();
+  // Geography changes in super admin: zone / area lists and hub forms use the new catalog.
+  DF.events.on("catalog.updated", () => DF.api("/catalog").then(c => (Ops.catalog = c)).catch(() => undefined));
 })();

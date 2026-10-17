@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, OnModuleInit } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { z } from "zod";
 import {
   applyRateOverride,
@@ -16,10 +16,13 @@ import { AppError, notFound } from "../../common/errors";
 import { ApprovalsService } from "../approvals/approvals.service";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
-import type { RateCard, Segment } from "../../generated/prisma/client";
+import type { Prisma, RateCard, Segment } from "../../generated/prisma/client";
+import { RealtimeService } from "../../common/realtime.service";
+import { activeCatalog, GEO_META_KEY, lockGeography, normalizeMeta, readMeta } from "../geography/geo-catalog";
+import { prepareCatalogSave } from "../geography/geo-catalog-save";
 
-export const SEGMENTS = ["CUSTOMER", "ECOMMERCE", "CORPORATE_DOCUMENT"] as const satisfies readonly Segment[];
-export const segmentSchema = z.enum(SEGMENTS, "Choose CUSTOMER, ECOMMERCE or CORPORATE_DOCUMENT");
+export const SEGMENTS = ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"] as const satisfies readonly Segment[];
+export const segmentSchema = z.enum(SEGMENTS, "Choose CUSTOMER, ECOMMERCE or BANKING_FINANCIAL");
 
 const label = z.string().trim().min(1, "Names can't be empty").max(80, "Use at most 80 characters per name");
 const labels = (what: string, max = 500) =>
@@ -102,6 +105,9 @@ export class PricingService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
   ) {}
+
+  /** Catalog changes are announced to every panel (property injection keeps the constructor stable for parallel edits). */
+  @Inject(RealtimeService) private readonly realtime!: RealtimeService;
 
   /** Rate cards and merchant tariffs are maker-checker changes (see ApprovalsService). */
   onModuleInit() {
@@ -212,21 +218,23 @@ export class PricingService implements OnModuleInit {
   }
 
   /**
-   * Where a hub drop-off is priced from: the hub's district and the catalog zone it is in (a zone
-   * it serves that its name or address mentions, else a catalog zone of its district mentioned
-   * there, else the first zone it serves; empty when unknown, which prices as cross-zone).
+   * Where a hub drop-off is priced from: the hub's district and the catalog zone it is in (its
+   * `zone` when set; else a zone it serves that its name or address mentions, else a catalog zone
+   * of its district mentioned there, else the first zone it serves; empty when unknown, which
+   * prices as cross-zone).
    */
   async hubOrigin(hubId: string, db: Db = this.prisma): Promise<PricingOrigin> {
     const hub = await db.hub.findUnique({
       where: { id: hubId },
-      select: { id: true, name: true, district: true, address: true, zones: { where: { active: true }, select: { name: true, district: true }, orderBy: { code: "asc" } } },
+      select: { id: true, name: true, district: true, zone: true, address: true, zones: { where: { active: true }, select: { name: true, district: true }, orderBy: { code: "asc" } } },
     });
     if (!hub) throw notFound("Hub");
+    if (hub.zone?.trim()) return { kind: "DROP_OFF_HUB", hubId: hub.id, hub: hub.name, district: hub.district, zone: hub.zone.trim() };
     const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
     const text = ` ${hub.name} ${hub.address} `.toLowerCase();
     const named = (zone: string) => new RegExp(`(^|[^a-z0-9])${zone.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`).test(text);
     const served = hub.zones.filter(z => same(z.district, hub.district)).map(z => z.name);
-    const catalog = await this.catalog(db);
+    const catalog = await this.catalog(db, { includeInactive: true });
     const catalogZones = Object.entries(catalog.zonesByDistrict).find(([district]) => same(district, hub.district))?.[1] ?? [];
     const zone = served.find(named) ?? catalogZones.find(named) ?? served[0] ?? "";
     return { kind: "DROP_OFF_HUB", hubId: hub.id, hub: hub.name, district: hub.district, zone };
@@ -243,7 +251,7 @@ export class PricingService implements OnModuleInit {
   async merchantTariff(merchantId: string) {
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { id: true, name: true, type: true } });
     if (!merchant) throw notFound("Merchant");
-    const segment: Segment = merchant.type === "CORPORATE_DOCUMENT" ? "CORPORATE_DOCUMENT" : "ECOMMERCE";
+    const segment: Segment = merchant.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE";
     const [card, override] = await Promise.all([this.activeCard(segment), this.merchantOverride(merchantId)]);
     return { merchantId, segment, override, segmentCard: card.config, effective: applyRateOverride(card.config, override?.config) };
   }
@@ -268,16 +276,29 @@ export class PricingService implements OnModuleInit {
     return this.approvals.submit(actor, "rate_card.deactivate", { id }, meta);
   }
 
-  async catalog(db: Db = this.prisma): Promise<Catalog> {
-    const setting = await db.setting.findUnique({ where: { key: "catalog" } });
+  /**
+   * The service catalog. Without `includeInactive` (bookings, dropdowns, templates, imports) the
+   * places deactivated in the geography admin are left out; existing records keep them, so code
+   * that checks or prices an existing record passes `includeInactive: true`.
+   */
+  async catalog(db: Db = this.prisma, opts: { includeInactive?: boolean } = {}): Promise<Catalog> {
+    const rows = await db.setting.findMany({ where: { key: { in: ["catalog", GEO_META_KEY] } } });
+    const setting = rows.find(r => r.key === "catalog");
     // Read leniently: a stored catalog stays usable even if it predates a validation rule.
     const parsed = setting ? catalogShape.safeParse(setting.value) : undefined;
-    return parsed?.success ? parsed.data : DEFAULT_CATALOG;
+    const full = parsed?.success ? parsed.data : DEFAULT_CATALOG;
+    return opts.includeInactive ? full : activeCatalog(full, normalizeMeta(rows.find(r => r.key === GEO_META_KEY)?.value));
   }
 
-  async saveCatalog(actor: Actor, catalog: Catalog, meta: RequestMeta) {
-    await this.prisma.$transaction(async tx => {
+  /** Replaces the catalog lists (deactivated places the client can't see are kept; removed places must be unused). */
+  async saveCatalog(actor: Actor, input: Catalog, meta: RequestMeta) {
+    const catalog = await this.prisma.$transaction(async tx => {
+      await lockGeography(tx);
+      const prepared = await prepareCatalogSave(tx, input, await this.catalog(tx, { includeInactive: true }), await readMeta(tx));
+      const catalog = catalogSchema.parse(prepared.catalog);
+      const geo = prepared.meta as unknown as Prisma.InputJsonObject;
       await tx.setting.upsert({ where: { key: "catalog" }, create: { key: "catalog", value: catalog }, update: { value: catalog } });
+      await tx.setting.upsert({ where: { key: GEO_META_KEY }, create: { key: GEO_META_KEY, value: geo }, update: { value: geo } });
       await this.audit.record(
         actor,
         {
@@ -293,7 +314,9 @@ export class PricingService implements OnModuleInit {
         meta,
         tx,
       );
-    });
+      return activeCatalog(catalog, prepared.meta);
+    }, { timeout: 60_000 });
+    this.realtime.publish({ type: "catalog.updated", id: "catalog", staffPermission: "support:create", data: { action: "catalog.update" } });
     return catalog;
   }
 }

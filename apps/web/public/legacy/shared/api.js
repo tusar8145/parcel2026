@@ -23,7 +23,7 @@
     "courier-operation": ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"],
     rider: ["RIDER"],
     "ecommerce-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
-    "document-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
+    "banking-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
     "super-admin": ["SUPER_ADMIN"],
   };
 
@@ -352,13 +352,21 @@
     }
   };
 
+  let configMemo = null;
   Storage.prototype.getItem = function (key) {
     if (isLocal(this)) {
       if (VIRTUAL_KEYS.has(key)) return memory.has(key) ? memory.get(key) : null;
       if (key === CONFIG_KEY && (state.platformConfig || state.catalog)) {
         // Server settings (edited in super admin) win over anything left in this browser.
-        const config = { ...safeParse(nativeGet.call(this, key)), ...(state.platformConfig || {}) };
-        return JSON.stringify(state.catalog ? withServerPricing(config) : config);
+        // The page scripts read this often and it carries the whole country's geography:
+        // rebuild it only when one of its sources changed.
+        const local = nativeGet.call(this, key);
+        const memo = configMemo;
+        if (memo && memo.local === local && memo.platform === state.platformConfig && memo.catalog === state.catalog) return memo.json;
+        const config = { ...safeParse(local), ...(state.platformConfig || {}) };
+        const json = JSON.stringify(state.catalog ? withServerPricing(config) : config);
+        configMemo = { local, platform: state.platformConfig, catalog: state.catalog, json };
+        return json;
       }
     }
     return nativeGet.call(this, key);
@@ -750,6 +758,13 @@
       if (state.user) void streamEvents();
     },
   };
+
+  // Geography / catalog changes (super admin) reach every open page: the booking catalog and the
+  // platform settings overlay (geoCatalog / geoHierarchy) are reloaded for the next read.
+  DF.events.on("catalog.updated", () => {
+    if (state.catalog) rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined);
+    if (state.platformConfig) rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined);
+  });
 
   /**
    * Keeps a view fresh: reloads (debounced) when one of `types` arrives or after a

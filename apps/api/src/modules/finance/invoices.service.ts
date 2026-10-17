@@ -143,7 +143,7 @@ export class InvoicesService {
               number: invoice.number,
               amount: money(subtotal).toLocaleString("en-BD", { minimumFractionDigits: 2 }),
               dueDate: invoice.dueAt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Dhaka" }),
-              link: `${env().APP_URL}/${merchant.type === "CORPORATE_DOCUMENT" ? "document-merchant" : "ecommerce-merchant"}`,
+              link: `${env().APP_URL}/${merchant.type === "BANKING_FINANCIAL" ? "banking-merchant" : "ecommerce-merchant"}`,
             },
           })),
         );

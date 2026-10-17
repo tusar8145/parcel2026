@@ -12,7 +12,7 @@ import { actorLabel, hasRole, merchantIdsOf, type Actor } from "../../common/aut
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
-import { parcelInclude, parcelView, publicTrackingView } from "./parcel.views";
+import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { opsHubScope } from "./ops-scope";
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
@@ -23,6 +23,9 @@ import { returnChargeFor } from "../returns/return-charge";
 import { claimCn, linkCn } from "../cn-stock/cn-consume";
 import { slaDueDates } from "../sla/sla-policy";
 import { missingFieldsOf } from "./incomplete";
+import { assertActivePlaces } from "../geography/geo-catalog";
+import { PackagesService, type PackageQuote } from "../packages/packages.service";
+import { SPEED_LABEL, type ProductType } from "@delivery-fast/shared";
 
 const isStaff = (actor: Actor) => actor.permissions.has("parcel:read:any");
 
@@ -54,6 +57,10 @@ export interface BookingOptions {
   notify?: boolean;
   /** Booked from a spreadsheet import (modules/imports): row key, and the delivery details still missing. */
   import?: { jobId: string; key?: string; missingFields: string[]; destination?: { district: string; zone: string } };
+  /** Already priced and checked against the package (imports re-check each row with PackagesService.quote). */
+  quote?: PackageQuote;
+  /** The product, when already resolved (null = none). */
+  product?: { id: string; name: string; type: string; mutedNotifications: string[] } | null;
 }
 
 /** A booking whose delivery details may be missing (imports book incomplete orders; see parcels/incomplete.ts). */
@@ -83,6 +90,8 @@ export class ParcelsService {
 
   /** Booking notices (property injection keeps the constructor stable for parallel edits). */
   @Inject(NotifyService) private readonly notifications!: NotifyService;
+  /** Service packages: defaults, enforcement and prices (global module). */
+  @Inject(PackagesService) private readonly packages!: PackagesService;
 
   /** Parcels this actor may see. */
   scope(actor: Actor): Prisma.ParcelWhereInput {
@@ -123,43 +132,64 @@ export class ParcelsService {
     opts: BookingOptions = {},
   ) {
     const after = opts.after ?? this.workflow.newAfterCommit();
-    const dropOff = opts.dropOff;
+    // Hub drop-off: chosen by operations (opts.dropOff) or in the booking (first mile HUB_DROP, see the package).
+    let dropOff = opts.dropOff;
+    const droppingOff = !!dropOff || input.firstMile === "HUB_DROP";
     // Priced (and SLA'd) to the destination; an incomplete import row uses the import's default until completed.
     const dest = {
       district: input.delivery.district ?? opts.import?.destination?.district ?? input.pickup.district,
       zone: input.delivery.zone ?? opts.import?.destination?.zone ?? input.pickup.zone,
     };
     const run = async (tx: Db) => {
+      // Deactivated districts / zones / areas take no new bookings (imports checked them per row already).
+      if (!opts.import)
+        await assertActivePlaces(tx, [
+          { label: "delivery address", place: input.delivery },
+          ...(droppingOff ? [] : [{ label: "pickup address", place: input.pickup }]),
+        ]);
       // Website bookings must use one of the offered pickup slots (capacity is checked under a lock).
       if (input.pickupWindow) await this.pickupSlots.assertBookable(tx, input.pickupWindow, { strict: ctx.channel === "WEBSITE", district: input.pickup.district });
       if (ctx.merchantId && input.merchantOrderRef) {
         const dup = await tx.parcel.findUnique({ where: { merchantId_merchantOrderRef: { merchantId: ctx.merchantId, merchantOrderRef: input.merchantOrderRef } } });
         if (dup) throw new AppError("DUPLICATE_ORDER_REF", `Order ${input.merchantOrderRef} was already booked as ${dup.trackingId}`, HttpStatus.CONFLICT, { trackingId: dup.trackingId });
       }
-      const quote = await this.pricing.quote(
-        ctx.segment,
-        {
-          pickupDistrict: input.pickup.district,
-          pickupZone: input.pickup.zone,
-          deliveryDistrict: dest.district,
-          deliveryZone: dest.zone,
-          weightKg: input.weightKg,
-          serviceLevel: input.serviceLevel,
-          codAmount: input.codAmount,
-          discountPercent: ctx.discountPercent,
-          parcelType: input.type,
-          documentType: input.documentType,
-          // Drop-offs are priced from the drop-off hub, not the pickup address.
-          dropOffHubId: dropOff?.hub.id,
-        },
-        tx,
-        { merchantId: ctx.merchantId },
-      );
+      // The service package: defaults, enforcement (SERVICE_NOT_IN_PACKAGE) and the price (docs: "Service packages & pricing").
+      // The product (optional) prices by its type: none = Regular.
+      const subject = ctx.merchantId ? { merchantId: ctx.merchantId } : { segment: "CUSTOMER" as const };
+      const pkg = opts.quote ? undefined : await this.packages.effective(subject, tx);
+      const product = opts.product !== undefined ? opts.product : await this.packages.resolveProduct(pkg?.segment ?? "CUSTOMER", input.product, tx, undefined, input.contents);
+      const quote =
+        opts.quote ??
+        (await this.packages.quote(
+          subject,
+          {
+            pickup: { district: input.pickup.district, zone: input.pickup.zone, area: input.pickup.area },
+            delivery: { district: dest.district, zone: dest.zone, area: input.delivery.area },
+            weightKg: input.weightKg,
+            codAmount: input.codAmount,
+            productType: (product?.type as ProductType | undefined) ?? "REGULAR",
+            // Drop-offs are priced from the drop-off hub, not the pickup address.
+            firstMile: dropOff ? "HUB_DROP" : input.firstMile,
+            dropHubId: dropOff?.hub.id ?? input.dropHubId,
+            lastMile: input.lastMile,
+            collectHubId: input.collectHubId,
+            speed: input.speed,
+            openBox: input.openBox,
+            notifications: input.notifications,
+            serviceLevel: input.serviceLevel,
+            documentType: input.documentType,
+          },
+          tx,
+          { pkg },
+        ));
+      const fields = this.packages.parcelFields(quote, product);
+      if (!dropOff && quote.dropHub) dropOff = { hub: { id: quote.dropHub.id, name: quote.dropHub.name, address: quote.dropHub.address } };
+      const handling = ["B2B", "TRADE", "URGENT"].includes(quote.selection.speed) ? SPEED_LABEL[quote.selection.speed] : undefined;
       // A pre-printed CN label (CN stock) becomes the tracking ID; otherwise a new one is issued.
       const cn = input.cn ? await claimCn(tx, input.cn, { merchantId: ctx.merchantId, channel: ctx.channel }) : null;
       const trackingId = cn?.cn ?? (await nextTrackingId(tx));
       const due = await slaDueDates(tx, {
-        serviceLevel: input.serviceLevel,
+        serviceLevel: quote.serviceLevel,
         pickupDistrict: input.pickup.district,
         pickupZone: input.pickup.zone,
         deliveryDistrict: dest.district,
@@ -188,24 +218,18 @@ export class ParcelsService {
           deliveryZone: input.delivery.zone,
           deliveryDistrict: input.delivery.district,
           type: input.type,
-          serviceLevel: input.serviceLevel,
-          weightKg: input.weightKg,
+          weightKg: quote.selection.weightKg,
           packaging: input.packaging,
-          contents: input.contents,
-          documentType: input.type === "DOCUMENT" ? (quote.documentType ?? input.documentType ?? null) : null,
+          contents: input.contents ?? product?.name,
+          documentType: input.type === "DOCUMENT" || quote.segment === "BANKING_FINANCIAL" ? (handling ?? input.documentType ?? null) : null,
           declaredValue: input.declaredValue,
           instructions: input.instructions,
           receiverRelation: input.receiverRelation,
           originBranchCode: input.originBranchCode,
           codAmount: input.codAmount,
-          baseCharge: quote.baseCharge,
-          weightCharge: quote.weightCharge,
-          serviceCharge: quote.serviceCharge,
-          codFee: quote.codFee,
-          discount: quote.discount,
-          totalCharge: quote.totalCharge,
-          pricingSnapshot: { rateCardId: quote.rateCardId, segment: ctx.segment, config: quote.rateCard, discountPercent: ctx.discountPercent, ...(quote.origin ? { origin: { ...quote.origin } } : {}), ...(opts.import?.missingFields.length ? { destination: dest } : {}) },
-          estimatedDeliveryAt: estimateDelivery(input.serviceLevel, input.pickup.district === dest.district),
+          ...fields,
+          pricingSnapshot: this.packages.snapshot(quote, opts.import?.missingFields.length ? { destination: dest } : {}),
+          estimatedDeliveryAt: estimateDelivery(quote.serviceLevel, input.pickup.district === dest.district),
           pickupWindowStart: input.pickupWindow?.start,
           pickupWindowEnd: input.pickupWindow?.end,
           // Drop-offs have no pickup leg; their delivery SLA starts when the hub receives them.
@@ -244,6 +268,7 @@ export class ParcelsService {
         ...(await this.notifications.notify(tx, {
           event: dropOff ? "parcel.drop_off_booked" : "parcel.booked",
           to: { phone: input.sender.phone, userId: ctx.customerId, name: input.sender.name },
+          parcel: { packageVersionId: fields.packageVersionId, notifications: fields.notifications },
           vars: {
             trackingId,
             charge: quote.totalCharge,
@@ -257,8 +282,13 @@ export class ParcelsService {
           trackingId,
           merchantOrderRef: input.merchantOrderRef ?? null,
           totalCharge: quote.totalCharge,
+          charges: quote.lines.map(l => ({ ...l })),
           intake: dropOff ? "DROP_OFF" : "PICKUP",
+          firstMile: quote.selection.firstMile,
+          lastMile: quote.selection.lastMile,
+          speed: quote.selection.speed,
           ...(dropOff ? { dropOffHub: { id: dropOff.hub.id, name: dropOff.hub.name } } : {}),
+          ...(quote.collectHub ? { collectHub: { id: quote.collectHub.id, name: quote.collectHub.name } } : {}),
         })),
       );
       if (ctx.customerId && input.saveAddresses) await this.saveToAddressBook(tx, ctx.customerId, input as CreateParcelInput);
@@ -320,7 +350,7 @@ export class ParcelsService {
       channel,
       customerId: null,
       merchantId,
-      segment: (merchant.type === "CORPORATE_DOCUMENT" ? "CORPORATE_DOCUMENT" : "ECOMMERCE") as Segment,
+      segment: (merchant.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE") as Segment,
       discountPercent: merchant.plan ? Number(merchant.plan.discountPct) : 0,
       actorLabel: `${merchant.name} (${label})`,
     };
@@ -392,13 +422,33 @@ export class ParcelsService {
   async detail(actor: Actor, trackingId: string) {
     const parcel = await this.prisma.parcel.findFirst({ where: { AND: [{ trackingId: trackingId.toUpperCase() }, this.scope(actor)] }, include: parcelInclude });
     if (!parcel) throw notFound("Parcel");
-    const view = parcelView(parcel, { internal: isStaff(actor) });
+    const view = { ...parcelView(parcel, { internal: isStaff(actor) }), liveDelivery: await this.liveDelivery(parcel) };
     const isAssignedRider = actor.kind === "user" && !!actor.riderId && parcel.deliveryRiderId === actor.riderId;
     return isAssignedRider ? { ...view, devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;
   }
 
   async publicTrack(trackingId: string) {
-    return publicTrackingView(await this.findByTrackingId(trackingId));
+    const parcel = await this.findByTrackingId(trackingId);
+    return { ...publicTrackingView(parcel), liveDelivery: await this.liveDelivery(parcel) };
+  }
+
+  /**
+   * Service packages, while the parcel is out for delivery: the rider's live position ("Live rider
+   * location") and phone ("Share rider phone number", on the delivery day only; hidden afterwards).
+   */
+  async liveDelivery(p: ParcelWithRelations) {
+    if (p.status !== "OUT_FOR_DELIVERY" || !p.deliveryRiderId || !p.deliveryRider) return null;
+    const live = p.services.includes("tracking.live_location");
+    const sharePhone = p.services.includes("tracking.rider_phone");
+    if (!live && !sharePhone) return null;
+    const day = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+    const out = [...p.events].reverse().find(e => e.status === "OUT_FOR_DELIVERY");
+    const deliveryDay = !!out && day(out.createdAt) === day(new Date());
+    const location = live ? await this.prisma.riderLocation.findUnique({ where: { riderId: p.deliveryRiderId }, select: { lat: true, lng: true, accuracy: true, heading: true, at: true } }) : null;
+    return {
+      rider: { name: p.deliveryRider.user.name.split(/\s+/)[0], phone: sharePhone && deliveryDay ? p.deliveryRider.user.phone : null },
+      location: location ? { lat: location.lat, lng: location.lng, accuracy: location.accuracy, heading: location.heading, at: location.at } : null,
+    };
   }
 
   /** By tracking ID as typed (case, spaces and Crockford look-alikes such as O/0 forgiven). */
@@ -420,7 +470,8 @@ export class ParcelsService {
 
   // ───────────── owner actions ─────────────
 
-  async cancel(actor: Actor, trackingId: string, input: z.infer<typeof cancelParcelSchema>, meta: RequestMeta) {
+  /** `opts.expectedVersion`: optimistic locking for callers that saw a version (bulk updates). */
+  async cancel(actor: Actor, trackingId: string, input: z.infer<typeof cancelParcelSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     const after = this.workflow.newAfterCommit();
     await this.prisma.$transaction(async tx => {
       const parcel = await this.loadForUpdate(actor, trackingId, tx);
@@ -440,6 +491,7 @@ export class ParcelsService {
           title: asOps ? "Pickup cancelled by operations" : "Pickup request cancelled",
           description: input.reason ?? (asOps ? "Operations cancelled the request." : "The sender cancelled the request before confirmation."),
           location: asOps ? "Courier operations" : "Customer",
+          expectedVersion: opts.expectedVersion,
         },
         actor,
         meta,
@@ -452,7 +504,7 @@ export class ParcelsService {
 
   // ───────────── operations ─────────────
 
-  async assignPickup(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta) {
+  async assignPickup(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
       const rider = await this.activeRider(tx, input.riderId);
       await this.workflow.transition(
@@ -464,6 +516,7 @@ export class ParcelsService {
           data: { pickupRiderId: rider.id },
           description: `Operations accepted the request and assigned ${rider.label} to collect the parcel.`,
           internalNote: input.note,
+          expectedVersion: opts.expectedVersion,
         },
         actor,
         meta,
@@ -472,7 +525,7 @@ export class ParcelsService {
     });
   }
 
-  async assignDelivery(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta) {
+  async assignDelivery(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
       await this.assertHubAccess(tx, actor, parcel);
       const rider = await this.activeRider(tx, input.riderId);
@@ -486,6 +539,7 @@ export class ParcelsService {
           data: { deliveryRiderId: rider.id, deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) },
           description: `Operations assigned the parcel${hub ? ` from ${hub.name}` : ""} to ${rider.label} for delivery.`,
           internalNote: input.note,
+          expectedVersion: opts.expectedVersion,
         },
         actor,
         meta,

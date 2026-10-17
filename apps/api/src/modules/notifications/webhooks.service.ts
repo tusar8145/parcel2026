@@ -7,6 +7,7 @@ import { decrypt, hmacSha256 } from "../../common/crypto";
 import { AppError } from "../../common/errors";
 import { isProduction } from "../../config/env";
 import type { Prisma } from "../../generated/prisma/client";
+import { merchantHasService } from "../packages/package-resolver";
 
 export const WEBHOOK_EVENTS = [
   "pickup.requested",
@@ -63,6 +64,8 @@ export class WebhooksService {
   async emit(db: Db, merchantId: string | null | undefined, event: WebhookEvent, data: Prisma.InputJsonValue): Promise<string[]> {
     if (!merchantId) return [];
     const endpoints = await db.webhookEndpoint.findMany({ where: { merchantId, active: true, events: { has: event } }, select: { id: true } });
+    // Service packages: no webhook deliveries for a merchant whose package has no webhooks.
+    if (endpoints.length && !(await merchantHasService(db, merchantId, "integration.webhooks"))) return [];
     const ids: string[] = [];
     for (const endpoint of endpoints) {
       const delivery = await db.webhookDelivery.create({
@@ -87,6 +90,10 @@ export class WebhooksService {
   async deliver(id: string) {
     const delivery = await this.prisma.webhookDelivery.findUnique({ where: { id }, include: { endpoint: true } });
     if (!delivery || delivery.state === "SUCCEEDED" || !delivery.endpoint.active) return;
+    if (!(await merchantHasService(this.prisma, delivery.endpoint.merchantId, "integration.webhooks"))) {
+      await this.prisma.webhookDelivery.update({ where: { id }, data: { state: "FAILED", lastError: "SERVICE_NOT_IN_PACKAGE: Webhook" } });
+      return;
+    }
     const body = JSON.stringify({ id: delivery.id, ...(delivery.payload as object) });
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = hmacSha256(decrypt(delivery.endpoint.secretEncrypted), `${timestamp}.${body}`);

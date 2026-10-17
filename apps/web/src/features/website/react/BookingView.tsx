@@ -39,6 +39,7 @@ interface SlotDay {
   slots: Slot[];
 }
 interface Quote {
+  lines?: { code: string; label: string; amount: number }[];
   baseCharge: number;
   weightCharge: number;
   serviceCharge: number;
@@ -68,7 +69,7 @@ const WEIGHT_LABEL = (kg: number) => `Up to ${kg} kg`;
 const STEP_FIELDS = [
   ["requestName", "requestPhone", PICKUP.district, PICKUP.zone, PICKUP.street, "requestSlot"],
   ["requestReceiver", "requestReceiverPhone", DELIVERY.district, DELIVERY.zone, DELIVERY.street],
-  ["requestServiceLevel", "requestWeight", "requestCodAmount"],
+  ["requestServiceLevel", "requestWeight", "requestCodAmount", "requestDropHub"],
 ] as const;
 
 /** API detail paths → form fields, so server messages appear under the right field. */
@@ -86,7 +87,11 @@ const PATHS = {
   "delivery.area": DELIVERY.area!,
   weightKg: "requestWeight",
   serviceLevel: "requestServiceLevel",
+  speed: "requestServiceLevel",
   codAmount: "requestCodAmount",
+  collectHubId: "requestCollectHub",
+  dropHubId: "requestDropHub",
+  product: "requestProduct",
   pickupWindow: "requestSlot",
   "pickupWindow.start": "requestSlot",
   "pickupWindow.end": "requestSlot",
@@ -101,7 +106,10 @@ export default function BookingView() {
   const user = df().auth.user;
   const isCustomer = df().auth.hasRole("CUSTOMER");
   const cat = catalog();
-  const services = Object.entries(cat.serviceLevels);
+  // The website customer package (service packages): its services, first / last mile choices and messages.
+  const pkg = cat.customerPackage;
+  const services: [string, string][] = pkg ? pkg.options.speeds.map(s => [s, pkg.labels.speed[s] ?? s]) : Object.entries(cat.serviceLevels);
+  const [unticked, setUnticked] = useState<string[]>([]);
   const [step, setStep] = useState(0);
   const [days, setDays] = useState<SlotDay[] | null>(null);
   const [day, setDay] = useState("");
@@ -137,7 +145,11 @@ export default function BookingView() {
       requestServiceLevel: services[0]?.[0] ?? "REGULAR",
       requestWeight: String(cat.weightsKg.includes(1) ? 1 : (cat.weightsKg[0] ?? 1)),
       requestPackaging: cat.packaging[0] ?? "",
-      requestProduct: cat.products[0] ?? "",
+      requestProduct: "",
+      requestFirstMile: pkg?.options.defaultFirstMile ?? "RIDER_PICKUP",
+      requestDropHub: "",
+      requestLastMile: pkg?.options.defaultLastMile ?? "DOORSTEP",
+      requestCollectHub: "",
       requestCodEnabled: "",
       requestCodAmount: "",
       requestInstructions: "",
@@ -149,7 +161,8 @@ export default function BookingView() {
       requestPickupDistrict: rules.required("Choose the pickup district"),
       requestPickupZone: rules.required("Choose the pickup zone"),
       requestPickup: rules.length(1, 200, "Pickup address"),
-      requestSlot: (v, all) => (days && days.some(d => d.slots.some(s => s.available)) && !v ? "Choose a pickup time" : ""),
+      requestSlot: (v, all) => (all.requestFirstMile !== "HUB_DROP" && days && days.some(d => d.slots.some(s => s.available)) && !v ? "Choose a pickup time" : ""),
+      requestDropHub: (v, all) => (all.requestFirstMile === "HUB_DROP" && !v ? "Choose the hub you bring the parcel to" : ""),
       requestReceiver: rules.length(1, 120, "Receiver's name"),
       requestReceiverPhone: rules.phone,
       requestDistrict: rules.required("Choose the delivery district"),
@@ -204,9 +217,9 @@ export default function BookingView() {
   }, [isCustomer]);
 
   // The server's price for the current choices.
-  const quoteKey = [v.requestPickupDistrict, v.requestPickupZone, v.requestDistrict, v.requestZone, v.requestWeight, v.requestServiceLevel, v.requestCodEnabled === "1" ? v.requestCodAmount : "0"].join("|");
+  const quoteKey = [v.requestPickupDistrict, v.requestPickupZone, v.requestDistrict, v.requestZone, v.requestWeight, v.requestServiceLevel, v.requestCodEnabled === "1" ? v.requestCodAmount : "0", v.requestFirstMile, v.requestDropHub, v.requestLastMile, v.requestCollectHub, v.requestProduct].join("|");
   useEffect(() => {
-    if (!v.requestPickupDistrict || !v.requestPickupZone || !v.requestDistrict || !v.requestZone) return setQuote(null);
+    if (!v.requestPickupDistrict || !v.requestDistrict) return setQuote(null);
     let live = true;
     const timer = setTimeout(() => {
       df()
@@ -218,12 +231,18 @@ export default function BookingView() {
             deliveryDistrict: v.requestDistrict,
             deliveryZone: v.requestZone,
             weightKg: Number(v.requestWeight) || 1,
-            serviceLevel: v.requestServiceLevel,
+            ...(pkg ? { speed: v.requestServiceLevel } : { serviceLevel: v.requestServiceLevel }),
             codAmount: v.requestCodEnabled === "1" ? Number(v.requestCodAmount) || 0 : 0,
+            ...packageChoices(),
           },
         })
         .then(q => live && setQuote(q))
-        .catch(() => live && setQuote(null));
+        .catch(err => {
+          if (!live) return;
+          setQuote(null);
+          // A choice the package refuses (e.g. Express outside the same district) shows under the service.
+          if ((err as { status?: number }).status === 422) form.setServerErrors({ requestServiceLevel: describe(err) });
+        });
     }, 250);
     return () => {
       live = false;
@@ -253,17 +272,31 @@ export default function BookingView() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  /** First / last mile, hubs and the product (service packages). */
+  function packageChoices() {
+    if (!pkg) return {};
+    return {
+      firstMile: v.requestFirstMile,
+      ...(v.requestFirstMile === "HUB_DROP" && v.requestDropHub ? { dropHubId: v.requestDropHub } : {}),
+      lastMile: v.requestLastMile,
+      ...(v.requestLastMile === "HUB_COLLECT" && v.requestCollectHub ? { collectHubId: v.requestCollectHub } : {}),
+      ...(v.requestProduct ? { product: v.requestProduct } : {}),
+    };
+  }
+
   const body = () => {
-    const [start, end] = v.requestSlot.split("|");
+    const [start, end] = v.requestFirstMile === "HUB_DROP" ? [] : v.requestSlot.split("|");
     return {
       sender: { name: v.requestName.trim(), phone: e164(v.requestPhone) },
       pickup: addressBody(v, PICKUP),
       recipient: { name: v.requestReceiver.trim(), phone: e164(v.requestReceiverPhone) },
       delivery: addressBody(v, DELIVERY),
-      serviceLevel: v.requestServiceLevel,
-      weightKg: Number(v.requestWeight) || 1,
+      ...(pkg ? { speed: v.requestServiceLevel } : { serviceLevel: v.requestServiceLevel }),
+      weightKg: Number(v.requestWeight) || 0.5,
       packaging: v.requestPackaging || undefined,
       contents: v.requestProduct || undefined,
+      ...packageChoices(),
+      ...(pkg && unticked.length ? { notifications: pkg.notifications.map(n => n.code).filter(code => !unticked.includes(code)) } : {}),
       codAmount: v.requestCodEnabled === "1" ? Number(v.requestCodAmount) || 0 : 0,
       instructions: v.requestInstructions.trim() || undefined,
       ...(start && end ? { pickupWindow: { start, end } } : {}),
@@ -455,9 +488,36 @@ export default function BookingView() {
           <Select bound={form.bind("requestPackaging")} options={cat.packaging} />
         </div>
         <div className="field">
-          <label htmlFor="requestProduct">Parcel contents *</label>
-          <Select bound={form.bind("requestProduct")} options={cat.products} />
+          <label htmlFor="requestProduct">What are you sending?</label>
+          <Select bound={form.bind("requestProduct")} options={[["", "Regular parcel (no product)"] as [string, string], ...cat.products.map(p => [p, p] as [string, string])]} />
         </div>
+        {pkg && pkg.options.firstMiles.length > 1 ? (
+          <div className="field">
+            <label htmlFor="requestFirstMile">How the parcel reaches us</label>
+            <Select bound={form.bind("requestFirstMile")} options={pkg.options.firstMiles.map(f => [f, pkg.labels.firstMile[f] ?? f] as [string, string])} />
+          </div>
+        ) : null}
+        {pkg && v.requestFirstMile === "HUB_DROP" ? (
+          <div className="field">
+            <label htmlFor="requestDropHub">Drop-off hub *</label>
+            <Select bound={form.bind("requestDropHub")} error={form.error("requestDropHub")} options={[["", "Choose the hub"] as [string, string], ...pkg.dropHubs.map(h => [h.id, h.name] as [string, string])]} />
+            <FieldError id="requestDropHub" message={form.error("requestDropHub")} />
+          </div>
+        ) : null}
+        {pkg && pkg.options.lastMiles.length > 1 ? (
+          <div className="field">
+            <label htmlFor="requestLastMile">Delivery</label>
+            <Select bound={form.bind("requestLastMile")} options={pkg.options.lastMiles.map(l => [l, pkg.labels.lastMile[l] ?? l] as [string, string])} />
+          </div>
+        ) : null}
+        {pkg && v.requestLastMile === "HUB_COLLECT" ? (
+          <div className="field">
+            <label htmlFor="requestCollectHub">Collection hub</label>
+            <Select bound={form.bind("requestCollectHub")} error={form.error("requestCollectHub")} options={[["", "The hub serving the receiver's zone"] as [string, string], ...pkg.collectHubs.map(h => [h.id, h.name] as [string, string])]} />
+            <small className="field-hint">{"The receiver gets an SMS with the hub address and a collection code."}</small>
+            <FieldError id="requestCollectHub" message={form.error("requestCollectHub")} />
+          </div>
+        ) : null}
         <div className="field full">
           <label className="checkline">
             <input id="requestCodEnabled" type="checkbox" checked={v.requestCodEnabled === "1"} onChange={e => form.set("requestCodEnabled", e.target.checked ? "1" : "")} />
@@ -474,10 +534,34 @@ export default function BookingView() {
           <TextInput bound={form.bind("requestInstructions")} error={form.error("requestInstructions")} placeholder="e.g. Call before arriving, gate code" />
           <FieldError id="requestInstructions" message={form.error("requestInstructions")} />
         </div>
+        {pkg && pkg.notifications.length ? (
+          <details className="field full" id="requestNotifications">
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>{`Messages we send (${pkg.notifications.length - unticked.length} of ${pkg.notifications.length})`}</summary>
+            {pkg.notifications.map(n => (
+              <label className="checkline" key={n.code}>
+                <input type="checkbox" checked={!unticked.includes(n.code)} onChange={e => setUnticked(list => (e.target.checked ? list.filter(c => c !== n.code) : [...list, n.code]))} />
+                {` ${n.title}`}
+              </label>
+            ))}
+          </details>
+        ) : null}
         <div className="field full">
           <div className="route-price-preview" id="requestPricePreview" aria-live="polite">
             <strong>Estimated cost breakdown</strong>
-            {quote ? (
+            {quote?.lines ? (
+              <>
+                {quote.lines.map(l => (
+                  <div className="cost-row" key={l.code} data-line={l.code}>
+                    <span>{l.label}</span>
+                    <span>{`${l.amount < 0 ? "− " : ""}৳ ${Math.abs(l.amount)}`}</span>
+                  </div>
+                ))}
+                <div className="cost-row cost-total">
+                  <strong>Sender pays for delivery</strong>
+                  <strong>{`৳ ${quote.totalCharge}`}</strong>
+                </div>
+              </>
+            ) : quote ? (
               <>
                 <div className="cost-row">
                   <span>Delivery by route</span>

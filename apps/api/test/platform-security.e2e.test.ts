@@ -226,14 +226,16 @@ describe("platform security (super admin)", () => {
   // ───────────── maker-checker ─────────────
 
   describe("maker-checker approvals", () => {
-    it("queues rate card and role changes for a second super admin", async () => {
+    it("queues package and role changes for a second super admin", async () => {
       const a = await admin("Admin A");
       const b = await admin("Admin B");
-      const body = { segment: "CUSTOMER", name: "Customer v9", config: { sameZone: 95 } };
-      const pending = await ctx.api("POST", "/rate-cards", { token: a.token, body });
+      const catalog = (await ctx.api("GET", "/service-catalog")).body;
+      const services = catalog.services.filter((x: { segments: string[] }) => x.segments.includes("CUSTOMER")).map((x: { code: string }) => x.code);
+      const body = { segment: "CUSTOMER", name: "Customer v9", services, prices: { sameDistrict: 95 } };
+      const pending = await ctx.api("POST", "/packages", { token: a.token, body });
       expect(pending.status, JSON.stringify(pending.body)).toBe(202);
-      expect(pending.body).toMatchObject({ status: "PENDING", changeRequest: { kind: "rate_card.create", requestedBy: { name: "Admin A" }, status: "PENDING" } });
-      expect(await ctx.prisma.rateCard.count()).toBe(0);
+      expect(pending.body).toMatchObject({ status: "PENDING", changeRequest: { kind: "package.create", requestedBy: { name: "Admin A" }, status: "PENDING" } });
+      expect(await ctx.prisma.servicePackage.count({ where: { name: "Customer v9" } })).toBe(0);
       const id = pending.body.changeRequest.id;
 
       const summary = await ctx.api("GET", "/admin/changes/summary", { token: b.token });
@@ -247,8 +249,8 @@ describe("platform security (super admin)", () => {
       const approved = await ctx.api("POST", `/admin/changes/${id}/approve`, { token: b.token, body: { note: "Checked" } });
       expect(approved.status, JSON.stringify(approved.body)).toBe(200);
       expect(approved.body).toMatchObject({ status: "APPROVED", reviewedBy: { name: "Admin B" }, reviewNote: "Checked" });
-      const card = await ctx.prisma.rateCard.findFirstOrThrow();
-      expect(card).toMatchObject({ name: "Customer v9", createdById: a.user.id });
+      const pkg = await ctx.prisma.servicePackage.findFirstOrThrow({ where: { name: "Customer v9" } });
+      expect(pkg).toMatchObject({ segment: "CUSTOMER", createdById: a.user.id });
       expect((await ctx.api("POST", `/admin/changes/${id}/approve`, { token: b.token, body: {} })).body.error.code).toBe("CHANGE_NOT_PENDING");
 
       // Rejected and cancelled changes are never applied.
@@ -350,83 +352,26 @@ describe("platform security (super admin)", () => {
     });
   });
 
-  // ───────────── document type rates and merchant tariffs ─────────────
+  // ───────────── Banking & Financial pricing ─────────────
 
-  describe("document pricing and merchant tariffs", () => {
-    const quoteBody = {
-      pickupDistrict: "Dhaka North",
-      pickupZone: "Gulshan",
-      deliveryDistrict: "Dhaka Central",
-      deliveryZone: "Dhanmondi",
-      weightKg: 1,
-      serviceLevel: "REGULAR",
-      codAmount: 0,
-    };
-
-    it("prices DOCUMENT parcels by document type and applies merchant tariffs; other parcels are unchanged", async () => {
+  describe("Banking & Financial pricing; retired rate cards and tariffs", () => {
+    it("prices Banking services by route tier with no weight or COD; rate cards and merchant tariffs are retired", async () => {
       const { token } = await admin();
-      const card = await ctx.api("POST", "/rate-cards", {
-        token,
-        body: { segment: "CORPORATE_DOCUMENT", name: "Docs v1", config: { sameZone: 60, crossZone: 100, documentTypeRates: { "B2B Document": 50, "Corporate Urgent Document": 120 } } },
-      });
-      expect(card.status, JSON.stringify(card.body)).toBe(201);
       const merchant = await ctx.prisma.merchant.create({
-        data: {
-          code: "MR-DOC1",
-          type: "CORPORATE_DOCUMENT",
-          name: "Docs Ltd",
-          status: "ACTIVE",
-          contactName: "Owner",
-          contactPhone: "+8801711111111",
-          pickupAddress: "Road 5",
-          pickupArea: "Gulshan",
-          pickupDistrict: "Dhaka North",
-        },
+        data: { code: "MR-DOC1", type: "BANKING_FINANCIAL", name: "Docs Ltd", status: "ACTIVE", contactName: "Owner", contactPhone: "+8801711111111", pickupAddress: "Road 5", pickupArea: "Gulshan", pickupDistrict: "Dhaka North" },
       });
       const owner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: merchant.id }], "Docs Owner");
-      const quote = (body: object) => ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { ...quoteBody, ...body } });
-
-      // Between zones: the type's rate + the card's inter-zone surcharge (100 − 60).
-      expect((await quote({ parcelType: "DOCUMENT", documentType: "b2b document" })).body).toMatchObject({ baseCharge: 90, documentType: "B2B Document" });
-      expect((await quote({ parcelType: "DOCUMENT", documentType: "Unknown Type" })).body.baseCharge).toBe(100);
-      expect((await quote({ parcelType: "PARCEL", documentType: "B2B Document" })).body.baseCharge).toBe(100);
-      expect((await quote({})).body.baseCharge).toBe(100);
-
-      // A merchant tariff overrides individual rates.
-      const tariff = await ctx.api("PUT", `/merchants/${merchant.id}/tariff`, { token, body: { config: { documentTypeRates: { "B2B Document": 40 }, crossZone: 90 }, note: "Enterprise deal" } });
-      expect(tariff.status, JSON.stringify(tariff.body)).toBe(200);
-      const view = await ctx.api("GET", `/merchants/${merchant.id}/tariff`, { token });
-      expect(view.body).toMatchObject({ segment: "CORPORATE_DOCUMENT", override: { note: "Enterprise deal" }, effective: { crossZone: 90, documentTypeRates: { "B2B Document": 40, "Corporate Urgent Document": 120 } } });
-      expect((await quote({ parcelType: "DOCUMENT", documentType: "B2B Document" })).body).toMatchObject({ baseCharge: 70, merchantTariff: true });
-
-      // Bookings are priced the same way and keep the document type.
-      const booked = await ctx.api("POST", "/parcels", {
-        token: owner.token,
-        body: parcelBody({ type: "DOCUMENT", documentType: "B2B Document", weightKg: 1, serviceLevel: "Regular", codAmount: 0 }),
-      });
-      expect(booked.status, JSON.stringify(booked.body)).toBe(201);
-      const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantId: merchant.id } });
-      expect(parcel).toMatchObject({ documentType: "B2B Document" });
-      expect(Number(parcel.baseCharge)).toBe(70);
-      expect((await auditOf("merchant_rate.set")).length).toBe(1);
-
-      // The public customer quote ignores merchant tariffs and document rates of other segments.
-      const pub = await ctx.api("POST", "/pricing/quote", { body: { ...quoteBody, parcelType: "DOCUMENT", documentType: "B2B Document" } });
-      expect(pub.body.baseCharge).toBe(120); // default customer card crossZone
-      // Platform settings mirror the card's document rates.
-      await ctx.api("PUT", "/settings/platform-config", { token, body: { merchantPricing: { document: { documentRates: { Old: 1 } } } } });
-      const cfg = await ctx.api("GET", "/settings/platform-config");
-      expect(cfg.body.merchantPricing.document.documentRates).toEqual({ "B2B Document": 50, "Corporate Urgent Document": 120 });
-    });
-
-    it("removes a merchant tariff with config null", async () => {
-      const { token } = await admin();
-      const merchant = await ctx.prisma.merchant.create({
-        data: { code: "MR-E1", type: "ECOMMERCE", name: "Shop", status: "ACTIVE", contactName: "O", contactPhone: "+8801711111111", pickupAddress: "R", pickupArea: "A", pickupDistrict: "Dhaka North" },
-      });
-      await ctx.api("PUT", `/merchants/${merchant.id}/tariff`, { token, body: { config: { sameZone: 10 } } });
-      expect((await ctx.api("PUT", `/merchants/${merchant.id}/tariff`, { token, body: { config: { bogus: 1 } } })).status).toBe(422);
-      expect((await ctx.api("PUT", `/merchants/${merchant.id}/tariff`, { token, body: { config: null } })).status).toBe(200);
+      const quote = (body: object) => ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { pickupDistrict: "Dhaka North", deliveryDistrict: "Gazipur", deliveryZone: "Tongi", weightKg: 5, ...body } });
+      // Dhaka → Gazipur is Dhaka ↔ Sub-urban; Banking has no weight charge.
+      expect((await quote({})).body).toMatchObject({ tier: "DHAKA_SUBURBAN", totalCharge: 100, weightCharge: 0 });
+      // The old document type still selects the service.
+      expect((await quote({ documentType: "Corporate Urgent Document" })).body.selection).toMatchObject({ speed: "URGENT", weightKg: 0.5 });
+      // No COD for Banking & Financial.
+      const cod = await quote({ codAmount: 500 });
+      expect(cod.status).toBe(422);
+      // The old pricing endpoints are retired.
+      expect((await ctx.api("POST", "/rate-cards", { token, body: { segment: "BANKING_FINANCIAL", name: "Docs v1", config: {} } })).body.error.code).toBe("PRICING_RETIRED");
+      expect((await ctx.api("PUT", `/merchants/${merchant.id}/tariff`, { token, body: { config: { sameZone: 10 } } })).body.error.code).toBe("PRICING_RETIRED");
       expect(await ctx.prisma.merchantRateOverride.count()).toBe(0);
     });
   });

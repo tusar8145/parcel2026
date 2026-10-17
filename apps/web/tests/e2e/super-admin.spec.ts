@@ -19,7 +19,6 @@ const ENROLLER = tempAdmin("E2E Enrolling Admin", 13);
 let makerRecovery: string[] = [];
 let checker: APIRequestContext;
 let checkerToken = "";
-type Pricing = { sameZone: number; crossZone: number; extraWeight: number; codFeePercent: number; fees: { Regular: number; "Same day": number; Express: number } };
 /** Expected while signed out on the website / before the platform settings were ever saved. */
 const EXPECTED_ERRORS = [/status of 401/, /status of 404/];
 /** The merchant application (applicant and workspace) is deleted afterwards. */
@@ -96,18 +95,20 @@ const nav = (page: Page, name: string) => page.click(`#navigation [data-page="${
 const settingsSaved = (page: Page) =>
   page.waitForResponse(r => r.url().endsWith("/api/v1/settings/platform-config") && r.request().method() === "PUT" && r.ok());
 
-/** Fills the public customer parcel form in Service plans & pricing and saves it. */
-async function saveCustomerPricing(page: Page, values: Pricing) {
+/**
+ * Sets the Customer default package's "Inside same district" price in Service plans & pricing
+ * (a new version, effective once the second super admin approves it).
+ */
+async function saveCustomerSameDistrict(page: Page, price: number) {
   await nav(page, "Service plans");
-  const form = page.locator("#publicCustomerParcelForm");
-  await form.locator('[name="sameZone"]').fill(String(values.sameZone));
-  await form.locator('[name="crossZone"]').fill(String(values.crossZone));
-  await form.locator('[name="extraWeight"]').fill(String(values.extraWeight));
-  await form.locator('[name="codFeePercent"]').fill(String(values.codFeePercent));
-  for (const [service, fee] of Object.entries(values.fees)) await form.locator(`[name="serviceFee:${service}"]`).fill(String(fee));
-  await form.locator('button[type="submit"]').click();
+  await page.click('[data-pkg-segment="CUSTOMER"]');
+  const row = page.locator("#pkgTable tr", { has: page.locator(".status-good", { hasText: "Default" }) });
+  await row.locator("[data-pkg-edit]").click();
+  await page.fill("#pkgPrice-sameDistrict", String(price));
+  await page.fill("#pkgNote", "E2E price check");
+  await page.click("#pkgSave");
   // The change waits for the second super admin, then applies.
-  await expect(toast(page)).toContainText("sent for approval");
+  await expect(toast(page)).toContainText(/approval/i);
   await approveMakerChanges();
 }
 
@@ -199,34 +200,30 @@ test.describe("super admin", () => {
     await admin.context().close();
   });
 
-  test("customer pricing drives the website price preview and booking quote", async ({ browser, api }) => {
-    // The owner's current customer prices are put back afterwards.
-    const card = (await quote(api)).rateCard;
-    const original: Pricing = {
-      sameZone: card.sameZone,
-      crossZone: card.crossZone,
-      extraWeight: card.extraWeight,
-      codFeePercent: card.codFeePercent,
-      fees: { Regular: card.serviceFees.REGULAR, "Same day": card.serviceFees.SAME_DAY, Express: card.serviceFees.EXPRESS },
-    };
+  test("the Customer default package drives the website price preview and booking quote", async ({ browser, api }) => {
+    // The owner's current customer price is put back afterwards (as another version).
+    const before = await quote(api);
+    const original = (before.lines as { code: string; amount: number }[]).find(l => l.code === "route")!.amount;
+    const previewBefore = Number((await websitePreview(browser, errors)).replace(/[^0-9.]/g, ""));
     const admin = await open(browser, "/", errors);
     await signInAsAdmin(admin);
-    const changed = { ...original, sameZone: original.sameZone + 13 };
     try {
-      await saveCustomerPricing(admin, changed);
-      expect((await quote(api)).baseCharge).toBe(changed.sameZone);
-      expect(await websitePreview(browser, errors)).toBe(`৳ ${changed.sameZone + changed.fees.Regular}`);
+      await saveCustomerSameDistrict(admin, original + 13);
+      const changed = await quote(api);
+      expect(changed.totalCharge).toBe(before.totalCharge + 13);
+      expect(Number((await websitePreview(browser, errors)).replace(/[^0-9.]/g, ""))).toBe(previewBefore + 13);
       // The editor reloads with the published values.
       await admin.reload();
       await admin.waitForSelector("html.legacy-ready", { state: "attached" });
       await nav(admin, "Service plans");
-      await expect(admin.locator('#publicCustomerParcelForm [name="sameZone"]')).toHaveValue(String(changed.sameZone));
+      await admin.click('[data-pkg-segment="CUSTOMER"]');
+      await expect(admin.locator("#pkgTable")).toContainText(`v${changed.package.version}`);
     } finally {
-      await saveCustomerPricing(admin, original);
+      await saveCustomerSameDistrict(admin, original);
     }
     const restored = await quote(api);
-    expect(restored).toMatchObject({ baseCharge: original.sameZone, rateCard: card });
-    expect(await websitePreview(browser, errors)).toBe(`৳ ${original.sameZone + original.fees.Regular}`);
+    expect(restored.totalCharge).toBe(before.totalCharge);
+    expect(Number((await websitePreview(browser, errors)).replace(/[^0-9.]/g, ""))).toBe(previewBefore);
   });
 
   test("approves a merchant application", async ({ browser, api: request }) => {
@@ -261,7 +258,8 @@ test.describe("super admin", () => {
     await expect(row).toContainText("Pending review");
     await row.locator("[data-review]").click();
     await expect(admin.locator("#modalTitle")).toHaveText(`Review ${business}`);
-    await admin.selectOption("#approvalPlan", { label: "Growth · 8% off" });
+    // The merchant books with its category's default package unless another one is chosen.
+    await expect(admin.locator("#approvalPlan option").first()).toContainText("(default)");
     await admin.click("#modalSubmit");
     await expect(toast(admin)).toContainText(`${business}: approved`);
     await expect(row).toContainText("Approved");
@@ -269,8 +267,20 @@ test.describe("super admin", () => {
     await nav(admin, "E-commerce merchants");
     const account = admin.locator("#segmentMerchantBody tr", { hasText: business });
     await expect(account).toContainText("Active");
-    await expect(account).toContainText("Growth");
+    // Service packages replaced service plans: the account lists the package it books with (its category's default).
+    await expect(account).toContainText("(default)");
     await expect(account).toContainText(code);
+    await expect(admin.locator("#mainContent table th", { hasText: /^PACKAGE$/ })).toHaveCount(1);
+    // The account dialog shows the package, not the retired plan select, and "Change" leads to its assignment row.
+    await account.locator(`[data-merchant="${code}"]`).click();
+    await expect(admin.locator("#merchantPlan")).toHaveCount(0);
+    await expect(admin.locator("#merchantPackage")).toHaveValue(/\(default\) · v\d+$/);
+    await admin.click("#merchantPackageChange");
+    await expect(admin.locator("#modalBackdrop")).not.toHaveClass(/open/);
+    await expect(admin.locator("#breadcrumbPage")).toHaveText("Service plans");
+    const assignment = admin.locator(`#pkgAssignments tr[data-pkg-merchant="${code}"]`);
+    await expect(assignment).toBeVisible();
+    await expect(assignment.locator("select")).toBeFocused();
 
     const token = await admin.evaluate(() =>
       fetch("/api/v1/auth/refresh", { method: "POST", headers: { "x-df-client": "web" } })
@@ -278,7 +288,10 @@ test.describe("super admin", () => {
         .then(r => r.accessToken as string),
     );
     const merchant = await (await request.get(`/api/v1/merchants/${id}`, { headers: { authorization: `Bearer ${token}` } })).json();
-    expect(merchant).toMatchObject({ status: "ACTIVE", plan: { name: "Growth" } });
+    expect(merchant).toMatchObject({ status: "ACTIVE" });
+    // It books with the E-commerce default package.
+    const pkg = await (await request.get(`/api/v1/merchants/${id}/package`, { headers: { authorization: `Bearer ${token}` } })).json();
+    expect(pkg).toMatchObject({ segment: "ECOMMERCE", current: { isDefault: true } });
   });
 
   test("platform settings persist on the server", async ({ browser }) => {

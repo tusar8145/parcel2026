@@ -26,7 +26,9 @@ describe("parcel lifecycle", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(res.body.trackingId).toMatch(/^PP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/); // date + random Crockford base32
     expect(res.body).toMatchObject({ status: "PENDING_CONFIRMATION", statusLabel: "Pending operations confirmation", channel: "WEBSITE", canCancel: true });
-    expect(res.body.charges).toEqual({ base: 120, weight: 20, service: 30, codFee: 15, discount: 0, total: 185 });
+    // Service packages v2 (customer default): Dhaka → Dhaka (same district) 70 + 2 kg (2 × 15) + Express ("Same day") 40 + COD fee 15.
+    expect(res.body.charges).toMatchObject({ base: 70, weight: 30, service: 40, codFee: 15, discount: 0, reattempt: 0, total: 155 });
+    expect(res.body.charges.lines.map((l: { code: string; amount: number }) => [l.code, l.amount])).toEqual([["route", 70], ["weight", 30], ["speed", 40], ["cod_fee", 15]]);
     expect(res.body.recipient.phone).toBe("+8801812000000");
     expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.booked", channel: "SMS" } })).toBe(1);
     expect(await ctx.prisma.address.count({ where: { userId: customer.user.id } })).toBe(2);
@@ -38,7 +40,7 @@ describe("parcel lifecycle", () => {
     const body = { ...parcelBody(), totalCharge: 1 };
     const a = await ctx.api("POST", "/parcels", { token: customer.token, body, headers });
     const b = await ctx.api("POST", "/parcels", { token: customer.token, body, headers });
-    expect(a.body.charges.total).toBe(185);
+    expect(a.body.charges.total).toBe(155);
     expect(b.body.trackingId).toBe(a.body.trackingId);
     expect(await ctx.prisma.parcel.count()).toBe(1);
     const different = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody({ weightKg: 5 }), headers });

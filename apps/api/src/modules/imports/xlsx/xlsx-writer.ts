@@ -21,6 +21,14 @@ export const STYLE = {
   title: 6,
   /** Error message cell: red text, wrapped. */
   error: 7,
+  /** Read-only data on a protected sheet: grey fill, text format, locked. */
+  readonly: 8,
+  /** Read-only column header: dark grey fill, white bold text, locked. */
+  headerReadonly: 9,
+  /** Editable cell on a protected sheet: unlocked. */
+  editable: 10,
+  /** Editable cell kept as text (phone numbers): unlocked. */
+  editableText: 11,
 } as const;
 
 export type Cell = string | number | null | undefined | { value: string | number | null | undefined; style: number };
@@ -29,7 +37,7 @@ export interface DataValidation {
   /** e.g. "C2:C5001" */
   sqref: string;
   type: "list" | "decimal" | "whole" | "textLength";
-  /** list: a formula ("L_Districts", "IFERROR(…)") or a literal list (["Yes","No"]). Others: [min, max]. */
+  /** list: a formula ("L_Districts", "IF(…,INDIRECT(…))"; it must evaluate to a range) or a literal list (["Yes","No"]). Others: [min, max]. */
   formula1: string | string[];
   formula2?: string;
   operator?: "between" | "greaterThanOrEqual" | "lessThanOrEqual";
@@ -54,7 +62,16 @@ export interface Sheet {
   freezeHeader?: boolean;
   hidden?: boolean;
   validations?: DataValidation[];
+  /** Filter buttons on the header row, covering every written row. */
   autoFilter?: boolean;
+  /** Columns (0-based) hidden in Excel. */
+  hiddenColumns?: number[];
+  /**
+   * Sheet protection without a password: locked cells (every style except `editable` /
+   * `editableText`) can't be changed, while filtering, sorting and resizing stay allowed.
+   * Review → Unprotect Sheet lifts it (no password).
+   */
+  protect?: boolean;
 }
 
 export interface Workbook {
@@ -119,11 +136,12 @@ function validationXml(v: DataValidation) {
 
 function sheetXml(sheet: Sheet, tabSelected: boolean) {
   const columns = Math.max(sheet.columnCount ?? 0, sheet.widths?.length ?? 0, ...sheet.rows.map(r => r.length));
+  const hidden = new Set(sheet.hiddenColumns ?? []);
   const cols = Array.from({ length: columns }, (_, i) => {
     const width = sheet.widths?.[i];
     const style = sheet.columnStyles?.[i];
-    if (!width && !style) return "";
-    return `<col min="${i + 1}" max="${i + 1}" width="${width ?? 14}"${width ? ' customWidth="1"' : ""}${style ? ` style="${style}"` : ""}/>`;
+    if (!width && !style && !hidden.has(i)) return "";
+    return `<col min="${i + 1}" max="${i + 1}" width="${width ?? 14}"${width ? ' customWidth="1"' : ""}${style ? ` style="${style}"` : ""}${hidden.has(i) ? ' hidden="1"' : ""}/>`;
   }).join("");
   const rows = sheet.rows
     .map((row, r) => {
@@ -135,7 +153,11 @@ function sheetXml(sheet: Sheet, tabSelected: boolean) {
     ? `<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/>`
     : "";
   const validations = sheet.validations?.length ? `<dataValidations count="${sheet.validations.length}">${sheet.validations.map(validationXml).join("")}</dataValidations>` : "";
-  const filter = sheet.autoFilter && columns ? `<autoFilter ref="A1:${columnLetter(columns - 1)}1"/>` : "";
+  const filter = sheet.autoFilter && columns ? `<autoFilter ref="A1:${columnLetter(columns - 1)}${Math.max(1, sheet.rows.length)}"/>` : "";
+  // No password; "0" = allowed for the listed actions (sort, filter, resize), locked cells stay read-only.
+  const protection = sheet.protect
+    ? `<sheetProtection sheet="1" objects="1" scenarios="1" formatCells="1" formatColumns="0" formatRows="0" insertRows="1" deleteRows="1" sort="0" autoFilter="0" selectLockedCells="0" selectUnlockedCells="0"/>`
+    : "";
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
@@ -143,6 +165,7 @@ function sheetXml(sheet: Sheet, tabSelected: boolean) {
     `<sheetFormatPr defaultRowHeight="15"/>` +
     (cols ? `<cols>${cols}</cols>` : "") +
     `<sheetData>${rows}</sheetData>` +
+    protection +
     filter +
     validations +
     `<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>` +
@@ -160,16 +183,18 @@ const STYLES_XML =
   `<font><b/><sz val="14"/><color rgb="FF1F2A44"/><name val="Calibri"/><family val="2"/></font>` +
   `<font><sz val="11"/><color rgb="FFB42318"/><name val="Calibri"/><family val="2"/></font>` +
   `</fonts>` +
-  `<fills count="4">` +
+  `<fills count="6">` +
   `<fill><patternFill patternType="none"/></fill>` +
   `<fill><patternFill patternType="gray125"/></fill>` +
   `<fill><patternFill patternType="solid"><fgColor rgb="FFC62828"/><bgColor indexed="64"/></patternFill></fill>` +
   `<fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F7"/><bgColor indexed="64"/></patternFill></fill>` +
+  `<fill><patternFill patternType="solid"><fgColor rgb="FFF0F2F5"/><bgColor indexed="64"/></patternFill></fill>` +
+  `<fill><patternFill patternType="solid"><fgColor rgb="FF667085"/><bgColor indexed="64"/></patternFill></fill>` +
   `</fills>` +
   `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>` +
   `<border><left style="thin"><color rgb="FFB7C3D4"/></left><right style="thin"><color rgb="FFB7C3D4"/></right><top style="thin"><color rgb="FFB7C3D4"/></top><bottom style="thin"><color rgb="FFB7C3D4"/></bottom><diagonal/></border></borders>` +
   `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-  `<cellXfs count="8">` +
+  `<cellXfs count="12">` +
   `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
   `<xf numFmtId="49" fontId="1" fillId="2" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>` +
   `<xf numFmtId="49" fontId="2" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>` +
@@ -178,6 +203,10 @@ const STYLES_XML =
   `<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
   `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
   `<xf numFmtId="49" fontId="4" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+  `<xf numFmtId="49" fontId="0" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1" applyProtection="1"><protection locked="1"/></xf>` +
+  `<xf numFmtId="49" fontId="1" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1" applyProtection="1"><alignment vertical="center" wrapText="1"/><protection locked="1"/></xf>` +
+  `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyProtection="1"><protection locked="0"/></xf>` +
+  `<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyProtection="1"><protection locked="0"/></xf>` +
   `</cellXfs>` +
   `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
   `</styleSheet>`;

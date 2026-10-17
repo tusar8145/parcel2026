@@ -9,6 +9,8 @@ export const scripts = [
   "/legacy/super-admin/bridge-merchants.js",
   "/legacy/super-admin/bridge-notifications.js",
   "/legacy/super-admin/bridge-imports.js",
+  "/legacy/super-admin/bridge-geo.js",
+  "/legacy/super-admin/bridge-packages.js",
   "/legacy/shared/mfa.js",
   "/legacy/super-admin/bridge-security.js"
 ];

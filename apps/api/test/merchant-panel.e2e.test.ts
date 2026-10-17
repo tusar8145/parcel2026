@@ -1,6 +1,6 @@
 import { parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
-/** What the merchant panels (ecommerce-merchant, document-merchant) need from the API. */
+/** What the merchant panels (ecommerce-merchant, banking-merchant) need from the API. */
 describe("merchant panels", () => {
   let ctx: TestContext;
   beforeAll(async () => {
@@ -10,7 +10,7 @@ describe("merchant panels", () => {
   afterAll(() => ctx.app.close());
 
   let seq = 0;
-  async function workspace(type: "ECOMMERCE" | "CORPORATE_DOCUMENT" = "ECOMMERCE", discountPct = 0) {
+  async function workspace(type: "ECOMMERCE" | "BANKING_FINANCIAL" = "ECOMMERCE", discountPct = 0) {
     const plan = discountPct ? await ctx.prisma.servicePlan.create({ data: { segment: type, name: `Plan ${++seq}`, monthlyFee: 0, discountPct } }) : null;
     const m = await ctx.prisma.merchant.create({
       data: {
@@ -59,7 +59,8 @@ describe("merchant panels", () => {
       const other = await workspace();
       const first = await book(owner.token, {}, "panel-order-0001");
       expect(first).toMatchObject({ channel: "MERCHANT_PORTAL", type: "ECOMMERCE", merchant: { id: m.id }, codAmount: 1500 });
-      expect(first.charges.discount).toBeGreaterThan(0);
+      // Old service plans are retired (service packages v2): the merchant books with its category default.
+      expect(first.service.package.name).toBe("E-commerce default");
 
       const replay = await book(owner.token, {}, "panel-order-0001");
       expect(replay.trackingId).toBe(first.trackingId);
@@ -79,7 +80,7 @@ describe("merchant panels", () => {
     });
 
     it("books document consignments with the corporate rate card and a unique reference", async () => {
-      const { owner } = await workspace("CORPORATE_DOCUMENT");
+      const { owner } = await workspace("BANKING_FINANCIAL");
       const doc = await book(owner.token, {
         type: "DOCUMENT",
         weightKg: 0.5,
@@ -92,7 +93,7 @@ describe("merchant panels", () => {
       });
       expect(doc).toMatchObject({ type: "DOCUMENT", merchantOrderRef: "CARD-2026-0012", codAmount: 0, instructions: expect.stringContaining("MBP-DHK-01") });
       const snapshot = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: doc.trackingId } });
-      expect((snapshot.pricingSnapshot as { segment: string }).segment).toBe("CORPORATE_DOCUMENT");
+      expect((snapshot.pricingSnapshot as { segment: string }).segment).toBe("BANKING_FINANCIAL");
 
       const dup = await ctx.api("POST", "/parcels", { token: owner.token, body: portalOrder({ type: "DOCUMENT", codAmount: 0, merchantOrderRef: "CARD-2026-0012" }) });
       expect(dup.status).toBe(409);
@@ -201,8 +202,9 @@ describe("merchant panels", () => {
       const body = { pickupDistrict: "Dhaka North", pickupZone: "Banani", deliveryDistrict: "Dhaka Central", deliveryZone: "Dhanmondi", weightKg: 2, serviceLevel: "Same day", codAmount: 1000 };
       const res = await ctx.api("POST", "/merchants/me/quote", { token: owner.token, body });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
-      expect(res.body).toMatchObject({ sameZone: false, discountPercent: 10, plan: { name: expect.any(String) } });
-      expect(res.body.discount).toBeCloseTo(((res.body.baseCharge + res.body.weightCharge + res.body.serviceCharge) * 10) / 100, 2);
+      // Dhaka → Dhaka (same district) 70 + 2 kg (2 × 15) + Express ("Same day") 40 + COD fee 10 (the minimum).
+      expect(res.body).toMatchObject({ tier: "SAME_DISTRICT", package: { name: "E-commerce default" }, baseCharge: 70, weightCharge: 30, serviceCharge: 40, codFee: 10, totalCharge: 150 });
+      expect(res.body.lines.map((l: { code: string }) => l.code)).toEqual(["route", "weight", "speed", "cod_fee"]);
       expect(res.body.returnCharge).toBe(Math.ceil((res.body.totalCharge * res.body.returnPercent) / 100));
       expect(res.body).not.toHaveProperty("rateCard");
 
@@ -224,7 +226,7 @@ describe("merchant panels", () => {
 
   describe("billing and payouts", () => {
     it("shows owners their invoices and settlements; staff can't open them", async () => {
-      const { m, owner, staff } = await workspace("CORPORATE_DOCUMENT");
+      const { m, owner, staff } = await workspace("BANKING_FINANCIAL");
       const finance = await userWithRoles(ctx, [{ role: "FINANCE" }], "Finance");
       const doc = await book(owner.token, { type: "DOCUMENT", codAmount: 0, weightKg: 0.5 });
       await markDelivered(doc.trackingId, new Date(Date.now() - 2 * 86_400_000));

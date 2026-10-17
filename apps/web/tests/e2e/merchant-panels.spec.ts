@@ -1,15 +1,13 @@
 import { type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { DEMO_PASSWORD, Fixtures, expect, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, expect, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 /**
  * The two merchant panels on the real API: booking, tracking, cancelling, billing, API keys
  * and webhooks. Needs the API and the web app. The merchants (e-commerce with an owner and a
  * staff member, documents with an owner) and the delivery rider are temporary: created in the
  * database before the tests and deleted afterwards with everything they produced (support.ts).
- * Operations and finance use the seeded staff accounts.
+ * The operations manager and finance staff are temporary too.
  */
-const OPS = "ops@deliveryfast.example";
-const FINANCE = "finance@deliveryfast.example";
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
@@ -22,14 +20,18 @@ let shopStaff: TempUser;
 let bank: TempMerchant;
 let bankOwner: TempUser;
 let rider: TempRider;
+let OPS: TempUser;
+let FINANCE: TempUser;
 
 test.beforeAll(async () => {
   shop = await fx.merchant({ type: "ECOMMERCE", plan: true });
   shopOwner = await fx.member(shop, "MERCHANT_OWNER");
   shopStaff = await fx.member(shop, "MERCHANT_STAFF");
-  bank = await fx.merchant({ type: "CORPORATE_DOCUMENT", plan: true });
+  bank = await fx.merchant({ type: "BANKING_FINANCIAL", plan: true });
   bankOwner = await fx.member(bank, "MERCHANT_OWNER");
   rider = await fx.rider("Gulshan Sorting Hub");
+  OPS = await fx.staff("OPS_MANAGER");
+  FINANCE = await fx.staff("FINANCE");
 });
 test.afterAll(() => fx.cleanup());
 
@@ -60,7 +62,7 @@ async function signIn(browser: Browser, user: { login: string; password: string 
   return { page, errors };
 }
 
-async function token(request: APIRequestContext, identifier: string, password = DEMO_PASSWORD) {
+async function token(request: APIRequestContext, identifier: string, password: string) {
   const res = await request.post("/api/v1/auth/login", { data: { identifier, password } });
   expect(res.ok(), await res.text()).toBeTruthy();
   return (await res.json()).accessToken as string;
@@ -91,7 +93,7 @@ async function createdId(page: Page) {
 
 /** Takes a booked parcel through pickup and a signed delivery on the API. */
 async function deliver(request: APIRequestContext, trackingId: string) {
-  const ops = await token(request, OPS);
+  const ops = await token(request, OPS.login, OPS.password);
   const assign = await request.post(`/api/v1/parcels/${trackingId}/assign-pickup`, { headers: auth(ops), data: { riderId: rider.riderId } });
   expect(assign.ok(), await assign.text()).toBeTruthy();
   const riderToken = await token(request, rider.login, rider.password);
@@ -112,15 +114,19 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await expect(page.locator(".user-profile .profile-meta small")).toHaveText("Store owner");
   await expect(page.locator("#mainContent h1")).toContainText(shopOwner.name.split(" ")[0]);
 
-  // ── Book an order: priced on the server with the plan discount ──
+  // ── Book an order: priced on the server from the service package, with a live breakdown ──
   await nav(page, "Orders");
   const recipient = `E2E Buyer ${unique()}`;
   await fillOrder(page, recipient, "01812345678");
   await page.selectOption("#orderType", "E-commerce parcel");
   await page.fill("#orderAmount", "1250");
-  await page.selectOption("#merchantServiceLevel", "Same day");
-  await expect(page.locator("#merchantPriceHint")).toContainText("Estimated delivery charge ৳", { timeout: 10_000 });
-  await expect(page.locator("#merchantPriceHint")).toContainText("discount");
+  // Express (same day) is offered inside the same district (Gulshan → Dhanmondi are both Dhaka).
+  await page.selectOption("#merchantSvcSpeed", "EXPRESS");
+  const breakdown = page.locator("#merchantPriceHint [data-price-breakdown]");
+  await expect(breakdown).toContainText("Inside same district", { timeout: 10_000 });
+  await expect(breakdown).toContainText("Express");
+  await expect(breakdown).toContainText("COD fee");
+  await expect(breakdown.locator("[data-price-total]")).toContainText("৳");
   await page.click('#orderForm button[type="submit"]');
   const trackingId = await createdId(page);
   await expect(page.locator("#orderModal")).not.toHaveClass(/open/);
@@ -257,7 +263,7 @@ test("e-commerce merchant: API keys and webhooks", async ({ browser, api: reques
   // ── Settings reflect the workspace ──
   await nav(page, "Settings");
   await expect(page.locator("#tableBody")).toContainText(`${shop.name} · ${shop.pickupArea}, ${shop.pickupDistrict}`);
-  await expect(page.locator("#tableBody")).toContainText(`${shop.plan!.name} plan`);
+  await expect(page.locator("#tableBody tr", { hasText: "Service package" })).toContainText(/· version [0-9]+/);
   await page.locator("#tableBody tr", { hasText: "Team & permissions" }).locator("button").click();
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText(shopOwner.name);
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText(shopStaff.name);
@@ -275,23 +281,28 @@ test("e-commerce merchant: a staff member works in the same workspace without th
   expect(errors).toEqual([]);
 });
 
-test("document merchant: redirect, document booking, delivery and invoices", async ({ browser, api: request }) => {
-  // Merchant owners land on the e-commerce panel; a document merchant is sent to its own.
-  const { page, errors } = await signIn(browser, bankOwner, /\/(ecommerce|document)-merchant/);
-  await expect(page).toHaveURL(/\/document-merchant/);
+test("banking & financial merchant: redirect, document booking, delivery and invoices", async ({ browser, api: request }) => {
+  // Merchant owners land on the e-commerce panel; a Banking & Financial merchant is sent to its own.
+  const { page, errors } = await signIn(browser, bankOwner, /\/(ecommerce|banking)-merchant/);
+  await expect(page).toHaveURL(/\/banking-merchant/);
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await expect(page.locator(".workspace-meta strong")).toHaveText(bank.name);
+  // The old panel URL (/document-merchant) redirects.
+  await page.goto("/document-merchant");
+  await expect(page).toHaveURL(/\/banking-merchant$/);
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
 
   // ── New document request ──
   await nav(page, "Orders");
   const recipient = `E2E Receiver ${unique()}`;
   const reference = `E2E-${unique()}`;
   await fillOrder(page, recipient, "01912345678");
-  await page.selectOption("#merchantDocumentType", { index: 1 });
+  // Banking & Financial services come from the package (no weight, no COD).
+  await page.selectOption("#merchantSvcSpeed", "B2B");
   await page.fill("#merchantBranchCode", "MBP-DHK-07");
   await page.fill("#merchantReferenceNo", reference);
   await page.selectOption("#merchantRelation", "Reception");
-  await expect(page.locator("#merchantPriceHint")).toContainText("Estimated delivery charge ৳", { timeout: 10_000 });
+  await expect(page.locator("#merchantPriceHint [data-price-breakdown]")).toContainText("Inside same district", { timeout: 10_000 });
   await page.click('#orderForm button[type="submit"]');
   const trackingId = await createdId(page);
   await page.fill("#tableSearch", recipient);
@@ -309,7 +320,7 @@ test("document merchant: redirect, document booking, delivery and invoices", asy
   await deliver(request, trackingId);
   await page.waitForTimeout(1100); // the invoice period must have ended
   const parcel = await (await request.get(`/api/v1/parcels/${trackingId}`, { headers: auth(await token(request, bankOwner.login, bankOwner.password)) })).json();
-  const finance = await token(request, FINANCE);
+  const finance = await token(request, FINANCE.login, FINANCE.password);
   const invoice = await request.post("/api/v1/invoices", {
     headers: auth(finance),
     data: { merchantId: parcel.merchant.id, periodStart: new Date(new Date(parcel.deliveredAt).getTime() - 500).toISOString(), periodEnd: new Date(Date.now() - 100).toISOString() },

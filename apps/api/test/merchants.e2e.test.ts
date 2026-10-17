@@ -25,7 +25,7 @@ describe("merchants", () => {
   afterAll(() => ctx.app.close());
 
   let seq = 0;
-  const merchant = (data: { status?: "PENDING_REVIEW" | "ACTIVE" | "SUSPENDED"; type?: "ECOMMERCE" | "CORPORATE_DOCUMENT"; name?: string } = {}) =>
+  const merchant = (data: { status?: "PENDING_REVIEW" | "ACTIVE" | "SUSPENDED"; type?: "ECOMMERCE" | "BANKING_FINANCIAL"; name?: string } = {}) =>
     ctx.prisma.merchant.create({
       data: {
         code: `MR-T${++seq}`,
@@ -86,7 +86,7 @@ describe("merchants", () => {
 
       // Once approved, the user may apply for another business.
       await ctx.prisma.merchant.update({ where: { id: first.body.merchant.id }, data: { status: "ACTIVE" } });
-      const third = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ type: "CORPORATE_DOCUMENT", name: "Docs Ltd" }) });
+      const third = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ type: "BANKING_FINANCIAL", name: "Docs Ltd" }) });
       expect(third.status).toBe(201);
       expect(third.body.merchant.code).toBe("MR-1003");
     });
@@ -117,7 +117,7 @@ describe("merchants", () => {
       const plan = await ctx.prisma.servicePlan.create({ data: { segment: "ECOMMERCE", name: "Growth", monthlyFee: 999, discountPct: 10 } });
       const a = await merchant({ name: "Alpha Store" });
       await ctx.prisma.merchant.update({ where: { id: a.id }, data: { planId: plan.id } });
-      await merchant({ name: "Beta Docs", type: "CORPORATE_DOCUMENT", status: "PENDING_REVIEW" });
+      await merchant({ name: "Beta Docs", type: "BANKING_FINANCIAL", status: "PENDING_REVIEW" });
       await merchant({ name: "Gamma Store", status: "SUSPENDED" });
 
       const all = await ctx.api("GET", "/merchants?limit=2", { token: ops.token });
@@ -164,7 +164,7 @@ describe("merchants", () => {
       const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }]);
       const m = await merchant({ status: "PENDING_REVIEW" });
       const ecom = await ctx.prisma.servicePlan.create({ data: { segment: "ECOMMERCE", name: "Starter", monthlyFee: 0, discountPct: 5 } });
-      const docs = await ctx.prisma.servicePlan.create({ data: { segment: "CORPORATE_DOCUMENT", name: "Corporate", monthlyFee: 5000 } });
+      const docs = await ctx.prisma.servicePlan.create({ data: { segment: "BANKING_FINANCIAL", name: "Corporate", monthlyFee: 5000 } });
       const retired = await ctx.prisma.servicePlan.create({ data: { segment: "ECOMMERCE", name: "Legacy", monthlyFee: 100, active: false } });
 
       const mismatch = await ctx.api("PATCH", `/merchants/${m.id}`, { token: admin.token, body: { planId: docs.id } });
@@ -533,7 +533,7 @@ describe("merchants", () => {
       expect(created.status, JSON.stringify(created.body)).toBe(201);
       expect(created.body).toMatchObject({ ...body, active: true });
       expect((await ctx.api("POST", "/plans", { token: admin.token, body: { ...body, name: "growth" } })).body.error.code).toBe("PLAN_NAME_TAKEN");
-      await ctx.api("POST", "/plans", { token: admin.token, body: { segment: "CORPORATE_DOCUMENT", name: "Corporate", monthlyFee: 5000 } });
+      await ctx.api("POST", "/plans", { token: admin.token, body: { segment: "BANKING_FINANCIAL", name: "Corporate", monthlyFee: 5000 } });
       const retired = await ctx.api("POST", "/plans", { token: admin.token, body: { segment: "ECOMMERCE", name: "Legacy", monthlyFee: 0, active: false } });
 
       const visible = await ctx.api("GET", "/plans?segment=ECOMMERCE", { token: customer.token });
@@ -562,7 +562,7 @@ describe("merchants", () => {
 
       const m = await merchant();
       await ctx.prisma.merchant.update({ where: { id: m.id }, data: { planId: plan.body.id } });
-      const segment = await ctx.api("PATCH", `/plans/${plan.body.id}`, { token: admin.token, body: { segment: "CORPORATE_DOCUMENT" } });
+      const segment = await ctx.api("PATCH", `/plans/${plan.body.id}`, { token: admin.token, body: { segment: "BANKING_FINANCIAL" } });
       expect(segment.status).toBe(422);
       expect(segment.body.error.code).toBe("PLAN_IN_USE");
       expect((await ctx.api("PATCH", "/plans/00000000-0000-7000-8000-000000000000", { token: admin.token, body: { active: false } })).status).toBe(404);

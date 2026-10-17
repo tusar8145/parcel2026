@@ -35,6 +35,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { ReturnsModule } from "./modules/returns/returns.module";
 import { PickupsModule } from "./modules/pickups/pickups.module";
 import { GeoModule } from "./modules/geo/geo.module";
+import { GeographyModule } from "./modules/geography/geography.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { EmailVerificationModule } from "./modules/auth/email-verification.controller";
 import { ScansModule } from "./modules/scans/scans.module";
@@ -45,6 +46,8 @@ import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { RoutingModule } from "./modules/routing/routing.module";
 import { ImportsModule } from "./modules/imports/imports.module";
+import { BulkUpdatesModule } from "./modules/bulk-updates/bulk-updates.module";
+import { PackagesModule } from "./modules/packages/packages.module";
 
 @Module({
   imports: [
@@ -76,8 +79,10 @@ import { ImportsModule } from "./modules/imports/imports.module";
     AuthModule,
     EmailVerificationModule,
     GeoModule,
+    GeographyModule,
     NetworkModule,
     PricingModule,
+    PackagesModule,
     ParcelsModule,
     FeedbackModule,
     AccountsModule,
@@ -94,6 +99,7 @@ import { ImportsModule } from "./modules/imports/imports.module";
     ReportsModule,
     RoutingModule,
     ImportsModule,
+    BulkUpdatesModule,
     ApplicationsModule,
     RiderModule,
     ReturnsModule,

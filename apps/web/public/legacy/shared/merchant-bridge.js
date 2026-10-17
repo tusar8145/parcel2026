@@ -29,7 +29,6 @@
   const NEEDS_ATTENTION = ["EXCEPTION", "RETRY_SCHEDULED", "RETURN_SCHEDULED"];
   const TERMINAL = ["DELIVERED", "PICKUP_CANCELLED", "RETURNED"];
   const TYPE_LABEL = { ECOMMERCE: "E-commerce parcel", DOCUMENT: "Document delivery", PARCEL: "Domestic parcel", FRAGILE: "Fragile parcel" };
-  const TYPE_FROM_LABEL = { "e-commerce parcel": "ECOMMERCE", "document delivery": "DOCUMENT", "domestic parcel": "PARCEL", "fragile parcel": "FRAGILE", ecommerce: "ECOMMERCE", document: "DOCUMENT", parcel: "PARCEL", fragile: "FRAGILE" };
   const WEBHOOK_EVENTS = [
     "pickup.requested",
     "pickup.scheduled",
@@ -816,8 +815,17 @@
       )
       .join("");
     const complete = p.incomplete && EDITABLE_INCOMPLETE.includes(p.status) ? `<button type="button" class="button button-primary" data-df-complete="${esc(p.trackingId)}">Complete details</button>` : "";
+    // Failed delivery attempts (GET /parcels/:id: failedAttempts, lastFailedAttempt, returnedAfterFailure).
+    if (p.failedAttempts > 0 && !["DELIVERED", "PICKUP_CANCELLED"].includes(p.status)) {
+      const last = p.lastFailedAttempt;
+      const where = p.returnedAfterFailure ? `, back at ${p.currentHub?.name || "the hub"}` : p.status === "RETRY_SCHEDULED" ? ", another attempt is scheduled" : "";
+      const text = `Delivery failed ×${p.failedAttempts}${where}${last?.reason ? ` · Last reason: ${last.reason} (${when(last.at)})` : ""}`;
+      grid.unshift(detail("Delivery attempts", text).replace("<div>", `<div data-df-failure="${p.failedAttempts}" style="grid-column:1/-1;padding:8px 10px;border-radius:8px;background:#fef3f2;color:#b42318">`));
+    }
     if (p.incomplete) grid.unshift(detail("Needs info", `Missing ${(p.missingLabels || []).join(", ")}. It won't go out for delivery until the recipient's name, phone, address and destination are all filled in.`));
-    const actions = p.canCancel || complete ? `<div class="modal-actions" style="margin-top:0">${complete}${p.canCancel ? `<button type="button" class="button" data-df-cancel="${esc(p.trackingId)}">${doc ? "Cancel request" : "Cancel order"}</button>` : ""}</div>` : "";
+    // Shipping label (PDF in a new tab) while the parcel is still on its way; cancel / complete when allowed.
+    const label = TERMINAL.includes(p.status) ? "" : `<button type="button" class="button" data-df-label="${esc(p.trackingId)}">Print label (PDF)</button>`;
+    const actions = p.canCancel || complete || label ? `<div class="modal-actions" style="margin-top:0;flex-wrap:wrap">${label}${complete}${p.canCancel ? `<button type="button" class="button" data-df-cancel="${esc(p.trackingId)}">${doc ? "Cancel request" : "Cancel order"}</button>` : ""}</div>` : "";
     dialog(
       `Tracking history · ${p.trackingId}`,
       `${esc(p.recipient.name)} · ${statusPill(p.statusLabel)}`,
@@ -855,14 +863,13 @@
   // ───────────── booking ─────────────
 
   const option = (value, label = value, selected = false) => `<option value="${esc(value)}"${selected ? " selected" : ""}>${esc(label)}</option>`;
-  /** Order form start lists: the merchant's own district (prepareOrderForm narrows them as the form changes). */
+  /** The page's region lists (03.js) follow the live catalog; the form fills its selects from S.catalog. */
   function narrowRegions() {
     const c = S.catalog;
     if (!c || typeof merchantRegions === "undefined") return;
-    const home = S.merchant?.pickupDistrict && c.zonesByDistrict[S.merchant.pickupDistrict] ? S.merchant.pickupDistrict : c.districts[0];
     merchantRegions.district = c.districts;
-    merchantRegions.zone = c.zonesByDistrict[home] || [];
-    merchantRegions.area = c.areasByZone[merchantRegions.zone[0]] || [];
+    merchantRegions.zone = [];
+    merchantRegions.area = [];
   }
   const zonesOf = district => S.catalog?.zonesByDistrict?.[district] || [];
   const areasOf = zone => S.catalog?.areasByZone?.[zone] || [];
@@ -873,56 +880,76 @@
     return zones.find(z => z === m.pickupArea || areasOf(z).includes(m.pickupArea) || String(m.pickupAddress).toLowerCase().includes(z.toLowerCase())) || zones[0] || m.pickupArea;
   }
 
-  function fillSelect(select, values, keep) {
-    if (!select) return;
-    const current = keep ?? select.value;
-    select.innerHTML = values.map(v => (typeof v === "string" ? option(v) : option(v.value, v.label))).join("");
-    if ([...select.options].some(o => o.value === current)) select.value = current;
-  }
+  // District → zone → area: "Choose …" placeholders, nothing preselected, long lists searchable.
+  const fillPlace = (select, values, placeholder) => window.DFOrderServices?.fill(select, values, placeholder);
   function cascadeZones() {
     const district = $("merchantDistrict")?.value;
-    fillSelect($("merchantZone"), zonesOf(district));
+    fillPlace($("merchantZone"), zonesOf(district), district ? "Choose zone" : "Choose the district first");
     cascadeAreas();
   }
   function cascadeAreas() {
-    const areas = areasOf($("merchantZone")?.value);
-    fillSelect($("merchantArea"), [{ value: "", label: areas.length ? "Choose an area (optional)" : "No areas listed" }, ...areas]);
+    const zone = $("merchantZone")?.value;
+    const areas = areasOf(zone);
+    fillPlace($("merchantArea"), areas, zone ? (areas.length ? "Choose area (optional)" : "No areas listed") : "Choose the zone first");
+  }
+
+  // The order dialog: no horizontal overflow on phones (390 px) and long forms scroll inside it.
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfOrderFormStyles">
+      #orderModal .modal{max-width:min(640px,100%);max-height:calc(100vh - 32px);overflow-y:auto;box-sizing:border-box}
+      #orderModal .form-grid,#orderModal .order-extra-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      #orderModal .form-field{min-width:0}
+      #orderModal .form-field>select,#orderModal .form-field>input:not([type=checkbox]),#orderModal .df-phone{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+      #orderModal .df-phone input{min-width:0}
+      #orderModal .df-svc-checks label{color:#3c4859}
+      @media(max-width:560px){#orderModal.modal-backdrop{padding:10px}#orderModal .modal{padding:16px}#orderModal .form-grid,#orderModal .order-extra-grid{grid-template-columns:minmax(0,1fr)}}
+    </style>`,
+  );
+
+  /** Inline errors (DF.validate) and the +880 phone field; set up once, when the fields exist. */
+  function wireOrderForm(form) {
+    if (form.dfCheck) return;
+    DF.phoneInput($("customerPhone"));
+    const rules = {
+      customerName: v => (v.trim() ? "" : "Enter the recipient's name"),
+      merchantDistrict: v => (v ? "" : "Choose the delivery district"),
+      merchantZone: v => (v ? "" : "Choose the delivery zone"),
+      deliveryAddress: v => (v.trim() ? "" : "Enter the street address"),
+      orderAmount: v => (!v || Number(v) >= 0 ? "" : "Enter a value of ৳0 or more"),
+    };
+    if ($("merchantWeight")) rules.merchantWeight = v => (!String(v).trim() ? "Enter the weight" : !(Number(v) >= 0.01) ? "At least 0.01 kg" : Number(v) > 50 ? "At most 50 kg" : "");
+    const own = DF.validate(form, rules);
+    const phone = $("customerPhone");
+    form.dfCheck = () => {
+      let ok = own();
+      phone.dispatchEvent(new Event("blur")); // the phone field shows its own message
+      if (DF.phoneProblem(phone.value)) ok = false;
+      if (S.svcCheck && !S.svcCheck()) ok = false;
+      if (!ok) form.querySelector("[aria-invalid=true]")?.focus();
+      return ok;
+    };
   }
 
   function prepareOrderForm() {
-    // With the extra fields the dialog can be taller than the window: let it scroll.
-    const modal = document.querySelector("#orderModal .modal");
-    if (modal) Object.assign(modal.style, { maxHeight: "calc(100vh - 40px)", overflowY: "auto" });
+    const form = $("orderForm");
+    if (form) wireOrderForm(form);
     if (!S.merchant || !S.catalog) return;
-    const c = S.catalog;
-    const pickup = $("merchantPickupZone");
-    if (pickup && !pickup.dataset.df) {
-      fillSelect(pickup, zonesOf(S.merchant.pickupDistrict).length ? zonesOf(S.merchant.pickupDistrict) : [pickupZone()], pickupZone());
-      pickup.dataset.df = "1";
-      pickup.closest(".form-field").querySelector("label").textContent = `Pickup zone · ${S.merchant.pickupDistrict}`;
-    }
     const district = $("merchantDistrict");
     if (district && !district.dataset.df) {
-      fillSelect(district, c.districts, S.merchant.pickupDistrict);
+      fillPlace(district, S.catalog.districts, "Choose district");
       district.dataset.df = "1";
       cascadeZones();
     }
-    const levels = $("merchantServiceLevel");
-    if (levels && c.serviceLevels) fillSelect(levels, Object.values(c.serviceLevels));
-    const weight = $("merchantWeight");
-    if (weight && c.weightsKg?.length && !weight.dataset.df) {
-      weight.innerHTML = c.weightsKg.map(w => option(String(w), `Up to ${w} kg`)).join("");
-      weight.dataset.df = "1";
-    }
-    for (const id of ["customerPhone"]) $(id)?.setAttribute("autocomplete", "tel");
+    for (const id of ["customerPhone"]) $(id)?.setAttribute("autocomplete", "tel-national");
     void prepareServices();
     void updateQuote();
   }
 
   /**
    * The service package's choices on the order form (shared/order-services.js): only what the
-   * merchant's package offers. The Service choice replaces the old service level (and, for
-   * documents, the document type); the product list is the package's products.
+   * merchant's package offers (first / last mile, Service, COD + amount, open box, messages), and the
+   * category's products (active, with their type).
    */
   async function prepareServices() {
     const services = window.DFOrderServices;
@@ -932,27 +959,18 @@
     } catch {
       return;
     }
-    const hint = $("merchantPriceHint");
-    if (!hint || !S.pkg) return;
-    if (!$("dfOrderServices")) {
-      const box = document.createElement("div");
-      box.id = "dfOrderServices";
-      box.style.display = "contents";
-      box.innerHTML = services.block(S.pkg, { prefix: "merchantSvc", productSelect: "merchantProduct" });
-      hint.before(box);
-    }
-    for (const id of ["merchantServiceLevel", "merchantDocumentType"]) {
-      const f = $(id)?.closest(".form-field");
-      if (f) f.hidden = true;
+    const box = $("dfOrderServices");
+    if (!box || !S.pkg) return;
+    if (box.dataset.pkg !== S.pkg.package.versionId) {
+      box.innerHTML = services.block(S.pkg, { prefix: "merchantSvc", productSelect: "merchantProduct", codAmount: true, codChecked: true });
+      box.dataset.pkg = S.pkg.package.versionId;
+      S.svcCheck = services.checks("merchantSvc");
     }
     const product = $("merchantProduct");
     if (product && product.dataset.pkg !== S.pkg.package.versionId) {
       // Optional: the product's type (Regular, Document, Books) prices the order; none = Regular.
-      product.innerHTML = `<option value="">No product (Regular)</option>${S.pkg.products.map(p => option(p.name, `${p.name} · ${S.pkg.labels.productType?.[p.type] || p.type}`)).join("")}`;
+      product.innerHTML = services.productOptions(S.pkg);
       product.dataset.pkg = S.pkg.package.versionId;
-      product.dataset.catalog = "package";
-      product.required = false;
-      product.closest(".form-field").querySelector("label").textContent = "Product";
     }
     services.sync("merchantSvc");
     void updateQuote();
@@ -961,31 +979,24 @@
   /** The order form as a POST /parcels body. */
   function orderBody() {
     const m = S.merchant;
-    const type = S.cfg.document ? "DOCUMENT" : TYPE_FROM_LABEL[String($("orderType").value).toLowerCase()] || "PARCEL";
-    const doc = type === "DOCUMENT";
-    const value = Number($("orderAmount").value) || 0;
-    const documentType = $("merchantDocumentType")?.value || "";
-    const product = $("merchantProduct")?.value || "";
+    const doc = !!S.cfg.document;
+    const value = Number($("orderAmount")?.value) || 0;
     const area = $("merchantArea")?.value || undefined;
-    // Service package choices (first / last mile, speed + handling, COD, open box, messages).
-    const svc = S.pkg ? window.DFOrderServices.read(S.pkg, "merchantSvc") : null;
-    const { cod, ...choices } = svc || {};
+    // Service package choices (first / last mile, Service, COD + amount, open box, product, messages).
+    const svc = S.pkg ? window.DFOrderServices.read(S.pkg, "merchantSvc") : {};
+    const { cod, codAmount, ...choices } = svc;
     return {
-      ...(svc ? { ...choices, product: product || undefined } : {}),
+      ...choices,
       sender: { name: m.name, phone: m.contactPhone },
-      pickup: { category: "Office", street: m.pickupAddress, area: m.pickupArea || undefined, zone: $("merchantPickupZone")?.value || pickupZone(), district: m.pickupDistrict },
+      pickup: { category: "Office", street: m.pickupAddress, area: m.pickupArea || undefined, zone: pickupZone(), district: m.pickupDistrict },
       recipient: { name: $("customerName").value.trim(), phone: $("customerPhone").value.trim() },
-      delivery: { category: $("merchantAddressType")?.value || "Home", street: $("deliveryAddress").value.trim(), area, zone: $("merchantZone").value, district: $("merchantDistrict").value },
-      type,
-      serviceLevel: $("merchantServiceLevel")?.value || "Regular",
+      delivery: { category: $("merchantAddressType")?.value || (doc ? "Office" : "Home"), street: $("deliveryAddress").value.trim(), area, zone: $("merchantZone").value, district: $("merchantDistrict").value },
+      type: doc ? "DOCUMENT" : "ECOMMERCE",
+      // Banking & Financial has no weight in pricing: the API needs one, 0.5 kg (the included weight).
       weightKg: doc ? 0.5 : Number($("merchantWeight")?.value) || 0.5,
-      packaging: $("merchantPackaging")?.value || undefined,
-      contents: (doc ? [documentType, product && product !== documentType ? product : ""].filter(Boolean).join(" — ") : product) || undefined,
       declaredValue: value || undefined,
-      // E-commerce orders collect the order value as cash on delivery (when the package offers COD and it is ticked).
-      codAmount: type === "ECOMMERCE" && (!svc || cod) ? value : 0,
-      receiverRelation: $("merchantRelation")?.value || undefined,
-      originBranchCode: $("merchantBranchCode")?.value.trim() || undefined,
+      // Cash on delivery: the separate COD amount, only when the package offers COD and it is ticked.
+      codAmount: doc ? 0 : codAmount || 0,
       merchantOrderRef: $("merchantReferenceNo")?.value.trim() || undefined,
       // Pickup time window chosen in the form (merchant-features.js), when offered.
       pickupWindow: window.DFMerchantFeatures?.pickupWindow?.() || undefined,
@@ -999,10 +1010,12 @@
     clearTimeout(quoteTimer);
     quoteTimer = setTimeout(async () => {
       const hint = $("merchantPriceHint");
-      if (!hint || !$("merchantZone")?.value || !S.merchant) return;
+      if (!hint || !S.merchant) return;
+      if (!$("merchantDistrict")?.value) return void (hint.textContent = "Choose the delivery district to see the price from your service package.");
       const body = orderBody();
       const seq = ++quoteSeq;
       try {
+        // The same places and choices the booking sends (product included), so the price matches the booked one.
         const quote = await DF.api(`/merchants/me/quote${q()}`, {
           method: "POST",
           body: {
@@ -1010,30 +1023,18 @@
             pickupZone: body.pickup.zone,
             pickupArea: body.pickup.area,
             deliveryDistrict: body.delivery.district,
-            deliveryZone: body.delivery.zone,
-            deliveryArea: body.delivery.area,
-            weightKg: body.weightKg,
-            serviceLevel: body.serviceLevel,
+            ...(body.delivery.zone ? { deliveryZone: body.delivery.zone } : {}),
+            ...(body.delivery.area ? { deliveryArea: body.delivery.area } : {}),
+            ...(S.cfg.document ? {} : { weightKg: body.weightKg }),
             codAmount: body.codAmount,
-            ...(body.declaredValue ? { declaredValue: body.declaredValue } : {}),
-            ...(S.pkg ? { firstMile: body.firstMile, dropHubId: body.dropHubId, lastMile: body.lastMile, collectHubId: body.collectHubId, speed: body.speed, openBox: body.openBox } : {}),
+            ...(S.pkg ? { firstMile: body.firstMile, dropHubId: body.dropHubId, lastMile: body.lastMile, collectHubId: body.collectHubId, speed: body.speed, openBox: body.openBox, product: body.product } : {}),
           },
         });
         if (seq !== quoteSeq) return;
         S.returnPercent = quote.returnPercent;
-        // Live breakdown from the package (service packages): every price line and the total.
-        if (quote.lines) {
-          hint.innerHTML = window.DFOrderServices.breakdown(quote);
-          return;
-        }
-        const parts = [`base ${taka(quote.baseCharge)}`];
-        if (quote.weightCharge) parts.push(`weight ${taka(quote.weightCharge)}`);
-        if (quote.serviceCharge) parts.push(`${body.serviceLevel.toLowerCase()} ${taka(quote.serviceCharge)}`);
-        if (quote.codFee) parts.push(`COD fee ${taka(quote.codFee)}`);
-        if (quote.discount) parts.push(`${quote.plan?.name || "plan"} discount −${taka(quote.discount)}`);
-        hint.textContent = `Estimated delivery charge ${taka(quote.totalCharge)} (${parts.join(" · ")}). Return charge if returned: ${taka(quote.returnCharge)}. Final price is confirmed on booking.`;
+        hint.innerHTML = window.DFOrderServices.breakdown(quote) || `Estimated delivery charge ${taka(quote.totalCharge)}.`;
       } catch (error) {
-        // A choice the package doesn't allow (e.g. Security without a declared value) explains itself.
+        // A choice the package doesn't allow (e.g. Express outside the same district) explains itself.
         if (seq === quoteSeq) hint.textContent = error instanceof DF.ApiError && error.status === 422 ? DF.describe(error) : "Delivery charges use your service package and are confirmed when you create the order.";
       }
     }, 250);
@@ -1045,8 +1046,8 @@
 
   async function submitOrder(form) {
     const button = form.querySelector('button[type="submit"]');
+    if (form.dfCheck && !form.dfCheck()) return showToast("Check the highlighted fields.");
     const body = orderBody();
-    if (!body.delivery.zone) return showToast("Choose the delivery district and zone.");
     const json = JSON.stringify(body);
     if (!pendingBooking || pendingBooking.json !== json) pendingBooking = { json, key: newKey() };
     button.disabled = true;
@@ -1055,9 +1056,13 @@
       pendingBooking = null;
       form.reset();
       for (const select of form.querySelectorAll("select[data-df]")) delete select.dataset.df;
+      for (const el of form.querySelectorAll("[aria-invalid=true]")) el.setAttribute("aria-invalid", "false");
+      for (const msg of form.querySelectorAll(".df-field-error")) msg.textContent = "";
       closeOrderModal();
       await refresh({ force: true });
       showToast(`${S.cfg.document ? "Request" : "Order"} ${parcel.trackingId} created · delivery charge ${taka(parcel.charges.total)}.`);
+      // The new order's details, with "Print label (PDF)".
+      showParcel(parcel);
     } catch (error) {
       // A definite answer means this attempt is over; a lost connection may retry with the same key.
       if (error instanceof DF.ApiError && error.status < 500) pendingBooking = null;
@@ -1446,6 +1451,10 @@
       return paginate();
     }
     if (hit(".pagination .page-btn")) return stop(event);
+    if ((el = hit("[data-df-label]"))) {
+      stop(event);
+      return void window.DFPrint?.labels([el.dataset.dfLabel], window.DFPrint.labelFormat());
+    }
     if ((el = hit("[data-df-cancel]"))) {
       stop(event);
       return void cancelParcel(el.dataset.dfCancel);
@@ -1740,20 +1749,8 @@
     showIdentity();
     S.catalog = await DF.api("/catalog").catch(() => null);
     if (S.catalog) {
-      // The order form starts from these lists and prepareOrderForm() narrows zone and area to the
-      // chosen district / zone; starting from the merchant's own district keeps the dialog light
-      // (the whole country has hundreds of zones and thousands of areas).
+      // The order form fills district → zone → area from the live catalog (prepareOrderForm, cascadeZones).
       narrowRegions();
-      if (typeof window.applyMerchantConfig === "function" && !window.applyMerchantConfig.dfNarrowed) {
-        // The page re-reads the full lists from the platform config whenever a dialog opens.
-        const original = window.applyMerchantConfig;
-        window.applyMerchantConfig = Object.assign(function (...args) {
-          const result = original.apply(this, args);
-          narrowRegions();
-          return result;
-        }, { dfNarrowed: true });
-      }
-      if (S.catalog.packaging?.length) merchantCatalogs.ecommercePackaging = S.catalog.packaging;
       // Products: only the package's parcel products (prepareServices), never the booking catalog.
     }
     // Geography changes in super admin (new / renamed / deactivated places) reach the order form at once.
@@ -1762,6 +1759,8 @@
       if (!fresh) return;
       S.catalog = fresh;
       narrowRegions();
+      // The next time the order form opens it lists the fresh places.
+      if ($("merchantDistrict")) delete $("merchantDistrict").dataset.df;
     });
     if (!S.merchant) {
       S.stats = emptyStats();

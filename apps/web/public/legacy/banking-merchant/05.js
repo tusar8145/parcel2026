@@ -25,7 +25,7 @@
       if(event.target.closest("#generateDocumentBill")){
         const period=document.getElementById("documentBillingPeriod").value,monthName=period==="2026-09"?"September":period==="2026-08"?"August":"October",billed=billedDocumentIds(),eligible=sampleOrders.filter(order=>order.status==="Delivered"&&!billed.has(order.id));
         if(!eligible.length){showToast("No delivered, unbilled document consignments are available for this bill.");return}
-        const lineItems=eligible.map(order=>({trackingId:order.id,documentType:order.documentType||order.item,branchCode:order.branchCode||"MBP-DHK-01",referenceNo:order.referenceNo||"—",service:order.service||"Regular",charge:Number(order.deliveryFee)||Number(readMerchantConfig().documentTypeRates?.[order.documentType])||60}));
+        const lineItems=eligible.map(order=>({trackingId:order.id,documentType:order.documentType||order.item,branchCode:order.branchCode||"",referenceNo:order.referenceNo||"—",service:order.service||"Regular",charge:Number(order.deliveryFee)||Number(readMerchantConfig().documentTypeRates?.[order.documentType])||60}));
         const subtotal=lineItems.reduce((sum,item)=>sum+item.charge,0),sequence=String(documentBills.filter(bill=>bill.id.includes(period.slice(0,4))).length+100).padStart(4,"0"),bill={id:`INV-MBP-${period}-${sequence}`,period:`${monthName} 1–${period==="2026-10"?"14":"30"}, ${period.slice(0,4)}`,issued:"Oct 14, 2026",due:"Oct 29, 2026",shipmentCount:lineItems.length,subtotal,tax:0,total:subtotal,status:"Due",lineItems};
         documentBills.unshift(bill);if(!saveDocumentBills()){documentBills.shift();return}renderPage("Billing");showToast(`${bill.id} generated for ${lineItems.length} delivered consignment(s).`);return;
       }

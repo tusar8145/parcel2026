@@ -14,7 +14,7 @@
  *   COD & finance                                   bridge-finance.js
  *   Analytics & SLA                                 GET /ops/analytics
  *   Admin settings                                  GET /catalog (managed in super admin)
- *   New shipment                                    POST /ops/parcels (Excel import: bridge-imports.js)
+ *   New shipment                                    POST /ops/parcels: a merchant or a walk-in sender (Excel import: bridge-imports.js)
  */
 (() => {
   const DF = window.DF;
@@ -117,6 +117,16 @@
     q("#mainContent .metrics")?.remove();
     const active = Ops.overview?.serviceLines?.[key];
     setText(q("#mainContent .table-panel .panel-subtitle"), `${active == null ? "" : `${Ops.num(active)} active · `}newest first · 100 a page · search and filters run on the server`);
+    // Booking buttons (New shipment form, bookings below): walk-in senders on Customer parcels, the category's name elsewhere.
+    const heading = q("#mainContent .page-heading .heading-actions");
+    if (!heading) return;
+    if (page === "Customer parcels") {
+      const link = q('a[href="/#/request"]', heading);
+      if (link && Ops.can("dispatch")) link.outerHTML = `<button class="button button-primary" type="button" data-action="newWalkIn">${icon("plus")} New walk-in shipment</button>`;
+    } else {
+      const button = q('[data-action="newDocument"], [data-action="newDomestic"], [data-action="newEcommerce"]', heading);
+      if (button) button.innerHTML = `${icon("plus")} New ${page === "E-commerce operations" ? "e-commerce order" : "Banking & Financial shipment"}`;
+    }
   }
   for (const page of ["Customer parcels", "E-commerce operations", "Banking & Financial operations"]) Ops.enhance[page] = enhanceServiceLine;
 
@@ -342,49 +352,195 @@
     true,
   );
 
-  // ───────────── bookings by operations ─────────────
+  // ───────────── bookings by operations (New shipment) ─────────────
+  //
+  // One form for every sender (POST /ops/parcels):
+  //   E-commerce / Banking & Financial merchant  sender and pickup from the merchant's profile, its package
+  //   Walk-in sender (customer parcel)           sender name / phone and pickup address typed here, no
+  //                                              merchant, the Customer default package
+  // Order: sender → recipient → delivery address → parcel (product, weight, contents) → service (one
+  // first-mile select with its drop-off hub, one last-mile select, Service, COD + amount, open box,
+  // messages) → live price (the same quote body as the booking, product included). Inline errors
+  // (DF.validate.field) and +880 phone fields (DF.phoneInput). After booking the parcel's drawer opens
+  // (Print label there).
 
-  const BOOKING_KINDS = { newShipment: "", newEcommerce: "E-commerce", newDomestic: "Documents", newDocument: "Documents" };
-  const merchantsFor = line =>
-    (Ops.cache.merchants?.value || []).filter(m => m.status === "ACTIVE" && (!line || (line === "Documents") === (m.type === "BANKING_FINANCIAL")));
+  const LINE_LABEL = { ecommerce: "E-commerce merchant", banking: "Banking & Financial merchant", walkin: "Walk-in sender (customer parcel)" };
+  const BOOKING_KINDS = { newShipment: "", newEcommerce: "ecommerce", newDomestic: "banking", newDocument: "banking", newWalkIn: "walkin" };
+  const LINE_PAGE = { ecommerce: "E-commerce operations", banking: "Banking & Financial operations", walkin: "Customer parcels" };
+  const LINE_TITLE = { ecommerce: "Create e-commerce shipment", banking: "Create Banking & Financial shipment", walkin: "Create walk-in shipment" };
+  const booking = { line: "ecommerce", pkg: null, pkgKey: "", checks: [], quoteSeq: 0 };
+  const svcApi = () => window.DFOrderServices;
+  const lineNow = () => $("bkLine")?.value || booking.line;
+  const merchantsFor = line => (Ops.cache.merchants?.value || []).filter(m => m.status === "ACTIVE" && (line === "banking") === (m.type === "BANKING_FINANCIAL"));
+  const bookingMerchant = () => (Ops.cache.merchants?.value || []).find(m => m.id === $("bkMerchant")?.value);
+  const shown = el => !!el && !el.closest(".field")?.hidden;
 
-  function fillZones() {
-    const c = Ops.catalog;
-    const district = $("bkDistrict")?.value;
-    if (!c || !$("bkZone")) return;
-    $("bkZone").innerHTML = (c.zonesByDistrict[district] || []).map(z => `<option>${esc(z)}</option>`).join("");
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfBookingStyles">
+      #modalFields.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      #modalFields [hidden]{display:none!important}
+      #modalFields .field{min-width:0}
+      #modalFields .field>select,#modalFields .field>input:not([type=checkbox]):not([type=radio]),#modalFields .df-phone{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+      #modalFields .df-phone input{min-width:0}
+      #modalFields .df-bk-section{margin:4px 0 -4px;padding-top:10px;border-top:1px solid var(--line);color:#8792a2;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+      #modalFields .df-bk-section:first-child{margin-top:0;padding-top:0;border-top:0}
+      #modalFields .df-svc-checks label{display:flex;align-items:center;gap:7px;color:#3c4859;font-size:13px}
+      #modalFields details label{color:#3c4859;font-weight:400}
+      #modalBackdrop .modal{max-height:calc(100vh - 40px);overflow-y:auto}
+      @media(max-width:560px){#modalFields.form-grid{grid-template-columns:minmax(0,1fr)}#modalBackdrop{padding:10px}#modalBackdrop .modal{padding:16px}}
+    </style>`,
+  );
+
+  const bkField = (id, label, control, { full = false, cls = "", hidden = false } = {}) => `<div class="field${full ? " full" : ""}${cls ? ` ${cls}` : ""}"${hidden ? " hidden" : ""}><label for="${id}">${esc(label)}</label>${control}</div>`;
+  const bkSection = (title, cls = "") => `<div class="field full df-bk-section${cls ? ` ${cls}` : ""}">${esc(title)}</div>`;
+  const placeSelect = id => `<select id="${id}"><option value="">Loading…</option></select>`;
+
+  function bookingFields(fixed) {
+    const line = fixed || "ecommerce";
+    const lineSelect = fixed
+      ? ""
+      : bkField("bkLine", "Booking for", `<select id="bkLine">${Object.entries(LINE_LABEL).map(([v, l]) => `<option value="${v}" ${v === line ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`, { full: true });
+    return [
+      bkSection("Sender"),
+      lineSelect,
+      bkField("bkMerchant", "Merchant account", `<select id="bkMerchant"></select>`, { full: true, cls: "df-bk-merchant" }),
+      bkField("bkSenderName", "Sender name", `<input id="bkSenderName" maxlength="120" autocomplete="off" placeholder="Walk-in sender's name">`, { cls: "df-bk-walkin" }),
+      bkField("bkSenderPhone", "Sender phone", `<input id="bkSenderPhone">`, { cls: "df-bk-walkin" }),
+      bkField("bkPickupDistrict", "Sender district", placeSelect("bkPickupDistrict"), { cls: "df-bk-walkin" }),
+      bkField("bkPickupZone", "Sender zone", placeSelect("bkPickupZone"), { cls: "df-bk-walkin" }),
+      bkField("bkPickupArea", "Sender area (optional)", placeSelect("bkPickupArea"), { cls: "df-bk-walkin" }),
+      bkField("bkPickupStreet", "Sender address (pickup and returns)", `<input id="bkPickupStreet" maxlength="200" placeholder="House, road, flat">`, { cls: "df-bk-walkin" }),
+      bkSection("Recipient"),
+      bkField("bkRecipient", "Recipient name", `<input id="bkRecipient" maxlength="120" autocomplete="off" placeholder="Recipient name">`),
+      bkField("bkPhone", "Recipient phone", `<input id="bkPhone">`),
+      bkSection("Delivery address"),
+      bkField("bkDistrict", "District", placeSelect("bkDistrict")),
+      bkField("bkZone", "Zone", placeSelect("bkZone")),
+      bkField("bkArea", "Area (optional)", placeSelect("bkArea")),
+      bkField("bkStreet", "Street address", `<input id="bkStreet" maxlength="200" placeholder="House, road, flat">`, { full: true }),
+      bkSection("Parcel"),
+      bkField("bkSvcProduct", "Product (optional)", `<select id="bkSvcProduct"><option value="">No product (Regular)</option></select>`),
+      bkField("bkWeight", "Weight (kg)", `<input id="bkWeight" type="number" min="0.01" max="50" step="0.1" value="0.5" inputmode="decimal">`, { cls: "df-bk-weight" }),
+      bkField("bkContents", "Contents (optional)", `<input id="bkContents" maxlength="120">`),
+      bkField("bkRef", "Order reference (optional)", `<input id="bkRef" maxlength="80">`),
+      bkField("bkCn", "Pre-printed CN (optional)", `<input id="bkCn" maxlength="24" autocomplete="off" placeholder="Label from CN stock">`),
+      bkSection("Service"),
+      `<div id="bkServices" style="display:contents"></div>`,
+      `<div class="field full" id="bkPrice" aria-live="polite" style="font-size:13px;color:#637083"></div>`,
+    ].join("");
   }
+
+  /** Delivery / sender places from the catalog (active only): "Choose …" first, nothing preselected. */
+  function cascade(prefix) {
+    const c = Ops.catalog;
+    const S = svcApi();
+    if (!c || !S) return;
+    const d = $(`${prefix}District`);
+    const z = $(`${prefix}Zone`);
+    const a = $(`${prefix}Area`);
+    if (d && d.options.length <= 1) S.fill(d, c.districts || [], "Choose district");
+    S.fill(z, c.zonesByDistrict?.[d?.value] || [], d?.value ? "Choose zone" : "Choose the district first");
+    const areas = c.areasByZone?.[z?.value] || [];
+    S.fill(a, areas, z?.value ? (areas.length ? "Choose area (optional)" : "No areas listed") : "Choose the zone first");
+  }
+  function cascadeAreas(prefix) {
+    const c = Ops.catalog;
+    const areas = c?.areasByZone?.[$(`${prefix}Zone`)?.value] || [];
+    svcApi()?.fill($(`${prefix}Area`), areas, $(`${prefix}Zone`)?.value ? (areas.length ? "Choose area (optional)" : "No areas listed") : "Choose the zone first");
+  }
+
+  /** Shows the sender fields of the chosen line (merchant account, or the walk-in sender) and the weight (not Banking). */
+  function applyLine() {
+    const line = lineNow();
+    booking.line = line;
+    const walkIn = line === "walkin";
+    for (const el of qa("#modalFields .df-bk-merchant")) el.hidden = walkIn;
+    for (const el of qa("#modalFields .df-bk-walkin")) el.hidden = !walkIn;
+    const weight = q("#modalFields .df-bk-weight");
+    if (weight) weight.hidden = line === "banking";
+    const contents = $("bkContents");
+    if (contents) {
+      contents.closest(".field").querySelector("label").textContent = line === "banking" ? "Item description (optional)" : "Contents (optional)";
+      contents.placeholder = line === "banking" ? "e.g. Credit card for account ending 4821" : "e.g. 2 T-shirts";
+    }
+    $("modalTitle").textContent = LINE_TITLE[line] || "Create shipment";
+    $("modalDescription").textContent = walkIn
+      ? "Books a customer parcel for a walk-in sender (no merchant): picked up from the sender's address or dropped off at a hub. Priced with the Customer default package."
+      : "Books the parcel for a merchant: picked up by a rider from the merchant's registered address, or dropped off at a hub. The price comes from the merchant's service package.";
+    fillMerchants();
+  }
+
   function fillMerchants() {
-    const line = $("bkLine")?.value || modalContext.line;
     const select = $("bkMerchant");
     if (!select) return;
+    const line = lineNow();
+    if (line === "walkin") return;
+    const keep = select.value;
     const list = merchantsFor(line);
-    select.innerHTML = list.length ? list.map(m => `<option value="${m.id}">${esc(`${m.name} · ${m.code}`)}</option>`).join("") : `<option value="">${Ops.cache.merchants ? "No active merchants for this service line" : "Loading merchants…"}</option>`;
-    const cod = $("bkCod");
-    if (cod) {
-      cod.disabled = line === "Documents";
-      if (line === "Documents") cod.value = "0";
-    }
+    select.innerHTML = Ops.cache.merchants?.value
+      ? `<option value="">${list.length ? "Choose the merchant" : "No active merchants for this category"}</option>${list.map(m => `<option value="${m.id}">${esc(`${m.name} · ${m.code}`)}</option>`).join("")}`
+      : `<option value="">Loading merchants…</option>`;
+    select.value = list.some(m => m.id === keep) ? keep : list.length === 1 ? list[0].id : "";
+    svcApi()?.searchable(select, { label: "merchants" });
+  }
+
+  /** Inline checks for the form's own fields; the package fields add theirs when they load. */
+  function bookingChecks() {
+    const rule = (id, fn) => {
+      const el = $(id);
+      return el ? DF.validate.field(el, () => (shown(el) ? fn(el.value.trim(), el) : "")) : null;
+    };
+    const required = message => v => (v ? "" : message);
+    const list = [
+      rule("bkMerchant", required("Choose the merchant account")),
+      rule("bkSenderName", required("Enter the sender's name")),
+      rule("bkPickupDistrict", required("Choose the sender's district")),
+      rule("bkPickupZone", required("Choose the sender's zone")),
+      rule("bkPickupStreet", required("Enter the sender's address")),
+      rule("bkRecipient", required("Enter the recipient's name")),
+      rule("bkDistrict", required("Choose the delivery district")),
+      rule("bkZone", required("Choose the delivery zone")),
+      rule("bkStreet", required("Enter the street address")),
+      rule("bkWeight", v => (!v ? "Enter the weight" : !(Number(v) >= 0.01) ? "At least 0.01 kg" : Number(v) > 50 ? "At most 50 kg" : "")),
+      rule("bkCn", v => (!v || /^[A-Za-z]{2,4}-\d{6}-[0-9A-Za-z]{4,8}$/.test(v) ? "" : "Enter the consignment number printed on the label")),
+    ].filter(Boolean);
+    // The +880 phone fields check themselves (DF.phoneInput); a blur shows their message.
+    const phones = ["bkSenderPhone", "bkPhone"].map(id => $(id)).filter(Boolean);
+    return () => {
+      let ok = list.map(check => check(true)).every(Boolean);
+      for (const input of phones) {
+        if (!shown(input)) continue;
+        input.dispatchEvent(new Event("blur"));
+        if (DF.phoneProblem(input.value)) ok = false;
+      }
+      return ok;
+    };
   }
 
   async function openBooking(kind) {
     if (!Ops.require("dispatch", "book shipments")) return;
     const fixed = BOOKING_KINDS[kind];
-    const c = Ops.catalog;
-    modalContext = { kind: "booking", line: fixed || "E-commerce" };
-    $("modalTitle").textContent = fixed === "Documents" ? "Create document shipment" : fixed ? "Create e-commerce shipment" : "Create shipment";
-    $("modalDescription").textContent = "Books the parcel for a merchant: picked up by a rider from the merchant's registered address, or dropped off at a hub by the merchant. The price comes from the merchant's service package either way.";
+    booking.line = fixed || (Ops.page?.() === "Customer parcels" ? "walkin" : Ops.page?.() === "Banking & Financial operations" ? "banking" : "ecommerce");
+    booking.pkg = null;
+    booking.pkgKey = "";
+    modalContext = { kind: "booking", line: booking.line };
     $("modalSubmit").textContent = "Book shipment";
-    const levels = Object.entries(c?.serviceLevels || { REGULAR: "Regular", SAME_DAY: "Same day", EXPRESS: "Express" });
-    $("modalFields").innerHTML = `${fixed ? "" : `<div class="field"><label for="bkLine">Service line</label><select id="bkLine"><option>E-commerce</option><option>Documents</option></select></div>`}<div class="field ${fixed ? "full" : ""}"><label for="bkMerchant">Merchant / account</label><select id="bkMerchant" required></select></div><div class="field"><label for="bkRecipient">Recipient name</label><input id="bkRecipient" required maxlength="120" placeholder="Recipient name"></div><div class="field"><label for="bkPhone">Recipient phone</label><input id="bkPhone" required inputmode="tel" placeholder="01XXXXXXXXX"></div><div class="field"><label for="bkDistrict">District</label><select id="bkDistrict">${(c?.districts || []).map(d => `<option>${esc(d)}</option>`).join("")}</select></div><div class="field"><label for="bkZone">Zone</label><select id="bkZone"></select></div><div class="field full"><label for="bkStreet">Street address</label><input id="bkStreet" required maxlength="200" placeholder="House, road, flat"></div><div class="field"><label for="bkArea">Area / landmark (optional)</label><input id="bkArea" maxlength="120"></div><div class="field"><label for="bkLevel">Service level</label><select id="bkLevel">${levels.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></div><div class="field"><label for="bkWeight">Weight (kg)</label><input id="bkWeight" type="number" min="0.1" max="50" step="0.1" value="1" required></div><div class="field"><label for="bkCod">COD amount (৳)</label><input id="bkCod" type="number" min="0" step="1" value="0"></div><div class="field"><label for="bkContents">${fixed === "Documents" ? "Document type" : "Contents"}</label><input id="bkContents" maxlength="120" placeholder="${fixed === "Documents" ? "e.g. Contract" : "e.g. Clothing"}"></div><div class="field"><label for="bkRef">Order reference (optional)</label><input id="bkRef" maxlength="80"></div><div class="field"><label for="bkCn">Pre-printed CN (optional)</label><input id="bkCn" maxlength="24" autocomplete="off" placeholder="Label from CN stock"></div>${Ops.intake ? Ops.intake.fields("bk") : ""}<div id="bkServices" style="display:contents"></div><div class="field full" id="bkPrice" aria-live="polite" style="font-size:13px;color:#637083"></div>`;
-    Ops.intake?.wire("bk");
+    $("modalFields").innerHTML = bookingFields(fixed);
+    if ($("bkLine")) $("bkLine").value = booking.line;
+    // Inline validation replaces the browser's checks (closeModal turns them back on).
+    $("modalForm").noValidate = true;
+    const modal = q("#modalBackdrop .modal");
+    if (modal) modal.style.maxWidth = "min(680px, calc(100vw - 20px))";
+    DF.phoneInput($("bkSenderPhone"));
+    DF.phoneInput($("bkPhone"));
     DF.scanner?.attach($("bkCn"), { title: "Scan the CN label" });
-    $("bkDistrict")?.addEventListener("change", fillZones);
-    $("bkLine")?.addEventListener("change", fillMerchants);
-    fillZones();
-    fillMerchants();
-    void loadBookingPackage();
+    cascade("bk");
+    cascade("bkPickup");
+    applyLine();
+    booking.checks = [bookingChecks()];
     $("modalBackdrop").classList.add("open");
+    void loadBookingPackage();
     if (!Ops.cache.merchants?.value) {
       try {
         Ops.cache.merchants = { value: await DF.api("/ops/merchants"), at: Date.now(), loading: false };
@@ -396,80 +552,110 @@
     }
   }
   for (const kind of Object.keys(BOOKING_KINDS)) Ops.modals[kind] = () => openBooking(kind);
+  // Customer parcels: the page's "New website pickup" link becomes the walk-in booking.
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target.closest?.('[data-action="newWalkIn"]');
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openBooking("newWalkIn");
+    },
+    true,
+  );
 
-  // ───────────── the merchant's service package on the booking form (shared/order-services.js) ─────────────
-  let bookingPkg = null;
+  // ───────────── the sender's service package on the booking form (shared/order-services.js) ─────────────
   async function loadBookingPackage() {
-    const merchantId = $("bkMerchant")?.value;
+    const S = svcApi();
     const box = $("bkServices");
-    if (!box || !window.DFOrderServices) return;
-    bookingPkg = null;
+    if (!box || !S) return;
+    const line = lineNow();
+    const merchantId = line === "walkin" ? "" : $("bkMerchant")?.value;
+    const key = line === "walkin" ? "walkin" : merchantId;
+    if (key === booking.pkgKey && booking.pkg) return;
+    booking.pkg = null;
+    booking.pkgKey = key;
+    booking.checks = booking.checks.slice(0, 1);
     box.innerHTML = "";
-    if (!merchantId) return;
+    $("bkSvcProduct").innerHTML = `<option value="">No product (Regular)</option>`;
+    $("bkPrice").textContent = key ? "Loading the service package…" : "Choose the merchant account to see its services and price.";
+    if (!key) return;
     try {
-      const view = await window.DFOrderServices.load(`/packages/effective?merchantId=${encodeURIComponent(merchantId)}`);
-      if ($("bkMerchant")?.value !== merchantId) return;
-      bookingPkg = view;
-      box.innerHTML = window.DFOrderServices.block(view, { prefix: "bkSvc", firstMile: false, product: true });
-      // The package choices make the form taller than small screens: the modal scrolls.
-      const modal = box.closest(".modal");
-      if (modal) Object.assign(modal.style, { maxHeight: "calc(100vh - 40px)", overflowY: "auto" });
-      // COD only when the package offers it; the service level follows the Service choice.
-      const cod = $("bkCod");
-      if (cod && !view.options.cod) cod.value = "0";
-      if (cod) cod.closest(".field").hidden = !view.options.cod;
-      const level = $("bkLevel")?.closest(".field");
-      if (level) level.hidden = true;
-      window.DFOrderServices.sync("bkSvc");
+      const view = await S.load(line === "walkin" ? "/packages/effective?segment=CUSTOMER" : `/packages/effective?merchantId=${encodeURIComponent(merchantId)}`);
+      if (booking.pkgKey !== key || !$("bkServices")) return;
+      booking.pkg = view;
+      // Products of the category (active, with their type); the package's choices only.
+      const product = $("bkSvcProduct");
+      product.innerHTML = S.productOptions(view);
+      const hubs = Ops.myHubs() || DF.state.hubs;
+      box.innerHTML = S.block(view, { prefix: "bkSvc", fieldClass: "field", hubs, codAmount: true, codChecked: false, productSelect: "bkSvcProduct" });
+      booking.checks.push(S.checks("bkSvc"));
+      S.sync("bkSvc");
       bookingQuote();
     } catch (error) {
-      showToast(DF.describe(error));
+      $("bkPrice").textContent = DF.describe(error);
     }
   }
+
+  /** The quote body: the same places and choices the booking sends (product included, so the price matches). */
+  function bookingQuoteBody() {
+    const line = lineNow();
+    const svc = svcApi().read(booking.pkg, "bkSvc");
+    const merchant = bookingMerchant();
+    const pickup =
+      line === "walkin"
+        ? { pickupDistrict: $("bkPickupDistrict").value, pickupZone: $("bkPickupZone").value || undefined, pickupArea: $("bkPickupArea").value || undefined }
+        : { pickupDistrict: merchant?.pickupDistrict, pickupZone: merchant?.pickupZone || undefined };
+    const { cod, codAmount, notifications, ...choices } = svc;
+    return {
+      ...(line === "walkin" ? {} : { merchantId: $("bkMerchant").value }),
+      ...pickup,
+      deliveryDistrict: $("bkDistrict").value,
+      deliveryZone: $("bkZone").value,
+      ...($("bkArea").value ? { deliveryArea: $("bkArea").value } : {}),
+      ...(line === "banking" ? {} : { weightKg: Number($("bkWeight").value) || 0.5 }),
+      codAmount: line === "banking" ? 0 : codAmount || 0,
+      ...choices,
+    };
+  }
+
   let bookingQuoteTimer = null;
   function bookingQuote() {
     clearTimeout(bookingQuoteTimer);
     bookingQuoteTimer = setTimeout(async () => {
       const out = $("bkPrice");
-      if (!out || !bookingPkg || !$("bkZone")?.value) return;
-      const merchant = (Ops.cache.merchants?.value || []).find(m => m.id === $("bkMerchant").value);
-      const svc = window.DFOrderServices.read(bookingPkg, "bkSvc");
-      let intake = { intake: "PICKUP" };
+      if (!out || !booking.pkg) return;
+      const body = bookingQuoteBody();
+      if (!body.pickupDistrict || !body.deliveryDistrict) {
+        out.textContent = lineNow() === "walkin" && !body.pickupDistrict ? "Choose the sender's district and the delivery district to see the price." : "Choose the delivery district to see the price.";
+        return;
+      }
+      const seq = ++booking.quoteSeq;
       try {
-        intake = Ops.intake ? Ops.intake.read("bk") : intake;
-      } catch {}
-      try {
-        const quote = await DF.api("/packages/quote", {
-          method: "POST",
-          body: {
-            merchantId: $("bkMerchant").value,
-            pickupDistrict: merchant?.pickupDistrict || $("bkDistrict").value,
-            pickupZone: merchant?.pickupZone || merchant?.pickupArea || $("bkZone").value,
-            deliveryDistrict: $("bkDistrict").value,
-            deliveryZone: $("bkZone").value,
-            weightKg: Number($("bkWeight").value) || 1,
-            codAmount: bookingPkg.options.cod && svc.cod ? Number($("bkCod").value) || 0 : 0,
-            ...(intake.intake === "DROP_OFF" && intake.dropOffHubId ? { dropOffHubId: intake.dropOffHubId } : svc.firstMile ? { firstMile: svc.firstMile } : {}),
-            lastMile: svc.lastMile,
-            ...(svc.collectHubId ? { collectHubId: svc.collectHubId } : {}),
-            speed: svc.speed,
-            openBox: svc.openBox,
-          },
-        });
-        out.innerHTML = window.DFOrderServices.breakdown(quote);
+        const quote = await DF.api("/packages/quote", { method: "POST", body });
+        if (seq === booking.quoteSeq) out.innerHTML = svcApi().breakdown(quote);
       } catch (error) {
-        out.textContent = DF.describe(error);
+        if (seq === booking.quoteSeq) out.textContent = DF.describe(error);
       }
     }, 300);
   }
+
   window.addEventListener("change", event => {
     if (modalContext.kind !== "booking" || !event.target.closest?.("#modalFields")) return;
-    if (event.target.id === "bkMerchant" || event.target.id === "bkLine") return void setTimeout(loadBookingPackage);
-    window.DFOrderServices?.sync("bkSvc");
+    const id = event.target.id;
+    if (id === "bkLine") {
+      applyLine();
+      return void loadBookingPackage();
+    }
+    if (id === "bkMerchant") return void loadBookingPackage();
+    if (id === "bkDistrict" || id === "bkPickupDistrict") cascade(id === "bkDistrict" ? "bk" : "bkPickup");
+    if (id === "bkZone" || id === "bkPickupZone") cascadeAreas(id === "bkZone" ? "bk" : "bkPickup");
+    svcApi()?.sync("bkSvc");
     bookingQuote();
   });
   window.addEventListener("input", event => {
-    if (modalContext.kind === "booking" && event.target.closest?.("#modalFields")) bookingQuote();
+    if (modalContext.kind === "booking" && ["bkWeight", "bkSvcCodAmount"].includes(event.target.id)) bookingQuote();
   });
 
   window.addEventListener(
@@ -478,28 +664,34 @@
       if (event.target.id !== "modalForm" || modalContext.kind !== "booking") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      const line = $("bkLine")?.value || modalContext.line;
-      const merchantId = $("bkMerchant").value;
-      if (!merchantId) return void showToast("Choose the merchant account.");
-      const area = $("bkArea").value.trim();
-      let intake;
-      try {
-        intake = Ops.intake ? Ops.intake.read("bk") : { intake: "PICKUP" };
-      } catch (error) {
-        return void showToast(error.message);
+      const valid = booking.checks.map(check => check()).every(Boolean);
+      if (!valid) {
+        q("#modalFields [aria-invalid=true]")?.focus();
+        return void showToast("Check the highlighted fields.");
       }
+      if (!booking.pkg) return void showToast(lineNow() === "walkin" ? "The Customer package is still loading. Try again in a moment." : "Choose the merchant account.");
+      const line = lineNow();
+      const merchant = line === "walkin" ? null : bookingMerchant();
+      const { cod, codAmount = 0, firstMile, dropHubId, ...choices } = svcApi().read(booking.pkg, "bkSvc");
+      const dropOff = firstMile === "HUB_DROP";
+      const pickupArea = $("bkPickupArea").value || undefined;
       const body = {
-        merchantId,
-        intake: intake.intake,
-        dropOffHubId: intake.dropOffHubId,
+        ...(merchant
+          ? { merchantId: merchant.id }
+          : {
+              sender: { name: $("bkSenderName").value.trim(), phone: $("bkSenderPhone").value.trim() },
+              pickup: { category: "HOME", street: $("bkPickupStreet").value.trim(), area: pickupArea, zone: $("bkPickupZone").value, district: $("bkPickupDistrict").value },
+            }),
+        // Drop at hub is the hub drop-off intake (the hub receive desk expects it); other first miles go as chosen.
+        intake: dropOff ? "DROP_OFF" : "PICKUP",
+        ...(dropOff ? { dropOffHubId: dropHubId } : { firstMile }),
         recipient: { name: $("bkRecipient").value.trim(), phone: $("bkPhone").value.trim() },
-        delivery: { category: "HOME", street: $("bkStreet").value.trim(), area: area || undefined, zone: $("bkZone").value, district: $("bkDistrict").value },
-        type: line === "Documents" ? "DOCUMENT" : "ECOMMERCE",
-        serviceLevel: $("bkLevel").value,
-        weightKg: Number($("bkWeight").value),
-        codAmount: line === "Documents" ? 0 : Number($("bkCod").value) || 0,
-        // The merchant's service package choices (last mile, speed + handling, open box, product, messages).
-        ...(bookingPkg ? bookingChoices(intake) : {}),
+        delivery: { category: "HOME", street: $("bkStreet").value.trim(), area: $("bkArea").value || undefined, zone: $("bkZone").value, district: $("bkDistrict").value },
+        type: line === "banking" ? "DOCUMENT" : line === "ecommerce" ? "ECOMMERCE" : "PARCEL",
+        // Banking & Financial has no weight in pricing: the API needs one, 0.5 kg (the included weight).
+        weightKg: line === "banking" ? 0.5 : Number($("bkWeight").value),
+        codAmount: line === "banking" ? 0 : codAmount,
+        ...choices,
         contents: $("bkContents").value.trim() || undefined,
         merchantOrderRef: $("bkRef").value.trim() || undefined,
         cn: $("bkCn")?.value.trim().toUpperCase() || undefined,
@@ -510,22 +702,19 @@
         .then(async parcel => {
           closeModal();
           await Ops.refresh().catch(() => undefined);
-          render(line === "Documents" ? "Banking & Financial operations" : "E-commerce operations");
-          if (parcel.intake === "DROP_OFF") {
-            showToast(`${parcel.trackingId} booked for ${parcel.merchant?.name} · charge ৳${parcel.charges.total} · ${parcel.statusLabel.toLowerCase()}.`);
-            Ops.labels?.open([parcel.trackingId], { title: "Print the label", description: `${parcel.trackingId} · stick the label on the parcel, then receive it at ${parcel.dropOffHub?.name || "the hub"}.` });
-          } else showToast(`${parcel.trackingId} booked for ${parcel.merchant?.name} · charge ৳${parcel.charges.total}. Assign a pickup rider in Dispatch.`);
+          Ops.upsertParcels?.([parcel]);
+          render(LINE_PAGE[line]);
+          // The new parcel's drawer: its details, price breakdown and "Print label".
+          Ops.drawer?.open(parcel.trackingId);
+          const who = parcel.merchant?.name || `${parcel.sender?.name || body.sender?.name} (walk-in)`;
+          const next = parcel.intake === "DROP_OFF" ? `${parcel.statusLabel.toLowerCase()} at ${parcel.dropOffHub?.name || "the hub"}. Print the label from the parcel panel.` : "Assign a pickup rider in Dispatch.";
+          showToast(`${parcel.trackingId} booked for ${who} · charge ৳${parcel.charges.total} · ${next}`);
         })
         .catch(error => showToast(DF.describe(error)))
         .finally(() => (button.disabled = false));
     },
     true,
   );
-
-  function bookingChoices(intake) {
-    const { cod, firstMile, ...svc } = window.DFOrderServices.read(bookingPkg, "bkSvc");
-    return { ...svc, ...(intake.intake !== "DROP_OFF" && firstMile ? { firstMile } : {}), ...(cod ? {} : { codAmount: 0 }) };
-  }
 
   // Excel / CSV import: shared/importer.js (one import engine for merchants and operations), wired in bridge-imports.js.
 })();

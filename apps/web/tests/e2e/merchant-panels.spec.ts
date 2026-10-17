@@ -86,9 +86,16 @@ async function fillOrder(page: Page, recipient: string, phone: string) {
   await page.selectOption("#merchantArea", "Dhanmondi Road 7");
 }
 
+/** The booking toast's tracking ID; the new order's details open with "Print label (PDF)" (closed here). */
 async function createdId(page: Page) {
   await expect(toast(page)).toContainText(/created · delivery charge ৳/);
-  return (await toast(page).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  const trackingId = (await toast(page).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  const details = page.locator("#merchantHistoryBackdrop");
+  await expect(details).toContainText(trackingId);
+  await expect(details.locator(`[data-df-label="${trackingId}"]`)).toHaveText("Print label (PDF)");
+  await page.click("#closeMerchantHistory");
+  await expect(details).toHaveCount(0);
+  return trackingId;
 }
 
 /** Takes a booked parcel through pickup and a signed delivery on the API. */
@@ -118,8 +125,9 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await nav(page, "Orders");
   const recipient = `E2E Buyer ${unique()}`;
   await fillOrder(page, recipient, "01812345678");
-  await page.selectOption("#orderType", "E-commerce parcel");
-  await page.fill("#orderAmount", "1250");
+  // Cash on delivery is ticked by default; the amount is its own field (the product value is separate and optional).
+  await expect(page.locator("#merchantSvcCod")).toBeChecked();
+  await page.fill("#merchantSvcCodAmount", "1250");
   // Express (same day) is offered inside the same district (Gulshan → Dhanmondi are both Dhaka).
   await page.selectOption("#merchantSvcSpeed", "EXPRESS");
   const breakdown = page.locator("#merchantPriceHint [data-price-breakdown]");
@@ -301,9 +309,7 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   await fillOrder(page, recipient, "01912345678");
   // Banking & Financial services come from the package (no weight, no COD).
   await page.selectOption("#merchantSvcSpeed", "B2B");
-  await page.fill("#merchantBranchCode", "MBP-DHK-07");
   await page.fill("#merchantReferenceNo", reference);
-  await page.selectOption("#merchantRelation", "Reception");
   await expect(page.locator("#merchantPriceHint [data-price-breakdown]")).toContainText("Inside same district", { timeout: 10_000 });
   await page.click('#orderForm button[type="submit"]');
   const trackingId = await createdId(page);
@@ -336,7 +342,7 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   await page.fill("#tableSearch", recipient);
   await expect(row).toContainText("Delivered");
   await row.locator("[data-merchant-history]").click();
-  await expect(page.locator("#merchantHistoryBackdrop")).toContainText("MBP-DHK-07");
+  await expect(page.locator("#merchantHistoryBackdrop")).toContainText(reference);
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Signature");
   await page.keyboard.press("Escape");
 

@@ -2,6 +2,7 @@ import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
 import { vi } from "vitest";
 import { RealtimeService, type RealtimeEvent } from "../src/common/realtime.service";
 import { ImportJobsService } from "../src/modules/imports/import-jobs.service";
+import { ImportConfigService } from "../src/modules/imports/import-config.service";
 import { readZip, writeZip } from "../src/modules/imports/xlsx/zip";
 import { readXlsx } from "../src/modules/imports/xlsx/xlsx-reader";
 import { writeXlsx } from "../src/modules/imports/xlsx/xlsx-writer";
@@ -9,9 +10,12 @@ import { readCsv } from "../src/modules/imports/csv";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const ECOM_HEADER = ["Order ID", "Customer name", "Customer phone", "Delivery address", "District", "Zone", "Area", "Address type", "Parcel type", "Product type", "Item description", "Service", "Weight (kg)", "Cash on delivery", "COD amount (৳)", "Product value (৳)", "Packaging", "Delivery instructions"];
+const ECOM_HEADER = ["Order ID", "Customer name", "Customer phone", "Delivery address", "District", "Zone", "Area", "Product", "Service", "Weight (kg)", "COD amount (৳)", "Product value (৳)", "Delivery instructions"];
+const CUSTOMER_HEADER = ["Sender name", "Sender phone", "Pickup address", "Pickup district", "Pickup zone", "Recipient name", "Recipient phone", "Delivery address", "Delivery district", "Delivery zone", "Product", "Service", "Weight (kg)", "COD amount (৳)", "Reference no."];
+/** Columns of the old templates that are gone (the merchant is chosen in the upload modal). */
+const REMOVED = ["Merchant", "Parcel type", "Packaging", "Receiver relationship", "Origin branch code", "Document description", "Document type", "Item description", "Address type", "Cash on delivery"];
 
-/** One spreadsheet import engine for merchants (both panels, API keys) and operations. */
+/** One spreadsheet import engine for merchants (both panels, API keys) and operations; three bulk-create templates. */
 describe("imports", () => {
   let ctx: TestContext;
   beforeAll(async () => {
@@ -39,6 +43,15 @@ describe("imports", () => {
     const owner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: m.id }], "Owner");
     return { m, owner };
   }
+  const admin = () => userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+  const serviceCatalog = async () => (await ctx.api("GET", "/service-catalog")).body as { services: { code: string; segments: string[] }[] };
+  const allServices = async (segment: string, without: string[] = []) => (await serviceCatalog()).services.filter(s => s.segments.includes(segment) && !without.includes(s.code)).map(s => s.code);
+  async function packageFor(token: string, merchantId: string, segment: string, name: string, without: string[]) {
+    const created = await ctx.api("POST", "/packages", { token, body: { segment, name, services: await allServices(segment, without), prices: {} } });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const assigned = await ctx.api("PUT", `/merchants/${merchantId}/package`, { token, body: { packageId: created.body.id } });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+  }
 
   function multipart(fields: Record<string, string>, file: { name: string; data: Buffer; type?: string }) {
     const boundary = `----dfTest${Math.random().toString(16).slice(2)}`;
@@ -54,8 +67,28 @@ describe("imports", () => {
   }
   async function download(token: string, url: string) {
     const res = await ctx.app.inject({ method: "GET", url: `/api/v1${url}`, headers: { authorization: `Bearer ${token}` } });
-    return { status: res.statusCode, headers: res.headers, buffer: res.rawPayload };
+    return { status: res.statusCode, headers: res.headers, buffer: res.rawPayload, json: () => JSON.parse(res.body) };
   }
+  /** A template's data sheet, instructions, lists and raw sheet XML. */
+  async function template(token: string, url: string) {
+    const res = await download(token, url);
+    expect(res.status, res.buffer.toString()).toBe(200);
+    const zip = readZip(res.buffer, { maxBytes: 50_000_000 });
+    const lists = readXlsx(res.buffer, { maxRows: 20_000, prefer: ["Lists"] }).rows;
+    const listOf = (title: string) => {
+      const i = lists[0].indexOf(title);
+      return i < 0 ? [] : lists.slice(1).map(r => r[i]).filter(Boolean);
+    };
+    return {
+      res,
+      header: readXlsx(res.buffer, { maxRows: 10 }).rows[0],
+      workbook: zip.get("xl/workbook.xml")!.toString(),
+      sheet: zip.get("xl/worksheets/sheet1.xml")!.toString(),
+      help: readXlsx(res.buffer, { maxRows: 200, prefer: ["Instructions"] }).rows.map(r => r.join(" | ")),
+      listOf,
+    };
+  }
+  const letterOf = (header: string[], name: string) => String.fromCharCode(65 + header.findIndex(h => h.replace(/ \*$/, "") === name));
   const csv = (rows: string[][]) => Buffer.from(`﻿${rows.map(r => r.map(c => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\r\n")}`, "utf8");
   /** An e-commerce row by header name. */
   const ecom = (values: Partial<Record<(typeof ECOM_HEADER)[number], string>>) => ECOM_HEADER.map(h => values[h as (typeof ECOM_HEADER)[number]] ?? "");
@@ -67,70 +100,177 @@ describe("imports", () => {
       "Delivery address": "Road 7, Flat 3B",
       District: "Dhaka Central",
       Zone: "Dhanmondi",
-      Service: "Same day",
+      Service: "Express",
       "Weight (kg)": "2",
       "COD amount (৳)": "1500",
-      "Product type": "Fashion & Apparel",
+      Product: "Fashion & Apparel",
       ...extra,
     });
+  const customerRow = (values: Partial<Record<(typeof CUSTOMER_HEADER)[number], string>>) =>
+    CUSTOMER_HEADER.map(h => ({
+      "Sender name": "Karim Hossain",
+      "Sender phone": "01711000001",
+      "Pickup address": "House 5, Road 2",
+      "Pickup district": "Dhaka North",
+      "Pickup zone": "Gulshan",
+      "Recipient name": "Nabila Ahmed",
+      "Recipient phone": "01812000000",
+      "Delivery address": "Road 7",
+      "Delivery district": "Dhaka North",
+      "Delivery zone": "Banani",
+      Product: "Books",
+      Service: "Regular",
+      "Weight (kg)": "1",
+      "COD amount (৳)": "500",
+      "Reference no.": "",
+      ...values,
+    })[h as (typeof CUSTOMER_HEADER)[number]] ?? "");
   const allRows = async (token: string, id: string, filter = "all") => (await ctx.api("GET", `/imports/${id}/rows?filter=${filter}&pageSize=200`, { token })).body;
 
   describe("templates", () => {
-    it("are real .xlsx files with required markers, dropdowns from live data, instructions and a hidden lists sheet", async () => {
+    it("E-commerce: real .xlsx with exactly its columns, live dropdowns (dependent IF/INDIRECT lists, products with type, the package's services) and its own instructions", async () => {
       const { owner } = await merchant();
-      await ctx.prisma.setting.create({ data: { key: "platform-config", value: { receiverRelations: ["Self", "Reception", "Authorized representative"], documentTypes: ["B2B Document", "Cheque book"] } } });
-      const res = await download(owner.token, "/imports/templates/ecommerce");
-      expect(res.status).toBe(200);
-      expect(res.headers["content-type"]).toBe(XLSX);
-      expect(String(res.headers["content-disposition"])).toContain(".xlsx");
-      const files = readZip(res.buffer, { maxBytes: 50_000_000 });
-      const workbook = files.get("xl/workbook.xml")!.toString();
-      expect(workbook).toMatch(/<sheet name="Orders"[^>]*\/>/);
-      expect(workbook).toMatch(/<sheet name="Instructions"[^>]*\/>/);
-      expect(workbook).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
-      expect(workbook).toContain('<definedName name="L_districts">Lists!$');
-      expect(workbook).toMatch(/<definedName name="ZN_1">/);
-      const sheet = files.get("xl/worksheets/sheet1.xml")!.toString();
-      // Required columns: red header style (s="1") and "*"; optional: s="2". Merchant panels have no Merchant column.
-      expect(sheet).toContain('<c r="C1" s="1" t="inlineStr"><is><t>Customer phone *</t></is></c>');
-      expect(sheet).toContain('<c r="E1" s="2" t="inlineStr"><is><t>District</t></is></c>');
-      expect(sheet).not.toContain("Merchant");
-      expect(sheet).toContain('state="frozen"');
-      // Dropdowns: districts, dependent zones, services, yes/no; numbers and phone checks; 5,000 rows.
-      expect(sheet).toContain('sqref="E2:E5001"><formula1>L_districts</formula1>');
-      // IF, not IFERROR: Excel shows no dropdown when the list source isn't a range.
-      expect(sheet).toContain("IF($E2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($E2,L_districts,0)))");
-      expect(sheet).not.toContain("IFERROR");
-      expect(sheet).toContain("<formula1>L_speeds</formula1>");
-      expect(sheet).toContain("<formula1>L_yesNo</formula1>");
-      expect(sheet).toMatch(/type="decimal"[^>]*sqref="O2:O5001"/);
-      expect(sheet).toMatch(/type="textLength"[^>]*sqref="C2:C5001"/);
-      const lists = readXlsx(res.buffer, { maxRows: 10_000, prefer: ["Lists"] });
-      expect(lists.rows[0]).toContain("Districts");
-      expect(lists.rows.map(r => r[lists.rows[0].indexOf("Districts")])).toContain("Dhaka Central");
-      const help = readXlsx(res.buffer, { maxRows: 10_000, prefer: ["Instructions"] });
-      const text = help.rows.map(r => r.join(" | ")).join("\n");
+      const t = await template(owner.token, "/imports/templates/ecommerce");
+      expect(t.res.headers["content-type"]).toBe(XLSX);
+      expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-ecommerce-orders-template.xlsx");
+      expect(t.workbook).toMatch(/<sheet name="Orders"[^>]*\/>/);
+      expect(t.workbook).toMatch(/<sheet name="Instructions"[^>]*\/>/);
+      expect(t.workbook).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
+      expect(t.workbook).toContain('<definedName name="L_districts">Lists!$');
+      expect(t.workbook).toMatch(/<definedName name="ZN_1">/);
+      expect(t.workbook).toMatch(/<definedName name="AR_1">/);
+      // Exactly the E-commerce columns (the default package has COD and open box); the phone is required.
+      expect(t.header).toEqual(["Customer name", "Customer phone *", "Delivery address", "District", "Zone", "Area", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Service", "Open box", "Order ID", "Delivery instructions"]);
+      for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
+      expect(t.sheet).toContain('<c r="B1" s="1" t="inlineStr"><is><t>Customer phone *</t></is></c>');
+      expect(t.sheet).toContain('state="frozen"');
+      // Dropdowns: districts, zones dependent on the district and areas on the zone (IF, never IFERROR), products, services, yes/no.
+      const [d, z] = [letterOf(t.header, "District"), letterOf(t.header, "Zone")];
+      expect(t.sheet).toContain(`sqref="${d}2:${d}5001"><formula1>L_districts</formula1>`);
+      expect(t.sheet).toContain(`IF($${d}2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($${d}2,L_districts,0)))`);
+      expect(t.sheet).toContain(`IF($${z}2=&quot;&quot;,L_areas,INDIRECT(&quot;AR_&quot;&amp;MATCH($${z}2,L_zones,0)))`);
+      expect(t.sheet).not.toContain("IFERROR");
+      expect(t.sheet).toContain("<formula1>L_products</formula1>");
+      expect(t.sheet).toContain("<formula1>L_speeds</formula1>");
+      expect(t.sheet).toContain("<formula1>L_yesNo</formula1>");
+      expect(t.sheet).toMatch(new RegExp(`type="decimal"[^>]*sqref="${letterOf(t.header, "COD amount (৳)")}2:`));
+      expect(t.sheet).toMatch(/type="textLength"[^>]*sqref="B2:B5001"/);
+      // Live lists: active products only, with their type, Regular → Document → Books in the seeded order.
+      expect(t.listOf("Districts")).toContain("Dhaka Central");
+      const products = t.listOf("Products");
+      expect(products[0]).toBe("Fashion & Apparel (Regular)");
+      expect(products.indexOf("Papers (Document)")).toBeGreaterThan(products.indexOf("Industrial & Business Supplies (Regular)"));
+      expect(products.indexOf("Books (Books)")).toBeGreaterThan(products.indexOf("Warranty Documents (Document)"));
+      expect(products.some(p => /Credit Cards/.test(p))).toBe(false);
+      expect(t.listOf("Service")).toEqual(["Regular", "Express"]);
+      // Instructions for this category: phone required, upload-screen choices, pricing by district, Express same day.
+      const text = t.help.join("\n");
       expect(text).toContain("at most 5,000 rows");
+      expect(text).toContain("The customer phone is required");
+      expect(text).toContain("First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen");
+      expect(text).toContain("Pricing is by district");
+      expect(text).toContain("Express is same-day delivery, only inside the same district.");
+      expect(text).not.toContain("pickup zone)\n");
       expect(text).toContain("Customer phone | Yes | Bangladeshi mobile number");
-      // The Service column follows the merchant's package (service packages): the default e-commerce package.
-      expect(text).toContain("Service | No | Regular, Express | Regular");
+      expect(t.help.find(l => l.startsWith("Service | No | Regular, Express (the services in Shop "))).toBeTruthy();
+      // Examples come from live data (the first active product, a real zone).
+      expect(t.help.find(l => l.startsWith("Product | No |"))).toContain("| Fashion & Apparel (Regular) |");
+      const catalog = (await ctx.api("GET", "/catalog")).body as { zonesByDistrict: Record<string, string[]> };
+      const example = (column: string) => t.help.find(l => l.startsWith(`${column} | No |`))!.split(" | ")[4];
+      expect(catalog.zonesByDistrict[example("District")]).toContain(example("Zone"));
 
-      // The document template has its own columns; operations templates add the Merchant column.
+      // An inactive product is not offered.
+      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Fashion & Apparel" } }, data: { active: false } });
+      expect((await template(owner.token, "/imports/templates/ecommerce")).listOf("Products")[0]).toBe("Electronics & Gadgets (Regular)");
+    });
+
+    it("Banking & Financial: no COD, weight or open box; Banking products; texts without weight or e-commerce Express", async () => {
       const bank = await merchant("BANKING_FINANCIAL");
-      const doc = readZip((await download(bank.owner.token, "/imports/templates/document")).buffer, { maxBytes: 50_000_000 });
-      const docSheet = doc.get("xl/worksheets/sheet1.xml")!.toString();
-      expect(doc.get("xl/workbook.xml")!.toString()).toContain('<sheet name="Consignments"');
-      // Banking & Financial: document types are Service options now (service packages); no weight, no COD.
-      expect(docSheet).toContain("<t>Service</t>");
-      expect(docSheet).not.toContain("Weight (kg)");
-      expect(docSheet).toContain("<t>Product</t>");
-      expect(docSheet).toContain("Receiver relationship");
-      expect(docSheet).not.toContain("COD");
-      expect(readXlsx((await download(bank.owner.token, "/imports/templates/document")).buffer, { maxRows: 100, prefer: ["Lists"] }).rows.flat()).toContain("Authorized representative");
+      for (const url of ["/imports/templates/document", "/imports/templates/banking"]) {
+        const t = await template(bank.owner.token, url);
+        expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
+        expect(t.workbook).toContain('<sheet name="Consignments"');
+        expect(t.header).toEqual(["Recipient name", "Recipient phone *", "Delivery address", "District", "Zone", "Area", "Product", "Service", "Reference no.", "Delivery instructions"]);
+        for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
+        expect(t.sheet).not.toContain("Weight");
+        expect(t.sheet).not.toContain("COD");
+        expect(t.listOf("Products")[0]).toBe("Credit Cards (Regular)");
+        expect(t.listOf("Products")).not.toContain("Fashion & Apparel (Regular)");
+        expect(t.listOf("Service")).toEqual(["Regular", "Express", "On-demand", "B2B Document", "Trade Service Document", "Corporate Urgent Document"]);
+        const text = t.help.join("\n");
+        expect(text).not.toMatch(/weight and service defaults|Weight \(kg\)|Express is same-day/);
+        expect(text).toContain("no weight, no cash on delivery and no product-type charge");
+        expect(text).toContain("The recipient phone is required");
+        expect(t.help.find(l => l.startsWith("Product | No |"))).toContain("| Credit Cards (Regular) |");
+      }
+      // A merchant only gets its own category's template.
+      const wrong = await download(bank.owner.token, "/imports/templates/ecommerce");
+      expect(wrong.status).toBe(422);
+      expect(wrong.json().error).toMatchObject({ code: "WRONG_TEMPLATE", message: `${bank.m.name} is a Banking & Financial merchant: use the Banking & Financial template` });
+      expect((await download(bank.owner.token, "/imports/templates/customer")).status).toBe(403);
+    });
+
+    it("operations: the template and the checks follow the merchant chosen in the modal (a package without Express offers no Express)", async () => {
+      const { token } = await admin();
+      const bank = await merchant("BANKING_FINANCIAL");
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
-      const opsSheet = readZip((await download(ops.token, "/imports/templates/ecommerce")).buffer, { maxBytes: 50_000_000 }).get("xl/worksheets/sheet1.xml")!.toString();
-      expect(opsSheet).toContain(">Merchant</t>");
-      expect(opsSheet).toContain("sqref=\"A2:A10001\"><formula1>L_merchants</formula1>");
+      await packageFor(token, bank.m.id, "BANKING_FINANCIAL", "No express", ["speed.express"]);
+      const chosen = await template(ops.token, `/imports/templates/document?merchantId=${bank.m.id}`);
+      expect(chosen.listOf("Service")).toEqual(["Regular", "On-demand", "B2B Document", "Trade Service Document", "Corporate Urgent Document"]);
+      expect(chosen.help.join("\n")).toContain(`For ${bank.m.name} (${bank.m.code})`);
+      expect(chosen.header).not.toContain("Merchant");
+      expect(chosen.sheet).toContain("sqref=\"I2:I10001\""); // operations: 10,000 rows
+      // Without a merchant: the category's default package (all six services).
+      expect((await template(ops.token, "/imports/templates/document")).listOf("Service")).toContain("Express");
+      // An e-commerce merchant for the Banking & Financial template is refused.
+      const shop = await merchant();
+      expect((await download(ops.token, `/imports/templates/document?merchantId=${shop.m.id}`)).json().error.code).toBe("WRONG_TEMPLATE");
+      // The upload is checked against the same package.
+      const res = await upload(ops.token, { kind: "document", merchantId: bank.m.id }, {
+        name: "bank.csv",
+        data: csv([["Reference no.", "Recipient phone", "District", "Zone", "Service"], ["B-1", "01819123205", "Dhaka South", "Motijheel", "Express"], ["B-2", "01819123206", "Dhaka South", "Motijheel", "B2B Document"]]),
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const rows = (await allRows(ops.token, res.body.id)).items;
+      expect(rows[0].errors[0]).toMatchObject({ column: "service_level", message: `Express is not in ${bank.m.name}'s service package (choose Regular, On-demand, B2B Document, Trade Service Document, Corporate Urgent Document)` });
+      expect(rows[1].status).toBe("INCOMPLETE");
+    });
+
+    it("Customer parcel: sender and pickup columns, the Customer package's services, no open box", async () => {
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const t = await template(ops.token, "/imports/templates/customer");
+      expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-customer-parcels-template.xlsx");
+      expect(t.workbook).toContain('<sheet name="Parcels"');
+      expect(t.header).toEqual([
+        "Sender name *",
+        "Sender phone *",
+        "Pickup address *",
+        "Pickup district *",
+        "Pickup zone *",
+        "Pickup area",
+        "Recipient name",
+        "Recipient phone *",
+        "Delivery address",
+        "Delivery district",
+        "Delivery zone",
+        "Delivery area",
+        "Product",
+        "COD amount (৳)",
+        "Product value (৳)",
+        "Weight (kg)",
+        "Service",
+        "Reference no.",
+        "Delivery instructions",
+      ]);
+      // Pickup zone follows the pickup district; delivery zone the delivery district.
+      expect(t.sheet).toContain("IF($D2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($D2,L_districts,0)))");
+      expect(t.sheet).toContain("IF($J2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($J2,L_districts,0)))");
+      expect(t.listOf("Service")).toEqual(["Regular", "Express"]);
+      expect(t.listOf("Products")[0]).toBe("Fashion & Apparel (Regular)");
+      expect(t.help.join("\n")).toContain("Customer parcels booked by operations (walk-in or website customers): no merchant.");
+      // A merchant can't use it.
+      const { owner } = await merchant();
+      expect((await download(owner.token, "/imports/templates/customer")).status).toBe(403);
     });
   });
 
@@ -181,18 +321,19 @@ describe("imports", () => {
         full("ORD-7", { "COD amount (৳)": "-5" }), // 8
         full("ORD-8", { "Weight (kg)": "80" }), // 9
         full("ORD-9", { Service: "Rocket" }), // 10
-        full("ORD-DUP"), // 11
-        full("ORD-DUP"), // 12
-        full("ORD-12", { "Parcel type": "Document", "COD amount (৳)": "500" }), // 13 COD on a document
+        full("ORD-DUP"), // 11 the first one stays valid
+        full("ORD-DUP"), // 12 the later duplicate is the error
+        full("ORD-12", { Service: "Same day" }), // 13 no longer read as Express
         full("ORD-BOOKED"), // 14 booked before
         full("ORD-14", { District: "", Zone: "mirpur", "Customer phone": "+8801912345678" }), // 15 zone alone finds its district
-        full("ORD-15", { "Cash on delivery": "No" }), // 16 COD "No" with an amount
-        full("ORD-16", { "Product type": "Spaceships" }), // 17 unknown option
-        ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], // empty row: not a candidate
+        full("ORD-15", { Product: "Fashion & Apparel (Regular)", Service: "Regular" }), // 16 the dropdown label
+        full("ORD-16", { Product: "Spaceships" }), // 17 unknown option
+        full("ORD-17", { "Customer phone": "" }), // 18 the phone is required
+        ECOM_HEADER.map(() => ""), // empty row: not a candidate
       ]);
       const res = await upload(owner.token, { kind: "ecommerce" }, { name: "orders.csv", data: file });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(res.body).toMatchObject({ status: "VALIDATED", kind: "ecommerce", merchant: { id: m.id }, counts: { rows: 16, valid: 2, incomplete: 1, errors: 13 } });
+      expect(res.body).toMatchObject({ status: "VALIDATED", kind: "ecommerce", kindLabel: "E-commerce", merchant: { id: m.id }, counts: { rows: 17, valid: 4, incomplete: 1, errors: 12 } });
       expect(res.body.number).toMatch(/^IMP-\d{6}-\d{3}$/);
       const rows = (await allRows(owner.token, res.body.id)).items as { rowNumber: number; status: string; errors: { column: string; text: string; message: string }[]; missing: string[]; charge: number }[];
       const at = (n: number) => rows.find(r => r.rowNumber === n)!;
@@ -204,46 +345,53 @@ describe("imports", () => {
       expect(at(7).errors[0]).toMatchObject({ column: "cod_amount", message: '"abc" is not a number' });
       expect(at(8).errors[0]).toMatchObject({ column: "cod_amount", message: "can't be negative" });
       expect(at(9).errors[0]).toMatchObject({ column: "weight_kg", message: "must be at most 50 kg" });
-      expect(at(10).errors[0]).toMatchObject({ column: "service_level" });
-      expect(at(11).errors[0].message).toBe("ORD-DUP appears more than once in this file (rows 11, 12)");
-      expect(at(12).status).toBe("ERROR");
-      expect(at(13).errors[0]).toMatchObject({ column: "cod_amount", message: "documents can't be cash on delivery" });
+      expect(at(10).errors[0]).toMatchObject({ column: "service_level", message: '"Rocket" is not an option (Regular, Express)' });
+      expect(at(11)).toMatchObject({ status: "VALID", errors: [] });
+      expect(at(12).errors).toEqual([expect.objectContaining({ column: "order_ref", message: "ORD-DUP duplicates row 11 (each reference is booked once)" })]);
+      expect(at(13).errors[0]).toMatchObject({
+        column: "service_level",
+        message: '"Same day" is not a service option: choose one from the list (Regular, Express); Express is the same-day service, inside the same district',
+      });
       expect(at(14).errors[0].message).toBe(`ORD-BOOKED was already booked as ${booked.body.trackingId}`);
       expect(at(15)).toMatchObject({ status: "VALID" });
-      expect(at(16).errors[0].message).toBe('Cash on delivery is "No" but an amount is given');
-      expect(at(17).errors[0]).toMatchObject({ column: "product_type", message: '"Spaceships" is not an option (choose from the list)' });
+      expect(at(16)).toMatchObject({ status: "VALID" });
+      expect(at(17).errors[0]).toMatchObject({ column: "product_type", message: '"Spaceships" is not an option (choose a product of the E-commerce list)' });
+      expect(at(18).errors[0]).toMatchObject({ column: "recipient_phone", message: "required", text: "Row 18 · Customer phone: required" });
 
       // Paginated preview with filters.
       const errorsPage = await ctx.api("GET", `/imports/${res.body.id}/rows?filter=error&page=2&pageSize=10`, { token: owner.token });
-      expect(errorsPage.body).toMatchObject({ total: 13, pages: 2, page: 2 });
-      expect(errorsPage.body.items).toHaveLength(3);
+      expect(errorsPage.body).toMatchObject({ total: 12, pages: 2, page: 2 });
+      expect(errorsPage.body.items).toHaveLength(2);
       expect((await ctx.api("GET", `/imports/${res.body.id}/rows?filter=incomplete`, { token: owner.token })).body.items.map((r: { rowNumber: number }) => r.rowNumber)).toEqual([3]);
       // Nothing booked by the dry run.
       expect(await ctx.prisma.parcel.count({ where: { merchantId: m.id } })).toBe(1);
 
-      // Document template: COD isn't possible; a valid consignment passes.
+      // Banking & Financial: never COD; Banking products; the package's services; old columns are ignored.
       const bank = await merchant("BANKING_FINANCIAL");
       const doc = await upload(bank.owner.token, { kind: "document" }, {
         name: "docs.csv",
         data: csv([
-          ["Reference no.", "Recipient name", "Recipient phone", "Delivery address", "District", "Zone", "Document type", "Receiver relationship", "COD amount"],
-          ["LOAN-1", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Cheque book", "Reception", ""],
-          ["LOAN-2", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Cheque book", "Reception", "500"],
-          ["LOAN-3", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "Reception", ""],
-          ["LOAN-4", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Cheque book", "Best friend", ""],
+          ["Reference no.", "Recipient name", "Recipient phone", "Delivery address", "District", "Zone", "Product", "Service", "Receiver relationship", "COD amount"],
+          ["LOAN-1", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Credit Cards (Regular)", "B2B Document", "Reception", ""],
+          ["LOAN-2", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Credit Cards", "", "", "500"],
+          ["LOAN-3", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "", "", ""],
+          ["LOAN-4", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "Cheque book", "", ""],
+          ["LOAN-5", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "Same day", "", ""],
+          ["LOAN-6", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Fashion & Apparel", "", "", ""],
         ]),
       });
       expect(doc.status, JSON.stringify(doc.body)).toBe(201);
+      expect(doc.body.ignoredColumns).toEqual(["Receiver relationship"]);
       const docRows = (await allRows(bank.owner.token, doc.body.id)).items;
-      // An empty "Document type" (now the Service column) books Regular (service packages).
-      expect(docRows.map((r: { status: string }) => r.status)).toEqual(["VALID", "ERROR", "VALID", "ERROR"]);
-      expect(docRows[1].errors[0].message).toBe("documents can't be cash on delivery");
-      expect(docRows[2].errors).toEqual([]);
-      // "Cheque book" (an old document type, not a handling option) is kept on the consignment and books Regular.
-      expect(docRows[0].lines.map((l: { code: string }) => l.code)).toEqual(["route"]);
-      expect(docRows[3].errors[0].column).toBe("receiver_relationship");
-      // The wrong template for the merchant's type is refused.
-      expect((await upload(bank.owner.token, { kind: "ecommerce" }, { name: "x.csv", data: csv([ECOM_HEADER, full("A")]) })).body.error.code).toBe("WRONG_TEMPLATE");
+      expect(docRows.map((r: { status: string }) => r.status)).toEqual(["VALID", "ERROR", "VALID", "ERROR", "ERROR", "ERROR"]);
+      expect(docRows[1].errors[0]).toMatchObject({ column: "cod_amount", message: "Banking & Financial parcels can't be cash on delivery", header: "COD amount" });
+      expect(docRows[0].lines.map((l: { code: string }) => l.code)).toEqual(["route"]); // B2B Document costs nothing extra by default
+      expect(docRows[3].errors[0].message).toBe('"Cheque book" is not an option (Regular, Express, On-demand, B2B Document, Trade Service Document, Corporate Urgent Document)');
+      expect(docRows[4].errors[0].message).toBe('"Same day" is not a service option: choose one from the list (Regular, Express, On-demand, B2B Document, Trade Service Document, Corporate Urgent Document)');
+      expect(docRows[5].errors[0]).toMatchObject({ column: "product_type", message: '"Fashion & Apparel" is not an option (choose a product of the Banking & Financial list)' });
+      // The wrong template for the merchant's category is refused.
+      const wrong = await upload(bank.owner.token, { kind: "ecommerce" }, { name: "x.csv", data: csv([ECOM_HEADER, full("A")]) });
+      expect(wrong.body.error).toMatchObject({ code: "WRONG_TEMPLATE", message: `${bank.m.name} is a Banking & Financial merchant: use the Banking & Financial template` });
       // Someone else's import isn't visible.
       expect((await ctx.api("GET", `/imports/${res.body.id}`, { token: bank.owner.token })).status).toBe(404);
     });
@@ -262,11 +410,11 @@ describe("imports", () => {
       const parcels = await ctx.prisma.parcel.findMany({ where: { merchantId: m.id }, orderBy: { createdAt: "asc" } });
       expect(parcels).toHaveLength(2);
       const [complete, incomplete] = parcels;
-      expect(complete).toMatchObject({ merchantOrderRef: "ORD-1", incomplete: false, deliveryZone: "Dhanmondi", channel: "MERCHANT_PORTAL", importJobId: res.body.id });
-      // Service packages v2: Dhaka → Dhaka (same district) 70 + 2 kg (1.5 started kg over 0.5 → 2 × 15) + Express ("Same day") 40 + COD fee 15.
+      expect(complete).toMatchObject({ merchantOrderRef: "ORD-1", incomplete: false, deliveryZone: "Dhanmondi", channel: "MERCHANT_PORTAL", importJobId: res.body.id, productName: "Fashion & Apparel", packaging: null, receiverRelation: null, originBranchCode: null });
+      // Service packages v2: Dhaka → Dhaka (same district) 70 + 2 kg (1.5 started kg over 0.5 → 2 × 15) + Express 40 + COD fee 15.
       expect(Number(complete.totalCharge)).toBe(155);
       expect(incomplete).toMatchObject({ incomplete: true, missingFields: ["address", "district", "zone"], deliveryDistrict: null, deliveryZone: null, deliveryStreet: null, recipientPhone: "+8801712345678" });
-      // Missing destination: priced to the merchant's own city, 0.5 kg, Regular.
+      // Missing destination: priced inside the merchant's own district, 0.5 kg, Regular.
       expect(Number(incomplete.totalCharge)).toBe(P.sameDistrict);
       expect(Number(incomplete.weightKg)).toBe(0.5);
       expect(incomplete.serviceLevel).toBe("REGULAR");
@@ -382,24 +530,83 @@ describe("imports", () => {
     });
   });
 
+  describe("customer parcels (operations)", () => {
+    it("imports walk-in / website customer parcels end to end: sender and pickup per row, the Customer package, no merchant", async () => {
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const file = csv([
+        CUSTOMER_HEADER,
+        customerRow({ "Reference no.": "WALK-1" }), // 2 valid
+        customerRow({ "Reference no.": "WALK-2", "Sender phone": "01711000002", "Recipient name": "", "Delivery address": "", "Delivery district": "", "Delivery zone": "" }), // 3 needs info
+        customerRow({ "Reference no.": "WALK-3", "Sender phone": "" }), // 4 sender phone required
+        customerRow({ "Reference no.": "WALK-4", "Pickup zone": "Dhanmondi" }), // 5 not a zone of the pickup district
+        customerRow({ "Reference no.": "WALK-5", Service: "Same day" }), // 6
+        customerRow({ "Reference no.": "WALK-6", Service: "B2B Document" }), // 7 a Banking & Financial service
+      ]);
+      const res = await upload(ops.token, { kind: "customer" }, { name: "walkins.csv", data: file });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body).toMatchObject({ kind: "customer", kindLabel: "Customer parcel", source: "OPERATIONS", merchant: null, counts: { rows: 6, valid: 1, incomplete: 1, errors: 4 } });
+      const rows = (await allRows(ops.token, res.body.id)).items;
+      expect(rows[0]).toMatchObject({ status: "VALID", charge: P.sameDistrict + P.extraKg + Math.max(P.codMin, (500 * P.codPercent) / 100) });
+      expect(rows[1]).toMatchObject({ status: "INCOMPLETE", missing: ["recipientName", "address", "district", "zone"], charge: P.sameDistrict + P.extraKg + Math.max(P.codMin, (500 * P.codPercent) / 100) });
+      expect(rows[2].errors[0]).toMatchObject({ column: "sender_phone", text: "Row 4 · Sender phone: required" });
+      expect(rows[3].errors[0]).toMatchObject({ column: "pickup_zone", message: '"Dhanmondi" is not a zone of Dhaka North' });
+      expect(rows[4].errors[0].message).toMatch(/^"Same day" is not a service option: choose one from the list \(Regular, Express\)/);
+      expect(rows[5].errors[0].message).toBe('"B2B Document" is not an option (Regular, Express)');
+
+      const commit = await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: ops.token });
+      expect(commit.body).toMatchObject({ status: "COMPLETED", result: { created: 2, createdIncomplete: 1 } });
+      const parcels = await ctx.prisma.parcel.findMany({ where: { importJobId: res.body.id }, orderBy: { merchantOrderRef: "asc" } });
+      expect(parcels.map(p => [p.merchantOrderRef, p.merchantId, p.channel, p.senderName, p.senderPhone, p.pickupDistrict, p.pickupZone, p.incomplete])).toEqual([
+        ["WALK-1", null, "OPERATIONS", "Karim Hossain", "+8801711000001", "Dhaka North", "Gulshan", false],
+        ["WALK-2", null, "OPERATIONS", "Karim Hossain", "+8801711000002", "Dhaka North", "Gulshan", true],
+      ]);
+      expect(parcels[0]).toMatchObject({ productName: "Books", productType: "BOOKS", type: "PARCEL", deliveryZone: "Banani" });
+      expect((await ctx.prisma.importJob.findUniqueOrThrow({ where: { id: res.body.id } })).kind).toBe("CUSTOMER");
+      const history = await ctx.api("GET", "/imports?kind=customer", { token: ops.token });
+      expect(history.body.items.map((i: { id: string }) => i.id)).toEqual([res.body.id]);
+
+      // The same file again books nothing twice.
+      const again = await upload(ops.token, { kind: "customer" }, { name: "walkins.csv", data: file });
+      const againRows = (await allRows(ops.token, again.body.id)).items;
+      expect(againRows[0].errors[0].message).toBe(`WALK-1 was already booked as ${parcels[0].trackingId}`);
+      // Merchants can't import customer parcels; operations can't give them a merchant.
+      const { m, owner } = await merchant();
+      expect((await upload(owner.token, { kind: "customer" }, { name: "c.csv", data: file })).status).toBe(403);
+      const withMerchant = await upload(ops.token, { kind: "customer", merchantId: m.id }, { name: "c.csv", data: file });
+      expect(withMerchant.status).toBe(422);
+      expect(withMerchant.body.error.message).toContain("Customer parcels have no merchant");
+    });
+  });
+
   describe("super admin settings", () => {
-    it("change required columns and defaults for templates and validation at once, audited", async () => {
+    it("change required columns and defaults for the three templates and validation at once, audited", async () => {
       const { owner } = await merchant();
-      const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+      const { token } = await admin();
       expect((await ctx.api("PUT", "/imports/config", { token: owner.token, body: {} })).status).toBe(403);
+      const config = (await ctx.api("GET", "/imports/config", { token: owner.token })).body;
+      expect(Object.keys(config.templates)).toEqual(["ecommerce", "document", "customer"]);
+      expect(config.titles).toEqual({ ecommerce: "E-commerce", document: "Banking & Financial", customer: "Customer parcel" });
+      for (const kind of ["ecommerce", "document", "customer"]) for (const c of config.templates[kind]) expect(REMOVED).not.toContain(c.header);
+      expect(config.templates.customer.find((c: { key: string }) => c.key === "sender_phone")).toMatchObject({ required: true, configurable: false });
+      expect(config.templates.ecommerce.find((c: { key: string }) => c.key === "open_box")).toMatchObject({ packageOnly: "openBox" });
+
       const row = ecom({ "Order ID": "CFG-1", "Customer name": "A", "Customer phone": "01812000000", "Delivery address": "Road 1" });
       const before = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, row]) });
       expect(before.body.counts).toMatchObject({ incomplete: 1, errors: 0 });
 
-      const bad = await ctx.api("PUT", "/imports/config", { token: admin.token, body: { templates: { ecommerce: { service_level: { default: "Rocket" } } } } });
+      const bad = await ctx.api("PUT", "/imports/config", { token, body: { templates: { ecommerce: { service_level: { default: "Rocket" } } } } });
       expect(bad.status).toBe(422);
-      expect((await ctx.api("PUT", "/imports/config", { token: admin.token, body: { limits: { merchantMaxRows: 50_000 } } })).status).toBe(422);
+      expect(bad.body.error.message).toContain("E-commerce template, Service default");
+      expect((await ctx.api("PUT", "/imports/config", { token, body: { templates: { ecommerce: { packaging: { default: "Poly mailer" } } } } })).body.error.message).toBe('E-commerce template: unknown column "packaging"');
+      expect((await ctx.api("PUT", "/imports/config", { token, body: { templates: { ecommerce: { recipient_phone: { required: false } } } } })).body.error.message).toBe('E-commerce template: "Customer phone" is always required');
+      expect((await ctx.api("PUT", "/imports/config", { token, body: { limits: { merchantMaxRows: 50_000 } } })).status).toBe(422);
       const saved = await ctx.api("PUT", "/imports/config", {
-        token: admin.token,
-        body: { templates: { ecommerce: { district: { required: true }, recipient_name: { required: false }, service_level: { default: "Express" } } } },
+        token,
+        body: { templates: { ecommerce: { district: { required: true }, recipient_name: { required: false }, service_level: { default: "Express" } }, customer: { recipient_name: { required: true } } } },
       });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body.templates.ecommerce.find((c: { key: string }) => c.key === "district")).toMatchObject({ required: true });
+      expect(saved.body.templates.customer.find((c: { key: string }) => c.key === "recipient_name")).toMatchObject({ required: true });
       expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.update" } })).toBe(1);
 
       const after = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, row, ecom({ "Order ID": "CFG-2", "Customer phone": "01812000000", District: "Dhaka North", Zone: "Banani" })]) });
@@ -408,11 +615,43 @@ describe("imports", () => {
       expect(rows[1].status).toBe("INCOMPLETE");
       await ctx.api("POST", `/imports/${after.body.id}/commit`, { token: owner.token });
       expect((await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "CFG-2" } })).speedOption).toBe("EXPRESS"); // Express = same day (serviceLevel SAME_DAY)
-      const sheet = readZip((await download(owner.token, "/imports/templates/ecommerce")).buffer, { maxBytes: 50_000_000 }).get("xl/worksheets/sheet1.xml")!.toString();
-      expect(sheet).toContain("<t>District *</t>");
-      expect(sheet).toContain("<t>Customer name</t>");
-      const instructions = readXlsx((await download(owner.token, "/imports/templates/ecommerce")).buffer, { maxRows: 100, prefer: ["Instructions"] }).rows.map(r => r.join(" | "));
-      expect(instructions.find(l => l.startsWith("Service | No | Regular, Express | Express | Regular |"))).toBeTruthy();
+      const t = await template(owner.token, "/imports/templates/ecommerce");
+      expect(t.header).toContain("District *");
+      expect(t.header).toContain("Customer name");
+      expect(t.help.find(l => l.startsWith("Service | No | Regular, Express (the services in Shop ") && l.includes("'s service package) | Express | Regular |"))).toBeTruthy();
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      expect((await template(ops.token, "/imports/templates/customer")).header).toContain("Recipient name *");
+    });
+
+    it("drops the stored settings of removed columns once, audited", async () => {
+      await ctx.prisma.setting.upsert({
+        where: { key: "import-config" },
+        create: {
+          key: "import-config",
+          value: {
+            templates: {
+              ecommerce: { merchant: { required: true }, parcel_type: { default: "Fragile parcel" }, packaging: { default: "Poly mailer" }, district: { required: true }, weight_kg: { default: "1" } },
+              document: { receiver_relationship: { default: "Self" }, branch_code: { required: true }, document_type: { required: true }, address_type: { default: "Office" }, recipient_phone: { required: false } },
+            },
+            limits: { merchantMaxRows: 3000 },
+          },
+        },
+        update: {},
+      });
+      const service = ctx.app.get(ImportConfigService);
+      const removed = await service.migrateStored();
+      expect(removed.sort()).toEqual(
+        ["ecommerce.merchant", "ecommerce.parcel_type", "ecommerce.packaging", "document.receiver_relationship", "document.branch_code", "document.document_type", "document.address_type", "document.recipient_phone.required"].sort(),
+      );
+      const stored = (await ctx.prisma.setting.findUniqueOrThrow({ where: { key: "import-config" } })).value as { templates: Record<string, Record<string, unknown>>; limits: unknown };
+      expect(stored.templates).toEqual({ ecommerce: { district: { required: true }, weight_kg: { default: "1" } }, document: {} });
+      expect(stored.limits).toEqual({ merchantMaxRows: 3000 });
+      expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.migrate" } })).toBe(1);
+      expect(await service.migrateStored()).toEqual([]);
+      expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.migrate" } })).toBe(1);
+      // The kept settings still apply.
+      const { owner } = await merchant();
+      expect((await template(owner.token, "/imports/templates/ecommerce")).header).toContain("District *");
     });
   });
 
@@ -428,7 +667,7 @@ describe("imports", () => {
       expect(sheet.sheetName).toBe("Orders");
       expect(sheet.rows[0].at(-1)).toBe("Error");
       expect(sheet.rows).toHaveLength(2);
-      expect(sheet.rows[1][0]).toBe("BAD-1");
+      expect(sheet.rows[1][sheet.rows[0].indexOf("Order ID")]).toBe("BAD-1");
       expect(sheet.rows[1].at(-1)).toBe('Row 3: Customer phone: bangladeshi mobile numbers start with 1 (e.g. 17XXXXXXXX); District: unknown district "Nowhere" (use one from the list)');
       const zip = readZip(file.buffer, { maxBytes: 50_000_000 });
       expect(zip.get("xl/workbook.xml")!.toString()).toContain('<sheet name="Lists"');
@@ -454,9 +693,10 @@ describe("imports", () => {
       expect(rows[0].errors[0].message).toMatch(/^SAME-1 was already booked as /);
       expect(rows[1].errors[0].message).toMatch(/^this order was already imported as /);
       expect((await ctx.api("POST", `/imports/${second.body.id}/commit`, { token: owner.token })).body.error.code).toBe("NOTHING_TO_IMPORT");
-      // Two identical rows without an order ID in one file are flagged rather than guessed.
+      // Two identical rows without an order ID in one file: the later one is flagged, naming the first.
       const twins = await upload(owner.token, { kind: "ecommerce" }, { name: "b.csv", data: csv([ECOM_HEADER, full("", { "Customer name": "Twin" }), full("", { "Customer name": "Twin" })]) });
-      expect(twins.body.counts.errors).toBe(2);
+      expect(twins.body.counts).toMatchObject({ valid: 1, errors: 1 });
+      expect((await allRows(owner.token, twins.body.id, "error")).items[0].errors[0].message).toBe("the same order as row 2 (identical details); add an order ID to book both");
       expect(await ctx.prisma.parcel.count({ where: { merchantId: m.id } })).toBe(2);
       // A row booked meanwhile (between preview and submit) fails at booking instead of booking twice.
       const third = await upload(owner.token, { kind: "ecommerce" }, { name: "c.csv", data: csv([ECOM_HEADER, full("RACE-1")]) });
@@ -502,9 +742,9 @@ describe("imports", () => {
 
     it("refuses files over the row and size limits set by super admin", async () => {
       const { owner } = await merchant();
-      const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+      const { token } = await admin();
       expect((await ctx.api("GET", "/imports/limits", { token: owner.token })).body).toMatchObject({ maxRows: 5000, maxFileMb: 10, forOps: false });
-      await ctx.api("PUT", "/imports/config", { token: admin.token, body: { limits: { merchantMaxRows: 3, maxFileMb: 0.1 } } });
+      await ctx.api("PUT", "/imports/config", { token, body: { limits: { merchantMaxRows: 3, maxFileMb: 0.1 } } });
       const tooMany = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, full("A"), full("B"), full("C"), full("D")]) });
       expect(tooMany.status).toBe(413);
       expect(tooMany.body.error).toMatchObject({ code: "TOO_MANY_ROWS", details: { maxRows: 3 } });
@@ -519,27 +759,22 @@ describe("imports", () => {
   });
 
   describe("operations and API keys", () => {
-    it("operations import with a merchant per row and drop-off at a hub: batch, labels and receive desk", async () => {
+    it("operations choose the merchant in the modal (no per-row merchant) and drop-off at a hub: batch, labels and receive desk", async () => {
       const shop = await merchant();
       const bank = await merchant("BANKING_FINANCIAL");
       const gulshan = await hub(ctx, "HUB-OPS");
       const hubOp = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: gulshan.id }], "Gulshan Operator");
+      // An old file with a Merchant column: the column is ignored, the merchant comes from the modal.
       const header = ["Merchant", ...ECOM_HEADER];
-      const res = await upload(hubOp.token, { kind: "ecommerce", intake: "DROP_OFF" }, {
-        name: "dropoff.csv",
-        data: csv([
-          header,
-          [shop.m.code, ...full("OPS-1")],
-          [`${shop.m.code} · ${shop.m.name}`, ...ecom({ "Order ID": "OPS-2", "Customer name": "No Address Yet", "Customer phone": "01812000003" })],
-          [bank.m.code, ...full("OPS-3")],
-          ["", ...full("OPS-4")],
-        ]),
-      });
+      const data = csv([header, [bank.m.code, ...full("OPS-1")], [shop.m.code, ...ecom({ "Order ID": "OPS-2", "Customer name": "No Address Yet", "Customer phone": "01812000003" })], ["", ...full("OPS-3", { Service: "Same day" })]]);
+      const noMerchant = await upload(hubOp.token, { kind: "ecommerce", intake: "DROP_OFF" }, { name: "dropoff.csv", data });
+      expect(noMerchant.status).toBe(422);
+      expect(noMerchant.body.error).toMatchObject({ code: "MERCHANT_REQUIRED", message: "Choose the E-commerce merchant for this file" });
+      const wrong = await upload(hubOp.token, { kind: "ecommerce", merchantId: bank.m.id }, { name: "dropoff.csv", data });
+      expect(wrong.body.error).toMatchObject({ code: "WRONG_TEMPLATE", message: `${bank.m.name} is a Banking & Financial merchant: use the Banking & Financial template` });
+      const res = await upload(hubOp.token, { kind: "ecommerce", merchantId: shop.m.id, intake: "DROP_OFF" }, { name: "dropoff.csv", data });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(res.body).toMatchObject({ source: "OPERATIONS", intake: "DROP_OFF", dropOffHub: { id: gulshan.id }, counts: { valid: 1, incomplete: 1, errors: 2 } });
-      const rows = (await allRows(hubOp.token, res.body.id)).items;
-      expect(rows[2].errors[0]).toMatchObject({ column: "merchant", message: `unknown or inactive e-commerce merchant "${bank.m.code}"` });
-      expect(rows[3].errors[0].message).toBe("choose the merchant (in this column or for the whole file)");
+      expect(res.body).toMatchObject({ source: "OPERATIONS", merchant: { id: shop.m.id }, intake: "DROP_OFF", dropOffHub: { id: gulshan.id }, counts: { valid: 1, incomplete: 1, errors: 1 }, ignoredColumns: ["Merchant"] });
       // Merchants don't see operations imports.
       expect((await ctx.api("GET", `/imports/${res.body.id}`, { token: shop.owner.token })).status).toBe(404);
       const commit = await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: hubOp.token });
@@ -558,16 +793,21 @@ describe("imports", () => {
       const history = await ctx.api("GET", "/imports?mine=true", { token: hubOp.token });
       expect(history.body.items.map((i: { id: string }) => i.id)).toEqual([res.body.id]);
 
-      // The file-level merchant choice fills an empty Merchant column.
+      // Banking & Financial for the merchant chosen in the modal.
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
-      const perFile = await upload(ops.token, { kind: "document", merchantId: bank.m.id }, {
+      const perFile = await upload(ops.token, { kind: "banking", merchantId: bank.m.id }, {
         name: "bank.csv",
-        data: csv([["Merchant", "Reference no.", "Recipient name", "Recipient phone", "Document type"], ["", "B-1", "Mahir", "01819123205", "Cheque book"]]),
+        data: csv([["Reference no.", "Recipient name", "Recipient phone", "Service"], ["B-1", "Mahir", "01819123205", "B2B Document"]]),
       });
-      expect(perFile.body).toMatchObject({ merchant: { id: bank.m.id }, counts: { incomplete: 1 } });
-      expect((await upload(ops.token, { kind: "ecommerce", intake: "DROP_OFF" }, { name: "x.csv", data: csv([header, [shop.m.code, ...full("Z")]]) })).body.error.code).toBe("HUB_REQUIRED");
+      expect(perFile.body).toMatchObject({ kind: "document", merchant: { id: bank.m.id }, counts: { incomplete: 1 } });
+      expect((await upload(ops.token, { kind: "ecommerce", merchantId: shop.m.id, intake: "DROP_OFF" }, { name: "x.csv", data: csv([ECOM_HEADER, full("Z")]) })).body.error.code).toBe("HUB_REQUIRED");
       // Merchants choose drop at hub in the import modal when their package offers it (service packages): with a hub.
       expect((await upload(shop.owner.token, { kind: "ecommerce", intake: "DROP_OFF" }, { name: "x.csv", data: csv([ECOM_HEADER, full("Z")]) })).body.error.code).toBe("HUB_REQUIRED");
+      // The modal's choices are checked against the chosen merchant's package (operations too).
+      const { token } = await admin();
+      await packageFor(token, shop.m.id, "ECOMMERCE", "No drop at hub", ["first.hub_drop"]);
+      const refused = await upload(ops.token, { kind: "ecommerce", merchantId: shop.m.id, intake: "DROP_OFF", dropOffHubId: gulshan.id }, { name: "x.csv", data: csv([ECOM_HEADER, full("Z")]) });
+      expect(refused.body.error).toMatchObject({ code: "SERVICE_NOT_IN_PACKAGE", message: "SERVICE_NOT_IN_PACKAGE: Merchant drop at hub" });
     });
 
     it("API keys with parcels:write import JSON rows; read-only keys can't", async () => {

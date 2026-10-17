@@ -39,5 +39,7 @@ export const scripts = [
   // Last: the parcel drawer / next action / global search, then the journey navigation (menu,
   // tabs, counts, role menu, old page names), which wrap everything above.
   "/legacy/courier-operation/bridge-parcel.js",
+  // Failed deliveries: badge, attempts, "Re-attempt (Assign rider)" / "Return to sender" (uses the drawer and next action above).
+  "/legacy/courier-operation/bridge-failed.js",
   "/legacy/courier-operation/bridge-nav.js"
 ];

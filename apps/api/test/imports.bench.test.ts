@@ -32,7 +32,7 @@ describe.skipIf(!process.env.IMPORT_BENCH)("import benchmark", () => {
             header,
             ...Array.from({ length: n }, (_, i) => {
               const [district, zone] = zones[i % zones.length];
-              return [`${prefix}-${i}`, `Customer ${i}`, `01${7 + (i % 3)}${String(10_000_000 + i).slice(-8)}`, `House ${i}, Road ${i % 40}`, district, zone, i % 5 ? "Regular" : "Express", String(1 + (i % 4)), String((i % 10) * 250), "Clothing", i % 7 ? "" : "Call first"];
+              return [`${prefix}-${i}`, `Customer ${i}`, `01${7 + (i % 3)}${String(10_000_000 + i).slice(-8)}`, `House ${i}, Road ${i % 40}`, district, zone, i % 5 ? "Regular" : "Express", String(1 + (i % 4)), String((i % 10) * 250), "Fashion & Apparel", i % 7 ? "" : "Call first"];
             }),
           ],
         },

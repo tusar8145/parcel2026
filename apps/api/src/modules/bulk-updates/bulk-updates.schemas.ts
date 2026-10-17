@@ -2,14 +2,20 @@ import { z } from "zod";
 import { listParcelsQuerySchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { BULK_KINDS } from "./bulk-kinds";
+import { BULK_ACTION_IDS } from "./bulk-actions";
 
-/** The page template: new_orders, pickup, hub_desk, delivery, problems, returns, or all (every action; default). */
+/** The page: new_orders, pickup, hub_desk, delivery, problems, returns, or all (every action; default). */
 export const bulkKindSchema = z.enum(BULK_KINDS);
-/** The page a file is uploaded or applied on: a file of another page's template is refused (All parcels takes any). */
-export const bulkKindQuerySchema = z.object({ kind: bulkKindSchema.default("all") });
+/** The action template (bulk-actions.ts): accept_pickup, reassign_pickup, mark_picked_up, receive_at_hub, … */
+export const bulkActionSchema = z.enum(BULK_ACTION_IDS);
+/**
+ * The page and action a file is uploaded or applied with: a file of another action is refused, and of
+ * another page unless on All parcels. Without `action` the file's own action is used (if the page offers it).
+ */
+export const bulkKindQuerySchema = z.object({ kind: bulkKindSchema.default("all"), action: bulkActionSchema.optional() });
 
-/** The parcels to download for a bulk update: the shipment filters plus SLA state, service line and presets. */
-export const bulkExportQuerySchema = listParcelsQuerySchema
+/** A page's parcels for a bulk update: the shipment filters plus SLA state, service line and presets. */
+export const bulkActionsQuerySchema = listParcelsQuerySchema
   .pick({ status: true, q: true, merchantId: true, hubId: true, intake: true, dropOffHubId: true, incomplete: true, from: true, to: true })
   .extend({
     kind: bulkKindSchema.default("all"),
@@ -24,6 +30,9 @@ export const bulkExportQuerySchema = listParcelsQuerySchema
     line: z.enum(["ecommerce", "document", "customer"]).optional(),
   });
 
+/** The download of one action's file: the page's filters plus the action (required). */
+export const bulkExportQuerySchema = bulkActionsQuerySchema.extend({ action: bulkActionSchema });
+
 export const BULK_ROW_FILTERS = ["all", "apply", "warning", "error", "applied", "already_done", "failed", "not_applied"] as const;
 export const bulkRowsQuerySchema = z.object({
   filter: z.enum(BULK_ROW_FILTERS).default("all"),
@@ -34,6 +43,8 @@ export const bulkRowsQuerySchema = z.object({
 export const bulkListQuerySchema = pageQuerySchema.extend({
   /** Only the bulk updates of this page template. */
   kind: bulkKindSchema.optional(),
+  /** Only the bulk updates of this action. */
+  action: bulkActionSchema.optional(),
   /** Only my bulk updates (default: every operations bulk update the caller may see). */
   mine: z
     .enum(["true", "false"])

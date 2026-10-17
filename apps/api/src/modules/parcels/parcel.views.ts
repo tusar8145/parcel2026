@@ -24,6 +24,11 @@ export const parcelInclude = {
   proof: { select: { method: true, receivedBy: true, fileId: true, otpVerified: true, createdAt: true } },
   codCollection: { select: { amount: true, state: true, collectedAt: true } },
   events: { orderBy: { createdAt: "asc" } },
+  // Delivery attempts (a handful per parcel, loaded in one batched query for a whole list page).
+  attempts: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, outcome: true, reason: true, nextAction: true, note: true, createdAt: true, rider: { select: { code: true, user: { select: { name: true } } } } },
+  },
 } satisfies Prisma.ParcelInclude;
 
 export type ParcelWithRelations = Prisma.ParcelGetPayload<{ include: typeof parcelInclude }>;
@@ -83,6 +88,28 @@ export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" |
 /** Collect from hub: the collection hub, when it became ready and the last day to collect. */
 const collectView = (p: ParcelWithRelations) =>
   p.lastMile === "HUB_COLLECT" ? { hub: p.collectHub, readyAt: p.readyForCollectionAt, dueAt: p.collectionDueAt } : null;
+
+/** Statuses where a parcel that failed delivery waits at a hub for the next step. */
+const BACK_AT_HUB: ParcelStatus[] = ["AT_HUB", "READY_FOR_COLLECTION"];
+
+/**
+ * Failed deliveries: how many, the latest (reason, when, rider) and whether the parcel is back at a hub
+ * after one (at a hub and its latest attempt failed: no delivery since). Rider names and the attempt
+ * list are for staff only.
+ */
+export function failureView(p: Pick<ParcelWithRelations, "status" | "attempts">, internal: boolean) {
+  const attempts = p.attempts ?? [];
+  const failed = attempts.filter(a => a.outcome === "FAILED");
+  const last = failed.at(-1);
+  return {
+    failedAttempts: failed.length,
+    lastFailedAttempt: last ? { reason: last.reason, at: last.createdAt, nextAction: last.nextAction, riderName: internal ? last.rider.user.name : undefined } : null,
+    returnedAfterFailure: BACK_AT_HUB.includes(p.status as ParcelStatus) && attempts.at(-1)?.outcome === "FAILED",
+    attempts: internal
+      ? attempts.map(a => ({ id: a.id, outcome: a.outcome, reason: a.reason, nextAction: a.nextAction, note: a.note, at: a.createdAt, rider: { code: a.rider.code, name: a.rider.user.name } }))
+      : undefined,
+  };
+}
 
 /** Full detail for the owner (customer/merchant), the assigned rider and staff. */
 export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) {
@@ -170,6 +197,8 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
     missingFields: p.missingFields,
     missingLabels: p.missingFields.map(f => MISSING_LABEL[f as MissingField] ?? f),
     attemptCount: p.attemptCount,
+    /** failedAttempts, lastFailedAttempt { reason, at, riderName }, returnedAfterFailure, attempts (staff). */
+    ...failureView(p, opts.internal),
     proof: p.proof ? { method: p.proof.method, receivedBy: p.proof.receivedBy, hasFile: !!p.proof.fileId, fileId: p.proof.fileId, recordedAt: p.proof.createdAt } : null,
     canCancel: isCustomerCancellable(status),
     estimatedDeliveryAt: p.estimatedDeliveryAt,

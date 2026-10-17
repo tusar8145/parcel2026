@@ -2,32 +2,35 @@ import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import {
   bdPhoneProblem,
+  isBanking,
   normalizeBdPhone,
   packageOptions,
   parseSpeedOption,
+  PRODUCT_TYPE_LABEL,
+  PRODUCT_TYPES,
+  productListOf,
+  SEED_PRODUCTS,
+  SEGMENT_LABEL,
+  SERVICE_BY_CODE,
   SPEED_LABEL,
-  SPEED_OPTIONS,
   SPEED_SERVICE,
   SPEED_SERVICE_LEVEL,
-  SERVICE_BY_CODE,
   type FirstMile,
   type LastMile,
-  type PackageSegment,
   type PriceLine,
   type ProductType,
   type SpeedOption,
 } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AppError } from "../../common/errors";
-import type { MerchantType, ParcelProduct, Segment } from "../../generated/prisma/client";
+import type { MerchantType, ParcelProduct } from "../../generated/prisma/client";
 import { PricingService, type Catalog } from "../pricing/pricing.service";
 import type { BookingInput } from "../parcels/parcels.service";
 import type { MissingField } from "../parcels/incomplete";
 import { resolvePlace, zoneForArea } from "../parcels/places";
-import { PLATFORM_CONFIG_KEY } from "../admin/platform-config.service";
-import { PackagesService, type HubRef, type PackageQuote } from "../packages/packages.service";
+import { PackagesService, type HubRef, type PackageQuote, type PackageSubject } from "../packages/packages.service";
 import type { PackageView } from "../packages/package-resolver";
-import { columnsFor, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
+import { columnsFor, KIND_LABEL, segmentOf, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
 import type { ImportSettings } from "./import-config.service";
 
 export type Cells = Partial<Record<ColumnKey | "__cod", string>>;
@@ -48,7 +51,6 @@ export interface MerchantInfo {
   pickupArea: string;
   pickupDistrict: string;
   pickupZone: string;
-  segment: Segment;
 }
 
 /** The import modal's choices for the whole file (service packages): first / last mile, drop hub, notifications. */
@@ -66,6 +68,7 @@ export interface RowResult {
   status: RowStatus;
   errors: CellError[];
   missing: MissingField[];
+  /** The file's merchant (null: customer parcels). */
   merchantId: string | null;
   /** Order ref, or "h:<hash>" of the normalised row when it has none. */
   dedupeKey: string | null;
@@ -76,52 +79,30 @@ export interface RowResult {
   booking?: BookingInput;
   /** Where an incomplete row is priced to. */
   destination?: { district: string; zone: string };
-  /** Priced and checked against the merchant's package. */
+  /** Priced and checked against the package. */
   quote?: PackageQuote;
   product?: { id: string; name: string; type: string; sendMessages: boolean } | null;
 }
 
 export interface EngineContext {
   kind: ImportKindKey;
-  forOps: boolean;
   settings: ImportSettings;
   columns: ColumnDef[];
   lists: Record<ListKey, string[]>;
   catalog: Catalog;
+  /** The merchant chosen for the file (operations) or the signed-in merchant; null for customer parcels (or a template without a merchant). */
   fileMerchant: MerchantInfo | null;
-  /** Operations: every merchant of the template's type, by code, name and "code · name" (lower case). */
-  merchants: Map<string, MerchantInfo>;
   services: ImportServiceOptions;
-  /** The file merchant's package (null: operations file with a Merchant column). */
-  pkg: PackageView | null;
+  /** The package the file books with: the merchant's, else the category's default (customer parcels: the Customer default). */
+  pkg: PackageView;
+  /** The category's active products, in list order (type, then the seeded order, then name). */
   products: ParcelProduct[];
-  /** Per-file caches: packages by merchant, hubs by place, hub groups. */
-  memo: { packages: Map<string, PackageView>; hubs: Map<string, HubRef | null>; groups: Map<string, string | null> };
+  /** Per-file caches: hubs by place. */
+  memo: { hubs: Map<string, HubRef | null> };
 }
 
-const PARCEL_TYPES: Record<string, "ECOMMERCE" | "FRAGILE" | "PARCEL" | "DOCUMENT"> = {
-  "e-commerce parcel": "ECOMMERCE",
-  "ecommerce parcel": "ECOMMERCE",
-  "e-commerce": "ECOMMERCE",
-  ecommerce: "ECOMMERCE",
-  "fragile parcel": "FRAGILE",
-  fragile: "FRAGILE",
-  "domestic parcel": "PARCEL",
-  parcel: "PARCEL",
-  document: "DOCUMENT",
-  "document delivery": "DOCUMENT",
-  documents: "DOCUMENT",
-};
-const PARCEL_TYPE_LABELS = ["E-commerce parcel", "Fragile parcel", "Domestic parcel", "Document"];
-const ADDRESS_TYPES: Record<string, "HOME" | "OFFICE" | "OTHER"> = { home: "HOME", house: "HOME", office: "OFFICE", work: "OFFICE", other: "OTHER" };
-const YES = new Set(["yes", "y", "true", "1", "cod", "হ্যাঁ"]);
+const YES = new Set(["yes", "y", "true", "1", "হ্যাঁ"]);
 const NO = new Set(["no", "n", "false", "0", "prepaid", "না"]);
-/** Old document types still read in the Service column of old files (document types are now the package's handling options). */
-const OLD_DOCUMENT_TYPES = ["B2B Document", "Trade Service Document", "Corporate Urgent Document", "ATM card", "Cheque book"];
-/** Suggestions for the free-text document description (not a product list: products are the parcel products). */
-const DOCUMENT_ITEM_SUGGESTIONS = ["ATM card", "Cheque book", "Contract", "Trade document"];
-const DEFAULT_RELATIONS = ["Self", "Family member", "Colleague", "Reception", "Authorized representative"];
-const DEFAULT_DOCUMENT_PACKAGING = ["Document envelope", "Security pouch", "Rigid document mailer"];
 /** Quote / package problems → the template column they belong to. */
 const COLUMN_OF_FIELD: Record<string, ColumnKey | "row"> = {
   speed: "service_level",
@@ -137,8 +118,25 @@ const unique = (items: string[]) => {
   const seen = new Set<string>();
   return items.filter(i => i && !seen.has(lower(i)) && seen.add(lower(i)));
 };
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
-const segmentOf = (kind: ImportKindKey): PackageSegment => (kind === "document" ? "BANKING_FINANCIAL" : "ECOMMERCE");
+
+/** "Fashion & Apparel (Regular)": how products appear in the dropdown (the plain name is accepted too). */
+export const productLabel = (p: Pick<ParcelProduct, "name" | "type">) => `${p.name} (${PRODUCT_TYPE_LABEL[p.type as ProductType] ?? p.type})`;
+/** "Fashion & Apparel (Regular)" → "fashion & apparel" (cells may hold the label or the name). */
+export const productNameOfCell = (cell: string) => lower(cell).replace(/\s*\((regular|document|books)\)$/, "");
+
+/** Products in list order: Regular, Document, Books; inside a type the seeded order, then new ones by name. */
+export function sortProducts<T extends Pick<ParcelProduct, "name" | "type" | "segment">>(products: T[]): T[] {
+  const typeRank = (t: string) => {
+    const i = (PRODUCT_TYPES as readonly string[]).indexOf(t);
+    return i < 0 ? PRODUCT_TYPES.length : i;
+  };
+  const seedRank = (p: T) => {
+    const list = SEED_PRODUCTS[p.segment === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"][p.type as ProductType] ?? [];
+    const i = list.indexOf(p.name);
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return [...products].sort((a, b) => typeRank(a.type) - typeRank(b.type) || seedRank(a) - seedRank(b) || a.name.localeCompare(b.name));
+}
 
 /** "1,5 kg" → 1.5; "৳ 2,450" → 2450; null when not a number. */
 export function parseNumber(raw: string): number | null {
@@ -149,17 +147,21 @@ export function parseNumber(raw: string): number | null {
   return Number(s);
 }
 
-/** Which optional columns a package's template has (Speed + handling only with more than Regular). */
+/** Which optional columns a package's template has (COD amount, Open box). */
 export function packageColumnOptions(pkg: PackageView): PackageColumnOptions {
   const o = packageOptions(pkg.segment, pkg.services);
-  return { cod: o.cod, speeds: o.speeds.length > 1, openBox: o.openBox, weight: o.weight };
+  return { cod: o.cod, openBox: o.openBox };
 }
+
+/** "Shop 1's service package" / "the Customer service package". */
+export const packageOwner = (ctx: Pick<EngineContext, "fileMerchant" | "pkg">) => (ctx.fileMerchant ? `${ctx.fileMerchant.name}'s service package` : `the ${SEGMENT_LABEL[ctx.pkg.segment]} service package`);
 
 /**
  * The import rules, shared by the preview (POST /imports/validate) and the booking job, so a row
  * shown as valid is booked exactly as previewed. Lenient creation: only the columns super admins
  * made required must be filled; strict validation: every non-empty cell must be valid. Prices and
- * the services come from the merchant's service package (PackagesService.quote, per row).
+ * the services come from the file's service package (the merchant's, or the Customer default for
+ * customer parcels; PackagesService.quote, per row).
  */
 @Injectable()
 export class ImportEngineService {
@@ -169,100 +171,80 @@ export class ImportEngineService {
     private readonly packages: PackagesService,
   ) {}
 
-  /** Live option lists (catalog, the package, products, platform settings) and merchants for a file. */
+  /** Live option lists (geography, the package, the category's products) for a file. */
   async context(
-    input: { kind: ImportKindKey; forOps: boolean; settings: ImportSettings; merchantId?: string | null; dropOffHubId?: string | null; services?: ImportServiceOptions },
+    input: { kind: ImportKindKey; settings: ImportSettings; merchantId?: string | null; dropOffHubId?: string | null; services?: ImportServiceOptions },
     db: Db = this.prisma,
   ): Promise<EngineContext> {
     const segment = segmentOf(input.kind);
-    const [catalog, platform, products] = await Promise.all([this.pricing.catalog(db), db.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } }), this.packages.products(segment, db)]);
-    const pc = (platform?.value ?? {}) as Record<string, unknown>;
+    const [catalog, products] = await Promise.all([this.pricing.catalog(db), this.packages.products(segment, db)]);
     const zones = unique(catalog.districts.flatMap(d => catalog.zonesByDistrict[d] ?? []));
-    const type: MerchantType = input.kind === "document" ? "BANKING_FINANCIAL" : "ECOMMERCE";
-    const rows = await db.merchant.findMany({ where: input.forOps ? { type, status: "ACTIVE" } : { id: input.merchantId ?? "00000000-0000-0000-0000-000000000000" }, orderBy: { code: "asc" } });
-    if (input.merchantId && !rows.some(r => r.id === input.merchantId)) {
-      const chosen = await db.merchant.findUnique({ where: { id: input.merchantId } });
-      if (chosen) rows.push(chosen);
-    }
-    const merchants = new Map<string, MerchantInfo>();
-    let fileMerchant: MerchantInfo | null = null;
-    for (const m of rows) {
-      const info: MerchantInfo = {
-        id: m.id,
-        code: m.code,
-        name: m.name,
-        type: m.type,
-        status: m.status,
-        contactPhone: m.contactPhone,
-        pickupAddress: m.pickupAddress,
-        pickupArea: m.pickupArea,
-        pickupDistrict: m.pickupDistrict,
-        pickupZone: zoneForArea(catalog, m.pickupDistrict, m.pickupArea),
-        segment: m.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE",
-      };
-      if (m.id === input.merchantId) fileMerchant = info;
-      if (m.type === type && m.status === "ACTIVE") for (const key of [m.code, m.name, `${m.code} · ${m.name}`]) merchants.set(lower(key), info);
-    }
-    const memo: EngineContext["memo"] = { packages: new Map(), hubs: new Map(), groups: new Map() };
-    const pkg = fileMerchant ? await this.packageOf(fileMerchant.id, memo, db) : null;
-    const speeds = pkg ? packageOptions(pkg.segment, pkg.services).speeds : SPEED_OPTIONS.filter(o => SERVICE_BY_CODE.get(SPEED_SERVICE[o])!.segments.includes(segment));
+    const m = input.kind !== "customer" && input.merchantId ? await db.merchant.findUnique({ where: { id: input.merchantId } }) : null;
+    const fileMerchant: MerchantInfo | null = m
+      ? {
+          id: m.id,
+          code: m.code,
+          name: m.name,
+          type: m.type,
+          status: m.status,
+          contactPhone: m.contactPhone,
+          pickupAddress: m.pickupAddress,
+          pickupArea: m.pickupArea,
+          pickupDistrict: m.pickupDistrict,
+          pickupZone: zoneForArea(catalog, m.pickupDistrict, m.pickupArea),
+        }
+      : null;
+    const pkg = await this.packages.effective(fileMerchant ? { merchantId: fileMerchant.id } : { segment }, db);
+    const sorted = sortProducts(products);
     const lists: Record<ListKey, string[]> = {
-      merchants: input.forOps ? rows.filter(m => m.type === type && m.status === "ACTIVE").map(m => `${m.code} · ${m.name}`) : [],
       districts: catalog.districts,
       zones,
       areas: unique(zones.flatMap(z => catalog.areasByZone[z] ?? [])),
-      addressTypes: ["Home", "Office", "Other"],
-      parcelTypes: PARCEL_TYPE_LABELS,
-      // The segment's parcel products (Service plans → Products) only.
-      products: products.map(p => p.name),
-      speeds: speeds.map(s => SPEED_LABEL[s]),
+      // The category's active products with their type (Customer and E-commerce share one list).
+      products: sorted.map(productLabel),
+      // Only the services the package offers.
+      speeds: packageOptions(pkg.segment, pkg.services).speeds.map(s => SPEED_LABEL[s]),
       weights: [...new Set(catalog.weightsKg)].sort((a, b) => a - b).map(String),
       yesNo: ["Yes", "No"],
-      packaging: input.kind === "document" ? unique([...(strings(pc.documentPackaging).length ? strings(pc.documentPackaging) : DEFAULT_DOCUMENT_PACKAGING), ...catalog.packaging]) : catalog.packaging,
-      documentTypes: OLD_DOCUMENT_TYPES,
-      documentItems: DOCUMENT_ITEM_SUGGESTIONS,
-      relations: strings(pc.receiverRelations).length ? strings(pc.receiverRelations) : DEFAULT_RELATIONS,
     };
     const services: ImportServiceOptions = { ...input.services, ...(input.dropOffHubId ? { firstMile: "HUB_DROP" as const, dropHubId: input.dropOffHubId } : {}) };
     return {
       kind: input.kind,
-      forOps: input.forOps,
       settings: input.settings,
-      columns: columnsFor(input.kind, input.forOps, pkg ? packageColumnOptions(pkg) : null),
+      columns: columnsFor(input.kind, packageColumnOptions(pkg)),
       lists,
       catalog,
       fileMerchant,
-      merchants,
       services,
       pkg,
-      products,
-      memo,
+      products: sorted,
+      memo: { hubs: new Map() },
     };
   }
 
-  private async packageOf(merchantId: string, memo: EngineContext["memo"], db: Db) {
-    let pkg = memo.packages.get(merchantId);
-    if (!pkg) {
-      pkg = await this.packages.effective({ merchantId }, db);
-      memo.packages.set(merchantId, pkg);
-    }
-    return pkg;
+  /** Who the file books for: the merchant, or the Customer category. */
+  private subjectOf(ctx: EngineContext): PackageSubject {
+    return ctx.fileMerchant ? { merchantId: ctx.fileMerchant.id } : { segment: ctx.pkg.segment };
   }
 
   /** Validates rows: cell rules, required columns, duplicates in the file, orders already booked, then the package and the price. */
   async validate(ctx: EngineContext, rows: { rowNumber: number; cells: Cells }[], opts: { inFileDuplicates?: boolean; db?: Db } = {}): Promise<RowResult[]> {
     const results = rows.map(r => this.validateRow(ctx, r.rowNumber, r.cells));
     if (opts.inFileDuplicates !== false) {
-      const groups = new Map<string, RowResult[]>();
-      for (const r of results) if (r.merchantId && r.dedupeKey) groups.set(`${r.merchantId}|${r.dedupeKey}`, [...(groups.get(`${r.merchantId}|${r.dedupeKey}`) ?? []), r]);
-      for (const group of groups.values()) {
-        if (group.length < 2) continue;
-        const where = `rows ${group.map(g => g.rowNumber).join(", ")}`;
-        for (const r of group)
+      // The first row with a reference (or the same details) is kept; later ones are errors that name it.
+      const first = new Map<string, RowResult>();
+      for (const r of results) {
+        if (!r.dedupeKey || r.status === "ERROR") continue;
+        const key = `${r.merchantId ?? "customer"}|${r.dedupeKey}`;
+        const earlier = first.get(key);
+        if (!earlier) first.set(key, r);
+        else
           this.fail(
             r,
             "order_ref",
-            r.dedupeKey!.startsWith("h:") ? `the same order appears more than once in this file (${where}); add an order ID to book each one` : `${r.dedupeKey} appears more than once in this file (${where})`,
+            r.dedupeKey.startsWith("h:")
+              ? `the same order as row ${earlier.rowNumber} (identical details); add an order ID to book both`
+              : `${r.dedupeKey} duplicates row ${earlier.rowNumber} (each reference is booked once)`,
           );
       }
     }
@@ -273,18 +255,18 @@ export class ImportEngineService {
   }
 
   /**
-   * Each row against its merchant's package: services it doesn't include are refused
+   * Each row against the file's package: services it doesn't include are refused
    * (SERVICE_NOT_IN_PACKAGE), defaults applied, the product resolved and the price computed.
    */
   private async priceRows(ctx: EngineContext, results: RowResult[], db: Db) {
+    const subject = this.subjectOf(ctx);
     for (const r of results) {
-      if (r.status === "ERROR" || !r.booking || !r.merchantId) continue;
+      if (r.status === "ERROR" || !r.booking) continue;
       const b = r.booking;
       try {
-        const pkg = await this.packageOf(r.merchantId, ctx.memo, db);
-        const product = await this.packages.resolveProduct(pkg.segment, b.product, db, ctx.products);
+        const product = await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
         const quote = await this.packages.quote(
-          { merchantId: r.merchantId },
+          subject,
           {
             pickup: { district: b.pickup.district, zone: b.pickup.zone, area: b.pickup.area },
             delivery: { district: r.destination!.district, zone: r.destination!.zone, area: b.delivery.area },
@@ -300,7 +282,7 @@ export class ImportEngineService {
             notifications: b.notifications,
           },
           db,
-          { pkg, hubs: ctx.memo.hubs },
+          { pkg: ctx.pkg, hubs: ctx.memo.hubs },
         );
         r.quote = quote;
         r.product = product;
@@ -313,22 +295,22 @@ export class ImportEngineService {
         const details = Array.isArray(error.details) ? (error.details as { path?: string; message: string }[]) : [];
         const message = (error.getResponse() as { message: string }).message;
         if (!details.length) this.fail(r, "row", message);
-        else for (const d of details) this.fail(r, COLUMN_OF_FIELD[d.path ?? ""] ?? "row", d.message.replace(/^SERVICE_NOT_IN_PACKAGE: /, "not in your service package: "));
+        else for (const d of details) this.fail(r, COLUMN_OF_FIELD[d.path ?? ""] ?? "row", d.message.replace(/^SERVICE_NOT_IN_PACKAGE: /, `not in ${packageOwner(ctx)}: `));
       }
     }
   }
 
-  /** Rows whose order was booked before (same order ref, or the same row imported before). */
+  /** Rows whose order was booked before (same order ref, or the same row imported before) for the same merchant (or as customer parcels). */
   private async markBooked(results: RowResult[], db: Db) {
-    const byMerchant = new Map<string, RowResult[]>();
-    for (const r of results) if (r.merchantId && r.dedupeKey && r.status !== "ERROR") byMerchant.set(r.merchantId, [...(byMerchant.get(r.merchantId) ?? []), r]);
-    for (const [merchantId, rows] of byMerchant) {
+    const bySubject = new Map<string, RowResult[]>();
+    for (const r of results) if (r.dedupeKey && r.status !== "ERROR") bySubject.set(r.merchantId ?? "", [...(bySubject.get(r.merchantId ?? "") ?? []), r]);
+    for (const [subject, rows] of bySubject) {
       for (let i = 0; i < rows.length; i += 1000) {
         const chunk = rows.slice(i, i + 1000);
         const refs = chunk.filter(r => !r.dedupeKey!.startsWith("h:")).map(r => r.dedupeKey!);
         const keys = chunk.filter(r => r.dedupeKey!.startsWith("h:")).map(r => r.dedupeKey!);
         const found = await db.parcel.findMany({
-          where: { merchantId, OR: [...(refs.length ? [{ merchantOrderRef: { in: refs } }] : []), ...(keys.length ? [{ importKey: { in: keys } }] : [])] },
+          where: { merchantId: subject || null, OR: [...(refs.length ? [{ merchantOrderRef: { in: refs } }] : []), ...(keys.length ? [{ importKey: { in: keys } }] : [])] },
           select: { trackingId: true, merchantOrderRef: true, importKey: true },
         });
         if (!found.length) continue;
@@ -358,6 +340,8 @@ export class ImportEngineService {
     const errors: CellError[] = [];
     const err = (column: string, message: string) => errors.push({ column, message });
     const settings = ctx.settings.templates[ctx.kind];
+    const customer = ctx.kind === "customer";
+    const banking = isBanking(ctx.pkg.segment);
     const raw = (key: ColumnKey) => (cells[key] ?? "").trim();
     // Required columns (super admin), then defaults for empty cells.
     for (const col of ctx.columns) if (settings[col.key]?.required && !raw(col.key)) err(col.key, "required");
@@ -369,13 +353,6 @@ export class ImportEngineService {
         return undefined;
       }
       return v || undefined;
-    };
-    const fromList = (key: ColumnKey, list: ListKey) => {
-      const v = value(key);
-      if (!v) return undefined;
-      const hit = ctx.lists[list].find(x => lower(x) === lower(v));
-      if (!hit) err(key, `"${v}" is not an option (choose from the list)`);
-      return hit;
     };
     const number = (key: ColumnKey, min: number, max: number, unit: string) => {
       const v = value(key);
@@ -398,117 +375,116 @@ export class ImportEngineService {
       err(key, `"${v}" is not an option (Yes or No)`);
       return undefined;
     };
+    const phone = (key: ColumnKey) => {
+      const v = value(key);
+      if (!v) return undefined;
+      const problem = bdPhoneProblem(v);
+      if (problem) err(key, `${problem.charAt(0).toLowerCase()}${problem.slice(1)}`);
+      return problem ? undefined : normalizeBdPhone(v);
+    };
 
-    // Merchant: the row's, else the one chosen for the file.
-    let merchant = ctx.fileMerchant;
-    if (ctx.forOps && raw("merchant")) {
-      const hit = ctx.merchants.get(lower(raw("merchant"))) ?? ctx.merchants.get(lower(raw("merchant").split("·")[0]));
-      if (!hit) err("merchant", `unknown or inactive ${ctx.kind === "document" ? "document" : "e-commerce"} merchant "${raw("merchant")}"`);
-      merchant = hit ?? null;
-    } else if (!merchant) err("merchant", "choose the merchant (in this column or for the whole file)");
-    if (merchant && merchant.status !== "ACTIVE") err("merchant", `${merchant.name} is not active`);
+    // Merchant: the one chosen for the whole file (there is no Merchant column). Customer parcels have none.
+    const merchant = customer ? null : ctx.fileMerchant;
+    if (!customer && !merchant) err("row", `choose the ${KIND_LABEL[ctx.kind]} merchant for this file`);
+    if (merchant && merchant.status !== "ACTIVE") err("row", `${merchant.name} is not active`);
 
-    const ref = text("order_ref", 80);
-    const name = text("recipient_name", 120);
-    let phone: string | undefined;
-    if (value("recipient_phone")) {
-      const problem = bdPhoneProblem(value("recipient_phone"));
-      if (problem) err("recipient_phone", `${problem.charAt(0).toLowerCase()}${problem.slice(1)}`);
-      else phone = normalizeBdPhone(value("recipient_phone"));
+    // Sender and pickup: the merchant's, or (customer parcels) the row's.
+    let sender: { name: string; phone: string } | null = null;
+    let pickup: { street: string; area?: string; district: string; zone: string } | null = null;
+    if (customer) {
+      const sName = text("sender_name", 120);
+      const sPhone = phone("sender_phone");
+      const sStreet = text("pickup_address", 200);
+      const place = resolvePlace(ctx.catalog, value("pickup_district"), value("pickup_zone"));
+      if (!place.ok) err(place.column === "district" ? "pickup_district" : "pickup_zone", place.message);
+      const sArea = text("pickup_area", 120);
+      if (sName && sPhone) sender = { name: sName, phone: sPhone };
+      if (sStreet && place.ok && place.district && place.zone) pickup = { street: sStreet, area: sArea, district: place.district, zone: place.zone };
+    } else if (merchant) {
+      sender = { name: merchant.name, phone: merchant.contactPhone };
+      pickup = { street: merchant.pickupAddress, area: merchant.pickupArea || undefined, district: merchant.pickupDistrict, zone: merchant.pickupZone };
     }
+
+    const name = text("recipient_name", 120);
+    const recipientPhone = phone("recipient_phone");
     const street = text("address", 200);
     const place = resolvePlace(ctx.catalog, value("district"), value("zone"));
     if (!place.ok) err(place.column, place.message);
     const area = text("area", 120);
-    let category: "HOME" | "OFFICE" | "OTHER" = ctx.kind === "document" ? "OFFICE" : "HOME";
-    if (value("address_type")) {
-      const c = ADDRESS_TYPES[lower(value("address_type"))];
-      if (!c) err("address_type", `"${value("address_type")}" is not an option (Home, Office or Other)`);
-      else category = c;
-    }
-    let type: "ECOMMERCE" | "FRAGILE" | "PARCEL" | "DOCUMENT" = ctx.kind === "document" ? "DOCUMENT" : "ECOMMERCE";
-    if (ctx.kind === "ecommerce" && value("parcel_type")) {
-      const t = PARCEL_TYPES[lower(value("parcel_type"))];
-      if (!t) err("parcel_type", `"${value("parcel_type")}" is not an option (choose from the list)`);
-      else type = t;
-    }
-    // Speed + handling (one dropdown). Empty = Regular; old service levels and document types still read.
+
+    // Service (one dropdown, only the package's options). Empty = Regular.
     let speed: SpeedOption = "REGULAR";
-    // Documents: an old document type (e.g. "Cheque book") that isn't a handling option books Regular and is kept.
-    let otherDocumentType: string | undefined;
-    if (value("service_level")) {
-      const parsed = parseSpeedOption(value("service_level"));
-      const oldType = ctx.kind === "document" && !parsed ? ctx.lists.documentTypes.find(t => lower(t) === lower(value("service_level"))) : undefined;
-      if (parsed) speed = parsed;
-      else if (oldType) otherDocumentType = oldType;
-      else err("service_level", `"${value("service_level")}" is not an option (${ctx.lists.speeds.join(", ")})`);
+    const serviceText = value("service_level");
+    if (serviceText) {
+      const options = ctx.lists.speeds.join(", ");
+      const parsed = parseSpeedOption(serviceText);
+      if (/^same[\s_-]*day$/i.test(serviceText.trim()))
+        err(
+          "service_level",
+          `"Same day" is not a service option: choose one from the list (${options})${!banking && ctx.lists.speeds.includes(SPEED_LABEL.EXPRESS) ? "; Express is the same-day service, inside the same district" : ""}`,
+        );
+      else if (parsed && ctx.lists.speeds.includes(SPEED_LABEL[parsed])) speed = parsed;
+      else if (parsed && SERVICE_BY_CODE.get(SPEED_SERVICE[parsed])!.segments.includes(ctx.pkg.segment)) err("service_level", `${SPEED_LABEL[parsed]} is not in ${packageOwner(ctx)} (choose ${options})`);
+      else err("service_level", `"${serviceText}" is not an option (${options})`);
     }
-    const weightKg = number("weight_kg", 0.01, 50, " kg") ?? (value("weight_kg") ? undefined : 0.5);
-    const packaging = fromList("packaging", "packaging");
-    const declaredValue = number("declared_value", 0, 1_000_000, "");
+    // Weight: Customer & E-commerce only (Banking & Financial has no weight).
+    const weightKg = banking ? undefined : number("weight_kg", 0.01, 50, " kg");
+    const declaredValue = banking ? undefined : number("declared_value", 0, 1_000_000, "");
     const instructions = text("instructions", 500);
-    const openBox = ctx.kind === "ecommerce" ? (yesNo("open_box") ?? false) : false;
-    // Product (optional): its type prices the row; none = Regular.
+    const openBox = banking ? false : (yesNo("open_box") ?? false);
+    const ref = text("order_ref", 80);
+    // Product (optional): the category's list, by its dropdown label or its name; its type prices the row.
     let product: string | undefined;
-    if (value("product_type")) product = fromList("product_type", "products");
-    let contents: string | undefined;
-    let receiverRelation: string | undefined;
-    let originBranchCode: string | undefined;
+    if (value("product_type")) {
+      const wanted = productNameOfCell(value("product_type"));
+      const hit = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type")));
+      if (!hit) err("product_type", `"${value("product_type")}" is not an option (choose a product of the ${SEGMENT_LABEL[ctx.pkg.segment]} list)`);
+      else product = hit.name;
+    }
     let codAmount = 0;
-    if (ctx.kind === "ecommerce") {
-      const item = text("item_description", 120);
-      contents = [product, item].filter(Boolean).join(" — ").slice(0, 120) || undefined;
-      const amount = number("cod_amount", 0, 1_000_000, "");
-      const codText = value("cod");
-      const cod = codText ? (YES.has(lower(codText)) ? true : NO.has(lower(codText)) ? false : null) : undefined;
-      if (cod === null) err("cod", `"${codText}" is not an option (Yes or No)`);
-      if (type === "DOCUMENT" && ((amount ?? 0) > 0 || cod === true)) err("cod_amount", "documents can't be cash on delivery");
-      else if (cod === false && (amount ?? 0) > 0) err("cod_amount", 'Cash on delivery is "No" but an amount is given');
-      else if (cod === true && !value("cod_amount")) err("cod_amount", 'enter the amount to collect (Cash on delivery is "Yes")');
-      else if (cod === true && amount === 0) err("cod_amount", 'must be more than 0 when Cash on delivery is "Yes"');
-      codAmount = amount ?? 0;
-    } else {
-      const item = text("document_item", 120);
-      contents = [product, item && item !== product ? item : ""].filter(Boolean).join(" — ").slice(0, 120) || undefined;
-      receiverRelation = fromList("receiver_relationship", "relations");
-      originBranchCode = text("branch_code", 40);
+    if (!banking) codAmount = number("cod_amount", 0, 1_000_000, "") ?? 0;
+    else {
       const cod = (cells.__cod ?? "").trim();
-      if (cod && !NO.has(lower(cod)) && parseNumber(cod) !== 0) err("cod_amount", "documents can't be cash on delivery");
+      if (cod && !NO.has(lower(cod)) && parseNumber(cod) !== 0) err("cod_amount", "Banking & Financial parcels can't be cash on delivery");
     }
 
     const result: RowResult = { rowNumber, cells, status: "VALID", errors, missing: [], merchantId: merchant?.id ?? null, dedupeKey: null, charge: null };
     const district = place.ok ? place.district : null;
     const zone = place.ok ? place.zone : null;
     if (!name) result.missing.push("recipientName");
-    if (!phone) result.missing.push("recipientPhone");
+    if (!recipientPhone) result.missing.push("recipientPhone");
     if (!street) result.missing.push("address");
     if (!district) result.missing.push("district");
     if (!zone) result.missing.push("zone");
-    if (errors.length || !merchant) {
+    if (errors.length || !sender || !pickup) {
+      if (!errors.length) err("row", "the sender and pickup details are incomplete");
       result.status = "ERROR";
       result.missing = [];
       return result;
     }
 
+    const type = ctx.kind === "document" ? "DOCUMENT" : customer ? "PARCEL" : "ECOMMERCE";
+    const category: "HOME" | "OFFICE" = ctx.kind === "document" ? "OFFICE" : "HOME";
     const serviceLevel = SPEED_SERVICE_LEVEL[speed];
-    const documentType = ctx.kind === "document" ? (["B2B", "TRADE", "URGENT"].includes(speed) ? SPEED_LABEL[speed] : otherDocumentType) : undefined;
+    const documentType = ctx.kind === "document" && ["B2B", "TRADE", "URGENT"].includes(speed) ? SPEED_LABEL[speed] : undefined;
     const booking: BookingInput = {
-      sender: { name: merchant.name, phone: merchant.contactPhone },
-      pickup: { category: "OFFICE", street: merchant.pickupAddress, area: merchant.pickupArea || undefined, zone: merchant.pickupZone, district: merchant.pickupDistrict },
-      recipient: { name: name ?? null, phone: phone ?? null },
+      sender,
+      pickup: { category: customer ? "HOME" : "OFFICE", street: pickup.street, area: pickup.area, zone: pickup.zone, district: pickup.district },
+      recipient: { name: name ?? null, phone: recipientPhone ?? null },
       delivery: { category, street: street ?? null, area, zone, district },
       type,
       documentType,
       serviceLevel,
       weightKg: weightKg ?? 0.5,
-      packaging,
-      contents,
+      contents: product,
       declaredValue,
       codAmount,
       instructions,
       merchantOrderRef: ref,
-      receiverRelation,
-      originBranchCode,
+      // Removed from the templates (2026-10-18); never written by imports any more.
+      packaging: undefined,
+      receiverRelation: undefined,
+      originBranchCode: undefined,
       saveAddresses: false,
       // The file's choices (import modal) and the row's.
       firstMile: ctx.services.firstMile ?? undefined,
@@ -519,26 +495,53 @@ export class ImportEngineService {
       openBox,
       product,
     };
-    // Priced to the destination, or (incomplete) to the configured default: the merchant's own city or a fixed zone.
+    // Priced to the destination, or (incomplete) to the configured default: inside the sender's own district or a fixed zone.
     const fallback =
-      ctx.settings.defaultDestination.mode === "FIXED"
-        ? { district: ctx.settings.defaultDestination.district, zone: ctx.settings.defaultDestination.zone }
-        : { district: merchant.pickupDistrict, zone: merchant.pickupZone };
+      ctx.settings.defaultDestination.mode === "FIXED" ? { district: ctx.settings.defaultDestination.district, zone: ctx.settings.defaultDestination.zone } : { district: pickup.district, zone: pickup.zone };
     const destination = {
       district: district ?? fallback.district,
-      zone: zone ?? (district ? (district === merchant.pickupDistrict ? merchant.pickupZone : (ctx.catalog.zonesByDistrict[district]?.[0] ?? fallback.zone)) : fallback.zone),
+      zone: zone ?? (district ? (district === pickup.district ? pickup.zone : (ctx.catalog.zonesByDistrict[district]?.[0] ?? fallback.zone)) : fallback.zone),
     };
     result.booking = booking;
     result.destination = destination;
     result.status = result.missing.length ? "INCOMPLETE" : "VALID";
-    // The content hash keeps its old fields (re-uploads of older files stay idempotent); new choices are added only when set.
+    // The content hash keeps the fields of the older templates in place (re-uploads of older files stay
+    // idempotent; removed columns are null); new choices are added only when set.
     const extras = [speed !== "REGULAR" && speed !== "EXPRESS" && speed !== "ON_DEMAND" ? speed : null, openBox || null].filter(Boolean);
+    const senderExtras = customer ? [[sender.name, sender.phone, pickup.street, pickup.district, pickup.zone, pickup.area ?? null]] : [];
     result.dedupeKey =
       ref ??
       `h:${createHash("sha256")
-        .update(JSON.stringify([merchant.id, ctx.kind, name, phone, street, district, zone, area, category, type, serviceLevel, booking.weightKg, codAmount, contents, documentType, receiverRelation, originBranchCode, declaredValue, instructions, ...(extras.length ? [extras] : [])]))
+        .update(
+          JSON.stringify([
+            merchant?.id ?? "customer",
+            ctx.kind,
+            name,
+            recipientPhone,
+            street,
+            district,
+            zone,
+            area,
+            category,
+            type,
+            serviceLevel,
+            booking.weightKg,
+            codAmount,
+            product,
+            documentType,
+            undefined,
+            undefined,
+            declaredValue,
+            instructions,
+            ...(extras.length ? [extras] : []),
+            ...senderExtras,
+          ]),
+        )
         .digest("hex")
         .slice(0, 40)}`;
     return result;
   }
 }
+
+/** The product list a category reads (Customer and E-commerce share one). */
+export const productSegmentOf = (kind: ImportKindKey) => productListOf(segmentOf(kind));

@@ -80,10 +80,14 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await ops.selectOption("#bkZone", "Dhanmondi");
   await ops.fill("#bkStreet", "Road 7, Flat 3B");
   await ops.fill("#bkWeight", "1");
-  await ops.fill("#bkCod", "750");
+  await ops.check("#bkSvcCod");
+  await ops.fill("#bkSvcCodAmount", "750");
   await ops.click("#modalSubmit");
   await expect(toast(ops)).toContainText(`booked for ${shop.name}`);
   const trackingId = (await toast(ops).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  // The new parcel's drawer opens (details, price, "Print label (PDF)"); closed to work the tables.
+  await expect(ops.locator("#parcelDrawerTitle")).toHaveText(trackingId);
+  await ops.click("#parcelDrawerClose");
   // It's a merchant parcel: listed under E-commerce operations, not Customer parcels.
   await expect(ops.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`)).toContainText(shop.name);
   await opsNav(ops, "customerParcels");

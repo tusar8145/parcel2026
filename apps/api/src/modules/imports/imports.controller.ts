@@ -9,7 +9,7 @@ import { AppError } from "../../common/errors";
 import { ApiZodBody, ApiZodQuery, ZBody, ZodPipe, ZQuery } from "../../common/zod";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { resolvePlace } from "../parcels/places";
-import { COLUMNS, IMPORT_KINDS } from "./columns";
+import { COLUMNS, IMPORT_KINDS, KIND_LABEL } from "./columns";
 import { ImportConfigService, importConfigSchema, LIMIT_CEILINGS, type ImportSettings } from "./import-config.service";
 import { ImportEngineService } from "./import-engine.service";
 import { ImportJobsService } from "./import-jobs.service";
@@ -41,7 +41,7 @@ export class ImportsController {
     private readonly engine: ImportEngineService,
   ) {}
 
-  /** Columns of both templates with the required flags and defaults in force, the default destination and the limits. */
+  /** Columns of the three templates (ecommerce, document = Banking & Financial, customer) with the required flags and defaults in force, the default destination and the limits. */
   @AllowApiKey()
   @RequireApiKeyScope("parcels:write", "parcels:read")
   @Get("config")
@@ -67,7 +67,7 @@ export class ImportsController {
     return this.jobs.limits(actor, query.merchantId);
   }
 
-  /** The .xlsx template (e-commerce or document), generated from the live catalog, rate cards and settings. */
+  /** The .xlsx template (ecommerce, document = Banking & Financial, customer), generated from live data; `merchantId`: the Service list follows that merchant's package. */
   @AllowApiKey()
   @RequireApiKeyScope("parcels:write")
   @Get("templates/:kind")
@@ -206,10 +206,13 @@ export class ImportsController {
             defaultable: c.defaultable,
             builtInRequired: c.required,
             builtInDefault: c.default ?? null,
-            opsOnly: !!c.opsOnly,
+            /** Only in the template when the package offers it (COD, open box). */
+            packageOnly: c.needs ?? null,
           })),
         ]),
       ),
+      /** What each template is called: E-commerce, Banking & Financial (kind "document"), Customer parcel. */
+      titles: KIND_LABEL,
       defaultDestination: settings.defaultDestination,
       limits: settings.limits,
       ceilings: LIMIT_CEILINGS,
@@ -220,18 +223,18 @@ export class ImportsController {
   private async checkDefaults(settings: ImportSettings) {
     const problems: string[] = [];
     if (settings.defaultDestination.mode === "FIXED") {
-      const catalog = (await this.engine.context({ kind: "ecommerce", forOps: false, settings })).catalog;
+      const catalog = (await this.engine.context({ kind: "ecommerce", settings })).catalog;
       const place = resolvePlace(catalog, settings.defaultDestination.district, settings.defaultDestination.zone);
       if (!place.ok || !place.zone) problems.push(`Default destination: ${place.ok ? "choose a zone" : place.message}`);
     }
     for (const kind of IMPORT_KINDS) {
-      const ctx = await this.engine.context({ kind, forOps: false, settings });
+      const ctx = await this.engine.context({ kind, settings });
       for (const col of COLUMNS[kind]) {
         const value = settings.templates[kind][col.key].default;
         if (!value) continue;
         const row = this.engine.validateRow({ ...ctx, fileMerchant: null }, 0, { [col.key]: value });
         const problem = row.errors.find(e => e.column === col.key);
-        if (problem) problems.push(`${kind === "document" ? "Document" : "E-commerce"} template, ${col.header} default: ${problem.message}`);
+        if (problem) problems.push(`${KIND_LABEL[kind]} template, ${col.header} default: ${problem.message}`);
       }
     }
     return problems;

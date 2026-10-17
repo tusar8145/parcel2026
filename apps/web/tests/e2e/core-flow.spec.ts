@@ -73,7 +73,7 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await form.getByRole("button", { name: "Continue" }).click();
   // Express (same day) is offered inside the same district only: Gulshan → Dhanmondi are both Dhaka.
   await customer.selectOption("#requestServiceLevel", "EXPRESS");
-  await customer.selectOption("#requestWeight", "2");
+  await customer.fill("#requestWeight", "2");
   await customer.check("#requestCodEnabled");
   await customer.fill("#requestCodAmount", "1500");
   while (!(await form.locator('button[type="submit"]').isVisible())) await form.getByRole("button", { name: "Continue" }).click();

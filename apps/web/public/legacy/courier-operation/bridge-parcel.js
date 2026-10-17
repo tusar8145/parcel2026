@@ -12,6 +12,7 @@
  *                        Needs info             → Edit details            (completion form)
  *                        Ready for collection   → Hand over               (Hub desk › Hub Pickup counter)
  *                        Return scheduled       → Add to return run       (Returns › Return a parcel)
+ *                        Failed delivery        → Re-attempt (Assign rider) + Return to sender (bridge-failed.js)
  *                      Shipment table rows show it first, then "Details" (the drawer), and the
  *                      row's other buttons under "More".
  *   Parcel drawer      Ops.drawer.open(trackingId): summary, actions, price breakdown, proof of
@@ -211,6 +212,8 @@
     wrap.className = "df-row-actions";
     if (primary) wrap.append(primary);
     else if (next) wrap.insertAdjacentHTML("beforeend", Ops.nextButton(p));
+    // Failed deliveries: "Return to sender" beside "Re-attempt (Assign rider)" (bridge-failed.js).
+    wrap.insertAdjacentHTML("beforeend", Ops.returnButton?.(p) || "");
     wrap.insertAdjacentHTML("beforeend", `<button type="button" class="button button-sm" data-drawer="${esc(p.trackingId)}">Details</button>`);
     const rest = controls.filter(el => el !== primary);
     if (rest.length) {
@@ -406,7 +409,7 @@
   function actionsMarkup(p) {
     const id = esc(p.trackingId);
     const dispatch = Ops.can("dispatch");
-    const buttons = [Ops.nextButton(p)];
+    const buttons = [Ops.nextButton(p), Ops.returnButton?.(p) || ""];
     const next = Ops.nextAction(p);
     if (dispatch && !CLOSED.includes(p.status)) {
       if (next?.kind !== "edit") buttons.push(`<button type="button" class="button button-sm" data-generated-edit="${id}">Edit details</button>`);
@@ -416,7 +419,7 @@
         buttons.push(`<button type="button" class="button button-sm" data-intake-change="${id}">${p.intake === "DROP_OFF" ? "Change to rider pickup" : "Change to drop-off"}</button>`);
       if (p.status === "PENDING_CONFIRMATION") buttons.push(`<button type="button" class="button button-sm" data-customer-cancel="${id}">Cancel request</button>`);
     }
-    buttons.push(`<button type="button" class="button button-sm" data-drawer-labels="${id}">Print label</button>`);
+    buttons.push(`<button type="button" class="button button-sm" data-drawer-labels="${id}">Print label (PDF)</button>`);
     return `<div class="df-actions">${buttons.filter(Boolean).join("")}</div>`;
   }
 
@@ -436,11 +439,11 @@
     if (!p) return void Ops.drawer.close();
     const s = Ops.shipment?.(p.trackingId) || shipments.find(x => x.id === p.trackingId);
     $("parcelDrawerTitle").textContent = p.trackingId;
-    $("parcelDrawerSub").innerHTML = `${statusPill(esc(p.statusLabel))} ${s?.sla ? statusPill(esc(s.sla)) : ""}`;
+    $("parcelDrawerSub").innerHTML = `${statusPill(esc(p.statusLabel))} ${s?.sla ? statusPill(esc(s.sla)) : ""}${Ops.failureBadge?.(p) || ""}`;
     const body = $("parcelDrawerBody");
     const scroll = body.scrollTop;
     const typing = document.activeElement?.id === "drawerNote" ? document.activeElement.selectionStart : null;
-    body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>
+    body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>${Ops.failureSection?.(p) || ""}
       <section><h3>Parcel</h3>${kv([
         ["Merchant / sender", esc(p.merchant?.name || p.sender?.name || "—")],
         ["Recipient", esc([p.recipient?.name, DF.localPhone(p.recipient?.phone)].filter(Boolean).join(" · ") || "—")],

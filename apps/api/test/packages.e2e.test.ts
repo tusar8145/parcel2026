@@ -114,6 +114,47 @@ describe("service packages", () => {
       expect((await q({ deliveryDistrict: "Dhaka South", product: "Spaceship" })).body.error.code).toBe("UNKNOWN_PRODUCT");
     });
 
+    it("a form quote with the product prices like the booking (operations, merchant form, walk-in sender)", async () => {
+      const { token } = await admin();
+      const { m, owner } = await merchant();
+      const pkg = await createPackage(token, "ECOMMERCE", "Document fee", await allServices("ECOMMERCE"), { typeDocument: 35 });
+      await assign(token, m.id, pkg.id);
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const places = { pickupDistrict: "Dhaka North", deliveryDistrict: "Dhaka Central", deliveryZone: "Dhanmondi" };
+      const recipient = { name: "Nabila Ahmed", phone: "1812000000" };
+      const delivery = { category: "HOME", street: "Road 7 Flat 3B", zone: "Dhanmondi", district: "Dhaka Central" };
+
+      // Operations New shipment: the live quote sends the product (a Document-type product costs more), then the booking.
+      const quoted = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, merchantId: m.id, weightKg: 7.5, product: "Papers" } });
+      expect(quoted.status, JSON.stringify(quoted.body)).toBe(200);
+      const regular = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, merchantId: m.id, weightKg: 7.5 } });
+      expect(quoted.body.totalCharge).toBe(regular.body.totalCharge + 35);
+      const booked = await ctx.api("POST", "/ops/parcels", { token: ops.token, body: { merchantId: m.id, intake: "PICKUP", recipient, delivery, type: "ECOMMERCE", weightKg: 7.5, codAmount: 0, product: "Papers" } });
+      expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+      expect(booked.body).toMatchObject({ product: "Papers", weightKg: 7.5, charges: { total: quoted.body.totalCharge } });
+
+      // The merchant order form: COD amount apart from the product value, the product in the quote.
+      const formQuote = await ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { ...places, weightKg: 1, codAmount: 900, product: "Papers" } });
+      expect(formQuote.status, JSON.stringify(formQuote.body)).toBe(200);
+      const formBooked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ serviceLevel: undefined, packaging: undefined, weightKg: 1, codAmount: 900, declaredValue: 2000, product: "Papers" }) });
+      expect(formBooked.status, JSON.stringify(formBooked.body)).toBe(201);
+      expect(formBooked.body).toMatchObject({ codAmount: 900, declaredValue: 2000, charges: { total: formQuote.body.totalCharge } });
+
+      // A walk-in sender (no merchant): the Customer default package, quoted by staff without a merchant.
+      const walkQuote = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, weightKg: 12, product: "Papers" } });
+      expect(walkQuote.body.package.name).toBe("Customer default");
+      const walkIn = await ctx.api("POST", "/ops/parcels", {
+        token: ops.token,
+        body: { sender: { name: "Walk-in Sender", phone: "1711000001" }, pickup: { category: "HOME", street: "House 5 Road 2", zone: "Gulshan", district: "Dhaka North" }, intake: "PICKUP", recipient, delivery, type: "PARCEL", weightKg: 12, codAmount: 0, product: "Papers" },
+      });
+      expect(walkIn.status, JSON.stringify(walkIn.body)).toBe(201);
+      expect(walkIn.body).toMatchObject({ merchant: null, channel: "OPERATIONS", weightKg: 12, charges: { total: walkQuote.body.totalCharge } });
+
+      // The website booking form lists the products with their type.
+      const site = (await ctx.api("GET", "/catalog")).body as { customerPackage: { products: { name: string; type: string }[] } };
+      expect(site.customerPackage.products.find(p => p.name === "Papers")?.type).toBe("DOCUMENT");
+    });
+
     it("refuses services the package doesn't include, on every surface (form/API, import)", async () => {
       const { token } = await admin();
       const { m, owner } = await merchant();

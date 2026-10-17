@@ -167,18 +167,15 @@
     // The product dropdown lists only the package's parcel products: pick one only when the saved item matches it.
     const wanted = doc() ? p.name : p.category || p.name;
     if ([...($("merchantProduct")?.options || [])].some(o => o.value && o.value === wanted)) setSelect($("merchantProduct"), wanted);
-    if (doc()) setSelect($("merchantDocumentType"), p.category && [...$("merchantDocumentType").options].some(o => o.value === p.category) ? p.category : undefined);
-    setSelect($("merchantPackaging"), p.packaging);
-    const weight = $("merchantWeight");
-    if (weight && p.weightKg) {
-      const fit = [...weight.options].map(o => Number(o.value)).filter(n => n >= p.weightKg).sort((a, b) => a - b)[0];
-      if (fit) setSelect(weight, String(fit));
-    }
-    const amount = $("orderAmount");
-    if (amount && p.price) {
-      amount.value = String(p.price);
-      amount.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    const setNumber = (input, value) => {
+      if (!input || !value) return;
+      input.value = String(value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    setNumber($("merchantWeight"), p.weightKg);
+    // The catalogue price is the product value; with COD ticked it is also the cash to collect.
+    setNumber($("orderAmount"), p.price);
+    if ($("merchantSvcCod")?.checked && $("merchantSvcCodAmount") && !$("merchantSvcCodAmount").value) setNumber($("merchantSvcCodAmount"), p.price);
     const ref = $("merchantReferenceNo");
     if (ref && !ref.value) ref.placeholder = `e.g. ${p.sku}-${new Date().getDate()}`;
   }
@@ -189,9 +186,10 @@
     const form = $("orderForm");
     const m = S().merchant;
     if (!form || !m || $("dffPickupWindow")) return;
-    const anchor = $("merchantPickupZone")?.closest(".form-field");
+    // Beside the service choices (first mile), before the price.
+    const anchor = $("merchantPriceHint");
     if (!anchor) return;
-    anchor.insertAdjacentHTML("afterend", `<div class="form-field"><label for="dffPickupWindow">Pickup time</label><select id="dffPickupWindow">${option("", "Any time today or next working day")}</select><small>Operations confirm the exact time.</small></div>`);
+    anchor.insertAdjacentHTML("beforebegin", `<div class="form-field"><label for="dffPickupWindow">Pickup time</label><select id="dffPickupWindow">${option("", "Any time today or next working day")}</select><small>Operations confirm the exact time.</small></div>`);
     try {
       const data = await DF.api(`/pickup-slots?district=${encodeURIComponent(m.pickupDistrict)}`);
       F.slots = data.days || [];

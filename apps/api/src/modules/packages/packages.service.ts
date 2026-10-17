@@ -306,7 +306,8 @@ export class PackagesService implements OnModuleInit {
     if (input.speed) return input.speed;
     const fromDoc = isBanking(segment) ? speedFromDocumentType(input.documentType) : undefined;
     if (fromDoc) return fromDoc;
-    const level = input.serviceLevel ? parseSpeedOption(input.serviceLevel) : undefined;
+    // Old `serviceLevel` field (API integrations): SAME_DAY still means Express.
+    const level = input.serviceLevel ? (/^same[\s_-]*day$/i.test(String(input.serviceLevel).trim()) ? "EXPRESS" : parseSpeedOption(input.serviceLevel)) : undefined;
     return level && level !== "REGULAR" ? level : undefined;
   }
 

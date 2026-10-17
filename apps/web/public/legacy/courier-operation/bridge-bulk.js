@@ -2,16 +2,18 @@
  * Courier Operations: bulk operations by Excel (shared/importer.js in bulk mode, API /bulk-updates).
  *
  *   Bulk update by Excel      on Shipments and the E-commerce / Document / Customer operations pages:
- *   (#courierBulkUpdate)      the dialog downloads the parcels as filtered on the page (status, merchant,
- *                             dates, "Needs info", service line; plus hub, intake and SLA state in the
- *                             dialog, and quick presets such as "Pending operations confirmation"),
- *                             then takes the filled-in file back: check → preview → apply → result.
- *   Bulk update history       past bulk updates with the rows not applied (.xlsx), filtered by page
- *   (#courierBulkHistory)
+ *   (#courierBulkUpdate)      the dialog first asks for an action (every action on All parcels, with how many
+ *                             parcels can take it), then downloads that action's file with the parcels as
+ *                             filtered on the page (status, merchant, dates, "Needs info", service line; plus
+ *                             hub, intake and SLA state in the dialog, and quick presets), then takes the
+ *                             filled-in file back: check → preview → apply → result.
+ *   Bulk update history       past bulk updates ("Accept & assign pickup rider · New orders") with the rows
+ *   (#courierBulkHistory)     not applied (.xlsx), filtered by page and action
  *
- * Page templates: every journey page with "Bulk update <page> by Excel" (bridge-nav.js #stageBulkUpdate)
- * downloads its own file (GET /bulk-updates/kinds: that page's parcels, only its actions and the columns
- * they need). All parcels keeps the full file with every action and takes any page's file.
+ * One file per action (GET /bulk-updates/actions, /export?action=): only the parcels that can take the
+ * action and only the columns it needs; no Action column. Every journey page with "Bulk update <page> by
+ * Excel" (bridge-nav.js #stageBulkUpdate) offers its own actions (GET /bulk-updates/kinds); All parcels
+ * offers every action and takes any page's file of the chosen action.
  *   Ops.bulkKindOf(view)   the template of a journey view ("Delivery" → "delivery"), or null (none / not allowed)
  *   Ops.bulkLabel(kind)    "Bulk update Delivery by Excel"
  *   Ops.bulkConfig(kind)   the DFImport.bulk() config for that template
@@ -126,7 +128,7 @@
     const actions = document.querySelector("#mainContent .page-heading .heading-actions");
     if (!actions) return;
     const anchor = $("courierImportHistory") || $("courierImport");
-    const html = `<button class="button" id="courierBulkUpdate" type="button" title="Download the filtered parcels, fill in actions in Excel, upload and apply (every action; takes any page's file)">${Ops.bulkLabel("all")}</button><button class="button" id="courierBulkHistory" type="button">Bulk update history</button>`;
+    const html = `<button class="button" id="courierBulkUpdate" type="button" title="Choose an action, download its Excel file with the filtered parcels, fill it in, upload and apply (every action)">${Ops.bulkLabel("all")}</button><button class="button" id="courierBulkHistory" type="button">Bulk update history</button>`;
     if (anchor) anchor.insertAdjacentHTML("afterend", html);
     else actions.insertAdjacentHTML("afterbegin", html);
   };

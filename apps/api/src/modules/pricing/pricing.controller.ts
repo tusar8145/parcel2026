@@ -46,7 +46,16 @@ export class PricingController {
       productsWithoutMessages: view.products.filter(p => !p.sendMessages).map(p => p.name),
       serviceLevels: SERVICE_LEVEL_LABEL,
       customerRateCard: legacyCardOf(view.prices),
-      customerPackage: { options: view.options, labels: view.labels, notifications: view.notifications, collectHubs: view.collectHubs, dropHubs: view.dropHubs, package: view.package },
+      customerPackage: {
+        options: view.options,
+        labels: view.labels,
+        notifications: view.notifications,
+        collectHubs: view.collectHubs,
+        dropHubs: view.dropHubs,
+        package: view.package,
+        /** The active Customer & E-commerce products with their type (the booking form lists "Name · Type"). */
+        products: view.products.map(p => ({ name: p.name, type: p.type, sendMessages: p.sendMessages })),
+      },
     };
   }
 

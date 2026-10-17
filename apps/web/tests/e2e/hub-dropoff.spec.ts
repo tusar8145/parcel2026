@@ -47,15 +47,18 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   await opsNav(page, "ecommerce");
   await page.click("#courierImport");
   await expect(page.locator("#dfImportTitle")).toHaveText("Import orders from Excel");
+  // The merchant is chosen in the dialog (searchable); its package brings the first-mile choices.
+  await page.fill("#dfiMerchantSearch", MERCHANT.code);
+  await page.selectOption("#dfiMerchant", MERCHANT.id);
   await page.selectOption("#dfiIntake", "DROP_OFF");
   await expect(page.locator("#dfiHub")).toBeEnabled();
   await expect(page.locator("#dfiHub option:checked")).toHaveText("Gulshan Sorting Hub");
   const recipient = `Drop E2E ${stamp}`;
   // The old CSV headers are still recognised.
   const csv = [
-    "merchant,recipient_name,phone,district,zone,area,address,service_level,weight_kg,cod_amount,contents,order_ref",
-    `${MERCHANT.code},${recipient},01812000000,Dhaka Central,Dhanmondi,,"Road 7, Flat 3B",Same day,1.5,1250,Fashion & Apparel,DROP-${stamp}`,
-    `${MERCHANT.code},Bad Phone,12345,Dhaka Central,Dhanmondi,,"Road 9",Regular,1,0,Books,DROP-${stamp}-2`,
+    "recipient_name,phone,district,zone,area,address,service_level,weight_kg,cod_amount,product,order_ref",
+    `${recipient},01812000000,Dhaka Central,Dhanmondi,,"Road 7, Flat 3B",Express,1.5,1250,Fashion & Apparel,DROP-${stamp}`,
+    `Bad Phone,12345,Dhaka Central,Dhanmondi,,"Road 9",Regular,1,0,Books,DROP-${stamp}-2`,
   ].join("\r\n");
   await page.setInputFiles("#dfiFile", { name: `dropoff-${stamp}.csv`, mimeType: "text/csv", buffer: Buffer.from(csv) });
   await page.click('[data-dfi="check"]');

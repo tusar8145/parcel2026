@@ -209,7 +209,10 @@ test.describe("super admin", () => {
     // The old product, service level and document type lists are gone; the lists real forms read stay.
     for (const list of ["ecommerceProducts", "documentProducts", "deliveryServices", "documentTypes"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(0);
     for (const title of ["E-commerce products", "Document products", "Delivery service levels", "Document type catalog"]) await expect(main.getByText(title, { exact: true })).toHaveCount(0);
-    for (const list of ["returnReasons", "receiverRelations", "ecommercePackaging", "documentPackaging"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(1);
+    await expect(main.locator('[data-catalog-form="returnReasons"]')).toHaveCount(1);
+    // Receiver relationships and packaging are no longer booking fields (owner decision 2026-10-18).
+    for (const list of ["receiverRelations", "ecommercePackaging", "documentPackaging"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(0);
+    for (const title of ["Receiver relationships", "E-commerce packaging", "Document packaging"]) await expect(main.getByText(title, { exact: true })).toHaveCount(0);
     await expect(main.locator("#geoAdmin")).toBeAttached();
     await main.locator("[data-open-products]").click();
     await expect(admin.locator("#pkgProductsPanel")).toBeVisible();

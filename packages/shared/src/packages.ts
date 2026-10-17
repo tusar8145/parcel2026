@@ -245,13 +245,15 @@ export const SPEED_LABEL: Record<SpeedOption, string> = {
 export const SPEED_SERVICE_LEVEL: Record<SpeedOption, "REGULAR" | "SAME_DAY" | "EXPRESS"> = { REGULAR: "REGULAR", EXPRESS: "SAME_DAY", ON_DEMAND: "SAME_DAY", B2B: "REGULAR", TRADE: "REGULAR", URGENT: "EXPRESS" };
 
 const norm = (raw: string) => raw.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-/** Accepts "Express", "EXPRESS", "Same day" (old service level → Express), "On demand", "B2B Document", "Corporate urgent"… */
+/** Accepts "Express", "EXPRESS", "On demand", "B2B Document", "Corporate urgent"… */
 export function parseSpeedOption(raw: string | null | undefined): SpeedOption | undefined {
   const v = norm(raw ?? "");
   if (!v) return undefined;
   for (const o of SPEED_OPTIONS) if (v === norm(o) || v === norm(SPEED_LABEL[o]) || v === norm(SPEED_LABEL[o]).replace(/ document$/, "")) return o;
   if (v === "regular delivery") return "REGULAR";
-  if (v === "same day" || v === "sameday" || v === "express delivery") return "EXPRESS";
+  // "Same day" is not a service option (Express is the same-day service): only the old `serviceLevel`
+  // field still maps SAME_DAY → Express (PackagesService.speedOf).
+  if (v === "express delivery") return "EXPRESS";
   if (v === "on demand delivery") return "ON_DEMAND";
   if (v === "trade" || v === "trade service") return "TRADE";
   if (v === "urgent" || v === "corporate urgent") return "URGENT";

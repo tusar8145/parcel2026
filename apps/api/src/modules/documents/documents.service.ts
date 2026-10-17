@@ -491,7 +491,8 @@ export class DocumentsService {
           zone: pickup ? p.pickupZone : p.deliveryZone,
           codAmount: pickup ? 0 : num(p.codAmount),
           status: PARCEL_STATUS_LABEL[p.status as ParcelStatus] ?? p.status,
-          note: p.instructions,
+          // Re-attempts after failed deliveries are flagged for the rider.
+          note: [!pickup && p.attemptCount > 0 ? `Re-attempt · failed ×${p.attemptCount} before` : "", p.instructions ?? ""].filter(Boolean).join(" · ") || null,
           orderRef: p.merchantOrderRef,
         };
       }),

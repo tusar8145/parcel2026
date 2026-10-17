@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, type OnApplicationBootstrap } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -6,7 +6,7 @@ import { AppError } from "../../common/errors";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { Prisma } from "../../generated/prisma/client";
-import { COLUMNS, IMPORT_KINDS, type ColumnKey, type ImportKindKey } from "./columns";
+import { COLUMNS, IMPORT_KINDS, KIND_LABEL, type ColumnKey, type ImportKindKey } from "./columns";
 
 export const IMPORT_CONFIG_KEY = "import-config";
 
@@ -30,6 +30,7 @@ export const importConfigSchema = z.object({
     .object({
       ecommerce: z.record(z.string(), columnSetting).optional(),
       document: z.record(z.string(), columnSetting).optional(),
+      customer: z.record(z.string(), columnSetting).optional(),
     })
     .optional(),
   /** Where orders without a destination are priced to until completed. */
@@ -70,6 +71,33 @@ function builtIn(): ImportSettings {
   return { templates, defaultDestination: { mode: "MERCHANT_CITY" }, limits: { ...DEFAULT_LIMITS } };
 }
 
+/**
+ * The stored overrides without columns that no longer exist (e.g. Merchant, Parcel type, Packaging,
+ * Receiver relationship, Origin branch code of the old templates) and without flags a column doesn't
+ * take. `dropped` lists what was removed ("ecommerce.packaging"), for the one-time migration.
+ */
+export function cleanStored(stored: ImportConfigInput): { config: ImportConfigInput; dropped: string[] } {
+  const dropped: string[] = [];
+  const templates: NonNullable<ImportConfigInput["templates"]> = {};
+  for (const kind of IMPORT_KINDS) {
+    const entries = Object.entries(stored.templates?.[kind] ?? {});
+    if (!entries.length) continue;
+    const kept: Record<string, z.infer<typeof columnSetting>> = {};
+    for (const [key, setting] of entries) {
+      const col = COLUMNS[kind].find(c => c.key === key);
+      if (!col) {
+        dropped.push(`${kind}.${key}`);
+        continue;
+      }
+      const next = { ...(setting.required !== undefined && col.configurable ? { required: setting.required } : {}), ...(setting.default !== undefined && col.defaultable ? { default: setting.default } : {}) };
+      if (Object.keys(next).length !== Object.keys(setting).length) dropped.push(`${kind}.${key}.${Object.keys(setting).filter(k => !(k in next)).join("+")}`);
+      if (Object.keys(next).length) kept[key] = next;
+    }
+    templates[kind] = kept;
+  }
+  return { config: { ...stored, templates }, dropped };
+}
+
 /** Stored overrides on top of the built-in settings (unknown columns and non-configurable flags are ignored). */
 function merge(stored: ImportConfigInput | null): ImportSettings {
   const result = builtIn();
@@ -94,11 +122,17 @@ function merge(stored: ImportConfigInput | null): ImportSettings {
  * validation and instructions follow them at once.
  */
 @Injectable()
-export class ImportConfigService {
+export class ImportConfigService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  onApplicationBootstrap() {
+    void this.migrateStored()
+      .then(removed => removed.length && new Logger("Imports").log(`Import settings: dropped the settings of removed columns (${removed.join(", ")})`))
+      .catch(err => new Logger("Imports").error({ err }, "Could not clean up the import settings"));
+  }
 
   async settings(db: Db = this.prisma): Promise<ImportSettings> {
     const row = await db.setting.findUnique({ where: { key: IMPORT_CONFIG_KEY } });
@@ -110,22 +144,22 @@ export class ImportConfigService {
   async save(actor: Actor, input: ImportConfigInput, meta: RequestMeta, validateDefaults: (settings: ImportSettings) => Promise<string[]>) {
     return this.prisma.$transaction(async tx => {
       const row = await tx.setting.findUnique({ where: { key: IMPORT_CONFIG_KEY } });
-      const previous = (row ? importConfigSchema.safeParse(row.value) : null)?.data ?? {};
+      const parsed = (row ? importConfigSchema.safeParse(row.value) : null)?.data;
+      // Settings of removed columns are dropped whenever the config is saved.
+      const previous = parsed ? cleanStored(parsed).config : {};
       const next: ImportConfigInput = {
-        templates: {
-          ecommerce: { ...(previous.templates?.ecommerce ?? {}), ...(input.templates?.ecommerce ?? {}) },
-          document: { ...(previous.templates?.document ?? {}), ...(input.templates?.document ?? {}) },
-        },
+        templates: Object.fromEntries(IMPORT_KINDS.map(kind => [kind, { ...(previous.templates?.[kind] ?? {}), ...(input.templates?.[kind] ?? {}) }])),
         defaultDestination: input.defaultDestination ?? previous.defaultDestination,
         limits: { ...(previous.limits ?? {}), ...(input.limits ?? {}) },
       };
       for (const kind of IMPORT_KINDS)
         for (const key of Object.keys(input.templates?.[kind] ?? {})) {
           const col = COLUMNS[kind].find(c => c.key === key);
-          if (!col) throw new AppError("VALIDATION_FAILED", `${kind} template: unknown column "${key}"`, 422);
+          const label = `${KIND_LABEL[kind]} template`;
+          if (!col) throw new AppError("VALIDATION_FAILED", `${label}: unknown column "${key}"`, 422);
           const s = input.templates![kind]![key];
-          if (s.required !== undefined && !col.configurable) throw new AppError("VALIDATION_FAILED", `${kind} template: "${col.header}" can't be made required here`, 422);
-          if (s.default && !col.defaultable) throw new AppError("VALIDATION_FAILED", `${kind} template: "${col.header}" can't have a default value`, 422);
+          if (s.required !== undefined && !col.configurable) throw new AppError("VALIDATION_FAILED", `${label}: "${col.header}" is always ${col.required ? "required" : "optional"}`, 422);
+          if (s.default && !col.defaultable) throw new AppError("VALIDATION_FAILED", `${label}: "${col.header}" can't have a default value`, 422);
         }
       const settings = merge(next);
       const problems = await validateDefaults(settings);
@@ -137,6 +171,29 @@ export class ImportConfigService {
       });
       await this.audit.record(actor, { action: "import_config.update", entityType: "setting", entityId: IMPORT_CONFIG_KEY, data: { changes: input as Prisma.InputJsonObject } }, meta, tx);
       return settings;
+    });
+  }
+
+  /**
+   * One-time clean-up of the stored settings after the templates changed (2026-10-18: three
+   * templates, no Merchant / Parcel type / Packaging / Receiver relationship / Origin branch code /
+   * document columns): settings of removed columns are dropped, audited. Returns what was dropped;
+   * running it again finds nothing. Called at start-up.
+   */
+  async migrateStored(): Promise<string[]> {
+    return this.prisma.$transaction(async tx => {
+      const row = await tx.setting.findUnique({ where: { key: IMPORT_CONFIG_KEY } });
+      if (!row) return [];
+      const parsed = importConfigSchema.safeParse(row.value);
+      if (!parsed.success) return [];
+      const { config, dropped } = cleanStored(parsed.data);
+      // Templates the schema doesn't know (none today) are dropped by the parse itself.
+      const unknownKinds = Object.keys((row.value as { templates?: Record<string, unknown> } | null)?.templates ?? {}).filter(k => !(IMPORT_KINDS as readonly string[]).includes(k));
+      if (!dropped.length && !unknownKinds.length) return [];
+      await tx.setting.update({ where: { key: IMPORT_CONFIG_KEY }, data: { value: config as Prisma.InputJsonObject } });
+      const removed = [...dropped, ...unknownKinds];
+      await this.audit.record("system", { action: "import_config.migrate", entityType: "setting", entityId: IMPORT_CONFIG_KEY, data: { removed } }, { ip: "", userAgent: "import-config-migration", requestId: "import-config-migration" }, tx);
+      return removed;
     });
   }
 }

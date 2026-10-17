@@ -18,7 +18,10 @@ import type { Catalog } from "../pricing/pricing.service";
 import { resolvePlace } from "../parcels/places";
 import { describeMissing, missingFor, type MissingField } from "../parcels/incomplete";
 import { ACTION_LABEL, DETAIL_KEYS, headerOf, parseSettableStatus, riderCodeOf, type BulkAction, type BulkColumnKey } from "./bulk-columns";
-import { parseChoice, type BulkChoice } from "./bulk-kinds";
+import type { ActionTemplate } from "./bulk-actions";
+
+/** The action a row runs (fixed by the file's action template). */
+export type BulkChoice = Pick<ActionTemplate, "label" | "action" | "status" | "statuses" | "noteRequired">;
 
 export type BulkRowCells = Partial<Record<BulkColumnKey, string>>;
 export interface Problem {
@@ -115,8 +118,6 @@ export class BulkPlanner {
       catalog: Catalog;
       /** Hub operators' hubs; null = the whole network. */
       scope: string[] | null;
-      /** The page template's Action labels (null = any action: All parcels) and its title for messages. */
-      allowed?: { labels: Set<string>; page: string } | null;
     },
   ) {
     for (const r of ctx.riders) this.ridersByCode.set(r.code.toUpperCase(), r);
@@ -135,21 +136,14 @@ export class BulkPlanner {
     return this.hubs.find(h => norm(h.name) === v || norm(h.code) === v || norm(`${h.name} (${h.code})`) === v);
   }
 
-  check(rowNumber: number, cells: BulkRowCells): CheckedRow {
+  check(rowNumber: number, cells: BulkRowCells, choice: BulkChoice): CheckedRow {
     const errors: Problem[] = [];
     const warnings: Problem[] = [];
     const err = (column: string, message: string) => errors.push({ column, message });
     const warn = (column: string, message: string) => warnings.push({ column, message });
-    const base: CheckedRow = { rowNumber, status: "ERROR", action: null, trackingId: cells.tracking_id ?? null, parcelId: null, expectedVersion: null, priority: 0, cells, plan: null, errors, warnings, result: null, dedupeKey: null };
+    const action = choice.action;
+    const base: CheckedRow = { rowNumber, status: "ERROR", action, trackingId: cells.tracking_id ?? null, parcelId: null, expectedVersion: null, priority: 0, cells, plan: null, errors, warnings, result: null, dedupeKey: null };
 
-    let choice = cells.action ? parseChoice(cells.action) : undefined;
-    if (!choice) err("action", `"${cells.action}" is not an action: choose one from the list`);
-    else if (this.ctx.allowed && !this.ctx.allowed.labels.has(choice.label)) {
-      err("action", `"${choice.label}" isn't an action of the ${this.ctx.allowed.page} page: choose one from the list (or upload the file on All parcels)`);
-      choice = undefined;
-    }
-    const action = choice?.action;
-    base.action = action ?? null;
     const priority = cells.priority ? (norm(cells.priority) === "high" ? 1 : norm(cells.priority) === "normal" ? 0 : null) : 0;
     if (priority === null) err("priority", "Choose Normal or High");
     base.priority = priority ?? 0;
@@ -170,11 +164,11 @@ export class BulkPlanner {
         base.trackingId = parcel.trackingId;
         base.parcelId = parcel.id;
         const first = this.seen.get(parcel.id);
-        if (first !== undefined) err("tracking_id", `${parcel.trackingId} already has an action in row ${first}: one row per parcel`);
+        if (first !== undefined) err("tracking_id", `${parcel.trackingId} is already in row ${first}: one row per parcel`);
         else this.seen.set(parcel.id, rowNumber);
       }
     }
-    if (!action || !choice || !parcel) return base;
+    if (!parcel) return base;
     const label = choice.label;
     if (versionText && version === null) err("version", "The version was changed: download a fresh file");
     if (!versionText) warn("version", "No version (not a downloaded file?): changes made since can't be detected");
@@ -236,14 +230,14 @@ export class BulkPlanner {
         const rider = this.rider(cells, plan, err, warn, "pickup", p);
         if (rider && (status === "PICKUP_ASSIGNED" || status === "PICKUP_CONFIRMED") && p.pickupRiderId === rider.id) return `pickup already assigned to ${riderLabel(rider)}`;
         if (p.intake === "DROP_OFF" && status === "PENDING_CONFIRMATION")
-          err("action", `${p.trackingId} is booked for drop-off at ${p.dropOffHub?.name ?? "a hub"}: use "${ACTION_LABEL.RECEIVE_AT_HUB}" when it arrives (or "${ACTION_LABEL.TO_PICKUP}" first)`);
-        else if (!can("PICKUP_ASSIGNED")) err("action", `A parcel that is "${label}" can't get a pickup rider`);
+          err("status", `${p.trackingId} is booked for drop-off at ${p.dropOffHub?.name ?? "a hub"}: use "${ACTION_LABEL.RECEIVE_AT_HUB}" when it arrives (or "${ACTION_LABEL.TO_PICKUP}" first)`);
+        else if (!can("PICKUP_ASSIGNED")) err("status", `A parcel that is "${label}" can't get a pickup rider`);
         return null;
       }
       case "ASSIGN_DELIVERY": {
         const rider = this.rider(cells, plan, err, warn, "delivery", p);
         if (rider && (status === "ASSIGNED" || status === "OUT_FOR_DELIVERY") && p.deliveryRiderId === rider.id) return `already assigned to ${riderLabel(rider)} for delivery`;
-        if (!can("ASSIGNED")) err("action", `A parcel that is "${label}" can't be assigned for delivery (it must be at a hub)`);
+        if (!can("ASSIGNED")) err("status", `A parcel that is "${label}" can't be assigned for delivery (it must be at a hub)`);
         hubAccess();
         const details = this.details(cells, p, err);
         if (details.body) plan.details = details.body;
@@ -300,16 +294,16 @@ export class BulkPlanner {
         plan.hubId = hubId;
         plan.hubName = this.hubName(hubId);
         if (status === "AT_HUB" && p.currentHubId === hubId) return `already at ${plan.hubName}`;
-        this.statusRules(p, "AT_HUB", plan, err, "action");
+        this.statusRules(p, "AT_HUB", plan, err, "status");
         return null;
       }
       case "CANCEL":
         if (status === "PICKUP_CANCELLED") return "already cancelled";
-        if (!can("PICKUP_CANCELLED")) err("action", `A parcel that is "${label}" can't be cancelled (only before pickup): use "${ACTION_LABEL.SCHEDULE_RETURN}"`);
+        if (!can("PICKUP_CANCELLED")) err("status", `A parcel that is "${label}" can't be cancelled (only before pickup): use "${ACTION_LABEL.SCHEDULE_RETURN}"`);
         return null;
       case "SCHEDULE_RETURN":
         if (status === "RETURN_SCHEDULED" || status === "RETURNED") return `already "${label}"`;
-        if (!can("RETURN_SCHEDULED")) err("action", `A parcel that is "${label}" can't be returned now (it must be at a hub, or have a failed delivery)`);
+        if (!can("RETURN_SCHEDULED")) err("status", `A parcel that is "${label}" can't be returned now (it must be at a hub, or have a failed delivery)`);
         else hubAccess();
         return null;
       case "TO_DROP_OFF": {
@@ -333,14 +327,14 @@ export class BulkPlanner {
       case "COMPLETE_DETAILS": {
         const details = this.details(cells, p, err);
         if (!DETAIL_KEYS.some(k => cells[k]?.trim())) {
-          err("action", "Fill at least one Set … column");
+          err("status", "Fill at least one Set … column");
           return null;
         }
-        if (STAFF_LOCKED.includes(status)) err("action", `${p.trackingId} is "${label}"; its details can no longer change`);
+        if (STAFF_LOCKED.includes(status)) err("status", `${p.trackingId} is "${label}"; its details can no longer change`);
         hubAccess();
         if (!details.body) return p.incomplete ? "these are already the order's details" : "the details are already complete";
         plan.details = details.body;
-        if (!p.incomplete) err("action", `${p.trackingId} already has every delivery detail; correct it with Edit details on the parcel`);
+        if (!p.incomplete) err("status", `${p.trackingId} already has every delivery detail; correct it with Edit details on the parcel`);
         return null;
       }
       case "ADD_NOTE":
@@ -349,13 +343,13 @@ export class BulkPlanner {
   }
 
   /** The lifecycle, hub and detail rules of a status change by operations (like ParcelsService.setStatus). */
-  private statusRules(p: PlannerParcel, to: ParcelStatus, plan: BulkPlan, err: (c: string, m: string) => void, column: "new_status" | "action") {
+  private statusRules(p: PlannerParcel, to: ParcelStatus, plan: BulkPlan, err: (c: string, m: string) => void, column: "new_status" | "status") {
     const status = p.status as ParcelStatus;
     const label = statusLabelOf(p);
     const scope = this.ctx.scope;
     if (!canTransition(status, to, "ops", { intake: p.intake })) {
       if (status === "PENDING_CONFIRMATION" && to === "AT_HUB")
-        err("action", `${p.trackingId} is booked for rider pickup: assign a pickup rider; only drop-offs are received at a hub before pickup`);
+        err("status", `${p.trackingId} is booked for rider pickup: assign a pickup rider; only drop-offs are received at a hub before pickup`);
       else err(column, `A parcel that is "${label}" can't be changed to "${PARCEL_STATUS_LABEL[to]}"`);
       return;
     }
@@ -366,13 +360,13 @@ export class BulkPlanner {
     } else if (scope && p.currentHubId && !scope.includes(p.currentHubId))
       err("tracking_id", `${p.trackingId} is at ${this.hubName(p.currentHubId)}. Only that hub or an operations manager can update it`);
     const missing = missingFor(p, to);
-    if (missing.length) err("action", `${p.trackingId} still needs the ${describeMissing(missing)}: complete the order first`);
+    if (missing.length) err("status", `${p.trackingId} still needs the ${describeMissing(missing)}: complete the order first`);
     if (to === "OUT_FOR_DELIVERY" && !p.deliveryRiderId && !p.pickupRiderId) err("new_status", "Assign a delivery rider first");
   }
 
   private intakeRules(p: PlannerParcel, err: (c: string, m: string) => void) {
     const status = p.status as ParcelStatus;
-    if (!INTAKE_CHANGEABLE_STATUSES.includes(status)) err("action", `${p.trackingId} is "${statusLabelOf(p)}": pickup and drop-off can only be switched before the parcel is picked up or received`);
+    if (!INTAKE_CHANGEABLE_STATUSES.includes(status)) err("status", `${p.trackingId} is "${statusLabelOf(p)}": pickup and drop-off can only be switched before the parcel is picked up or received`);
     const scope = this.ctx.scope;
     if (scope && p.dropOffHubId && !scope.includes(p.dropOffHubId)) err("tracking_id", `${p.trackingId} is booked for drop-off at ${p.dropOffHub?.name ?? "another hub"}. Only that hub or an operations manager can change it`);
     if (scope && p.pickupRider?.hubId && !scope.includes(p.pickupRider.hubId)) err("tracking_id", `${p.trackingId}'s pickup rider works at another hub. Only that hub or an operations manager can change it`);

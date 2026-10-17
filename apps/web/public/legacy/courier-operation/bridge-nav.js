@@ -111,7 +111,7 @@
       stage: "Problems",
       tabs: [
         { id: "Exceptions", page: "Exceptions", list: { stage: "exceptions" }, bulk: { status: "EXCEPTION" }, title: "Exception work queue", empty: "No open exceptions." },
-        { id: "Failed delivery", page: "Exceptions", list: { stage: "failed" }, bulk: { status: "RETRY_SCHEDULED" }, title: "Failed deliveries · retry scheduled", empty: "No failed deliveries waiting for another attempt." },
+        { id: "Failed delivery", page: "Exceptions", list: { stage: "failed" }, bulk: { status: "RETRY_SCHEDULED" }, title: "Failed deliveries · retry scheduled or back at the hub", empty: "No failed deliveries waiting for a decision." },
         { id: "Needs info", page: "Exceptions", list: { stage: "needs_info" }, bulk: { incomplete: true }, title: "Orders with details missing", empty: "No orders are missing details." },
         { id: "SLA late-risk", page: "Exceptions", list: { stage: "sla_risk" }, bulk: { sla: "AT_RISK" }, title: "Late or at risk of missing the delivery promise", sla: true, empty: "No parcels are past their promised delivery time." },
       ],
@@ -316,7 +316,7 @@
     if (!actions || $("stageBulkUpdate")) return;
     actions.insertAdjacentHTML(
       "beforeend",
-      `<button class="button" id="stageBulkUpdate" type="button" data-stage-bulk data-kind="${kind}" title="Download this page's parcels with only this page's actions, fill them in in Excel, upload and apply">${Ops.bulkLabel(kind)}</button>`,
+      `<button class="button" id="stageBulkUpdate" type="button" data-stage-bulk data-kind="${kind}" title="Choose one of this page's actions, download its Excel file, fill it in, upload and apply">${Ops.bulkLabel(kind)}</button>`,
     );
   }
 
@@ -366,7 +366,11 @@
           ["delivery-active", "delivery", "Out with delivery riders", "Assigned to a delivery rider or out for delivery", "No parcels are out with delivery riders."],
         ];
     let after = (!pickup && q("#mainContent .dashboard-grid")) || q("#mainContent .metrics") || q("#mainContent .df-tabs") || q("#mainContent .page-heading");
-    for (const [id, stage, title, subtitle, empty] of tables) after = stageList(id, { params: () => ({ stage }), empty }, title, subtitle, after) || after;
+    // Waiting for a delivery rider: "Failed before" narrows it to parcels back after a failed attempt (bridge-failed.js badge).
+    const failed = Ops.lists.get("delivery-waiting")?.filters.failedBefore || "";
+    const failedTools = `<select class="select-small" data-list-failed aria-label="Failed before"><option value="">All parcels</option><option value="true"${failed === "true" ? " selected" : ""}>Failed before</option><option value="false"${failed === "false" ? " selected" : ""}>Not failed before</option></select>`;
+    for (const [id, stage, title, subtitle, empty] of tables)
+      after = stageList(id, { params: () => ({ stage }), empty, tools: id === "delivery-waiting" ? failedTools : "" }, title, subtitle, after) || after;
   }
 
   function problemsTab(tab) {

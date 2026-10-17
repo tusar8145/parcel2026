@@ -26,9 +26,23 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
 
 Shared UI modules loaded before the bridges that use them: `shared/print.js` (`window.DFPrint`: every print button opens an API-generated PDF in a new tab, see docs/architecture-contracts.md "Printed documents"), `shared/importer.js` (`window.DFImport`:
 the Excel/CSV import dialog, history and "Needs info" completion form for the merchant panels and
-Courier Operations, drawn with each panel's own modal/table/status classes; in bulk mode, `DFImport.bulk`, the same
-steps run Courier Operations' "Bulk update <page> by Excel" on /bulk-updates with the page's own template, see
-courier-operation/bridge-bulk.js) and
+Courier Operations, drawn with each panel's own modal/table/status classes. Three bulk-create templates:
+Customer parcel (operations only), E-commerce and Banking & Financial (API kind `document`). Operations
+choose the category and then the merchant (searchable select, `#dfiMerchantSearch` / `#dfiMerchant`) or
+"Customer parcel"; merchants get their own category. The first / last mile, drop-off hub and message
+choices and the template download follow that merchant's (or the Customer) package; there is no per-row
+merchant. Super admin's required columns / defaults per template: `super-admin/bridge-imports.js`; in bulk mode, `DFImport.bulk`, the same
+steps run Courier Operations' "Bulk update <page> by Excel" on /bulk-updates, one file per action: step 1
+"Choose an action" (`#dfiActions`, the page's actions with counts from `GET /bulk-updates/actions?kind=`;
+All parcels offers every action), then that action's download (only its eligible parcels and columns, no
+Action column), upload → preview → apply; history by page and action; see courier-operation/bridge-bulk.js
+and docs/architecture-contracts.md "Bulk operations by Excel"),
+`shared/order-services.js` (`window.DFOrderServices`: the single-order forms' package choices — one
+first-mile and one last-mile select, Service, COD tick + amount, open box, messages — the product list
+"Name · Type", place selects with "Choose …" placeholders and a search box for long lists, inline checks
+and the price breakdown; used by Courier Operations New shipment in `courier-operation/bridge-pages.js`,
+merchant or walk-in sender, and by both merchant order forms in `shared/merchant-bridge.js`; see
+docs/architecture-contracts.md "Single-order forms") and
 `shared/scanner.js` (barcode scanning).
 
 Dialogs: no panel uses `window.confirm` / `prompt` / `alert`. `shared/api.js` has `DF.confirm`, `DF.prompt`,
@@ -55,5 +69,9 @@ updates, `DFOps.navigate(view, tab)`). The original pages keep their internal na
 `/courier-operation?page=<old or new name>&tab=<tab>`) open the view that now holds the page; the map is in
 docs/architecture-contracts.md ("Courier Operations navigation"). Browser tests navigate with `opsNav(page,
 area)` from `tests/e2e/support.ts` (`OPS_NAV`).
+
+`courier-operation/bridge-failed.js` (between the drawer and navigation pair): failed deliveries — the
+"Failed ×N" badge on parcel rows and in the drawer (with the attempts), "Re-attempt (Assign rider)" and the
+"Return to sender" dialog; see docs/architecture-contracts.md ("Failed deliveries").
 
 As a feature is rebuilt in React, delete its code here and from `scripts.ts`.

@@ -1,9 +1,10 @@
 import { parseParcelStatus, type ParcelStatus } from "@delivery-fast/shared";
 
 /**
- * The bulk update sheet ("Parcels"): read-only data columns (greyed, locked) describing each
- * parcel, and the editable action columns operations fill in. One definition drives the export,
- * the header matching on upload, the preview and the failed-rows download.
+ * The columns of the bulk update sheets: read-only data columns (greyed, locked) describing each
+ * parcel, and the editable input columns operations fill in. Each action template (bulk-actions.ts)
+ * picks its columns from these, sometimes with its own header and help; one definition drives the
+ * export, the header matching on upload, the preview and the failed-rows download.
  */
 
 export const BULK_ACTIONS = [
@@ -31,38 +32,6 @@ export const ACTION_LABEL: Record<BulkAction, string> = {
   SCHEDULE_RETURN: "Schedule return",
   COMPLETE_DETAILS: "Complete details",
   ADD_NOTE: "Add note",
-};
-
-/** What each action does and which columns it reads (Instructions sheet). */
-export const ACTION_HELP: Record<BulkAction, { needs: string; does: string }> = {
-  ACCEPT_PICKUP: {
-    needs: "Rider (empty = the Suggested rider)",
-    does: "Accepts a pickup request (Pending operations confirmation) and assigns the pickup rider; also re-assigns another pickup rider while the pickup is assigned or confirmed.",
-  },
-  ASSIGN_DELIVERY: {
-    needs: "Rider; the recipient name, phone, address, district and zone must be known (fill the Set … columns of a \"Needs info\" order in the same row)",
-    does: "Assigns the delivery rider to a parcel at a hub (or re-assigns one). The recipient gets the delivery code by SMS.",
-  },
-  SET_STATUS: {
-    needs: "New status; Hub for At hub / In transit (empty = the current hub)",
-    does: "Moves the parcel to another status by the lifecycle rules. Assignments, cancellations and returns have their own actions; Delivered is only set by the rider with proof.",
-  },
-  RECEIVE_AT_HUB: {
-    needs: "Hub (empty = the drop-off hub, or your own hub)",
-    does: "Receives the parcel at a hub (At hub). A drop-off is received only at the hub it was booked for.",
-  },
-  CANCEL: { needs: "Reason / note", does: "Cancels the pickup request (before it is picked up). The sender is notified." },
-  TO_DROP_OFF: {
-    needs: "Hub (the drop-off hub; hub operators may leave it empty for their own hub)",
-    does: "Turns a rider pickup into a drop-off at a hub, before pickup. An assigned pickup rider is released; the parcel is re-priced and the sender told where to bring it.",
-  },
-  TO_PICKUP: { needs: "Nothing else", does: "Turns a drop-off back into a rider pickup, before it is received. Re-priced; the sender is notified." },
-  SCHEDULE_RETURN: { needs: "Reason / note", does: "Schedules the return to the sender (RTO) with the return charge." },
-  COMPLETE_DETAILS: {
-    needs: "At least one Set … column",
-    does: "Completes a \"Needs info\" order (recipient, address, destination, weight, service). It is re-priced with the tariff frozen at booking.",
-  },
-  ADD_NOTE: { needs: "Reason / note", does: "Adds an internal note to the parcel's history (staff only)." },
 };
 
 /** Statuses operations may set with "Change status" (assignments, cancellations and returns have their own actions; never Delivered). */
@@ -95,7 +64,6 @@ export type BulkColumnKey =
   | "sla_state"
   | "missing"
   | "suggested_rider"
-  | "action"
   | "rider"
   | "new_status"
   | "hub"
@@ -112,7 +80,7 @@ export type BulkColumnKey =
   | "version"
   | "template";
 
-export type BulkListKey = "actions" | "riders" | "statuses" | "hubs" | "priorities" | "districts" | "zones" | "areas" | "services";
+export type BulkListKey = "riders" | "statuses" | "hubs" | "priorities" | "districts" | "zones" | "areas" | "services";
 
 export interface BulkColumn {
   key: BulkColumnKey;
@@ -128,6 +96,8 @@ export interface BulkColumn {
   /** Kept as text (phone numbers). */
   text?: boolean;
   hidden?: boolean;
+  /** Required in every applied row (action templates: the header ends with "*"). */
+  required?: boolean;
   number?: { min: number; max: number };
   maxLength?: number;
 }
@@ -139,7 +109,6 @@ export const BULK_COLUMNS: BulkColumn[] = [
   ro("tracking_id", "Tracking ID", 18, "The parcel. Don't change it.", { aliases: ["tracking", "tracking_no", "consignment_id"] }),
   ro("status", "Current status", 24, "The status when you downloaded the file."),
   ro("suggested_rider", "Suggested rider", 30, "Routing suggestion (zone, route, load, distance) for parcels waiting for a pickup or delivery rider. Leave Rider empty to accept it."),
-  ed("action", "Action", 28, "What to do with this parcel. Leave empty to skip the row.", { list: "actions", strict: true }),
   ed("rider", "Rider", 34, "Rider code · name · hub. Choose a Hub first to narrow the list to that hub's riders.", { list: "riders", strict: false }),
   ed("new_status", "New status", 22, "For Change status: the status to move to.", { list: "statuses", strict: true }),
   ed("hub", "Hub", 24, "For Receive at hub, Change to drop-off and At hub / In transit; for rider actions it narrows the Rider list.", { list: "hubs", strict: true }),
@@ -174,12 +143,10 @@ export const BULK_COLUMNS: BulkColumn[] = [
   ed("set_weight", "Set weight (kg)", 13, "Complete details: weight in kg.", { number: { min: 0.01, max: 50 } }),
   ed("set_service", "Set service", 13, "Complete details: service level.", { list: "services", strict: true }),
   ro("version", "version", 8, "Optimistic locking: the parcel's version when downloaded. Don't change it.", { hidden: true }),
-  ro("template", "template", 12, "The page this file was downloaded for (bulk-kinds.ts). Don't change it.", { hidden: true }),
+  ro("template", "template", 26, "The page and action this file was downloaded for (page:action, bulk-actions.ts). Don't change it.", { hidden: true }),
 ];
 
 export const DETAIL_KEYS = ["set_recipient_name", "set_recipient_phone", "set_address", "set_district", "set_zone", "set_area", "set_weight", "set_service"] as const satisfies readonly BulkColumnKey[];
-
-export const SHEET_NAME = "Parcels";
 
 const normHeader = (h: string) =>
   h
@@ -189,15 +156,21 @@ const normHeader = (h: string) =>
     .replace(/[^a-z0-9৳]+/g, "_")
     .replace(/^_|_$/g, "");
 
-/** Matches a header row to column keys (by header, key or alias). */
-export function matchBulkHeaders(headers: string[]) {
+/** Matches a header row to the columns of a template (by its header, the base header, key or alias). */
+export function matchBulkHeaders(headers: string[], columns: readonly BulkColumn[] = BULK_COLUMNS) {
   const byName = new Map<string, BulkColumnKey>();
-  for (const c of BULK_COLUMNS) for (const n of [c.header, c.key, ...(c.aliases ?? [])]) byName.set(normHeader(n), c.key);
+  for (const c of columns) for (const n of [c.header, c.key, ...(c.aliases ?? [])]) byName.set(normHeader(n), c.key);
   const map = headers.map(h => byName.get(normHeader(String(h ?? ""))) ?? null);
-  return { map, unknown: headers.filter((h, i) => String(h ?? "").trim() && !map[i] && normHeader(String(h)) !== "error") };
+  return {
+    map,
+    unknown: headers.filter((h, i) => String(h ?? "").trim() && !map[i] && normHeader(String(h)) !== "error"),
+    /** The multi-action file of before 2026-10-18 had an Action column. */
+    legacyAction: headers.some(h => normHeader(String(h ?? "")) === "action"),
+  };
 }
 
-export const headerOf = (key: string) => BULK_COLUMNS.find(c => c.key === key)?.header ?? (key === "row" ? "Row" : key);
+export const headerOf = (key: string, columns: readonly BulkColumn[] = BULK_COLUMNS) =>
+  columns.find(c => c.key === key)?.header ?? BULK_COLUMNS.find(c => c.key === key)?.header ?? (key === "row" ? "Row" : key === "action" ? "Action" : key);
 
 /** A status label or enum value that operations may set with "Change status". */
 export const parseSettableStatus = (value: string) => {

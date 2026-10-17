@@ -9,9 +9,10 @@ import pg from "pg";
 
 // The spreadsheet import engine through the real UI: a merchant (template → upload with valid,
 // incomplete and invalid rows → paginated preview with highlighted errors → create → result →
-// download of the rows not created → complete a "Needs info" order), operations (drop-off
-// import with a merchant per row → labels) and super admin (a required column changes the
-// template and the validation). A temporary merchant, owner and super admin are created in the
+// download of the rows not created → complete a "Needs info" order), operations for each of the
+// three templates (E-commerce with drop-off and labels, Banking & Financial, Customer parcel; the
+// merchant is chosen in the dialog, never per row) and super admin (a required column changes the
+// template and the validation; a download button per template). A temporary merchant, owner and super admin are created in the
 // database and deleted afterwards with everything they booked; the import settings are restored.
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
@@ -140,7 +141,7 @@ async function downloaded(page: Page, click: () => Promise<unknown>) {
   return { name: download.suggestedFilename(), buffer: fs.readFileSync((await download.path())!) };
 }
 
-const HEADER = "Order ID,Customer name,Customer phone,Delivery address,District,Zone,Service,Weight (kg),COD amount (৳),Product type";
+const HEADER = "Order ID,Customer name,Customer phone,Delivery address,District,Zone,Service,Weight (kg),COD amount (৳),Product";
 const csv = (rows: string[]) => Buffer.from(`﻿${[HEADER, ...rows].join("\r\n")}`, "utf8");
 
 test.describe.serial("spreadsheet imports", () => {
@@ -159,6 +160,9 @@ test.describe.serial("spreadsheet imports", () => {
     expect(parts.get("xl/workbook.xml")).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
     expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Customer phone *");
     expect(parts.get("xl/worksheets/sheet1.xml")).toContain("<formula1>L_districts</formula1>");
+    // Exactly the E-commerce columns: no Merchant, Parcel type or Packaging; products with their type.
+    for (const gone of [">Merchant<", "Parcel type", "Packaging", "Receiver relationship", "Address type"]) expect(parts.get("xl/worksheets/sheet1.xml")).not.toContain(gone);
+    expect(parts.get("xl/worksheets/sheet3.xml")).toContain("Fashion &amp; Apparel (Regular)");
 
     // ── Upload: 55 valid, 3 incomplete (no address or destination; the first also no name), 2 invalid ──
     const tag = stamp.slice(-5);
@@ -172,6 +176,9 @@ test.describe.serial("spreadsheet imports", () => {
     await page.click("#merchantBulkImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 5,000 rows and 10 MB per file");
     await expect(page.locator("#dfiLimits")).toContainText("Customer phone");
+    await expect(page.locator("#dfiLimits")).toContainText("The recipient phone is required.");
+    await expect(page.locator("#dfiLimits")).not.toContainText("missing the recipient name, phone");
+    await expect(page.locator("#dfiMerchant")).toHaveCount(0); // a merchant imports its own orders
     await page.setInputFiles("#dfiFile", { name: `orders-${tag}.csv`, mimeType: "text/csv", buffer: csv(rows) });
     // Messages: every one in the package is ticked; untick "Pickup request received" for this file.
     const messages = page.locator("#dfiNotifications");
@@ -257,36 +264,66 @@ test.describe.serial("spreadsheet imports", () => {
     expect(errors).toEqual([]);
   });
 
-  test("operations: drop-off import with a merchant per row, then labels", async ({ page, context }) => {
+  /** Opens the import dialog on an operations page and chooses the merchant (searchable) when the category has one. */
+  async function opsDialog(page: Page, merchant?: { id: string; code: string; name: string }) {
+    await page.click("#courierImport");
+    await expect(page.locator("#dfiLimits")).toContainText("Max 10,000 rows");
+    await expect(page.locator("#dfiLimits")).toContainText("The recipient phone is required.");
+    if (!merchant) return;
+    // No per-row merchant: nothing can be checked until the merchant is chosen.
+    await expect(page.locator("#dfiChooseMerchant")).toBeVisible();
+    await expect(page.locator('#dfiMerchant option[value=""]')).not.toHaveText(/per row/i);
+    await page.fill("#dfiMerchantSearch", merchant.code);
+    await expect(page.locator("#dfiMerchant option")).toHaveCount(2);
+    await page.selectOption("#dfiMerchant", merchant.id);
+    await expect(page.locator("#dfImportSubtitle")).toContainText(merchant.name);
+    await expect(page.locator("#dfiIntake")).toBeVisible();
+  }
+  /** The preview price of a row (its breakdown's total). */
+  const previewPrice = async (page: Page, row: number) => Number(await page.locator(`#dfiRows tr[data-row="${row}"] [data-price]`).getAttribute("data-price"));
+
+  test("operations · E-commerce: the merchant is chosen in the dialog, drop-off at a hub, preview prices, create, labels", async ({ page, context }) => {
     test.setTimeout(240_000);
     const errors = await prepare(context, page);
     await signIn(page, hubOp.login, hubOp.password, /\/courier-operation/);
     await opsNav(page, "ecommerce");
-    await page.click("#courierImport");
-    await expect(page.locator("#dfiLimits")).toContainText("Max 10,000 rows");
+    await opsDialog(page, MERCHANT);
+    // The template follows the merchant's package: no Merchant column, its services only.
+    const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
+    expect(template.name).toBe("delivery-fast-ecommerce-orders-template.xlsx");
+    const sheet = unzip(template.buffer).get("xl/worksheets/sheet1.xml")!;
+    for (const gone of [">Merchant<", "Parcel type", "Packaging", "Receiver relationship"]) expect(sheet).not.toContain(gone);
+    expect(unzip(template.buffer).get("xl/worksheets/sheet2.xml")).toContain("chosen on the upload screen");
+
     await page.selectOption("#dfiIntake", "DROP_OFF");
     await expect(page.locator("#dfiHub")).toBeEnabled();
     await expect(page.locator("#dfiHub option:checked")).toHaveText("Gulshan Sorting Hub");
     const tag = `${stamp.slice(-5)}O`;
     const file = Buffer.from(
-      `﻿Merchant,${HEADER}\r\n${MERCHANT.code},DROP-${tag}-1,Drop One,01812000011,Road 7,Dhaka Central,Dhanmondi,Same day,1.5,1250,Fashion & Apparel\r\n${MERCHANT.code},DROP-${tag}-2,,01812000012,,,,,,,\r\nNO-SUCH-MERCHANT,DROP-${tag}-3,Drop Three,01812000013,Road 9,Dhaka Central,Dhanmondi,Regular,1,0,Fashion & Apparel`,
+      `﻿${HEADER}\r\nDROP-${tag}-1,Drop One,01812000011,Road 7,Dhaka Central,Dhanmondi,Regular,1.5,1250,Fashion & Apparel (Regular)\r\nDROP-${tag}-2,,01812000012,,,,,,,\r\nDROP-${tag}-3,Drop Three,01812000013,Road 9,Dhaka Central,Dhanmondi,Same day,1,0,Fashion & Apparel`,
       "utf8",
     );
     await page.setInputFiles("#dfiFile", { name: `dropoff-${tag}.csv`, mimeType: "text/csv", buffer: file });
     await page.click('[data-dfi="check"]');
     await expect(page.locator("#dfImportSubtitle")).toContainText("drop-off at Gulshan Sorting Hub", { timeout: 30_000 });
     await expect(page.locator('#dfiSummary [data-count="errors"]')).toHaveText("1 with errors");
-    await expect(page.locator('#dfiRows tr[data-row="4"] td[data-col="merchant"]')).toHaveAttribute("data-invalid", "true");
+    await expect(page.locator('#dfiRows tr[data-row="4"] td[data-col="service_level"]')).toHaveAttribute("data-invalid", "true");
+    await expect(page.locator('#dfiRows tr[data-row="4"]')).toContainText('"Same day" is not a service option');
+    const price = await previewPrice(page, 2);
+    expect(price).toBeGreaterThan(0);
+    await expect(page.locator('#dfiSummary [data-count="total"]')).toContainText("Total ৳");
     await page.click('[data-dfi="commit"]');
     await expect(page.locator("#dfiResultText")).toContainText("2 orders created, 1 marked “Needs info”. 1 row not created.", { timeout: 60_000 });
-    const parcels = await sql<{ trackingId: string; intake: string; incomplete: boolean }>(
-      `SELECT "trackingId", intake, incomplete FROM parcels WHERE "merchantId" = $1 AND "merchantOrderRef" LIKE $2 ORDER BY "merchantOrderRef"`,
+    const parcels = await sql<{ trackingId: string; intake: string; incomplete: boolean; totalCharge: string }>(
+      `SELECT "trackingId", intake, incomplete, "totalCharge" FROM parcels WHERE "merchantId" = $1 AND "merchantOrderRef" LIKE $2 ORDER BY "merchantOrderRef"`,
       [MERCHANT.id, `DROP-${tag}-%`],
     );
     expect(parcels.map(p => [p.intake, p.incomplete])).toEqual([
       ["DROP_OFF", false],
       ["DROP_OFF", true],
     ]);
+    // Booked at the previewed price.
+    expect(Number(parcels[0].totalCharge)).toBe(price);
 
     // Labels for the new parcels (the existing Code 128 label sheet).
     await page.click('[data-dfi="labels"]');
@@ -324,6 +361,97 @@ test.describe.serial("spreadsheet imports", () => {
     expect(errors).toEqual([]);
   });
 
+  test("operations · Banking & Financial: the bank is chosen in the dialog, its template has no COD or weight, preview prices, create", async ({ page, context }) => {
+    test.setTimeout(240_000);
+    const errors = await prepare(context, page);
+    const bank = await fx.merchant({ type: "BANKING_FINANCIAL", label: "Import Bank" });
+    await signIn(page, hubOp.login, hubOp.password, /\/courier-operation/);
+    await opsNav(page, "banking");
+    await opsDialog(page, bank);
+    // Only Banking & Financial merchants are offered for this category.
+    await page.fill("#dfiMerchantSearch", MERCHANT.code);
+    await expect(page.locator("#dfiMerchant option")).toHaveCount(2); // the placeholder and the chosen bank
+    await page.fill("#dfiMerchantSearch", "");
+    const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
+    expect(template.name).toBe("delivery-fast-banking-financial-template.xlsx");
+    const parts = unzip(template.buffer);
+    expect(parts.get("xl/workbook.xml")).toContain('<sheet name="Consignments"');
+    expect(parts.get("xl/worksheets/sheet1.xml")).not.toMatch(/COD|Weight|Open box/);
+    expect(parts.get("xl/worksheets/sheet3.xml")).toContain("B2B Document");
+    expect(parts.get("xl/worksheets/sheet3.xml")).toContain("Credit Cards (Regular)");
+
+    const tag = `${stamp.slice(-5)}B`;
+    const file = Buffer.from(
+      `﻿Reference no.,Recipient name,Recipient phone,Delivery address,District,Zone,Product,Service\r\nBANK-${tag}-1,Mahir Chowdhury,01819123205,Office 8,Dhaka South,Motijheel,Credit Cards (Regular),B2B Document\r\nBANK-${tag}-2,Mahir Chowdhury,01819123206,Office 9,Dhaka South,Motijheel,,Corporate Urgent Document`,
+      "utf8",
+    );
+    await page.setInputFiles("#dfiFile", { name: `bank-${tag}.csv`, mimeType: "text/csv", buffer: file });
+    await page.click('[data-dfi="check"]');
+    await expect(page.locator('#dfiSummary [data-count="valid"]')).toHaveText("2 valid", { timeout: 30_000 });
+    const prices = [await previewPrice(page, 2), await previewPrice(page, 3)];
+    expect(prices.every(p => p > 0)).toBe(true);
+    await page.click('[data-dfi="commit"]:has-text("Create 2 consignments")');
+    await expect(page.locator("#dfiResultText")).toContainText("2 consignments created", { timeout: 60_000 });
+    const parcels = await sql<{ ref: string; totalCharge: string; productName: string | null; speedOption: string; channel: string }>(
+      `SELECT "merchantOrderRef" AS ref, "totalCharge", "productName", "speedOption", channel FROM parcels WHERE "merchantId" = $1 ORDER BY "merchantOrderRef"`,
+      [bank.id],
+    );
+    expect(parcels.map(p => [p.ref, Number(p.totalCharge), p.productName, p.speedOption, p.channel])).toEqual([
+      [`BANK-${tag}-1`, prices[0], "Credit Cards", "B2B", "OPERATIONS"],
+      [`BANK-${tag}-2`, prices[1], null, "URGENT", "OPERATIONS"],
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  test("operations · Customer parcel: no merchant, sender and pickup per row, the Customer package, preview prices, create", async ({ page, context }) => {
+    test.setTimeout(240_000);
+    const errors = await prepare(context, page);
+    await signIn(page, hubOp.login, hubOp.password, /\/courier-operation/);
+    await opsNav(page, "customerParcels");
+    await opsDialog(page);
+    await expect(page.locator("#dfImportSubtitle")).toContainText("Customer parcel template");
+    await expect(page.locator("#dfiMerchant")).toHaveCount(0);
+    await expect(page.locator("#dfiLimits")).toContainText("Sender name, Sender phone, Pickup address, Pickup district, Pickup zone, Recipient phone");
+    const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
+    expect(template.name).toBe("delivery-fast-customer-parcels-template.xlsx");
+    expect(unzip(template.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>Sender phone *</t>");
+
+    const tag = `${stamp.slice(-5)}C`;
+    const senders = ["01711" + String(Date.now()).slice(-6), "01711" + String(Date.now() + 1).slice(-6)];
+    const header = "Sender name,Sender phone,Pickup address,Pickup district,Pickup zone,Recipient name,Recipient phone,Delivery address,Delivery district,Delivery zone,Product,Service,Weight (kg),COD amount (৳),Reference no.";
+    const file = Buffer.from(
+      `﻿${header}\r\nWalk In,${senders[0]},House 5 Road 2,Dhaka North,Gulshan,Nabila Ahmed,01812000021,Road 7,Dhaka North,Banani,Books,Regular,1,500,CUST-${tag}-1\r\nWalk In Two,${senders[1]},House 6 Road 2,Dhaka North,Gulshan,,01812000022,,,,,,,,CUST-${tag}-2\r\nNo Phone,,House 7,Dhaka North,Gulshan,Rahim,01812000023,Road 9,Dhaka North,Banani,,,,,CUST-${tag}-3`,
+      "utf8",
+    );
+    await page.setInputFiles("#dfiFile", { name: `walkins-${tag}.csv`, mimeType: "text/csv", buffer: file });
+    await page.click('[data-dfi="check"]');
+    await expect(page.locator('#dfiSummary [data-count="valid"]')).toHaveText("1 valid", { timeout: 30_000 });
+    await expect(page.locator('#dfiSummary [data-count="incomplete"]')).toHaveText("1 needs info");
+    await expect(page.locator('#dfiSummary [data-count="errors"]')).toHaveText("1 with errors");
+    await expect(page.locator('#dfiRows tr[data-row="4"]')).toContainText("Row 4 · Sender phone: required");
+    const price = await previewPrice(page, 2);
+    expect(price).toBeGreaterThan(0);
+    await page.click('[data-dfi="commit"]:has-text("Create 2 parcels")');
+    await expect(page.locator("#dfiResultText")).toContainText("2 parcels created, 1 marked “Needs info”.", { timeout: 60_000 });
+    const parcels = await sql<{ trackingId: string; ref: string; merchantId: string | null; senderPhone: string; totalCharge: string; channel: string; incomplete: boolean }>(
+      `SELECT "trackingId", "merchantOrderRef" AS ref, "merchantId", "senderPhone", "totalCharge", channel, incomplete FROM parcels WHERE "merchantOrderRef" LIKE $1 ORDER BY "merchantOrderRef"`,
+      [`CUST-${tag}-%`],
+    );
+    parcels.forEach((p, i) => fx.adoptParcel(p.trackingId, senders[i]));
+    expect(parcels.map(p => [p.ref, p.merchantId, p.channel, p.incomplete])).toEqual([
+      [`CUST-${tag}-1`, null, "OPERATIONS", false],
+      [`CUST-${tag}-2`, null, "OPERATIONS", true],
+    ]);
+    expect(parcels[0].senderPhone).toBe(`+880${senders[0].slice(1)}`);
+    expect(Number(parcels[0].totalCharge)).toBe(price);
+    // The history shows it as a customer parcel import.
+    await page.click('[data-dfi="history"]');
+    await expect(page.locator("#dfiHistory tbody tr").first()).toContainText(`walkins-${tag}.csv`);
+    await expect(page.locator("#dfiHistory tbody tr").first()).toContainText("Customer parcels");
+    await page.keyboard.press("Escape");
+    expect(errors).toEqual([]);
+  });
+
   test("super admin: a required column changes the template and the validation", async ({ page, context }) => {
     test.setTimeout(240_000);
     const errors = await prepare(context, page);
@@ -349,6 +477,17 @@ test.describe.serial("spreadsheet imports", () => {
     // The template marks District as required…
     const file = await downloaded(page, () => panel.locator('[data-import-template="ecommerce"]').click());
     expect(unzip(file.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>District *</t>");
+    // Three templates: a tab and a download button each; removed columns are gone from the settings.
+    await expect(panel.locator("[data-import-tab]")).toHaveText(["Customer parcel template", "E-commerce template", "Banking & Financial template"]);
+    await expect(panel.locator('[data-import-column="packaging"], [data-import-column="merchant"], [data-import-column="parcel_type"]')).toHaveCount(0);
+    await panel.locator('[data-import-tab="customer"]').click();
+    await expect(panel.locator('[data-import-column="sender_phone"]')).toContainText("Always required");
+    const customer = await downloaded(page, () => panel.locator('[data-import-template="customer"]').click());
+    expect(customer.name).toBe("delivery-fast-customer-parcels-template.xlsx");
+    expect(unzip(customer.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>Sender phone *</t>");
+    const banking = await downloaded(page, () => panel.locator('[data-import-template="document"]').click());
+    expect(unzip(banking.buffer).get("xl/worksheets/sheet1.xml")).not.toContain("Weight");
+    await panel.locator('[data-import-tab="ecommerce"]').click();
     // …and a merchant upload without a district is refused for that row.
     const owner = await (await page.request.post(`${API}/api/v1/auth/login`, { headers: WEB, data: { identifier: OWNER.phone, password: OWNER.password } })).json();
     const check = await page.request.post(`${API}/api/v1/imports/validate`, {

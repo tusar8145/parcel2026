@@ -37,7 +37,9 @@ model BulkUpdateJob {
   status           BulkUpdateStatus @default(VALIDATED)
   /// The page template the file was downloaded from (bulk-kinds.ts): new_orders, pickup, hub_desk, delivery, problems, returns, or all.
   kind             String           @default("all")
-  fileName         String?
+  /// The action template the file was downloaded for (bulk-actions.ts): accept_pickup, cancel, …; null for files from before action templates (2026-10-18).
+  action           String?
+  fileName       String?
   fileSha256       String?
   fileBytes        Int              @default(0)
   /// Rows with an action (rows without one are ignored and only counted).
@@ -67,6 +69,7 @@ model BulkUpdateJob {
 
   @@index([createdById, createdAt])
   @@index([kind, createdAt])
+  @@index([action, createdAt])
   @@index([status, updatedAt])
   @@map("bulk_update_jobs")
 }

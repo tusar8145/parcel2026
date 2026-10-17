@@ -8,6 +8,8 @@ import {
   phoneSchema,
   parseSpeedOption,
   quoteParcel,
+  speedOptionSchema,
+  type SpeedOption,
   rateCardConfigSchema,
   type ParcelStatus,
   type ServiceLevel,
@@ -48,12 +50,15 @@ export const completeParcelSchema = z
       })
       .optional(),
     weightKg: z.coerce.number("Enter the weight in kg").positive("Weight must be more than 0").max(50, "Weight can be at most 50 kg").optional(),
+    /** Old field (Regular / Express; "Same day" still means Express). The forms send `speed`. */
     serviceLevel: upper(SERVICE_LEVELS, "Choose Regular, Same day or Express").optional(),
+    /** The service from the parcel's package (Regular, Express, On-demand, B2B, Trade, Corporate Urgent). */
+    speed: speedOptionSchema.optional(),
     /** Why (internal; staff only). */
     note: optionalText(500).transform(v => v || undefined),
     expectedVersion: z.number().int().min(0).optional(),
   })
-  .refine(v => v.recipient?.name || v.recipient?.phone || v.delivery || v.weightKg !== undefined || v.serviceLevel, { message: "Send at least one detail" });
+  .refine(v => v.recipient?.name || v.recipient?.phone || v.delivery || v.weightKg !== undefined || v.serviceLevel || v.speed, { message: "Send at least one detail" });
 
 type Snapshot = { config?: unknown; discountPercent?: number; segment?: Segment; origin?: PricingOrigin; destination?: unknown } & Record<string, unknown>;
 const MERCHANT_EDITABLE: ParcelStatus[] = ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"];
@@ -109,6 +114,7 @@ export class CompleteDetailsService {
     db: Db,
     parcel: Parcel,
     next: { deliveryArea: string | null; deliveryDistrict: string | null; deliveryZone: string | null; weightKg: number; serviceLevel: ServiceLevel },
+    speed?: SpeedOption,
   ) {
     const snap = (parcel.pricingSnapshot ?? {}) as Snapshot;
     const dest = { district: next.deliveryDistrict ?? (snap.destination as { district?: string } | undefined)?.district ?? parcel.pickupDistrict, zone: next.deliveryZone ?? (snap.destination as { zone?: string } | undefined)?.zone ?? parcel.pickupZone };
@@ -126,7 +132,7 @@ export class CompleteDetailsService {
     };
     const packaged = await this.packages.reprice(
       { ...parcel, deliveryArea: next.deliveryArea ?? parcel.deliveryArea },
-      { delivery: { district: dest.district, zone: dest.zone, area: next.deliveryArea }, weightKg: next.weightKg, ...(next.serviceLevel !== parcel.serviceLevel ? { speed: parseSpeedOption(next.serviceLevel) ?? "REGULAR" } : {}) },
+      { delivery: { district: dest.district, zone: dest.zone, area: next.deliveryArea }, weightKg: next.weightKg, ...(speed ? { speed } : next.serviceLevel !== parcel.serviceLevel ? { speed: parseSpeedOption(next.serviceLevel) ?? (next.serviceLevel === "SAME_DAY" ? "EXPRESS" : "REGULAR") } : {}) },
       db,
     );
     const frozen = rateCardConfigSchema.safeParse(snap.config);
@@ -173,6 +179,8 @@ export class CompleteDetailsService {
       weightKg: input.weightKg ?? Number(parcel.weightKg),
       serviceLevel: (input.serviceLevel as ServiceLevel | undefined) ?? (parcel.serviceLevel as ServiceLevel),
     };
+    // A new service (package option): re-priced through the parcel's package.
+    const speed = input.speed && input.speed !== parcel.speedOption ? input.speed : undefined;
     const changed = (
       [
         ["recipient name", next.recipientName !== parcel.recipientName],
@@ -180,7 +188,7 @@ export class CompleteDetailsService {
         ["delivery address", next.deliveryStreet !== parcel.deliveryStreet || next.deliveryArea !== parcel.deliveryArea || next.deliveryCategory !== parcel.deliveryCategory],
         ["destination", next.deliveryDistrict !== parcel.deliveryDistrict || next.deliveryZone !== parcel.deliveryZone],
         ["weight", next.weightKg !== Number(parcel.weightKg)],
-        ["service", next.serviceLevel !== parcel.serviceLevel],
+        ["service", next.serviceLevel !== parcel.serviceLevel || !!speed],
       ] as const
     )
       .filter(([, c]) => c)
@@ -189,7 +197,7 @@ export class CompleteDetailsService {
     const missing = missingFieldsOf(next);
 
     // Re-price to the (now known) destination with the tariff frozen at booking.
-    const { price, packaged, dest, snap } = await this.priceOf(tx, parcel, next);
+    const { price, packaged, dest, snap } = await this.priceOf(tx, parcel, next, speed);
     const { destination: _default, ...restSnap } = snap;
     const needsDefault = missing.includes("district") || missing.includes("zone");
     const pricingSnapshot = (packaged ? this.packages.snapshot(packaged, needsDefault ? { destination: dest } : {}) : needsDefault ? { ...restSnap, destination: dest } : restSnap) as Prisma.InputJsonObject;

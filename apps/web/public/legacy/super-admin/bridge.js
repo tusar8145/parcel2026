@@ -447,7 +447,6 @@
     replaceAll(geoCatalog.area, [...new Set(zones.flatMap(z => c.areasByZone[z] || []))]);
     geoHierarchy.zonesByDistrict = structuredClone(c.zonesByDistrict);
     geoHierarchy.areasByZone = structuredClone(c.areasByZone);
-    replaceAll(ecommercePackaging, c.packaging);
     replaceAll(
       deliveryServices,
       LEVELS.map(([, label]) => label),
@@ -834,7 +833,7 @@
         const list = form.dataset.catalogForm;
         const value = String(new FormData(form).get("item") || "").trim();
         const parent = String(new FormData(form).get("parent") || "").trim();
-        if (!["district", "zone", "area", "ecommercePackaging"].includes(list) || !S.catalog || !value) return;
+        if (!["district", "zone", "area"].includes(list) || !S.catalog || !value) return;
         const c = structuredClone(S.catalog);
         const next = {
           districts: c.districts,
@@ -856,9 +855,6 @@
           const zones = Object.values(next.zonesByDistrict).flat();
           if (!zones.includes(parent) || has(next.areasByZone[parent] || [], value)) return;
           (next.areasByZone[parent] ||= []).push(value);
-        } else {
-          if (has(next.packaging, value)) return;
-          next.packaging.push(value);
         }
         stop(event);
         void busy(form.querySelector('[type="submit"]'), async () => {
@@ -866,10 +862,7 @@
             await DF.api("/catalog", { method: "PUT", body: next });
             await load("catalog", "audit");
             // The page adds the item to its own lists and saves the platform settings.
-            if (list === "district" || list === "ecommercePackaging") {
-              const own = list === "district" ? geoCatalog.district : ecommercePackaging;
-              if (own.includes(value)) own.splice(own.indexOf(value), 1);
-            }
+            if (list === "district" && geoCatalog.district.includes(value)) geoCatalog.district.splice(geoCatalog.district.indexOf(value), 1);
             if (list === "zone") geoHierarchy.zonesByDistrict[parent] = geoHierarchy.zonesByDistrict[parent].filter(z => z !== value);
             if (list === "area") geoHierarchy.areasByZone[parent] = geoHierarchy.areasByZone[parent].filter(a => a !== value);
             replay(form, "submit");

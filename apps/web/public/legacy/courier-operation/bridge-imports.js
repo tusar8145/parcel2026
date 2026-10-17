@@ -2,8 +2,10 @@
  * Courier Operations: the Excel import (shared/importer.js, one engine with the merchant panels)
  * and incomplete orders ("Needs info").
  *
- *   Sample Excel / Import Excel     GET /imports/templates/:kind, the importer dialog (merchant per row
- *   (shipment pages)                or for the whole file, rider pickup or drop-off at a hub), result
+ *   Sample Excel / Import Excel     GET /imports/templates/:kind, the importer dialog: the category
+ *   (shipment pages)                (Customer parcel / E-commerce / Banking & Financial), the merchant
+ *                                   (searchable; none for customer parcels), first / last mile, drop-off
+ *                                   hub and messages from that package; result
  *                                   with "Print labels" (Ops.labels → PDF, GET/POST /documents/labels)
  *   Import history                  GET /imports (operations imports)
  *   "Needs info"                    a badge on imported orders that miss delivery details, a status
@@ -27,11 +29,12 @@
 
   async function config() {
     const page = Ops.page();
-    const kind = page === "Banking & Financial operations" ? "document" : "ecommerce";
+    // The page's own category; Shipments offers all three.
+    const kind = page === "Banking & Financial operations" ? "document" : page === "Customer parcels" ? "customer" : "ecommerce";
     const hubs = Ops.myHubs() || DF.state.hubs;
     return {
       kind,
-      kinds: page === "Shipments" ? ["ecommerce", "document"] : undefined,
+      kinds: page === "Shipments" ? ["customer", "ecommerce", "document"] : undefined,
       forOps: true,
       merchants: await merchants(),
       hubs,
@@ -55,8 +58,6 @@
       if (!template && !importer && !history) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (Ops.page() === "Customer parcels" && !history)
-        return void showToast("Customer parcels are booked by senders on the website. Import merchant orders from E-commerce or Banking & Financial operations.");
       if (!Ops.require("dispatch", "import shipments")) return;
       void config().then(cfg => (template ? DFImport.template(cfg) : history ? DFImport.history(cfg) : DFImport.open(cfg)));
     },

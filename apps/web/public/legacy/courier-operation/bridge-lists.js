@@ -95,6 +95,8 @@
 
   // ───────────── lists ─────────────
 
+  /** Back at a hub after a failed delivery attempt (parcel-stages.ts BACK_AFTER_FAILURE). */
+  const backAfterFailure = p => ["AT_HUB", "READY_FOR_COLLECTION"].includes(p.status) && Number(p.failedAttempts) > 0;
   const lineOf = p => (!p.merchant ? "CUSTOMER" : p.merchant.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE");
   /** The browser's mirror of the API's stages (apps/api/src/modules/parcels/parcel-stages.ts), for live patches. */
   const STAGE = {
@@ -106,10 +108,10 @@
     delivery_waiting: p => p.status === "AT_HUB",
     delivery: p => ["ASSIGNED", "OUT_FOR_DELIVERY"].includes(p.status),
     exceptions: p => p.status === "EXCEPTION",
-    failed: p => p.status === "RETRY_SCHEDULED",
+    failed: p => p.status === "RETRY_SCHEDULED" || backAfterFailure(p),
     needs_info: p => !!p.incomplete && !CLOSED.includes(p.status),
     sla_risk: p => AT_RISK.includes(p.status) && !!p.estimatedDeliveryAt && new Date(p.estimatedDeliveryAt).getTime() < Date.now(),
-    problems: p => ["EXCEPTION", "RETRY_SCHEDULED"].includes(p.status) || (!!p.incomplete && !CLOSED.includes(p.status)),
+    problems: p => ["EXCEPTION", "RETRY_SCHEDULED"].includes(p.status) || backAfterFailure(p) || (!!p.incomplete && !CLOSED.includes(p.status)),
     returns: p => p.status === "RETURN_SCHEDULED",
   };
   const norm = v => String(v || "").toLowerCase().replace(/_/g, " ").trim();
@@ -145,6 +147,7 @@
     if (f.to) params.set("to", new Date(`${f.to}T23:59:59.999`).toISOString());
     if (f.merchantId) params.set("merchantId", f.merchantId);
     if (f.hubId) params.set("hubId", f.hubId);
+    if (f.failedBefore) params.set("failedBefore", f.failedBefore);
     const hubs = list.cfg.scoped === false ? null : Ops.scope.hubIds();
     if (hubs && !f.hubId) params.set("forHubIds", hubs.join(","));
     return params;
@@ -164,6 +167,7 @@
     if (f.status === "Needs info" ? !p.incomplete : f.status && ![norm(p.status), norm(p.statusLabel)].includes(norm(f.status)) && !(norm(f.status) === "pending operations confirmation" && p.status === "PENDING_CONFIRMATION")) return false;
     if (f.merchantId && p.merchant?.id !== f.merchantId) return false;
     if (f.hubId && p.currentHub?.id !== f.hubId) return false;
+    if (f.failedBefore && (Number(p.failedAttempts) > 0) !== (f.failedBefore === "true")) return false;
     if (f.from && Ops.dayKey(p.createdAt) < f.from) return false;
     if (f.to && Ops.dayKey(p.createdAt) > f.to) return false;
     const hubs = list.cfg.scoped !== false && !f.hubId ? Ops.scope.hubIds() : null;
@@ -403,7 +407,7 @@
   });
   window.addEventListener("change", event => {
     const t = event.target;
-    const key = MAIN_INPUTS[t.id] || (t.matches?.("[data-list-hub]") ? "hubId" : null);
+    const key = MAIN_INPUTS[t.id] || (t.matches?.("[data-list-hub]") ? "hubId" : t.matches?.("[data-list-failed]") ? "failedBefore" : null);
     if (!key || key === "q") return;
     const list = listOfElement(t);
     if (list) setFilter(list, key, t.value);

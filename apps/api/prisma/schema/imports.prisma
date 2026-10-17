@@ -5,7 +5,10 @@
 
 enum ImportKind {
   ECOMMERCE
+  /// Banking & Financial (the API kind "document").
   DOCUMENT
+  /// Customer parcels (walk-in / website customers) booked by operations: no merchant.
+  CUSTOMER
 }
 
 enum ImportStatus {

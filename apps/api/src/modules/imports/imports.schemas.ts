@@ -3,12 +3,16 @@ import { firstMileSchema, lastMileSchema, PARCEL_INTAKES } from "@delivery-fast/
 import { pageQuerySchema } from "../../common/pagination";
 import { IMPORT_KINDS } from "./columns";
 
-export const importKindSchema = z.enum(IMPORT_KINDS, "Choose the ecommerce or document template");
+/** ecommerce | document (Banking & Financial; "banking" is accepted too) | customer (customer parcels, operations only). */
+export const importKindSchema = z.preprocess(
+  v => (typeof v === "string" && ["banking", "banking_financial", "banking-financial"].includes(v.trim().toLowerCase()) ? "document" : v),
+  z.enum(IMPORT_KINDS, "Choose the ecommerce, document (Banking & Financial) or customer template"),
+);
 
 /** Options of an upload (multipart form fields, or the JSON body next to `rows`). */
 export const importOptionsSchema = z.object({
   kind: importKindSchema,
-  /** The merchant of every row. Merchants with one workspace may leave it out; operations may choose one or use the Merchant column. */
+  /** The merchant of every row. Merchants with one workspace may leave it out; operations choose it for E-commerce and Banking & Financial files (customer parcels have none). */
   merchantId: z.uuid("merchantId must be a valid id").optional(),
   /** Operations: PICKUP (default, a pickup rider collects them) or DROP_OFF at dropOffHubId (same as firstMile HUB_DROP). */
   intake: z.enum(PARCEL_INTAKES).optional(),
@@ -49,8 +53,9 @@ export const listImportsQuerySchema = pageQuerySchema.extend({
 });
 
 export const templateQuerySchema = z.object({
-  /** Operations templates carry a Merchant column; `for=merchant` gives the merchant version. */
+  /** Deprecated (there is no Merchant column any more); accepted and ignored. */
   for: z.enum(["merchant", "ops"]).optional(),
+  /** The file's merchant: the Service list and checks follow its package. Operations without one get the category's default package. */
   merchantId: z.uuid().optional(),
 });
 

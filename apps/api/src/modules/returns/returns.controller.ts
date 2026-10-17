@@ -7,6 +7,7 @@ import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import {
   ReturnsService,
+  addToReturnRunSchema,
   completeReturnRunSchema,
   createReturnRunSchema,
   dispatchReturnRunSchema,
@@ -75,6 +76,15 @@ export class ReturnsController {
   @ApiZodBody(createReturnRunSchema)
   createRun(@CurrentActor() actor: Actor, @ZBody(createReturnRunSchema) body: z.infer<typeof createReturnRunSchema>, @ReqMeta() meta: RequestMeta) {
     return this.returns.createRun(actor, body, meta);
+  }
+
+  /** Adds parcels to a planned run (at a hub, awaiting retry, in exception, or scheduled for return without a run). */
+  @RequirePermissions("parcel:dispatch")
+  @Post("returns/runs/:id/parcels")
+  @HttpCode(200)
+  @ApiZodBody(addToReturnRunSchema)
+  addParcels(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(addToReturnRunSchema) body: z.infer<typeof addToReturnRunSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.returns.addToRun(actor, id, body, meta);
   }
 
   @RequirePermissions("parcel:dispatch")

@@ -64,7 +64,9 @@ interface SavedAddress {
 }
 
 const CATEGORY_LABEL = { HOME: "Home", OFFICE: "Office", OTHER: "Other" } as const;
-const WEIGHT_LABEL = (kg: number) => `Up to ${kg} kg`;
+const WEIGHT_LABEL = (kg: number) => `${kg} kg`;
+/** Product types in the spec's order: Regular, Document, Books. */
+const TYPE_ORDER: Record<string, number> = { REGULAR: 0, DOCUMENT: 1, BOOKS: 2 };
 
 const STEP_FIELDS = [
   ["requestName", "requestPhone", PICKUP.district, PICKUP.zone, PICKUP.street, "requestSlot"],
@@ -108,7 +110,8 @@ export default function BookingView() {
   const cat = catalog();
   // The website customer package (service packages): its services, first / last mile choices and messages.
   const pkg = cat.customerPackage;
-  const services: [string, string][] = pkg ? pkg.options.speeds.map(s => [s, pkg.labels.speed[s] ?? s]) : Object.entries(cat.serviceLevels);
+  // The package's services only (no "Same day": Express is the same-day service).
+  const services: [string, string][] = pkg ? pkg.options.speeds.map(s => [s, pkg.labels.speed[s] ?? s]) : [["REGULAR", "Regular"]];
   const [unticked, setUnticked] = useState<string[]>([]);
   const [step, setStep] = useState(0);
   const [days, setDays] = useState<SlotDay[] | null>(null);
@@ -143,8 +146,7 @@ export default function BookingView() {
       requestDeliveryLng: "",
       requestDeliverySearch: "",
       requestServiceLevel: services[0]?.[0] ?? "REGULAR",
-      requestWeight: String(cat.weightsKg.includes(1) ? 1 : (cat.weightsKg[0] ?? 1)),
-      requestPackaging: cat.packaging[0] ?? "",
+      requestWeight: "0.5",
       requestProduct: "",
       requestFirstMile: pkg?.options.defaultFirstMile ?? "RIDER_PICKUP",
       requestDropHub: "",
@@ -168,7 +170,7 @@ export default function BookingView() {
       requestDistrict: rules.required("Choose the delivery district"),
       requestZone: rules.required("Choose the delivery zone"),
       requestDelivery: rules.length(1, 200, "Delivery address"),
-      requestWeight: v => (Number(v) > 0 && Number(v) <= 50 ? "" : "Choose the parcel weight"),
+      requestWeight: v => (!v.trim() ? "Enter the weight" : !(Number(v) >= 0.01) ? "At least 0.01 kg" : Number(v) > 50 ? "At most 50 kg" : ""),
       requestCodAmount: (v, all) =>
         all.requestCodEnabled !== "1" ? "" : !v.trim() ? "Enter the amount to collect" : !(Number(v) >= 1) ? "Enter an amount of at least ৳1" : Number(v) > 1_000_000 ? "The amount is too large" : "",
       requestInstructions: rules.optionalMax(500),
@@ -232,7 +234,7 @@ export default function BookingView() {
             pickupZone: v.requestPickupZone,
             deliveryDistrict: v.requestDistrict,
             deliveryZone: v.requestZone,
-            weightKg: Number(v.requestWeight) || 1,
+            weightKg: Number(v.requestWeight) || 0.5,
             ...(pkg ? { speed: v.requestServiceLevel } : { serviceLevel: v.requestServiceLevel }),
             codAmount: v.requestCodEnabled === "1" ? Number(v.requestCodAmount) || 0 : 0,
             ...packageChoices(),
@@ -295,7 +297,6 @@ export default function BookingView() {
       delivery: addressBody(v, DELIVERY),
       ...(pkg ? { speed: v.requestServiceLevel } : { serviceLevel: v.requestServiceLevel }),
       weightKg: Number(v.requestWeight) || 0.5,
-      packaging: v.requestPackaging || undefined,
       contents: v.requestProduct || undefined,
       ...packageChoices(),
       ...(pkg && unticked.length && !productSilent ? { notifications: pkg.notifications.map(n => n.code).filter(code => !unticked.includes(code)) } : {}),
@@ -378,8 +379,12 @@ export default function BookingView() {
   const chosenSlot = days?.flatMap(d => d.slots.map(s => ({ ...s, day: d.label }))).find(s => `${s.start}|${s.end}` === v.requestSlot);
   const pickupSaved = saved.filter(a => a.role === "PICKUP");
   const receiverSaved = saved.filter(a => a.role === "RECEIVER");
-  const serviceLabel = cat.serviceLevels[v.requestServiceLevel] ?? v.requestServiceLevel;
-  const weights = useMemo(() => (cat.weightsKg.length ? cat.weightsKg : [0.5, 1, 2, 5]), [cat.weightsKg]);
+  const serviceLabel = services.find(([code]) => code === v.requestServiceLevel)?.[1] ?? v.requestServiceLevel;
+  // Products of the Customer & E-commerce list with their type ("Fashion & Apparel · Regular").
+  const productOptions = useMemo<[string, string][]>(
+    () => [["", "No product (Regular)"], ...(pkg?.products ? [...pkg.products].sort((a, b) => (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9) || a.name.localeCompare(b.name)).map(p => [p.name, `${p.name} · ${pkg.labels.productType?.[p.type] ?? p.type}`] as [string, string]) : cat.products.map(p => [p, p] as [string, string]))],
+    [pkg, cat.products],
+  );
 
   return (
     <form ref={form.formRef} id="requestForm" className="route-card route-form" data-form="request" data-react="1" noValidate onSubmit={submit}>
@@ -477,21 +482,17 @@ export default function BookingView() {
       <div className={step === 2 ? "route-step active" : "route-step"} data-request-step="2">
         <h2 className="field full">Parcel and service</h2>
         <div className="field">
-          <label htmlFor="requestServiceLevel">Delivery service *</label>
-          <Select bound={form.bind("requestServiceLevel")} options={services} />
+          <label htmlFor="requestProduct">Product (optional)</label>
+          <Select bound={form.bind("requestProduct")} options={productOptions} />
         </div>
         <div className="field">
-          <label htmlFor="requestWeight">Parcel weight *</label>
-          <Select bound={form.bind("requestWeight")} error={form.error("requestWeight")} options={weights.map(w => [String(w), WEIGHT_LABEL(w)] as [string, string])} />
+          <label htmlFor="requestWeight">Weight (kg) *</label>
+          <TextInput bound={form.bind("requestWeight")} error={form.error("requestWeight")} type="number" min="0.01" max="50" step="0.1" inputMode="decimal" placeholder="0.5" />
           <FieldError id="requestWeight" message={form.error("requestWeight")} />
         </div>
         <div className="field">
-          <label htmlFor="requestPackaging">Packaging type *</label>
-          <Select bound={form.bind("requestPackaging")} options={cat.packaging} />
-        </div>
-        <div className="field">
-          <label htmlFor="requestProduct">What are you sending?</label>
-          <Select bound={form.bind("requestProduct")} options={[["", "Regular parcel (no product)"] as [string, string], ...cat.products.map(p => [p, p] as [string, string])]} />
+          <label htmlFor="requestServiceLevel">Service *</label>
+          <Select bound={form.bind("requestServiceLevel")} options={services} />
         </div>
         {pkg && pkg.options.firstMiles.length > 1 ? (
           <div className="field">
@@ -577,7 +578,7 @@ export default function BookingView() {
                   <span>{`৳ ${quote.weightCharge}`}</span>
                 </div>
                 <div className="cost-row">
-                  <span>Delivery service</span>
+                  <span>Service</span>
                   <span>{`৳ ${quote.serviceCharge}`}</span>
                 </div>
                 <div className="cost-row">
@@ -619,7 +620,7 @@ export default function BookingView() {
             <div className="review-item">
               <strong>Parcel</strong>
               <div>{`${serviceLabel} · ${WEIGHT_LABEL(Number(v.requestWeight))}`}</div>
-              <div>{`${v.requestPackaging} · ${v.requestProduct}`}</div>
+              <div>{v.requestProduct || "No product (Regular)"}</div>
               <div>{v.requestCodEnabled === "1" && Number(v.requestCodAmount) > 0 ? `COD to collect: ৳${Number(v.requestCodAmount)}` : "No COD"}</div>
             </div>
             <div className="review-item">

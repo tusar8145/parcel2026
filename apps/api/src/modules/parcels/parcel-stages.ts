@@ -15,7 +15,8 @@ import type { Db } from "../../common/prisma.service";
  *   delivery_waiting  at a hub, waiting for a delivery rider (AT_HUB)
  *   delivery          with a delivery rider: ASSIGNED, OUT_FOR_DELIVERY
  *   exceptions        EXCEPTION
- *   failed            RETRY_SCHEDULED (failed delivery, another attempt planned)
+ *   failed            failed delivery: RETRY_SCHEDULED (another attempt planned), or back at a hub
+ *                     (AT_HUB / READY_FOR_COLLECTION) after a failed attempt (BACK_AFTER_FAILURE)
  *   needs_info        imported with details missing, still open
  *   sla_risk          past the promised delivery time and still on the way
  *   problems          exceptions + failed + needs_info
@@ -51,6 +52,11 @@ export const RETURN_REQUESTED: Prisma.ParcelWhereInput = {
   status: { in: ["PICKED_UP", "AT_HUB", "IN_TRANSIT", "ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"] },
 };
 
+/** Back at a hub after a failed delivery attempt (a delivered attempt would have closed the parcel). */
+export const BACK_AFTER_FAILURE: Prisma.ParcelWhereInput = { status: { in: ["AT_HUB", "READY_FOR_COLLECTION"] }, attempts: { some: { outcome: "FAILED" } } };
+/** Failed delivery: another attempt planned, or back at a hub after a failed attempt. */
+export const FAILED_DELIVERY: Prisma.ParcelWhereInput = { OR: [{ status: "RETRY_SCHEDULED" }, BACK_AFTER_FAILURE] };
+
 export function stageWhere(stage: ParcelStage, now = new Date()): Prisma.ParcelWhereInput {
   switch (stage) {
     case "new":
@@ -70,13 +76,13 @@ export function stageWhere(stage: ParcelStage, now = new Date()): Prisma.ParcelW
     case "exceptions":
       return { status: "EXCEPTION" };
     case "failed":
-      return { status: "RETRY_SCHEDULED" };
+      return FAILED_DELIVERY;
     case "needs_info":
       return { incomplete: true, status: { in: ACTIVE } };
     case "sla_risk":
       return { status: { in: AT_RISK_STATUSES }, estimatedDeliveryAt: { lt: now } };
     case "problems":
-      return { OR: [{ status: { in: ["EXCEPTION", "RETRY_SCHEDULED"] } }, { incomplete: true, status: { in: ACTIVE } }] };
+      return { OR: [{ status: { in: ["EXCEPTION", "RETRY_SCHEDULED"] } }, BACK_AFTER_FAILURE, { incomplete: true, status: { in: ACTIVE } }] };
     case "returns":
       return { status: "RETURN_SCHEDULED" };
   }
@@ -124,7 +130,20 @@ export const stageFilterSchema = z.object({
   line: z.enum(SERVICE_LINES).optional(),
   /** Comma-separated hub ids: only parcels that belong to these hubs now (forHubsWhere). */
   forHubIds: uuidList.optional(),
+  /** true: failed deliveries only (as stage=failed: RETRY_SCHEDULED, or back at a hub after a failed attempt). */
+  failedAttempts: z.enum(["true", "false"]).transform(v => v === "true").optional(),
+  /** true: parcels with at least one failed delivery attempt; false: none (e.g. "Waiting for a delivery rider" › Failed before). */
+  failedBefore: z.enum(["true", "false"]).transform(v => v === "true").optional(),
 });
+
+/** The failure filters of GET /parcels (failedAttempts, failedBefore). */
+export function failureWhere(query: { failedAttempts?: boolean; failedBefore?: boolean }): Prisma.ParcelWhereInput[] {
+  const where: Prisma.ParcelWhereInput[] = [];
+  if (query.failedAttempts) where.push(FAILED_DELIVERY);
+  if (query.failedBefore === true) where.push({ attempts: { some: { outcome: "FAILED" } } });
+  if (query.failedBefore === false) where.push({ attempts: { none: { outcome: "FAILED" } } });
+  return where;
+}
 
 export const listParcelsWithStageSchema = listParcelsQuerySchema.extend(stageFilterSchema.shape);
 export const stageCountsQuerySchema = stageFilterSchema.pick({ forHubIds: true });

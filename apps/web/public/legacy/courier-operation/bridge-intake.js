@@ -10,8 +10,7 @@
  *                                    CN), batch expected vs received from GET /ops/booking-batches(/:id),
  *                                    and "Find" (the code → the parcel drawer)
  *
- * Shared on window.DFOps: Ops.barcode128, Ops.labels.open(ids), Ops.intake.{fields, wire, read,
- * receive}.
+ * Shared on window.DFOps: Ops.barcode128, Ops.labels.open(ids), Ops.intake.receive.
  */
 (() => {
   const DF = window.DF;
@@ -128,39 +127,12 @@
     true,
   );
 
-  // ───────────── import: intake choice and result ─────────────
+  // ───────────── intake ─────────────
+  // New shipment chooses the first mile in its one first-mile select (shared/order-services.js: rider
+  // pickup / drop at hub + hub / on-demand pickup); the Excel import chooses it in its modal (shared/importer.js).
 
   const hubChoices = () => Ops.myHubs() || DF.state.hubs;
-  const intakeFields = (prefix, intake = "PICKUP", hubId) => {
-    const hubs = hubChoices();
-    const preferred = hubId || (hubs.length === 1 ? hubs[0].id : Ops.myHubs()?.[0]?.id);
-    return (
-      ui.field(`${prefix}Intake`, "Intake", ui.select(`${prefix}Intake`, [{ value: "PICKUP", label: "Rider pickup" }, { value: "DROP_OFF", label: "Drop-off at hub" }], intake)) +
-      ui.field(`${prefix}Hub`, "Drop-off hub", ui.select(`${prefix}Hub`, ui.hubOptions(hubs, Ops.myHubs() && hubs.length === 1 ? undefined : "Choose the hub"), preferred, intake === "DROP_OFF" ? "required" : "disabled"))
-    );
-  };
-  /** Enables the hub list only for drop-offs. */
-  const wireIntake = prefix => {
-    const intake = $(`${prefix}Intake`);
-    const hub = $(`${prefix}Hub`);
-    if (!intake || !hub) return;
-    const sync = () => {
-      const drop = intake.value === "DROP_OFF";
-      hub.disabled = !drop;
-      hub.required = drop;
-    };
-    intake.addEventListener("change", sync);
-    sync();
-  };
-  /** { intake, dropOffHubId, hubName } from the intake fields, or a message when the hub is missing. */
-  const readIntake = prefix => {
-    const intake = $(`${prefix}Intake`)?.value || "PICKUP";
-    if (intake !== "DROP_OFF") return { intake };
-    const hub = Ops.hubById($(`${prefix}Hub`)?.value);
-    if (!hub) throw new Error("Choose the hub the sender will bring the parcels to.");
-    return { intake, dropOffHubId: hub.id, hubName: hub.name };
-  };
-  Ops.intake = { fields: intakeFields, wire: wireIntake, read: readIntake };
+  Ops.intake = {};
 
   // The Excel import (intake choice, preview, result and labels) is shared/importer.js, wired in bridge-imports.js.
 

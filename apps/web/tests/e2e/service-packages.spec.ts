@@ -139,8 +139,9 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await expect(products.locator("#pkgProductSendMessages")).toBeChecked();
   await products.locator("#pkgProductSendMessages").uncheck();
   await products.locator('#pkgProductForm button[type="submit"]').click();
-  await expect(toast(page)).toContainText(`${QUIET_PRODUCT} added.`);
+  // Wait for the row itself: an earlier "sent for approval" toast may still be showing.
   const quietRow = () => page.locator(`#pkgProducts tr[data-pkg-product="${QUIET_PRODUCT}"]`);
+  await expect(quietRow()).toBeVisible();
   await expect(quietRow()).toContainText("Messages: Off");
   const [created] = await sql<{ id: string; sendMessages: boolean }>(`SELECT id, "sendMessages" FROM parcel_products WHERE name = $1`, [QUIET_PRODUCT]);
   expect(created.sendMessages).toBe(false);
@@ -162,8 +163,9 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await merchantPage.selectOption("#merchantDistrict", "Dhaka Central");
   await merchantPage.selectOption("#merchantZone", "Dhanmondi");
   await merchantPage.selectOption("#merchantArea", "Dhanmondi Road 7");
-  await merchantPage.selectOption("#orderType", "E-commerce parcel");
-  await merchantPage.fill("#orderAmount", "0");
+  // Prepaid: no cash on delivery (the COD amount field hides with the tick).
+  await merchantPage.locator("#merchantSvcCod").uncheck();
+  await expect(merchantPage.locator("#merchantSvcCodAmount")).toBeHidden();
   const breakdown = merchantPage.locator("#merchantPriceHint [data-price-breakdown]");
   await expect(breakdown).toContainText(PACKAGE_NAME, { timeout: 15_000 });
   await expect(breakdown).toContainText("Inside same district");

@@ -201,31 +201,68 @@ No panel uses `window.prompt` / `confirm` / `alert`.
 
 ## Spreadsheet imports (modules/imports, web: public/legacy/shared/importer.js)
 One engine for both merchant panels, merchant API keys (`parcels:write`) and Courier Operations.
-- Templates: `GET /imports/templates/ecommerce|document` → .xlsx generated from live data (catalog
-  districts/zones/areas and packaging, the segment's parcel products only, the package's services,
-  document packaging and receiver relations from platform-config, active merchants for operations).
-  Old document types ("Cheque book", …) are still read in the Service column of old files (fixed list in
-  the engine); platform-config `documentTypes` / `documentProducts` are no longer read. Sheets: the data sheet
-  (`Orders` / `Consignments`; required headers red with `*`, frozen header row, dropdowns as Excel data
-  validation, zone dependent on district via `INDIRECT`, numbers/phone checked), `Instructions` (every
-  column: required, allowed values, default, example) and the hidden `Lists` sheet the dropdowns read.
-  Operations templates add a `Merchant` column. Written by `imports/xlsx` (ZIP + XML, CRC32, no
-  dependency); the reader handles shared/inline strings, numbers, booleans and dates; CSV in UTF-8
-  (BOM), UTF-16, comma/semicolon/tab, quoted cells. Old headers (`customer_name`, `phone`, …) still match.
-- Dry run: `POST /imports/validate` (multipart `file` + `kind`, `merchantId?`, operations: `intake`,
-  `dropOffHubId`; or JSON `{ kind, rows: [{ column: value }] }`) → an `ImportJob` (status VALIDATED)
-  with one `ImportRow` per non-empty row: `VALID`, `INCOMPLETE` (will be created as "Needs info") or
-  `ERROR` with `[{ column, message }]` (`text`: "Row 14 · Customer phone: …"). Nothing is booked.
+- Three bulk-create templates (2026-10-18), API kinds `customer` (Customer parcel: walk-in / website
+  customers booked by operations, no merchant), `ecommerce` and `document` (Banking & Financial; the
+  kind name is kept, `banking` is accepted as an alias). `ImportJob.kind` is `CUSTOMER | ECOMMERCE |
+  DOCUMENT` (migration `import_kind_customer`). Each template has exactly its category's columns
+  (`imports/columns.ts`):
+  - E-commerce (`Orders`): Customer name, Customer phone *, Delivery address, District, Zone, Area,
+    Product, COD amount (only if the package has COD), Product value, Weight (kg) 0.01–50, Service,
+    Open box (only if the package has it), Order ID, Delivery instructions.
+  - Banking & Financial (`Consignments`): Recipient name, Recipient phone *, Delivery address, District,
+    Zone, Area, Product (Banking list), Service, Reference no., Delivery instructions. No COD, weight,
+    product value or open box.
+  - Customer parcel (`Parcels`): Sender name *, Sender phone *, Pickup address *, Pickup district *,
+    Pickup zone *, Pickup area, then the e-commerce-like recipient and parcel columns (Delivery
+    district / zone / area, Product from the shared Customer + E-commerce list, COD amount, Product
+    value, Weight, Service from the Customer default package; no open box), Reference no., instructions.
+  There is no Merchant column: operations choose the category and then the merchant (searchable) or
+  "Customer parcel" in the upload dialog; merchants (and API keys) always import their own category
+  (`WRONG_TEMPLATE` for the other one, on download and on upload; customer parcels are operations only).
+  Removed columns of the old templates: Merchant, Parcel type, Packaging, Receiver relationship,
+  Origin branch code, Address type, Cash on delivery (Yes/No), Item / Document description, Document
+  type. Files that still have them upload with those columns listed as ignored; imports never write
+  `packaging`, `receiverRelation` or `originBranchCode` (the parcel columns stay for existing data).
+- Templates: `GET /imports/templates/customer|ecommerce|document?merchantId=` → .xlsx generated from
+  live data: districts → zones → areas (active only; dependent dropdowns with
+  `IF($D2="",L_zones,INDIRECT("ZN_"&MATCH($D2,L_districts,0)))`, never IFERROR; the pickup zone follows
+  the pickup district), the category's active products shown with their type ("Fashion & Apparel
+  (Regular)"; order: Regular → Document → Books, the seeded order inside a type, then new ones by name;
+  the plain name is accepted too), and the Service list of the file's package only (the chosen
+  merchant's; customer parcels: the Customer default; operations without a merchant yet and super
+  admin downloads: the category's default). Sheets: the data sheet (required headers red with `*`,
+  frozen header row, Excel data validation, numbers/phone checked), `Instructions` written per
+  category (who the file is for, "the recipient phone is required", the Needs-info rule, pricing by
+  district, Express = same day inside the same district only for Customer / E-commerce, no weight /
+  COD text for Banking, first / last mile, drop hub and messages are chosen on the upload screen;
+  every column with required, allowed values, default and an example from live data: the first active
+  product, a real district / zone / area) and the hidden `Lists` sheet the dropdowns read. Written by
+  `imports/xlsx` (ZIP + XML, CRC32, no dependency); the reader handles shared/inline strings, numbers,
+  booleans and dates; CSV in UTF-8 (BOM), UTF-16, comma/semicolon/tab, quoted cells. Old headers
+  (`customer_name`, `phone`, …) still match.
+- Dry run: `POST /imports/validate` (multipart `file` + `kind`, `merchantId` (operations: required for
+  ecommerce / document, `MERCHANT_REQUIRED` otherwise; refused for customer), `intake` / `dropOffHubId`
+  or `firstMile` / `dropHubId`, `lastMile`, `notifications`; or JSON `{ kind, rows: [{ column: value }] }`)
+  → an `ImportJob` (status VALIDATED) with one `ImportRow` per non-empty row: `VALID`, `INCOMPLETE` (will
+  be created as "Needs info") or `ERROR` with `[{ column, message }]` (`text`: "Row 14 · Customer phone: …").
+  Nothing is booked. The modal's first / last mile, drop hub and messages are checked against the same
+  package before the file is read (`SERVICE_NOT_IN_PACKAGE`), for operations too.
   `GET /imports/:id/rows?filter=all|valid|incomplete|error|created|failed|not_created&page&pageSize`
   pages the preview (page numbers, not cursors: the rows are a fixed, ordered set).
 - Rules (ImportEngineService, the same for preview and booking): a row is created when every
   super-admin-required column is filled and every non-empty cell is valid (phone via the BD phone
   rules, district/zone from the catalog — a zone alone finds its district —, option lists, numbers and
-  ranges, COD Yes/No vs amount, no COD on documents, order ref unique in the file and not booked before;
-  rows without an order ref are idempotent by a hash of their content, `Parcel.importKey`). Empty
-  cells take the super admin's defaults (built in: service Regular, weight 1 kg e-commerce / 0.5 kg
-  documents, address type Home/Office, parcel type E-commerce parcel). Built-in required columns:
-  customer/recipient phone, and document type for documents.
+  ranges, a service the package offers ("Express is not in Shop 1's service package (choose …)"; "Same
+  day" is refused with a message pointing to Express, never mapped silently), no COD on Banking &
+  Financial ("Banking & Financial parcels can't be cash on delivery"), order ref not booked before).
+  Duplicates in a file: the first row is kept and each later one is an error naming it ("ORD-7
+  duplicates row 11", "the same order as row 2"); rows without an order ref are idempotent by a hash of
+  their content (`Parcel.importKey`; for customer parcels checked among parcels without a merchant).
+  Empty cells take the super admin's defaults (built in: service Regular, weight 0.5 kg). Always
+  required: the recipient phone, and for customer parcels the sender name / phone and the pickup
+  address / district / zone. Customer parcels book with channel OPERATIONS, no merchant, the row's
+  sender and pickup, priced by the Customer default package; incomplete rows are priced to the default
+  destination (MERCHANT_CITY = inside the merchant's / sender's own pickup district).
 - Submit: `POST /imports/:id/commit` → up to 100 rows are booked during the request, larger files by
   the pg-boss queue `imports` in chunks of 100 rows, each chunk one transaction (rows re-checked first;
   if a chunk fails its rows are booked one by one). Resumable: a retried or restarted job continues with
@@ -234,16 +271,21 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   uploader and super admins. Booking SMS per parcel are not sent for imports; the uploader gets one
   `import.completed` notification. Parcels: `importJobId`, `bookingBatchId` (= the import's batch),
   channel MERCHANT_PORTAL / MERCHANT_API / OPERATIONS, drop-off intake as chosen.
-- After: `GET /imports/:id` (counts, progress, result `{ created, createdIncomplete, failed, notCreated }`),
+- After: `GET /imports/:id` (counts, progress, `kindLabel`, result `{ created, createdIncomplete, failed, notCreated }`),
   `GET /imports/:id/failed-rows?format=xlsx|csv` (rows not created in the template format plus an `Error`
   column; it can be uploaded again as is), `GET /imports/:id/tracking-ids` (labels), `GET /imports`
-  (history: merchants their own imports, operations the operations imports, `mine=true`),
+  (history: merchants their own imports, operations the operations imports, `mine=true`, `kind=`),
   `DELETE /imports/:id` (drop a validated file). Validated files nobody submits are discarded after a
   day; rows of finished imports are kept 90 days.
-- Settings (super admin → Import settings, page "Spreadsheet imports"): `GET /imports/config`,
-  `PUT /imports/config` (config:manage, audited `import_config.update`) — per template `{ column:
-  { required, default } }`, `defaultDestination` (`MERCHANT_CITY` = the merchant's pickup zone, or a
-  `FIXED` district/zone) and `limits`. `GET /imports/limits` gives the caller's limits for the upload screen.
+- Settings (super admin → Import settings, page "Spreadsheet imports", `super-admin/bridge-imports.js`:
+  a tab and a download button per template): `GET /imports/config` (`templates.{ecommerce,document,customer}`
+  with `required`, `default`, `configurable`, `defaultable`, `packageOnly`; `titles`), `PUT /imports/config`
+  (config:manage, audited `import_config.update`) — per template `{ column: { required, default } }`,
+  `defaultDestination` (`MERCHANT_CITY` = the merchant's / sender's pickup zone, or a `FIXED`
+  district/zone) and `limits`. Unknown (removed) columns are refused on PUT; settings of removed
+  columns already stored are dropped once at start-up (`ImportConfigService.migrateStored`, audited
+  `import_config.migrate` with the removed keys) and on every save. `GET /imports/limits` gives the
+  caller's limits for the upload screen.
 - Limits (defaults / hard ceilings): merchants 5,000 rows and operations 10,000 rows per file (ceiling
   20,000), 10 MB per file (ceiling 20 MB), 1 running import per merchant (operations: per person;
   ceiling 3), 4 imports booking at once platform-wide (ceiling 8; each further one waits in the queue,
@@ -260,100 +302,137 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   owner decision and a migration; no data was removed.
 
 ## Bulk operations by Excel (modules/bulk-updates, web: shared/importer.js bulk mode)
-Courier Operations changes many parcels from one spreadsheet: download the filtered parcels, choose
-an action per row in Excel, upload, check the preview, apply. Built on the import engine (xlsx
-writer/reader, parse slots, `ImportConfigService` limits); `ParcelsService`, `IntakeChangeService`,
-`CompleteDetailsService` and `RoutingService` do the work. All endpoints need `parcel:dispatch` +
-`parcel:read:any` (no API keys); every action is then checked by the service the single action uses.
-- Export: `GET /bulk-updates/export?preset=pending_review|at_hub_unassigned|needs_info&status=&merchantId=
-  &hubId=&dropOffHubId=&intake=&incomplete=&sla=AWAITING_REVIEW|ON_TRACK|AT_RISK|BREACHED&line=ecommerce|
-  document|customer&from=&to=&q=` → .xlsx (headers `X-Row-Count`, `X-Matched`, `X-Row-Limit`; at most the
-  operations import row limit, oldest first; the Instructions sheet says when the file was cut). Hub
-  operators get their hubs' work only: parcels at / bound for / to be dropped off at their hubs, with
-  their hubs' riders, and pickup requests in zones their hubs serve. Audited `bulk_update.export`.
-- Sheet `Parcels` (`bulk-columns.ts`): Tracking ID, Current status, Suggested rider (`RoutingService.
-  suggestFor`, the GET /routing/suggestions rules) and the parcel's data are read-only (grey, locked);
-  Action, Rider, New status, Hub, Reason / note, Priority and the "Set …" completion columns are editable
-  with dropdowns from live data (riders `code · name · hub` in the caller's scope, per-hub lists `RD_<n>`
-  following the Hub column; Set zone/area follow Set district/zone; all as `IF($X2="",all,INDIRECT(…))`,
-  never IFERROR). A hidden `version` column carries `Parcel.version`. The sheet is protected without a
-  password (filter allowed; Review → Unprotect Sheet for anything else). Sheets `Instructions` and hidden
-  `Lists`. Writer additions: `STYLE.readonly/headerReadonly/editable/editableText`, `Sheet.protect`,
-  `Sheet.hiddenColumns`; `writeListsSheet()` / `dependentListFormula()` are shared with import templates.
-- Actions: Accept & assign pickup rider (`assignPickup`; empty Rider = the suggestion), Assign delivery
-  rider (`assignDelivery`; Set … columns in the same row complete a "Needs info" order first), Change
-  status (`setStatus`; PICKUP_CONFIRMED, PICKED_UP, AT_HUB, IN_TRANSIT, OUT_FOR_DELIVERY, RETRY_SCHEDULED,
-  RETURNED, EXCEPTION — never DELIVERED), Receive at hub (`setStatus` AT_HUB; drop-offs at their hub),
-  Cancel (`cancel`, reason required), Change to drop-off / rider pickup (`IntakeChangeService`), Schedule
-  return (`setStatus` RETURN_SCHEDULED, reason required), Complete details (`CompleteDetailsService`), Add
-  note (`addNote`). `assignPickup`, `assignDelivery` and `cancel` take `opts.expectedVersion`.
-- Dry run: `POST /bulk-updates/validate` (multipart `file`, .xlsx or .csv) → `BulkUpdateJob` (number
-  `BLK-YYMMDD-NNN`, status VALIDATED) with a `BulkUpdateRow` per row that has an Action (rows without one
-  are only counted as `ignored`): READY, WARNING (applies: rider off shift / on a break / over capacity,
-  rider of another hub, ignored cells, no version), ERROR (`[{ column, message }]`, text "Row N · Column:
-  message": lifecycle via `canTransition` with intake, hub scope, rider active and in scope, details needed
-  before delivery, unknown or duplicate tracking ID, "changed since you downloaded it" when the version
-  differs) or ALREADY_DONE (the parcel is already in the requested state). `GET /bulk-updates/:id/rows?
-  filter=all|apply|warning|error|applied|already_done|failed|not_applied&page&pageSize`.
-- Apply: `POST /bulk-updates/:id/apply` (only the uploader; one running bulk update per person) → up to
-  100 rows during the request, more through the pg-boss queue `bulk-updates` (progress `bulk_update.
-  progress` / `bulk_update.completed` `{ id, data: { number, status, processed, total, applied,
-  alreadyDone, failed } }` to the uploader). High-priority rows first. Each row: skipped as ALREADY_DONE
-  when the parcel already is in the target state or the same change (parcel, version, request: row
-  `dedupeKey`) was applied by an earlier upload; else the service runs with the row's version (its own
-  transaction; a refusal marks only that row FAILED). Resumable (rows not yet handled). Every audit record
-  the services write carries `data.bulkUpdate = { id, number, row }` (`withAuditContext`, common/audit.service.ts);
-  the job writes `bulk_update.validate / apply / complete / discard`. Notifications, webhooks and realtime
-  are those of the single actions.
-- Re-pricing preview: rows that change what the price depends on (Complete details / Assign delivery rider with
-  Set district, zone, area, weight or service; Change to drop-off / rider pickup) get `plan.price = { before,
-  after, difference }` at validate time from `CompleteDetailsService.previewCharge` / `IntakeChangeService.
-  previewCharge`: the same engine and package frozen at booking that applying uses, so the charge applied equals
-  the preview. A change the package refuses (`SERVICE_NOT_IN_PACKAGE`, e.g. no drop at hub) makes the row an
-  ERROR. The job view has `pricing: { rows, before, after, difference }` over the rows that will apply (or were
-  applied); the preview shows a PRICE column (old → new, difference) and a "Re-priced" total before Apply. There
-  is no bulk last-mile change or re-weigh action (no single action to reuse yet).
-- After: `GET /bulk-updates/:id` (counts, progress, result `{ applied, alreadyDone, failed, notApplied }`),
-  `GET /bulk-updates/:id/failed-rows?format=xlsx|csv` (the same sheet plus an Error column; upload it again
-  after fixing), `GET /bulk-updates?mine=` (history: your own; operations managers everyone's),
-  `DELETE /bulk-updates/:id` (drop a checked file), `GET /bulk-updates/limits`. Checked files nobody applies
-  are discarded after a day; rows of finished bulk updates are kept 90 days.
-- Page templates ("kinds", `bulk-kinds.ts`, 2026-10-17): every Courier Operations page with a bulk button has
-  its own file: its own parcel filter, only that page's actions (existing actions only, some under a page label
-  with a fixed or narrowed status), only the columns they need, its own Instructions sheet and title. `kind` =
-  `new_orders | pickup | hub_desk | delivery | problems | returns | all` (default all = every action and column,
-  as before) on `GET /bulk-updates/export?kind=`, `POST /bulk-updates/validate?kind=` (or multipart field
-  `kind`: the page it is uploaded on), `POST /bulk-updates/:id/apply?kind=` and `GET /bulk-updates?kind=`
-  (history filter). `GET /bulk-updates/kinds` lists the caller's templates (a page whose actions the caller
-  can't perform is left out; today every action needs `parcel:dispatch`) with actions (label, needs, does),
-  columns, statuses and presets. The file carries its kind in the hidden `template` column (39th column of the
-  All parcels file); another page's file is refused with `BULK_KIND_MISMATCH` (422, `{ fileKind, pageKind }`),
-  a file mixing kinds with `BULK_KIND_MIXED`; All parcels takes any kind (and any action). On a page, an action
-  of another page typed into its file is a row error. `BulkUpdateJob.kind` (migration `bulk_update_kind`)
-  is the file's kind; job views carry `kind`, `kindTitle` ("New orders bulk update"), `page`, and the kind's
-  columns; failed-rows downloads use the kind's format.
+Courier Operations changes many parcels from one spreadsheet, **one file per action** (2026-10-18): on a page
+choose an action ("Accept & assign pickup rider"), download its file (only the parcels that can take that
+action, only the columns it needs, no Action column), fill it in, upload, check the preview, apply. Built on
+the import engine (xlsx writer/reader, parse slots, `ImportConfigService` limits); `ParcelsService`,
+`IntakeChangeService`, `CompleteDetailsService` and `RoutingService` do the work. All endpoints need
+`parcel:dispatch` + `parcel:read:any` (no API keys); every row is then checked by the service the single
+action uses.
+- Pages (`bulk-kinds.ts`, `kind` = `new_orders | pickup | hub_desk | delivery | problems | returns | all`) and
+  action templates (`bulk-actions.ts`, `action` = `accept_pickup | reassign_pickup | mark_picked_up |
+  receive_at_hub | mark_exception | assign_delivery | resolve_status | change_status | cancel | to_drop_off |
+  to_pickup | schedule_return | complete_details | add_note`). Every template runs an existing single action
+  (`bulk-columns.ts BULK_ACTIONS`), some with a fixed or narrowed status ("Mark picked up" = Change status →
+  Picked up). A template defines: label, sheet tab name, the parcels that can take it (`where()`: the
+  lifecycle via `reachable(targets, only?)` = `canTransition` per intake and last mile; intake changes:
+  `INTAKE_CHANGEABLE_STATUSES` by intake; Complete details: `incomplete` and not delivered / out for delivery;
+  Add note: any parcel), lead / info read-only columns, input columns (own header and help, `required` → "*"),
+  `skipBlank` and the how-to / does texts.
 
-  | Page | Parcels | Actions |
+  | Page | Page's parcels | Actions |
   |---|---|---|
   | New orders | Pending operations confirmation | Accept & assign pickup rider, Cancel, Change to drop-off, Change to rider pickup, Complete details, Add note |
-  | Pickup | Pickup assigned / confirmed, picked up | Assign / reassign pickup rider, Mark picked up (= Change status → Picked up), Cancel, Add note |
-  | Hub desk | Picked up, in transit, drop-offs on their way, at hub, ready for collection | Receive at hub, Mark exception (= Change status → Exception, reason required), Add note |
+  | Pickup | Pickup assigned / confirmed, picked up | Assign / reassign pickup rider, Mark picked up, Cancel, Add note |
+  | Hub desk | Picked up, in transit, drop-offs on their way, at hub, ready for collection | Receive at hub, Mark exception, Add note |
   | Delivery | At hub without delivery rider (doorstep), assigned | Assign delivery rider, Complete details, Add note |
-  | Problems | Exception, retry scheduled, needs info, SLA at risk / breached | Resolve: change status (At hub, Out for delivery, Retry scheduled, Exception), Assign delivery rider, Schedule return, Complete details, Add note |
+  | Problems | Exception, retry scheduled, needs info, SLA at risk / breached | Resolve: change status, Assign delivery rider, Schedule return, Complete details, Add note |
   | Returns | Retry scheduled, exception, return scheduled, at hub after a delivery attempt | Schedule return, Add note |
-  | All parcels | any filter | every action |
+  | All parcels | any filter | every action (also the general Change status) |
 
-  Transfers has no bulk file: moving parcels between hubs goes through linehaul bags and manifests, which have
+  | Action | Parcels in the file | Columns to fill in (besides read-only info) | Blank rows |
+  |---|---|---|---|
+  | Accept & assign pickup rider | pending rider pickups | Rider (empty = Suggested rider, prefilled read-only), Hub (narrows Rider), Priority, Note | applied |
+  | Assign / reassign pickup rider | pickup assigned / confirmed | New rider *, Hub, Priority, Note | skipped |
+  | Mark picked up | pickup assigned / confirmed | Note | applied |
+  | Receive at hub | can go to At hub (picked up, in transit, drop-offs, returning) | Receiving hub (empty = drop-off hub / own hub), Note | applied |
+  | Mark exception | can go to Exception | Reason * | skipped |
+  | Assign delivery rider | can go to Assigned (at hub doorstep, assigned, failed / exception) | Rider (empty = suggestion), Hub, Priority, Note, Set … (district → zone → area) | applied |
+  | Resolve: change status | exception, retry scheduled | New status * (At hub, Out for delivery, Retry scheduled, Exception), Hub, Note | skipped |
+  | Change status (All parcels) | open parcels | New status * (operations-settable, never Delivered), Hub, Note | skipped |
+  | Cancel | can still be cancelled | Reason * | skipped |
+  | Change to drop-off | rider pickups before pickup | New drop-off hub, Note | applied |
+  | Change to rider pickup | drop-offs before receipt | Note | applied |
+  | Schedule return | can go to Return scheduled | Reason * | skipped |
+  | Complete details | "Needs info", still changeable | Set recipient name / phone / address / district / zone / area / weight / service, Note | skipped |
+  | Add note | any | Note * | skipped |
+
+  "Applied": every row in the file is applied (delete the rows not to change); "skipped": a row whose input
+  columns (Priority excluded) are all empty is skipped and counted as `ignored`. Completely empty rows are
+  always skipped.
+- `GET /bulk-updates/kinds`: the pages the caller can use (a page whose actions the caller can't perform is
+  left out; today every action needs `parcel:dispatch`) with `actions [{ action, label, summary }]`, statuses
+  and presets. `GET /bulk-updates/actions?kind=&<export filters>`: the page's actions with `label`, `title`
+  ("Accept & assign pickup rider · New orders"), `summary`, `howTo`, `does`, `parcels`, `skipBlank`, `fill`
+  (headers to fill in), `columns`, `statuses` (New status choices) and `count` (parcels that can take it now:
+  page ∩ eligibility ∩ filters ∩ hub scope).
+- Export: `GET /bulk-updates/export?kind=&action=` (action required; an action not on the page →
+  `BULK_ACTION_NOT_ON_PAGE` 422) `&preset=pending_review|at_hub_unassigned|needs_info&status=&merchantId=
+  &hubId=&dropOffHubId=&intake=&incomplete=&sla=AWAITING_REVIEW|ON_TRACK|AT_RISK|BREACHED&line=ecommerce|
+  document|customer&from=&to=&q=` → .xlsx named `delivery-fast-<page>-<action>-<stamp>.xlsx` (headers
+  `X-Row-Count`, `X-Matched`, `X-Row-Limit`; at most the operations import row limit, oldest first; the
+  Instructions sheet says when the file was cut; 60 downloads a minute). Hub operators get their hubs' work
+  only: parcels at / bound for / to be dropped off at their hubs, with their hubs' riders, and pickup requests
+  in zones their hubs serve. Audited `bulk_update.export` `{ kind, action, rows, matched, filter }`.
+- The data sheet is named after the action (e.g. "Accept & assign pickup"): Tracking ID, Current status, lead
+  info (Suggested rider from `RoutingService.suggestFor` / Pickup rider / Missing fields), the action's input
+  columns (blue; required ones red with "*"), read-only info (grey, locked), then hidden `version`
+  (`Parcel.version`) and `template` = `<kind>:<action>`. Dropdowns from live data (riders `code · name · hub`
+  in the caller's scope with per-hub lists `RD_<n>` following the Hub column; Set zone / area follow Set
+  district / zone; all `IF($X2="",all,INDIRECT(…))`, never IFERROR); only the lists the action uses are in
+  the hidden Lists sheet. Protected without a password (filter allowed; Review → Unprotect Sheet). The
+  Instructions sheet: title "Delivery Fast · <action> · <page>", the how-to line ("Accept & assign pickup
+  rider: fill Rider for each row …; delete rows you don't want to change"), what it does, which parcels,
+  where to upload, the columns and the action's rules.
+- Dry run: `POST /bulk-updates/validate?kind=&action=` (multipart `file`, .xlsx or .csv; `kind` / `action` may
+  also be multipart fields: the page and the chosen action). The file's `template` must match: another
+  page's file → `BULK_KIND_MISMATCH` (422, `{ fileKind, pageKind, fileAction }`, "This is the "Cancel" file
+  of New orders. Upload it on the New orders page (or All parcels), …"; All parcels takes any page's file);
+  another action's file → `BULK_ACTION_MISMATCH` (422, `{ fileAction, pageAction }`); rows of several files →
+  `BULK_KIND_MIXED`. Without `action` the file's own action is used (if the page offers it). A file without
+  a template column (hand-made CSV with Tracking ID + the action's columns) takes the chosen action.
+  **Backward compatibility (decision):** files from before action templates (an Action column, or a
+  page-only template such as `new_orders`) are refused politely with `BULK_TEMPLATE_OUTDATED` ("download a
+  fresh file for the action"); they would be stale anyway (versions) and their jobs are kept for history.
+  Only the template's columns are read (others are listed in `ignoredColumns`). → `BulkUpdateJob` (number
+  `BLK-YYMMDD-NNN`, status VALIDATED, `kind` and `action`) with a `BulkUpdateRow` per checked row: READY,
+  WARNING (applies: rider off shift / on a break / over capacity, rider of another hub, no version), ERROR
+  (`[{ column, message }]`, text "Row N · Column: message"; lifecycle refusals are on the Current status
+  column: "A parcel that is "At hub" can't get a pickup rider"; hub scope, rider active and in scope, details
+  needed before delivery, unknown or duplicate tracking ID, "changed since you downloaded it" when the
+  version differs) or ALREADY_DONE. No rows → `NO_ACTIONS` ("None of the N rows has Reason filled in").
+  `GET /bulk-updates/:id/rows?filter=all|apply|warning|error|applied|already_done|failed|not_applied&page&pageSize`.
+- Apply: `POST /bulk-updates/:id/apply?kind=&action=` (only the uploader; one running bulk update per
+  person; another page / action → `BULK_KIND_MISMATCH` / `BULK_ACTION_MISMATCH`) → up to 100 rows during the
+  request, more through the pg-boss queue `bulk-updates` (progress `bulk_update.progress` /
+  `bulk_update.completed` `{ id, data: { number, status, processed, total, applied, alreadyDone, failed } }`
+  to the uploader). High-priority rows first. Each row: skipped as ALREADY_DONE when the parcel already is in
+  the target state or the same change (parcel, version, request: row `dedupeKey`) was applied by an earlier
+  upload; else the service runs with the row's version (its own transaction; a refusal marks only that row
+  FAILED). Resumable. Every audit record the services write carries `data.bulkUpdate = { id, number, row }`
+  (`withAuditContext`); the job writes `bulk_update.validate` (with `kind`, `action`) / `apply` / `complete` /
+  `discard`. Notifications, webhooks and realtime are those of the single actions. `assignPickup`,
+  `assignDelivery` and `cancel` take `opts.expectedVersion`.
+- Re-pricing preview: rows that change what the price depends on (Complete details / Assign delivery rider
+  with Set district, zone, area, weight or service; Change to drop-off / rider pickup) get `plan.price =
+  { before, after, difference }` at validate time from `CompleteDetailsService.previewCharge` /
+  `IntakeChangeService.previewCharge` (the same engine and frozen package as applying). A change the package
+  refuses (`SERVICE_NOT_IN_PACKAGE`) makes the row an ERROR. The job view has `pricing: { rows, before, after,
+  difference }`; the preview shows a PRICE column and a "Re-priced" total. No bulk last-mile change or
+  re-weigh action (no single action to reuse yet).
+- After: `GET /bulk-updates/:id` (`kind`, `kindTitle`, `page`, `action`, `actionLabel`, `title` "Accept &
+  assign pickup rider · New orders", counts, progress, result `{ applied, alreadyDone, failed, notApplied }`,
+  the action's `columns`, `pricing`), `GET /bulk-updates/:id/failed-rows?format=xlsx|csv` (the same action's
+  sheet plus an Error column; upload it again after fixing; legacy jobs without an action →
+  `BULK_TEMPLATE_OUTDATED`), `GET /bulk-updates?mine=&kind=&action=` (history: your own; operations managers
+  everyone's; filter by page and action), `DELETE /bulk-updates/:id`, `GET /bulk-updates/limits`. Checked
+  files nobody applies are discarded after a day; rows of finished bulk updates are kept 90 days.
+- Schema: `BulkUpdateJob.kind` (migration `bulk_update_kind`) and `BulkUpdateJob.action` (nullable, index
+  `(action, createdAt)`, migration `bulk_update_action`, 2026-10-18; null = a file from before action
+  templates, shown as "Several actions").
+- Transfers has no bulk file: moving parcels between hubs goes through linehaul bags and manifests, which have
   no bulk action; adding to a return run has none either.
 - Web: All parcels (Shipments and the E-commerce / Banking & Financial / Customer tabs) has "Bulk update All
   parcels by Excel" and "Bulk update history" (courier-operation/bridge-bulk.js); the journey pages have
   "Bulk update <page> by Excel" (`#stageBulkUpdate`, bridge-nav.js with `DFOps.bulkKindOf(view)`,
-  `DFOps.bulkLabel(kind)`, `DFOps.bulkConfig(kind)`) → `DFImport.bulk(cfg)` with `cfg.bulkKind` /
-  `DFImport.bulkHistory(cfg)`: step 1 shows what the page's file can do (`#dfiKindInfo`: its actions and the
-  columns to fill in) and downloads with the page's filters plus hub, intake, SLA state and the page's quick
-  presets; then the import dialog's upload → preview (All / Will apply / Warnings / Errors, the cell in error
-  highlighted) → apply → progress → result steps. History has a page filter (`#dfiHKind`, starting with the
-  page's own) and a PAGE column.
+  `DFOps.bulkLabel(kind)`, `DFOps.bulkConfig(kind)`) → `DFImport.bulk(cfg)` with `cfg.bulkKind` (and optional
+  `cfg.bulkAction` to skip step 1) / `DFImport.bulkHistory(cfg)`. Step 1 "Choose an action" (`#dfiActions`
+  `[data-dfi="pick-action"][data-action]`, each with its one line and `[data-count]` parcels, from
+  `/bulk-updates/actions` with the page's filters); step 2 downloads that action's file (`#dfiActionInfo`
+  shows the how-to and the columns to fill in; the page's filters plus hub, intake, SLA state and quick
+  presets; "‹ Change action"); step 3 upload → preview (All / Will apply / Warnings / Errors, the cell in
+  error highlighted, the action's input columns) → apply → progress → result. History shows "ACTION · PAGE"
+  and filters by page (`#dfiHKind`, starting with the page's own) and action (`#dfiHAction`).
 
 ## Incomplete orders ("Needs info", parcels/incomplete.ts)
 - Data model: imports may book a parcel with `recipientName`, `recipientPhone`, `deliveryStreet`,
@@ -439,10 +518,11 @@ Cleaned up 2026-10-17: the page keeps only lists that real forms read.
   Corporate Urgent). Merchant forms hide both once the package loads; their static fallbacks no longer
   read the config.
 - **Kept (stored server-side):** return reasons (platform-config `returnReasons`; `GET /returns/reasons`
-  returns them, else the standard `RETURN_REASONS`; free text still accepted), receiver relationships
-  (`receiverRelations`: merchant forms' `merchantRelation` select and the Banking import column), e-commerce
-  packaging (Setting `catalog` via `PUT /catalog`: merchant forms, website, imports) and document packaging
-  (`documentPackaging`: Banking form and import column), plus the delivery address hierarchy (`bridge-geo.js`).
+  returns them, else the standard `RETURN_REASONS`; free text still accepted), plus the delivery address
+  hierarchy (`bridge-geo.js`).
+- **Removed (owner decision 2026-10-18):** receiver relationships and the e-commerce / document packaging
+  lists. No booking form reads them any more (the Setting `catalog` `packaging` field and the platform-config
+  keys stay for compatibility; nothing shows or edits them).
 - The old "Service catalog" page (demo service table) is now **Import settings** ("Spreadsheet imports",
   `bridge-imports.js`) with a pointer to Service plans; its demo rows are no longer saved.
 
@@ -530,6 +610,29 @@ segment=`. Quotes: `POST /pricing/quote` (customer), `POST /merchants/me/quote`,
 box, Weight only for Customer / E-com); the preview shows each row's `lines` and `totals`. Forms: both merchant
 panels and Courier Operations booking (`shared/order-services.js`), the website booking (React).
 
+### Single-order forms (2026-10-18)
+- One field order everywhere: recipient → delivery address (category, district → zone → area, street) → parcel
+  (product, weight, contents / value, reference) → service (ONE first-mile select: Rider pickup / Drop at hub +
+  its hub / On-demand pickup; ONE last-mile select: Home delivery / Hub Pickup + optional hub; Service) → COD
+  tick + its own amount, open box → messages → live price.
+- The live price uses the same body as the booking, **product included** (`product` in `POST /packages/quote`,
+  `POST /merchants/me/quote`, `POST /pricing/quote`), so the form price is the booked price.
+- Places come from `GET /catalog` (active only) with "Choose district / zone / area" placeholders and nothing
+  preselected; long lists get a search box (`DFOrderServices.fill` / `searchable`). Products come from the
+  package view (active, the category's list, shown "Name · Type", Regular → Document → Books).
+- Weight is a number (0.01–50 kg, 0.5 default) for Customer / E-commerce; Banking & Financial has no weight
+  (0.5 kg is sent, it doesn't price) and no COD. E-commerce: "COD amount" (shown when COD is ticked) is separate
+  from the optional "Product value" (`declaredValue`).
+- Removed from every form: Receiver relationship, Packaging, Origin branch code, Shipment / Service type,
+  Service level, the hidden Document type, the merchant Pickup zone select and the separate operations
+  "Intake" select. The API still accepts those fields (old integrations) but no form writes them.
+- Panels: `DF.phoneInput` (+880 fixed) and inline `DF.validate` errors; the booking dialogs fit a 390 px phone.
+- Courier Operations "New shipment" books for an E-commerce or Banking & Financial merchant, or a **walk-in
+  sender** (customer parcel: sender name / phone and pickup address, the Customer default package,
+  `POST /ops/parcels` without `merchantId`; Customer parcels → "New walk-in shipment"). Drop at hub is sent as
+  `intake: DROP_OFF` + `dropOffHubId`. After booking the parcel's drawer opens ("Print label (PDF)"); the
+  merchant panels open the new order's details with the same button.
+
 ### Parcel messages (stored per parcel)
 - Every booking surface (merchant single forms and Courier Operations booking via `shared/order-services.js`, the
   website booking, the Excel import modal, the API `POST /parcels` `notifications`) shows the package's parcel
@@ -611,7 +714,9 @@ mode or a subset of their sections. The page scripts keep the old internal names
   column is pinned on the right of every parcel table; rows have no status dropdowns (next action, drawer).
 - Read-only filters for the lists (`GET /parcels`, apps/api/src/modules/parcels/parcel-stages.ts):
   `stage` = new | pickup_waiting | pickup | hub | transfers | delivery_waiting | delivery | exceptions |
-  failed | needs_info | sla_risk | problems | returns; `line` = CUSTOMER | ECOMMERCE | BANKING_FINANCIAL;
+  failed | needs_info | sla_risk | problems | returns (failed = RETRY_SCHEDULED + back at a hub after a failed
+  attempt, see "Failed deliveries"); `failedAttempts=true` (= stage failed), `failedBefore=true|false` (any
+  failed attempt or none); `line` = CUSTOMER | ECOMMERCE | BANKING_FINANCIAL;
   `forHubIds` (comma list) = parcels that belong to those hubs now: current hub, drop-offs booked to them,
   picked up by their riders, pickups from the zones they serve (delivery zones and the hub's own zone).
 - "My hub": hub operators' lists and counts default to `forHubIds` = their hubs, with a "My hub / All hubs"
@@ -620,9 +725,9 @@ mode or a subset of their sections. The page scripts keep the old internal names
 - Stage counts (menu badges, Today cards, stage metrics): `GET /ops/stage-counts[?forHubIds=]` (same
   filters as the lists, reloaded after `parcel.*` events): New orders = PENDING_CONFIRMATION; Pickup =
   accepted without a rider + being picked up; Hub desk = AT_HUB + READY_FOR_COLLECTION; Transfers =
-  IN_TRANSIT; Delivery = ASSIGNED + OUT_FOR_DELIVERY; Problems = EXCEPTION + RETRY_SCHEDULED + open
-  "Needs info" (also Problems' "Awaiting action"); Returns = return requests + RETURN_SCHEDULED (what the
-  Returns page lists). `detail` carries each part (pickupWaiting, deliveryWaiting, slaRisk, …).
+  IN_TRANSIT; Delivery = ASSIGNED + OUT_FOR_DELIVERY; Problems = EXCEPTION + failed deliveries (RETRY_SCHEDULED
+  + back at a hub after a failed attempt) + open "Needs info" (also Problems' "Awaiting action"); Returns = return requests + RETURN_SCHEDULED (what the
+  Returns page lists). `detail` carries each part (pickupWaiting, deliveryWaiting, failed, backAfterFailure, slaRisk, …).
 - One way to assign a rider: the row's next action or the drawer; "Suggest riders" (the former Create
   dispatch) and Excel for many; New orders also accepts ticked rows together (one rider, one
   `POST /parcels/:id/assign-pickup` per order, progress and result in the dialog).
@@ -636,7 +741,9 @@ mode or a subset of their sections. The page scripts keep the old internal names
   drop-off → Receive (Hub desk › Receive); At hub → Assign rider, or Add to transfer when a hub
   of the delivery zone other than the current one is known (Transfers); Exception → Resolve; Needs info →
   Edit details; Ready for collection → Hand over (Hub Pickup counter); Return scheduled without a run →
-  Add to return run (Returns › Return a parcel). Rows show it, then Details (drawer) and More.
+  Add to return run (Returns › Return a parcel); failed delivery (back at a hub after a failed attempt, or
+  retry scheduled) → "Re-attempt (Assign rider)" plus a second primary "Return to sender" (bridge-failed.js).
+  Rows show it, then Details (drawer) and More.
 - Parcel drawer `DFOps.drawer.open(trackingId)` (summary, actions, price lines, proof via
   `GET /parcels/:id/proof`, staff notes with "Add a staff note" (`POST /parcels/:id/notes`), "Messages
   sent" (`GET /parcels/:id/messages`), tracking history); the top-bar search (tracking ID / CN /
@@ -670,6 +777,34 @@ mode or a subset of their sections. The page scripts keep the old internal names
 - Browser tests: `opsNav(page, area)` and `OPS_NAV` in `apps/web/tests/e2e/support.ts`; `rowAction` /
   `headingAction` open "More" menus. With `E2E_API_ORIGIN`, file uploads are continued to that API
   (Chromium doesn't expose multipart file parts to route.fetch).
+
+## Failed deliveries (parcels/parcel.views.ts, parcel-stages.ts; web: courier-operation/bridge-failed.js)
+Read-only views on the existing lifecycle (2026-10-18). A rider's failed attempt writes a DeliveryAttempt
+(FAILED, reason, nextAction) and moves the parcel to RETRY_SCHEDULED or back to a hub (AT_HUB).
+- Parcel views (`GET /parcels`, `GET /parcels/:id`, every `parcelView`): `attemptCount`, `failedAttempts`,
+  `lastFailedAttempt { reason, at, nextAction, riderName }`, `returnedAfterFailure` (AT_HUB /
+  READY_FOR_COLLECTION and the latest attempt failed) and, for staff, `attempts[]` (date, outcome, reason,
+  next step, note, rider). Attempts load with `parcelInclude` (one batched query per page, no N+1).
+  Merchants and riders get the same fields without `riderName` and `attempts`.
+- Lists: `stage=failed` / `failedAttempts=true` = RETRY_SCHEDULED + `BACK_AFTER_FAILURE` (AT_HUB /
+  READY_FOR_COLLECTION with a failed attempt); `problems` includes them; `failedBefore=true|false`.
+  Stage counts: `detail.failed`, `detail.backAfterFailure`; `stages.problems` includes them.
+- Courier Operations: "Failed ×N · <last reason>" red pill (`[data-failed-badge]`) in every parcel table's
+  status cell and the drawer header; the drawer's "Delivery attempts" section (`#drawerAttempts`);
+  Problems › Failed delivery adds ATTEMPTS and LAST FAILURE columns; Delivery › Waiting for a delivery rider
+  has a "Failed before" filter (`[data-list-failed]`). Next actions: "Re-attempt (Assign rider)" (the
+  assign dialog → assign-delivery) and "Return to sender" (`[data-return-sender]`): an `Ops.form` with
+  the reason (prefilled from the last failure, `#rtsReason`), a note (`#rtsNote`, saved as a staff note)
+  and "Add to a return run now" (`#rtsRun`: no → `POST /parcels/:id/status` RETURN_SCHEDULED; new →
+  `POST /returns/runs`; an open run → `POST /returns/runs/:id/parcels`), then a result dialog with "Open
+  Returns". Merchant panels: "Delivery failed ×N, back at <hub> · Last reason" in the parcel detail
+  (`[data-df-failure]`). Rider run sheets flag re-attempts ("Re-attempt · failed ×N before").
+- Returns: `POST /returns/runs/:id/parcels { trackingIds, reason? }` (parcel:dispatch; planned runs of the
+  parcels' merchant; the same checks and RETURN_SCHEDULED step as a new run; audit `return_run.add_parcels`).
+  A new run or an added parcel may also be RETURN_SCHEDULED without a run (exception "return" resolution,
+  "Return to sender" without a run): it joins the run without a status change (internal tracking event
+  "Added to return run RR-…"). `GET /returns?stage=requested` includes those parcels, so they wait on the
+  Returns page until a run is planned.
 
 ## Printed documents / PDFs (modules/documents, web: public/legacy/shared/print.js)
 Every print button opens a PDF generated by the API in a new tab; there is no `window.print` HTML printing left.

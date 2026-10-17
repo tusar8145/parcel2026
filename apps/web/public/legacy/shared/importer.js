@@ -3,23 +3,28 @@
  * Operations. One engine on the API (/imports); this file is its UI, drawn with the panel's own
  * CSS classes (modal, table, status pill, button):
  *
- *   DFImport.open(cfg)          choose file (+ operations: merchant per file, intake / drop-off hub)
+ *   DFImport.open(cfg)          choose file (+ operations: the category and the merchant (searchable) or
+ *                               "Customer parcel"; first / last mile, drop-off hub and messages from that package)
  *                               → POST /imports/validate (dry run) → paginated preview with every
  *                               invalid cell highlighted → "Create N orders" → progress (live events
  *                               import.progress / import.completed) → result, failed-rows download, labels
  *   DFImport.history(cfg)       past imports with their numbers and downloads
  *   DFImport.template(cfg)      GET /imports/templates/:kind (.xlsx, built from live data)
  *   DFImport.complete(parcel, cfg)  completes an incomplete order ("Needs info") → POST /parcels/:id/complete
- *   DFImport.bulk(cfg)          Courier Operations "Bulk update by Excel" (cfg.mode = "bulk"): download the
- *                               filtered parcels (GET /bulk-updates/export), then the same upload → preview →
- *                               apply → progress → result steps on /bulk-updates (bulk_update.* events)
+ *   DFImport.bulk(cfg)          Courier Operations "Bulk update by Excel" (cfg.mode = "bulk"): choose an action
+ *                               (GET /bulk-updates/actions: the page's actions with counts), download its file
+ *                               (GET /bulk-updates/export?action=), then the same upload → preview → apply →
+ *                               progress → result steps on /bulk-updates (bulk_update.* events)
  *   DFImport.bulkHistory(cfg)   past bulk updates with their downloads, filtered by page
  *
- * cfg: { kind: "ecommerce"|"document", merchantId?, forOps?, merchants?: [{id, code, name}],
+ * cfg: { kind: "ecommerce"|"document"|"customer" (document = Banking & Financial; customer = customer parcels,
+ *        operations only), kinds?: [...] (operations: the categories to choose from), merchantId?, forOps?,
+ *        merchants?: [{id, code, name, type}],
  *        hubs?: [{id, name}], hubId?, tones?: { good, warn, bad, info }, noun?: "orders",
  *        printLabels?(trackingIds, job), onDone?(job) }
- * bulk cfg: { bulkKind?: "new_orders"|"pickup"|"hub_desk"|"delivery"|"problems"|"returns"|"all" (the page's own
- *        template: its parcels, actions and columns from GET /bulk-updates/kinds; default all), filters?: { preset, status,
+ * bulk cfg: { bulkKind?: "new_orders"|"pickup"|"hub_desk"|"delivery"|"problems"|"returns"|"all" (the page: its
+ *        parcels and actions from GET /bulk-updates/kinds; default all), bulkAction?: "accept_pickup"|… (skip the
+ *        "Choose an action" step), filters?: { preset, status,
  *        merchantId, hubId, intake, sla, from, to, incomplete }, line?: "ecommerce"|"document"|"customer",
  *        merchants?: [{id, code, name}], hubs?: [{id, name}], tones?, onDone?(job) }
  */
@@ -64,12 +69,19 @@
   const kindDef = (kind = bulkKind()) => (ui?.kinds || []).find(k => k.kind === kind);
   const pageOf = kind => kindDef(kind)?.page || (kind === "all" ? "All parcels" : kind);
   const bulkTitle = (cfg = ui?.cfg) => `Bulk update ${pageOf(bulkKind(cfg))} by Excel`;
+  /** The chosen action of a bulk update (GET /bulk-updates/actions item), or null before step 1. */
+  const bulkAction = () => ui?.action || null;
 
   let ui = null; // the open dialog: { cfg, step, job, rows, filter, page, file, unsubscribe, poll }
 
   const tone = (cfg, key) => (cfg.tones || DEFAULT_TONES)[key] || DEFAULT_TONES[key];
   const pill = (cfg, text, key) => `<span class="status ${tone(cfg, key)}">${esc(text)}</span>`;
-  const noun = cfg => cfg.noun || (cfg.kind === "document" ? "consignments" : "orders");
+  const noun = cfg => cfg.noun || (cfg.kind === "document" ? "consignments" : cfg.kind === "customer" ? "parcels" : "orders");
+  /** The three bulk-create templates (API kinds; "document" is Banking & Financial). */
+  const KIND_LABEL = { customer: "Customer parcel", ecommerce: "E-commerce", document: "Banking & Financial" };
+  const MERCHANT_TYPE = { ecommerce: "ECOMMERCE", document: "BANKING_FINANCIAL" };
+  /** Operations pick the merchant of an E-commerce / Banking & Financial file in the dialog (customer parcels have none). */
+  const needsMerchant = (cfg = ui?.cfg) => !!cfg?.forOps && cfg.kind !== "customer";
   /** "1 order", "2 orders" */
   const nounFor = (cfg, n) => (n === 1 ? noun(cfg).replace(/s$/, "") : noun(cfg));
   const count = (cfg, n) => `${fmt(n)} ${nounFor(cfg, n)}`;
@@ -105,6 +117,12 @@
       backdrop = document.getElementById("dfImportBackdrop");
       backdrop.addEventListener("click", onClick);
       backdrop.addEventListener("change", onChange);
+      backdrop.addEventListener("input", event => {
+        if (event.target.id !== "dfiMerchantSearch" || !ui) return;
+        ui.merchantSearch = event.target.value;
+        const select = document.getElementById("dfiMerchant");
+        if (select) select.innerHTML = merchantOptions(merchantsOf(ui.cfg));
+      });
       backdrop.addEventListener("keydown", event => {
         if (event.key === "Enter" && event.target.id === "dfiJump") {
           event.preventDefault();
@@ -131,21 +149,18 @@
   const LAST_MILE = { DOORSTEP: "Home delivery", HUB_COLLECT: "Hub Pickup" };
   const optionLabel = "display:grid;gap:5px;font-weight:600;font-size:13px";
 
-  /** The package the file books with: the merchant's (merchants, or operations with a merchant for the file); per row otherwise. */
+  /**
+   * The package the file books with: the merchant's (merchants; operations: the merchant chosen in the
+   * dialog), the Customer default for customer parcels, none until operations choose the merchant.
+   * Its options are the only first / last miles, hubs and messages offered.
+   */
   async function loadPackage() {
     const { cfg } = ui;
+    ui.pkg = null;
     try {
       if (!cfg.forOps) ui.pkg = await DF.api("/packages/me");
+      else if (cfg.kind === "customer") ui.pkg = await DF.api(q("/packages/effective", { segment: "CUSTOMER" }));
       else if (ui.merchantId) ui.pkg = await DF.api(q("/packages/effective", { merchantId: ui.merchantId }));
-      else {
-        const catalog = (ui.serviceCatalog ||= await DF.api("/service-catalog"));
-        ui.pkg = {
-          perRow: true,
-          options: { firstMiles: ["RIDER_PICKUP", "HUB_DROP", "ON_DEMAND_PICKUP"], lastMiles: ["DOORSTEP", "HUB_COLLECT"], defaultFirstMile: "RIDER_PICKUP", defaultLastMile: "DOORSTEP" },
-          notifications: catalog.notifications.filter(n => n.code !== "notify.guest_verification").map(n => ({ code: n.code, title: `${n.label} (${n.audience})` })),
-          dropHubs: [],
-        };
-      }
     } catch (error) {
       ui.pkg = null;
       toast(describe(error));
@@ -230,31 +245,35 @@
     if (isBulk()) return bulkChooseStep(message);
     const { cfg, limits, config } = ui;
     ui.step = "choose";
-    const columns = config.templates[cfg.kind].filter(c => cfg.forOps || !c.opsOnly);
+    // The template's columns (COD and open box only when the package offers them).
+    const columns = config.templates[cfg.kind].filter(c => !c.packageOnly || !ui.pkg || ui.pkg.options?.[c.packageOnly]);
     const required = columns.filter(c => c.required).map(c => c.header);
     const options = [];
     if (cfg.forOps) {
-      const merchants = (cfg.merchants || []).filter(m => !m.type || (m.type === "BANKING_FINANCIAL") === (cfg.kind === "document"));
       if (cfg.kinds?.length > 1)
         options.push(
-          `<label style="display:grid;gap:5px;font-weight:600;font-size:13px">Template<select class="select-small" id="dfiKind">${cfg.kinds
-            .map(k => `<option value="${k}" ${k === cfg.kind ? "selected" : ""}>${k === "document" ? "Banking & Financial consignments" : "E-commerce orders"}</option>`)
+          `<label style="${optionLabel}">Category<select class="select-small" id="dfiKind">${cfg.kinds
+            .map(k => `<option value="${k}" ${k === cfg.kind ? "selected" : ""}>${esc(KIND_LABEL[k] || k)}</option>`)
             .join("")}</select></label>`,
         );
-      options.push(
-        `<label style="display:grid;gap:5px;font-weight:600;font-size:13px">Merchant<select class="select-small" id="dfiMerchant"><option value="">Per row (the Merchant column)</option>${merchants
-          .map(m => `<option value="${esc(m.id)}" ${m.id === ui.merchantId ? "selected" : ""}>${esc(`${m.code} · ${m.name}`)}</option>`)
-          .join("")}</select></label>`,
-      );
+      if (needsMerchant(cfg)) {
+        const all = merchantsOf(cfg);
+        options.push(
+          `<label style="${optionLabel}">Merchant<input type="search" class="table-search" id="dfiMerchantSearch" placeholder="Search by code or name" autocomplete="off" value="${esc(ui.merchantSearch || "")}" style="width:100%"><select class="select-small" id="dfiMerchant" aria-label="Merchant">${merchantOptions(all)}</select></label>`,
+        );
+      }
     }
     options.push(...packageOptions());
+    const choose = needsMerchant(cfg) && !ui.merchantId;
     const body = `<div style="display:grid;gap:14px">
       <div id="dfiLimits" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
         <strong>Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB per file</strong> · Excel (.xlsx) or CSV with the template's headers.<br>
         Required columns: <strong>${esc(required.join(", ") || "none")}</strong> (red headers with * in the template). Other columns may stay empty; a value you enter must be valid or the row is not created.<br>
-        Rows missing the recipient name, phone, address or destination are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.
+        The recipient phone is required. Rows missing the recipient name, address or destination are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.<br>
+        First mile, the drop-off hub, last mile and the messages are chosen here for the whole file${cfg.forOps ? (cfg.kind === "customer" ? " (Customer package); the sender and pickup are in each row" : " (the merchant's package)") : ""}.
       </div>
-      ${options.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">${options.join("")}</div>` : ""}
+      ${options.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px">${options.join("")}</div>` : ""}
+      ${choose ? `<p class="panel-subtitle" id="dfiChooseMerchant" style="margin:0">Choose the merchant: the template's services, the choices above and the checks follow its package.</p>` : ""}
       ${lastMileNote()}
       ${notificationBox()}
       ${fileDrop()}
@@ -262,11 +281,21 @@
     </div>`;
     draw(
       `Import ${noun(cfg)} from Excel`,
-      `${esc(cfg.kind === "document" ? "Banking & Financial consignment template" : "E-commerce order template")} · the preview shows every row before anything is created.`,
+      `${esc(KIND_LABEL[cfg.kind] || cfg.kind)} template${ui.merchantId && needsMerchant(cfg) ? ` · ${esc(merchantsOf(cfg).find(m => m.id === ui.merchantId)?.name || "")}` : ""} · the preview shows every row before anything is created.`,
       body,
-      `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("template", "Download template (.xlsx)")}${button("history", "Import history")}</div>${button("close", "Cancel")}${button("check", "Check file", { primary: true, disabled: !ui.file })}`,
+      `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("template", "Download template (.xlsx)")}${button("history", "Import history")}</div>${button("close", "Cancel")}${button("check", "Check file", { primary: true, disabled: !ui.file || choose })}`,
     );
     dropZone();
+  }
+
+  /** Active merchants of the dialog's category. */
+  const merchantsOf = cfg => (cfg.merchants || []).filter(m => !m.type || m.type === MERCHANT_TYPE[cfg.kind]);
+  /** The merchant select's options, filtered by the search box (the chosen one always stays). */
+  function merchantOptions(all) {
+    const term = (ui.merchantSearch || "").trim().toLowerCase();
+    const shown = all.filter(m => !term || `${m.code} ${m.name}`.toLowerCase().includes(term) || m.id === ui.merchantId);
+    const placeholder = shown.length ? `Choose the merchant (${shown.length}${shown.length === all.length ? "" : ` of ${all.length}`})` : "No merchant matches";
+    return `<option value="">${esc(placeholder)}</option>${shown.map(m => `<option value="${esc(m.id)}" ${m.id === ui.merchantId ? "selected" : ""}>${esc(`${m.code} · ${m.name}`)}</option>`).join("")}`;
   }
 
   const fileDrop = () => `<label for="dfiFile" id="dfiDrop" style="display:block;border:2px dashed #c7d2e0;border-radius:12px;padding:26px 16px;text-align:center;cursor:pointer;background:#fff">
@@ -300,7 +329,7 @@
 
   function readOptions() {
     if (isBulk()) return readBulkFilters();
-    if (ui.cfg.forOps) ui.merchantId = document.getElementById("dfiMerchant")?.value || "";
+    if (ui.cfg.forOps) ui.merchantId = needsMerchant() ? document.getElementById("dfiMerchant")?.value || "" : "";
     const first = document.getElementById("dfiIntake")?.value;
     if (first) ui.firstMile = Object.keys(FIRST_MILE).find(k => FIRST_MILE[k][0] === first) || "RIDER_PICKUP";
     ui.intake = ui.firstMile === "HUB_DROP" ? "DROP_OFF" : "PICKUP";
@@ -319,6 +348,7 @@
     readOptions();
     const { cfg, file } = ui;
     if (!file) return;
+    if (!isBulk() && needsMerchant() && !ui.merchantId) return chooseStep("Choose the merchant for this file.");
     if (!isBulk() && ui.firstMile === "HUB_DROP" && !ui.hubId) return chooseStep("Choose the hub the parcels are dropped at.");
     ui.step = "checking";
     draw(`Checking ${file.name}`, `Reading the file and checking every row. Nothing ${isBulk() ? "changes" : "is created"} yet.`, `<p class="panel-subtitle" id="dfiChecking" style="padding:28px 0;text-align:center">Checking rows…</p>`, button("close", "Cancel"));
@@ -326,7 +356,7 @@
     if (!isBulk()) {
       form.append("kind", cfg.kind);
       if (cfg.merchantId) form.append("merchantId", cfg.merchantId);
-      if (cfg.forOps && ui.merchantId) form.append("merchantId", ui.merchantId);
+      if (needsMerchant(cfg) && ui.merchantId) form.append("merchantId", ui.merchantId);
       if (ui.firstMile === "HUB_DROP") {
         form.append("intake", "DROP_OFF");
         form.append("dropOffHubId", ui.hubId);
@@ -337,7 +367,7 @@
     }
     form.append("file", file, file.name);
     try {
-      const response = await DF.apiRaw(isBulk() ? q(`${base()}/validate`, { kind: bulkKind() }) : `${base()}/validate`, { method: "POST", body: form });
+      const response = await DF.apiRaw(isBulk() ? q(`${base()}/validate`, { kind: bulkKind(), action: bulkAction()?.action }) : `${base()}/validate`, { method: "POST", body: form });
       const job = await response.json();
       if (!ui) return;
       ui.job = job;
@@ -482,7 +512,7 @@
   async function commit(target) {
     target.disabled = true;
     try {
-      const job = await DF.api(isBulk() ? q(`/bulk-updates/${ui.job.id}/apply`, { kind: bulkKind() }) : `/imports/${ui.job.id}/commit`, { method: "POST" });
+      const job = await DF.api(isBulk() ? q(`/bulk-updates/${ui.job.id}/apply`, { kind: bulkKind(), action: ui.job.action || undefined }) : `/imports/${ui.job.id}/commit`, { method: "POST" });
       if (!ui) return;
       ui.job = job;
       if (["COMPLETED", "FAILED"].includes(job.status)) return finish();
@@ -625,7 +655,7 @@
             j.downloads.failedRows ? `<button type="button" class="button button-sm" data-dfi="failed" data-id="${esc(j.id)}">Not created (.xlsx)</button>` : "",
             j.result.created && ui.cfg.printLabels ? `<button type="button" class="button button-sm" data-dfi="labels" data-id="${esc(j.id)}">Labels</button>` : "",
           ].join(" ");
-          return `<tr data-import="${esc(j.number)}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${esc(j.merchant ? j.merchant.name : "Per row")}${j.intake === "DROP_OFF" ? `<span class="subcell" style="display:block;color:#8792a2;font-size:12px">Drop-off · ${esc(j.dropOffHub?.name || "")}</span>` : ""}</td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.created)}</td><td>${fmt(j.result.createdIncomplete)}</td><td>${fmt(j.status === "COMPLETED" ? j.result.notCreated : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
+          return `<tr data-import="${esc(j.number)}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${esc(j.merchant ? j.merchant.name : j.kind === "customer" ? "Customer parcels" : "—")}${j.intake === "DROP_OFF" ? `<span class="subcell" style="display:block;color:#8792a2;font-size:12px">Drop-off · ${esc(j.dropOffHub?.name || "")}</span>` : ""}</td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.created)}</td><td>${fmt(j.result.createdIncomplete)}</td><td>${fmt(j.status === "COMPLETED" ? j.result.notCreated : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
         })
         .join("");
       draw(
@@ -658,10 +688,16 @@
     if (!el || !ui) return;
     const action = el.dataset.dfi;
     if (action === "close") return close();
-    // The template's columns follow the merchant's package (operations: the merchant chosen for the file).
-    if (action === "template") return void template({ ...ui.cfg, merchantId: ui.cfg.merchantId || ui.merchantId || undefined });
+    // The template's Service list follows the merchant's package (operations: the merchant chosen in the dialog).
+    if (action === "template") {
+      if (ui.step === "choose" && !isBulk()) readOptions();
+      if (!isBulk() && needsMerchant() && !ui.merchantId && !ui.cfg.merchantId) return chooseStep("Choose the merchant first: the template's services follow its package.");
+      return void template({ ...ui.cfg, merchantId: ui.cfg.merchantId || (needsMerchant() ? ui.merchantId : "") || undefined });
+    }
     if (action === "download") return void bulkDownload(el);
     if (action === "preset") return bulkPreset(el.dataset.preset);
+    if (action === "pick-action") return bulkPickAction(el.dataset.action);
+    if (action === "actions") return void bulkActionStep();
     if (action === "history") return void history(ui.cfg);
     if (action === "new") return void open(ui.cfg);
     if (action === "check") return void check();
@@ -697,7 +733,8 @@
       readOptions();
       ui.cfg.kind = event.target.value;
       ui.merchantId = "";
-      return chooseStep();
+      ui.merchantSearch = "";
+      return void loadPackage().then(() => ui && chooseStep());
     }
     if (event.target.id === "dfiIntake") {
       const hub = document.getElementById("dfiHub");
@@ -716,6 +753,10 @@
     // Bulk update history: one page's bulk updates, or every page's.
     if (event.target.id === "dfiHKind" && isBulk()) {
       ui.historyKind = event.target.value;
+      return void bulkHistory(ui.cfg);
+    }
+    if (event.target.id === "dfiHAction" && isBulk()) {
+      ui.historyAction = event.target.value;
       return void bulkHistory(ui.cfg);
     }
     // Operations: the merchant chosen for the file brings its package (choices, template columns).
@@ -755,28 +796,76 @@
   const selectOf = (id, options, value, all) =>
     `<select class="select-small" id="${id}"><option value="">${esc(all)}</option>${options.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
 
-  /** What the page's template can do: its actions (what each needs and does) and the columns to fill in. */
-  function kindInfo() {
-    const def = kindDef();
-    if (!def) return "";
-    const editable = def.columns.filter(c => c.editable && !/^Set /.test(c.header)).map(c => c.header);
-    const sets = def.columns.some(c => /^Set /.test(c.header));
-    return `<section id="dfiKindInfo" data-kind="${esc(def.kind)}" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
-        <strong style="display:block;margin-bottom:4px">${esc(def.title)} · what this file can do</strong>
-        <span class="panel-subtitle" style="display:block;margin-bottom:6px">It lists ${esc(def.scope)}.</span>
-        <ul style="margin:0 0 6px;padding-left:18px">${def.actions
-          .map(a => `<li data-action-label="${esc(a.label)}"><strong>${esc(a.label)}</strong>: ${esc(a.does)} <span style="color:#637083">Needs: ${esc(a.needs)}.</span></li>`)
-          .join("")}</ul>
-        <span>Columns to fill in: <strong>${esc([...editable, ...(sets ? ["the Set … columns (complete details)"] : [])].join(", "))}</strong>. The other columns are the parcel's data (grey, locked).${
-          def.kind === "all" ? "" : " A file from another page is refused here; All parcels takes any page's file."
-        }</span>
+  /**
+   * Step 1: choose an action. The page's actions (GET /bulk-updates/actions?kind=) with a one-line
+   * description and how many parcels can take it now (the page's filters).
+   */
+  async function bulkActionStep(message = "") {
+    ui.step = "actions";
+    ui.action = null;
+    ui.file = null;
+    ui.exportInfo = "";
+    draw(bulkTitle(), "Loading the actions…", "", button("close", "Cancel"));
+    try {
+      const f = ui.filters;
+      const list = await DF.api(
+        q("/bulk-updates/actions", { kind: bulkKind(), preset: f.preset, status: f.status, merchantId: f.merchantId, hubId: f.hubId, intake: f.intake, sla: f.sla, incomplete: f.incomplete ? "true" : "", line: ui.cfg.line }),
+      );
+      if (!ui || ui.step !== "actions") return;
+      ui.actions = list;
+      // A page that opens the dialog for one action (cfg.bulkAction) skips this step once.
+      if (ui.cfg.bulkAction && !ui.autoPicked) {
+        ui.autoPicked = true;
+        if (list.some(a => a.action === ui.cfg.bulkAction)) return bulkPickAction(ui.cfg.bulkAction);
+      }
+      const items = list
+        .map(
+          a => `<button type="button" class="dfi-action" data-dfi="pick-action" data-action="${esc(a.action)}" style="display:grid;gap:3px;text-align:left;padding:12px 14px;border:1px solid #e3e8ef;border-radius:10px;background:#fff;cursor:pointer;font:inherit">
+            <span style="display:flex;gap:8px;align-items:baseline;justify-content:space-between"><strong style="font-size:14px">${esc(a.label)}</strong><span class="status ${tone(ui.cfg, a.count ? "info" : "warn")}" data-count="${esc(a.action)}">${esc(fmt(a.count))} parcel${a.count === 1 ? "" : "s"}</span></span>
+            <span class="panel-subtitle" style="font-size:13px">${esc(a.summary)}</span>
+          </button>`,
+        )
+        .join("");
+      draw(
+        bulkTitle(),
+        "Choose an action → download its Excel file → fill it in → upload → check the preview → apply. Each action has its own file with only the parcels and columns it needs.",
+        `<div style="display:grid;gap:10px"><h3 style="margin:0;font-size:15px">1 · Choose an action</h3><div id="dfiActions" data-kind="${esc(bulkKind())}" role="list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">${items}</div>${
+          message ? `<p role="alert" id="dfiMessage" style="margin:0;color:#b42318;font-weight:600">${esc(message)}</p>` : ""
+        }</div>`,
+        `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("history", "Bulk update history")}</div>${button("close", "Cancel")}`,
+      );
+    } catch (error) {
+      toast(describe(error));
+      close();
+    }
+  }
+
+  function bulkPickAction(action) {
+    ui.action = (ui.actions || []).find(a => a.action === action) || null;
+    if (!ui.action) return void bulkActionStep();
+    ui.file = null;
+    ui.exportInfo = "";
+    bulkChooseStep();
+  }
+
+  /** What the chosen action's file does and what to fill in. */
+  function actionInfo() {
+    const a = bulkAction();
+    if (!a) return "";
+    return `<section id="dfiActionInfo" data-action="${esc(a.action)}" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
+        <strong style="display:block;margin-bottom:4px">${esc(a.title)}</strong>
+        <span style="display:block;margin-bottom:4px">${esc(a.howTo)}</span>
+        <span class="panel-subtitle" style="display:block;margin-bottom:4px">${esc(a.does)} The file lists ${esc(a.parcels)}: ${esc(fmt(a.count))} now.</span>
+        <span>Columns to fill in: <strong>${esc(a.fill.join(", "))}</strong> (* = required). The other columns are the parcel's data (grey, locked). There is no Action column: the file is "${esc(a.label)}".</span>
       </section>`;
   }
 
   function bulkChooseStep(message = "") {
+    if (!bulkAction()) return void bulkActionStep(message);
     const { cfg, limits } = ui;
     const f = ui.filters;
     const def = kindDef();
+    const a = bulkAction();
     ui.step = "choose";
     const presets = PRESETS.filter(([v]) => !def || def.presets.includes(v)).map(
       ([v, l]) => `<button type="button" class="button button-sm${f.preset === v ? " button-primary" : ""}" data-dfi="preset" data-preset="${v}" aria-pressed="${f.preset === v}">${esc(l)}</button>`,
@@ -793,25 +882,25 @@
     ];
     const body = `<div style="display:grid;gap:18px">
       <section id="dfiExport" style="display:grid;gap:10px">
-        <h3 style="margin:0;font-size:15px">1 · Download the ${esc(def && def.kind !== "all" ? `${def.page} parcels` : "parcels to update")}</h3>
-        ${kindInfo()}
-        <p class="panel-subtitle" style="margin:0">${presets ? "Choose a quick filter or set your own" : "Narrow it with the filters below if you like"}${cfg.line ? ` (service line: <strong>${esc(LINE_LABEL[cfg.line])}</strong>)` : ""}. The Excel file lists the matching parcels with their data (grey, locked) and the action columns with dropdowns. <strong>Max ${esc(fmt(limits.maxRows))} parcels per file.</strong></p>
+        <h3 style="margin:0;font-size:15px">2 · Download the "${esc(a.label)}" file</h3>
+        ${actionInfo()}
+        <p class="panel-subtitle" style="margin:0">${presets ? "Choose a quick filter or set your own" : "Narrow it with the filters below if you like"}${cfg.line ? ` (service line: <strong>${esc(LINE_LABEL[cfg.line])}</strong>)` : ""}. Only the parcels that can take this action are in the file. <strong>Max ${esc(fmt(limits.maxRows))} parcels per file.</strong></p>
         <div role="group" aria-label="Quick filters" style="display:flex;gap:6px;flex-wrap:wrap">${presets}${button("preset", "Clear filters", { extra: 'data-preset=""' })}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">${fields.join("")}</div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${button("download", "Download for bulk update (.xlsx)", { primary: true, extra: 'id="dfiBDownload"' })}<span class="panel-subtitle" id="dfiExportInfo" role="status">${esc(ui.exportInfo || "")}</span></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${button("download", `Download "${a.label}" file (.xlsx)`, { primary: true, extra: 'id="dfiBDownload"' })}<span class="panel-subtitle" id="dfiExportInfo" role="status">${esc(ui.exportInfo || "")}</span></div>
       </section>
       <section style="display:grid;gap:10px">
-        <h3 style="margin:0;font-size:15px">2 · Upload the filled-in file</h3>
-        <p class="panel-subtitle" style="margin:0">Every row is checked first (lifecycle, hub, rider, details and whether the parcel changed since you downloaded it). Nothing changes until you press Apply. Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB.</p>
+        <h3 style="margin:0;font-size:15px">3 · Upload the filled-in file</h3>
+        <p class="panel-subtitle" style="margin:0">Every row is checked first (lifecycle, hub, rider, details and whether the parcel changed since you downloaded it). Only a "${esc(a.label)}" file is accepted here. Nothing changes until you press Apply. Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB.</p>
         ${fileDrop()}
       </section>
       ${message ? `<p role="alert" id="dfiMessage" style="margin:0;color:#b42318;font-weight:600">${esc(message)}</p>` : ""}
     </div>`;
     draw(
       bulkTitle(),
-      "Download → fill in the actions in Excel → upload → check the preview → apply. Each row is applied on its own, exactly like the single action.",
+      `${esc(a.title)} · download → fill in → upload → check the preview → apply. Each row is applied on its own, exactly like the single action.`,
       body,
-      `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("history", "Bulk update history")}</div>${button("close", "Cancel")}${button("check", "Check file", { primary: true, disabled: !ui.file })}`,
+      `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("actions", "‹ Change action")}${button("history", "Bulk update history")}</div>${button("close", "Cancel")}${button("check", "Check file", { primary: true, disabled: !ui.file })}`,
     );
     dropZone();
   }
@@ -842,6 +931,7 @@
     const day = (d, end) => (d ? new Date(`${d}T${end ? "23:59:59.999" : "00:00:00"}`).toISOString() : "");
     return q("/bulk-updates/export", {
       kind: bulkKind(),
+      action: bulkAction()?.action,
       preset: f.preset,
       status: f.status,
       merchantId: f.merchantId,
@@ -866,7 +956,7 @@
       const matched = Number(response.headers.get("x-matched") || count);
       const limit = Number(response.headers.get("x-row-limit") || 0);
       if (!count) {
-        ui.exportInfo = "No parcels match these filters.";
+        ui.exportInfo = `No parcels can take "${bulkAction()?.label}" with these filters.`;
       } else {
         const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "delivery-fast-bulk-update.xlsx";
         const url = URL.createObjectURL(await response.blob());
@@ -880,7 +970,7 @@
         ui.exportInfo =
           matched > count
             ? `Downloaded the first ${fmt(count)} of ${fmt(matched)} parcels (limit ${fmt(limit)} per file). Narrow the filters for the rest.`
-            : `Downloaded ${fmt(count)} parcel${count === 1 ? "" : "s"}. Fill in an Action per parcel, save, and upload it below.`;
+            : `Downloaded ${fmt(count)} parcel${count === 1 ? "" : "s"}. ${bulkAction()?.skipBlank ? "Fill in the rows to change (empty rows are skipped)" : "Delete the rows you don't want to change"}, save, and upload it below.`;
       }
       toast(ui.exportInfo);
     } catch (error) {
@@ -893,12 +983,12 @@
     if (el) el.textContent = ui.exportInfo;
   }
 
-  const BULK_BASE_COLUMNS = ["tracking_id", "status", "action", "rider", "new_status", "hub", "note"];
 
   function bulkRowsTable(filters) {
     const { job, rows } = ui;
     const header = new Map(job.columns.map(c => [c.key, c.header]));
-    const keys = new Set(BULK_BASE_COLUMNS);
+    // Tracking ID, status and the action's input columns (the Set … ones and Priority only when used).
+    const keys = new Set(["tracking_id", "status", ...job.columns.filter(c => c.editable && !c.key.startsWith("set_") && c.key !== "priority").map(c => c.key)]);
     for (const r of rows.items) {
       for (const k of Object.keys(r.cells || {})) if (k.startsWith("set_") || k === "priority") keys.add(k);
       for (const e of [...r.errors, ...r.warnings]) if (header.has(e.column)) keys.add(e.column);
@@ -955,16 +1045,16 @@
     ui.step = "preview";
     const c = job.counts;
     const notes = [
-      c.ignored ? `${fmt(c.ignored)} row${c.ignored === 1 ? "" : "s"} without an Action ${c.ignored === 1 ? "was" : "were"} ignored.` : "",
+      c.ignored ? `${fmt(c.ignored)} row${c.ignored === 1 ? "" : "s"} with nothing filled in ${c.ignored === 1 ? "was" : "were"} skipped.` : "",
       job.ignoredColumns?.length ? `Ignored columns (not in the download): ${job.ignoredColumns.join(", ")}.` : "",
       c.errors ? "Rows with errors are skipped: fix them in your file and upload it again, or download them with the reason for each." : "",
       c.warnings ? "Rows with warnings are applied; check them first." : "",
     ].filter(Boolean);
     draw(
       `Preview · ${job.fileName || "upload"}`,
-      `${esc(job.number)} · ${esc(job.kindTitle || "")} · nothing changes until you apply.`,
+      `${esc(job.number)} · ${esc(job.title || job.kindTitle || "")} · nothing changes until you apply.`,
       summary([
-        [`${fmt(c.rows)} rows with an action`, "info", "rows"],
+        [`${fmt(c.rows)} row${c.rows === 1 ? "" : "s"} checked`, "info", "rows"],
         [`${fmt(c.toApply)} will apply`, "good", "apply"],
         [`${fmt(c.warnings)} with warnings`, "warn", "warnings"],
         [`${fmt(c.errors)} with errors`, "bad", "errors"],
@@ -998,7 +1088,7 @@
     const rowsAvailable = job.rowsAvailable !== false;
     draw(
       failed ? `Bulk update ${job.number} stopped` : `Bulk update ${job.number} finished`,
-      esc([job.kindTitle, job.fileName].filter(Boolean).join(" · ")),
+      esc([job.title || job.kindTitle, job.fileName].filter(Boolean).join(" · ")),
       lead +
         summary([
           [`${fmt(r.applied)} applied`, "good", "applied"],
@@ -1025,11 +1115,16 @@
     ui.historyKind ??= bulkKind() === "all" ? "" : bulkKind();
     draw("Bulk update history", "Loading…", "", button("close", "Close"));
     try {
-      const [list, kinds] = await Promise.all([DF.api(q("/bulk-updates", { limit: 50, kind: ui.historyKind })), ui.kinds ? ui.kinds : DF.api("/bulk-updates/kinds").catch(() => [])]);
+      const [list, kinds] = await Promise.all([DF.api(q("/bulk-updates", { limit: 50, kind: ui.historyKind, action: ui.historyAction })), ui.kinds ? ui.kinds : DF.api("/bulk-updates/kinds").catch(() => [])]);
       if (!ui) return;
       ui.kinds = kinds;
       const kindFilter = `<label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;margin-bottom:10px">Page<select class="select-small" id="dfiHKind"><option value="">Every page</option>${kinds
         .map(k => `<option value="${esc(k.kind)}" ${k.kind === ui.historyKind ? "selected" : ""}>${esc(k.title)}</option>`)
+        .join("")}</select></label>`;
+      // Actions of the chosen page (every page: every action).
+      const actionOptions = [...new Map((ui.historyKind ? kinds.filter(k => k.kind === ui.historyKind) : kinds).flatMap(k => k.actions).map(a => [a.action, a.label])).entries()];
+      const actionFilter = `<label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;margin-bottom:10px">Action<select class="select-small" id="dfiHAction"><option value="">Every action</option>${actionOptions
+        .map(([value, label]) => `<option value="${esc(value)}" ${value === ui.historyAction ? "selected" : ""}>${esc(label)}</option>`)
         .join("")}</select></label>`;
       const rows = list.items
         .map(j => {
@@ -1039,13 +1134,13 @@
             j.downloads.failedRows ? `<button type="button" class="button button-sm" data-dfi="failed" data-id="${esc(j.id)}">Not applied (.xlsx)</button>` : "",
           ].join(" ");
           const done = j.status === "COMPLETED";
-          return `<tr data-bulk="${esc(j.number)}" data-kind="${esc(j.kind || "all")}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td data-col="kind">${esc(j.kindTitle || "")}</td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.applied)}</td><td>${fmt(j.result.alreadyDone)}</td><td>${fmt(done ? j.result.notApplied : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
+          return `<tr data-bulk="${esc(j.number)}" data-kind="${esc(j.kind || "all")}" data-action="${esc(j.action || "")}"><td><strong>${esc(j.number)}</strong><span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.fileName || "")}</span></td><td data-col="kind">${esc(j.title || j.kindTitle || "")}</td><td>${esc(when(j.createdAt))}<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(j.createdBy || "")}</span></td><td>${fmt(j.counts.rows)}</td><td>${fmt(j.result.applied)}</td><td>${fmt(j.result.alreadyDone)}</td><td>${fmt(done ? j.result.notApplied : j.counts.errors)}</td><td>${pill(ui.cfg, j.status === "PROCESSING" ? `${label} ${j.progress.percent}%` : label, key)}</td><td style="white-space:nowrap">${actions}</td></tr>`;
         })
         .join("");
       draw(
         "Bulk update history",
         `${list.items.length ? `The last ${fmt(list.items.length)} bulk update${list.items.length === 1 ? "" : "s"}` : "No bulk updates yet"} · each has its own number, recorded on every change in the audit log.`,
-        `${kindFilter}<div class="table-scroll" style="max-height:60vh;overflow:auto"><table id="dfiHistory"><thead><tr><th>BULK UPDATE</th><th>PAGE</th><th>UPLOADED</th><th>ROWS</th><th>APPLIED</th><th>ALREADY DONE</th><th>NOT APPLIED</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="9" class="empty-state">No bulk updates yet.</td></tr>`}</tbody></table></div>`,
+        `<div style="display:flex;gap:16px;flex-wrap:wrap">${kindFilter}${actionFilter}</div><div class="table-scroll" style="max-height:60vh;overflow:auto"><table id="dfiHistory"><thead><tr><th>BULK UPDATE</th><th>ACTION · PAGE</th><th>UPLOADED</th><th>ROWS</th><th>APPLIED</th><th>ALREADY DONE</th><th>NOT APPLIED</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="9" class="empty-state">No bulk updates yet.</td></tr>`}</tbody></table></div>`,
         `${button("new", "New bulk update")}${button("close", "Close", { primary: true })}`,
       );
     } catch (error) {
@@ -1065,6 +1160,17 @@
       return toast(describe(error));
     }
     const conf = { tones: DEFAULT_TONES, ...cfg };
+    // The Service choices are the parcel's package options (no "Same day": Express is the same-day service).
+    let pkg = null;
+    try {
+      pkg = await DF.api(conf.forOps ? (parcel.merchant?.id ? `/packages/effective?merchantId=${encodeURIComponent(parcel.merchant.id)}` : "/packages/effective?segment=CUSTOMER") : "/packages/me");
+    } catch {
+      pkg = null; // the current service stays the only choice
+    }
+    const currentSpeed = parcel.service?.speed || "REGULAR";
+    const speedChoices = (pkg?.options?.speeds?.length ? pkg.options.speeds : [currentSpeed]).map(code => [code, pkg?.labels?.speed?.[code] || (code === currentSpeed && parcel.service?.speedLabel) || code]);
+    if (!speedChoices.some(([code]) => code === currentSpeed)) speedChoices.unshift([currentSpeed, parcel.service?.speedLabel || currentSpeed]);
+    const banking = pkg?.package?.segment === "BANKING_FINANCIAL" || pkg?.segment === "BANKING_FINANCIAL" || parcel.merchant?.type === "BANKING_FINANCIAL";
     const missing = (parcel.missingLabels || []).join(", ");
     const zonesOf = d => catalog.zonesByDistrict?.[d] || [];
     const option = (v, selected, label = v) => `<option value="${esc(v)}" ${v === selected ? "selected" : ""}>${esc(label)}</option>`;
@@ -1084,8 +1190,8 @@
         ${field("dfiArea", "Area / landmark", input("dfiArea", parcel.delivery.area, 'maxlength="120"'))}
         ${field("dfiDistrict", "District", `<select class="select-small" id="dfiDistrict"><option value="">Choose</option>${(catalog.districts || []).map(d => option(d, district)).join("")}</select>`)}
         ${field("dfiZone", "Zone", `<select class="select-small" id="dfiZone"><option value="">Choose</option>${zonesOf(district).map(z => option(z, parcel.delivery.zone)).join("")}</select>`)}
-        ${field("dfiWeight", "Weight (kg)", input("dfiWeight", parcel.weightKg, 'type="number" min="0.01" max="50" step="0.01"'))}
-        ${field("dfiService", "Service", `<select class="select-small" id="dfiService">${[["REGULAR", "Regular"], ["SAME_DAY", "Same day"], ["EXPRESS", "Express"]].map(([v, l]) => option(v, parcel.serviceLevel, l)).join("")}</select>`)}
+        ${banking ? "" : field("dfiWeight", "Weight (kg)", input("dfiWeight", parcel.weightKg, 'type="number" min="0.01" max="50" step="0.01"'))}
+        ${speedChoices.length > 1 ? field("dfiService", "Service", `<select class="select-small" id="dfiService">${speedChoices.map(([v, l]) => option(v, currentSpeed, l)).join("")}</select>`) : ""}
       </div>
       ${conf.forOps ? field("dfiNote", "Note (staff only)", input("dfiNote", "", 'maxlength="500" placeholder="e.g. Merchant confirmed by phone"')) : ""}
     </form>`;
@@ -1124,7 +1230,7 @@
       if (value("dfiZone") && value("dfiZone") !== (parcel.delivery.zone || "")) delivery.zone = value("dfiZone");
       if (Object.keys(delivery).length) body.delivery = delivery;
       if (value("dfiWeight") && Number(value("dfiWeight")) !== Number(parcel.weightKg)) body.weightKg = Number(value("dfiWeight"));
-      if (value("dfiService") !== parcel.serviceLevel) body.serviceLevel = value("dfiService");
+      if (value("dfiService") && value("dfiService") !== currentSpeed) body.speed = value("dfiService");
       if (!Object.keys(body).length) return toast("Nothing changed.");
       if (value("dfiNote")) body.note = value("dfiNote");
       body.expectedVersion = parcel.version;

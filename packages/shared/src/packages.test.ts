@@ -154,7 +154,9 @@ describe("selection rules", () => {
     expect(packageProblems("ECOMMERCE", ["last.doorstep"])).toEqual(["Choose at least one first-mile option", "Choose at least one delivery proof method"]);
     expect(proofMethodsFor(ECOM, ["notify.delivery_code"])).toEqual(["OTP", "SIGNATURE", "PHOTO"]);
     expect(proofMethodsFor(ECOM, [])).toEqual(["SIGNATURE", "PHOTO"]);
-    expect(parseSpeedOption("Same day")).toBe("EXPRESS");
+    // "Same day" isn't a service option any more (Express is the same-day service).
+    expect(parseSpeedOption("Same day")).toBeUndefined();
+    expect(parseSpeedOption("Express")).toBe("EXPRESS");
     expect(parseSpeedOption("corporate urgent document")).toBe("URGENT");
     expect(parseLastMile("Hub Pickup")).toBe("HUB_COLLECT");
     expect(segmentOfMerchantType("ECOMMERCE")).toBe("ECOMMERCE");

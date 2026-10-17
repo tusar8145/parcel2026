@@ -1,7 +1,9 @@
 /*
- * Super admin → Import settings → "Spreadsheet imports": which columns of the e-commerce and the
- * document import templates are required, the value used when a cell is empty, where orders
- * without a destination are priced to, and the file limits (GET/PUT /imports/config, audited).
+ * Super admin → Import settings → "Spreadsheet imports": which columns of the three bulk-create
+ * templates (Customer parcel, E-commerce, Banking & Financial = API kind "document") are required,
+ * the value used when a cell is empty, where orders without a destination are priced to, and the
+ * file limits (GET/PUT /imports/config, audited). Columns of the old templates (Merchant, Parcel
+ * type, Packaging, Receiver relationship, Origin branch code, …) are gone from the config.
  * Templates, validation and the instructions sheet follow the settings at once; the template
  * download buttons show the result.
  */
@@ -10,7 +12,8 @@
   if (!DF) return;
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const toast = message => (typeof showToast === "function" ? showToast(message) : DF.toast?.(message));
-  const KINDS = { ecommerce: "E-commerce order template", document: "Banking & Financial consignment template" };
+  const KINDS = { customer: "Customer parcel template", ecommerce: "E-commerce template", document: "Banking & Financial template" };
+  const PACKAGE_ONLY = { cod: "Only when the package offers cash on delivery", openBox: "Only when the package offers open box" };
   const LIMITS = [
     ["merchantMaxRows", "Rows per file · merchants", "rows"],
     ["opsMaxRows", "Rows per file · operations", "rows"],
@@ -47,11 +50,11 @@
       .map(c => {
         const toggle = c.configurable
           ? `<button type="button" class="toggle ${c.required ? "on" : ""}" data-import-required="${esc(c.key)}" aria-pressed="${c.required}" aria-label="${esc(`${c.header} required`)}"></button>`
-          : `<span class="panel-subtitle">Per file or per row</span>`;
+          : `<span class="panel-subtitle">${c.required ? "Always required" : "Always optional"}</span>`;
         const dflt = c.defaultable
           ? `<input data-import-default="${esc(c.key)}" value="${esc(c.default ?? "")}" placeholder="${esc(c.builtInDefault ? `Built-in: ${c.builtInDefault}` : "No default")}" style="width:100%;padding:7px 9px;border:1px solid #e4e8ee;border-radius:6px;font-size:12px">`
           : `<span class="panel-subtitle">${c.key === "district" || c.key === "zone" ? "Default destination below" : "—"}</span>`;
-        return `<tr data-import-column="${esc(c.key)}"><td><strong>${esc(c.header)}</strong>${c.opsOnly ? `<span class="subcell" style="display:block;color:#8792a2;font-size:12px">Operations templates only</span>` : ""}</td><td>${toggle}</td><td style="min-width:180px">${dflt}</td><td style="font-size:12px;color:#637083;line-height:1.45">${esc(c.description)}</td></tr>`;
+        return `<tr data-import-column="${esc(c.key)}"><td><strong>${esc(c.header)}</strong>${c.packageOnly ? `<span class="subcell" style="display:block;color:#8792a2;font-size:12px">${esc(PACKAGE_ONLY[c.packageOnly] || "")}</span>` : ""}</td><td>${toggle}</td><td style="min-width:180px">${dflt}</td><td style="font-size:12px;color:#637083;line-height:1.45">${esc(c.description)}</td></tr>`;
       })
       .join("");
   }
@@ -70,8 +73,10 @@
     main.insertAdjacentHTML(
       "beforeend",
       `<section class="panel" id="importSettings" style="margin-top:14px">
-        <div class="panel-heading"><div><h2 class="panel-title">Spreadsheet imports</h2><p class="panel-subtitle">Required columns and defaults for the merchant and operations Excel imports. Rows that have every required column and only valid values are created; missing delivery details make them “Needs info”.</p></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="button button-sm" data-import-template="ecommerce">E-commerce template</button><button type="button" class="button button-sm" data-import-template="document">Banking &amp; Financial template</button></div></div>
+        <div class="panel-heading"><div><h2 class="panel-title">Spreadsheet imports</h2><p class="panel-subtitle">Required columns and defaults of the three bulk-create templates (merchant and operations Excel imports). Rows that have every required column and only valid values are created; missing delivery details make them “Needs info”. The template buttons download each one with the category's default package.</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${Object.entries(KINDS)
+          .map(([k, label]) => `<button type="button" class="button button-sm" data-import-template="${k}">${esc(label)}</button>`)
+          .join("")}</div></div>
         <div style="display:flex;gap:6px;margin:12px 0" role="tablist">${Object.entries(KINDS)
           .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${tab === k ? " button-primary" : ""}" data-import-tab="${k}" aria-selected="${tab === k}">${esc(label)}</button>`)
           .join("")}</div>
@@ -128,7 +133,7 @@
       if (template) {
         event.stopImmediatePropagation();
         try {
-          await DF.download(`/imports/templates/${template.dataset.importTemplate}?for=merchant`);
+          await DF.download(`/imports/templates/${template.dataset.importTemplate}`);
         } catch (error) {
           toast(DF.describe(error));
         }

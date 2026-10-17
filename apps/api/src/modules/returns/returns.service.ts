@@ -35,7 +35,7 @@ const SCHEDULABLE: ParcelStatus[] = ["AT_HUB", "RETRY_SCHEDULED", "EXCEPTION"];
 const reason = z.string().trim().min(3, "Enter the reason (at least 3 characters)").max(300, "Use at most 300 characters");
 export const returnRequestSchema = z.object({ reason });
 export const listReturnsQuerySchema = pageQuerySchema.extend({
-  /** requested: asked for, not yet on a run · scheduled: on a run · returned: back with the merchant · received: merchant confirmed. */
+  /** requested: asked for (or scheduled for return), not yet on a run · scheduled: on a run · returned: back with the merchant · received: merchant confirmed. */
   stage: z.enum(["requested", "scheduled", "returned", "received", "all"]).default("all"),
   merchantId: z.uuid().optional(),
   q: z.string().trim().max(60).optional(),
@@ -48,6 +48,11 @@ export const createReturnRunSchema = z.object({
   /** Used for parcels that have no return reason yet. */
   reason: reason.optional(),
   note: z.string().trim().max(500).optional(),
+});
+export const addToReturnRunSchema = z.object({
+  trackingIds: z.array(z.string().trim().min(4).max(40)).min(1, "Choose at least one parcel").max(200, "At most 200 parcels per run"),
+  /** Used for parcels that have no return reason yet. */
+  reason: reason.optional(),
 });
 export const dispatchReturnRunSchema = z.object({ riderId: z.uuid().optional() });
 export const completeReturnRunSchema = z.object({
@@ -176,7 +181,8 @@ export class ReturnsService {
   async list(actor: Actor, query: z.infer<typeof listReturnsQuerySchema>) {
     if (query.merchantId && !isStaff(actor) && !merchantIdsOf(actor).includes(query.merchantId)) throw forbidden("You're not a member of this merchant");
     const stageWhere: Record<string, Prisma.ParcelWhereInput> = {
-      requested: { returnRequestedAt: { not: null }, status: { in: RETURNABLE } },
+      // Asked for and not on a run yet, including parcels scheduled for return without a run.
+      requested: { OR: [{ returnRequestedAt: { not: null }, status: { in: RETURNABLE } }, { status: "RETURN_SCHEDULED", returnRunId: null }] },
       scheduled: { status: "RETURN_SCHEDULED" },
       returned: { status: "RETURNED", returnReceivedAt: null },
       received: { status: "RETURNED", returnReceivedAt: { not: null } },
@@ -308,17 +314,7 @@ export class ReturnsService {
         if (!merchant) throw notFound("Merchant");
         await this.rider(tx, input.riderId);
         const ids = [...new Set(input.trackingIds.map(t => t.toUpperCase()))];
-        const parcels = await tx.parcel.findMany({ where: { trackingId: { in: ids } } });
-        const problems: { trackingId: string; message: string }[] = [];
-        for (const t of ids) {
-          const p = parcels.find(x => x.trackingId === t);
-          if (!p) problems.push({ trackingId: t, message: "Not found" });
-          else if (p.merchantId !== input.merchantId) problems.push({ trackingId: t, message: "Belongs to another merchant" });
-          else if (!SCHEDULABLE.includes(p.status as ParcelStatus)) problems.push({ trackingId: t, message: `Is ${p.status}; only parcels at a hub, awaiting retry or in exception can be returned` });
-          else if (!p.returnReason && !input.reason) problems.push({ trackingId: t, message: "Has no return reason; enter one for the run" });
-          else if (hubs && p.currentHubId && !hubs.includes(p.currentHubId)) problems.push({ trackingId: t, message: "Is held at another hub" });
-        }
-        if (problems.length) throw new AppError("PARCELS_NOT_RETURNABLE", `${problems.length} parcel(s) can't go on this run`, HttpStatus.UNPROCESSABLE_ENTITY, { problems });
+        const parcels = await this.runnable(tx, ids, input.merchantId, input.reason, hubs);
         const run = await tx.returnRun.create({
           data: {
             number: await nextNumber(tx, "RR"),
@@ -340,8 +336,74 @@ export class ReturnsService {
     return this.run(actor, id);
   }
 
+  /**
+   * The parcels for a run of this merchant, or PARCELS_NOT_RETURNABLE with one line per problem. Parcels
+   * already scheduled for return without a run (e.g. "Return to sender" in Courier Operations) join it too.
+   */
+  private async runnable(tx: Db, ids: string[], merchantId: string, reasonText: string | undefined, hubs: string[] | null) {
+    const parcels = await tx.parcel.findMany({ where: { trackingId: { in: ids } } });
+    const problems: { trackingId: string; message: string }[] = [];
+    for (const t of ids) {
+      const p = parcels.find(x => x.trackingId === t);
+      if (!p) problems.push({ trackingId: t, message: "Not found" });
+      else if (p.merchantId !== merchantId) problems.push({ trackingId: t, message: "Belongs to another merchant" });
+      else if (p.status === "RETURN_SCHEDULED" && p.returnRunId) problems.push({ trackingId: t, message: "Is already on a return run" });
+      else if (p.status !== "RETURN_SCHEDULED" && !SCHEDULABLE.includes(p.status as ParcelStatus))
+        problems.push({ trackingId: t, message: `Is ${p.status}; only parcels at a hub, awaiting retry or in exception can be returned` });
+      else if (!p.returnReason && !reasonText) problems.push({ trackingId: t, message: "Has no return reason; enter one for the run" });
+      else if (hubs && p.currentHubId && !hubs.includes(p.currentHubId)) problems.push({ trackingId: t, message: "Is held at another hub" });
+    }
+    if (problems.length) throw new AppError("PARCELS_NOT_RETURNABLE", `${problems.length} parcel(s) can't go on this run`, HttpStatus.UNPROCESSABLE_ENTITY, { problems });
+    return parcels;
+  }
+
+  /** Adds parcels to a planned run of their merchant (the same checks and RETURN_SCHEDULED step as a new run). */
+  async addToRun(actor: Actor, id: string, input: z.infer<typeof addToReturnRunSchema>, meta: RequestMeta) {
+    const after = this.workflow.newAfterCommit();
+    const hubs = opsHubScope(actor);
+    let merchantId = "";
+    await this.prisma.$transaction(
+      async tx => {
+        const run = await this.runForUpdate(tx, actor, id);
+        merchantId = run.merchantId;
+        if (run.status !== "PLANNED") throw conflict("RUN_NOT_PLANNED", "Parcels can only be added to a planned run");
+        const ids = [...new Set(input.trackingIds.map(t => t.toUpperCase()))];
+        const parcels = await this.runnable(tx, ids, run.merchantId, input.reason, hubs);
+        for (const parcel of parcels) await this.schedule(tx, actor, parcel, run, input.reason, meta, after);
+        await this.audit.record(actor, { action: "return_run.add_parcels", entityType: "return_run", entityId: run.id, data: { number: run.number, trackingIds: ids } }, meta, tx);
+      },
+      { timeout: 30_000 },
+    );
+    await this.workflow.flush(after);
+    this.publishRun(id, merchantId);
+    return this.run(actor, id);
+  }
+
   private async schedule(tx: Db, actor: Actor, parcel: Parcel, run: ReturnRun, fallbackReason: string | undefined, meta: RequestMeta, after: AfterCommit) {
     const reasonText = parcel.returnReason ?? fallbackReason!;
+    // Already scheduled for return (without a run): it joins the run, no status change.
+    if (parcel.status === "RETURN_SCHEDULED") {
+      const { count } = await tx.parcel.updateMany({
+        where: { id: parcel.id, version: parcel.version, status: "RETURN_SCHEDULED", returnRunId: null },
+        data: { returnRunId: run.id, returnReason: reasonText, returnCharge: parcel.returnCharge ?? returnChargeFor(parcel), deliveryRiderId: null, version: { increment: 1 } },
+      });
+      if (!count) throw conflict("PARCEL_CHANGED", `${parcel.trackingId} was just updated by someone else. Refresh and try again.`);
+      await tx.trackingEvent.create({
+        data: {
+          parcelId: parcel.id,
+          status: "RETURN_SCHEDULED",
+          title: `Added to return run ${run.number}`,
+          description: `The parcel will be returned to the sender (${reasonText}).`,
+          visibility: "INTERNAL",
+          actorUserId: actor.kind === "user" ? actor.userId : null,
+          actorLabel: actorLabel(actor),
+          metadata: { returnRunId: run.id, returnRun: run.number },
+        },
+      });
+      const fresh = await tx.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
+      after.realtime.push({ ...parcelEvent(fresh), staffPermission: "parcel:read:any" });
+      return;
+    }
     await this.workflow.transition(
       tx,
       parcel,

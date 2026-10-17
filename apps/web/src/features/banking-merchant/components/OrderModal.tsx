@@ -1,3 +1,5 @@
+// The order form (shared/merchant-bridge.js books it on the API). The page script (03.js) adds the
+// delivery address, parcel and service fields below the recipient in the order the bridge expects.
 export default function OrderModal() {
   return (
     <div className="modal-backdrop" id="orderModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -6,43 +8,24 @@ export default function OrderModal() {
         {" "}
         <div className="modal-head">
           <div>
-            <h2 id="modalTitle">Create a new order</h2>
-            <p>Add an order and prepare it for domestic delivery.</p>
+            <h2 id="modalTitle">Create a new delivery request</h2>
+            <p>{"Recipient, delivery address, product and service. Banking & Financial deliveries are priced by route and service only."}</p>
           </div>
           <button className="modal-close" id="closeModal" aria-label="Close">
             ×
           </button>
         </div>{" "}
-        <form id="orderForm">
+        <form id="orderForm" noValidate>
           {" "}
           <div className="form-grid">
             {" "}
             <div className="form-field">
-              <label htmlFor="customerName">Customer name</label>
-              <input id="customerName" name="customerName" required placeholder="e.g. Jamie Lee" />
+              <label htmlFor="customerName">Recipient name</label>
+              <input id="customerName" name="customerName" required maxLength={120} placeholder="e.g. Jamie Lee" />
             </div>{" "}
             <div className="form-field">
-              <label htmlFor="customerPhone">Phone number</label>
-              <input id="customerPhone" name="customerPhone" required placeholder="+880 1XXX-XXXXXX" />
-            </div>{" "}
-            <div className="form-field full">
-              <label htmlFor="deliveryAddress">Street, house / apartment / unit</label>
-              <input
-                id="deliveryAddress"
-                name="deliveryAddress"
-                required
-                placeholder="Street, house / apartment / unit"
-              />
-            </div>{" "}
-            <div className="form-field">
-              <label htmlFor="orderType">Service type</label>
-              <select id="orderType">
-                <option>Document delivery</option>
-              </select>
-            </div>{" "}
-            <div className="form-field">
-              <label htmlFor="orderAmount">Declared value (optional)</label>
-              <input id="orderAmount" type="number" min="0" placeholder="0.00" />
+              <label htmlFor="customerPhone">Recipient phone</label>
+              <input id="customerPhone" name="customerPhone" required placeholder="17XXXXXXXX" />
             </div>{" "}
           </div>{" "}
           <div className="modal-actions">
@@ -50,7 +33,7 @@ export default function OrderModal() {
               Cancel
             </button>
             <button className="button button-primary" type="submit">
-              Create order
+              Create request
             </button>
           </div>{" "}
         </form>{" "}

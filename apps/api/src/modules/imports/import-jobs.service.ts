@@ -19,9 +19,9 @@ import { opsHubScope } from "../parcels/ops-scope";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
 import { readCsv, writeCsv } from "./csv";
-import { columnsFor, kindKeyOf, KIND_ENUM, matchHeaders, type ColumnKey, type ImportKindKey } from "./columns";
+import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, merchantTypeOf, segmentOf, type ColumnKey, type ImportKindKey } from "./columns";
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
-import { ImportEngineService, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
+import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
 import { FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
@@ -55,6 +55,12 @@ const STATUS_FILTER: Record<string, ImportRowStatus[] | undefined> = {
   created: ["CREATED"],
   failed: ["FAILED"],
   not_created: ["ERROR", "FAILED"],
+};
+
+const TEMPLATE_FILE: Record<ImportKindKey, string> = {
+  ecommerce: "delivery-fast-ecommerce-orders-template.xlsx",
+  document: "delivery-fast-banking-financial-template.xlsx",
+  customer: "delivery-fast-customer-parcels-template.xlsx",
 };
 
 const describeErrors = (errors: { column: string; message: string }[], headerOf: (key: string) => string) => errors.map(e => `${headerOf(e.column)}: ${e.message}`).join("; ");
@@ -178,16 +184,45 @@ export class ImportJobsService implements OnApplicationBootstrap {
 
   // ───────────── templates ─────────────
 
-  async template(actor: Actor, kind: ImportKindKey, query: { for?: "merchant" | "ops"; merchantId?: string }) {
+  /**
+   * The template of a category for the file's merchant (operations: the merchant chosen in the
+   * modal; merchants: their own; customer parcels: none). Its Service list follows that merchant's
+   * package (customer parcels: the Customer default; operations without a merchant yet: the
+   * category's default). A merchant can only download its own category's template.
+   */
+  async template(actor: Actor, kind: ImportKindKey, query: { merchantId?: string }) {
     const scope = this.scopeFor(actor, query.merchantId);
-    const forOps = scope.forOps && query.for !== "merchant";
+    await this.checkSubject(scope, kind, { merchantRequired: false });
     const settings = await this.config.settings();
-    const ctx = await this.engine.context({ kind, forOps, settings, merchantId: scope.merchantId });
-    const limits = this.limitsFor(settings, forOps);
-    return {
-      buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb }),
-      fileName: `delivery-fast-${kind === "document" ? "document-consignments" : "ecommerce-orders"}-template.xlsx`,
-    };
+    const ctx = await this.engine.context({ kind, settings, merchantId: scope.merchantId });
+    const limits = this.limitsFor(settings, scope.forOps);
+    return { buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb }), fileName: TEMPLATE_FILE[kind] };
+  }
+
+  /**
+   * The file's category against who it books for: merchant templates need a merchant of that
+   * category (WRONG_TEMPLATE otherwise; operations choose one in the modal), customer parcels are
+   * operations only and have no merchant.
+   */
+  private async checkSubject(scope: Scope, kind: ImportKindKey, opts: { merchantRequired: boolean }) {
+    const type = merchantTypeOf(kind);
+    if (!type) {
+      if (!scope.forOps) throw forbidden("Customer parcel imports are for operations");
+      if (scope.merchantId) throw new AppError("VALIDATION_FAILED", "Customer parcels have no merchant: choose Customer parcel without a merchant, or the merchant's own template", 422);
+      return null;
+    }
+    if (!scope.merchantId) {
+      if (opts.merchantRequired) throw new AppError("MERCHANT_REQUIRED", `Choose the ${KIND_LABEL[kind]} merchant for this file`, HttpStatus.UNPROCESSABLE_ENTITY);
+      return null;
+    }
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: scope.merchantId }, select: { status: true, type: true, name: true } });
+    if (!merchant) throw notFound("Merchant");
+    if (merchant.type !== type) {
+      const theirs = merchant.type === "BANKING_FINANCIAL" ? KIND_LABEL.document : KIND_LABEL.ecommerce;
+      throw new AppError("WRONG_TEMPLATE", `${merchant.name} is a ${theirs} merchant: use the ${theirs} template`, 422, { merchantType: merchant.type });
+    }
+    if (opts.merchantRequired && merchant.status !== "ACTIVE") throw forbidden("This merchant account is not active yet");
+    return merchant;
   }
 
   // ───────────── validate (dry run) ─────────────
@@ -279,8 +314,10 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const hubId = options.dropHubId ?? options.dropOffHubId;
     if (hubId && !dropping) throw new AppError("VALIDATION_FAILED", "A rider pickup import has no drop-off hub", 422);
     if (options.intake === "PICKUP" && options.firstMile === "HUB_DROP") throw new AppError("VALIDATION_FAILED", "Choose either rider pickup or drop at hub", 422);
-    // The package is checked first: a merchant without drop at hub hears that, not "choose a hub".
-    if (scope.merchantId && options.firstMile === "HUB_DROP") await this.checkServices(scope.merchantId, { firstMile: "HUB_DROP", lastMile: options.lastMile, notifications: options.notifications });
+    // Who the file books for (operations: the merchant chosen in the modal, or customer parcels).
+    await this.checkSubject(scope, options.kind, { merchantRequired: true });
+    // The package is checked first: a package without drop at hub says so, not "choose a hub".
+    if (dropping) await this.checkServices(scope.merchantId, options.kind, { firstMile: "HUB_DROP", lastMile: options.lastMile, notifications: options.notifications });
     const dropOff = dropping ? await this.dropOffHub(actor, hubId) : null;
     const services: ImportServiceOptions = {
       firstMile: dropOff ? "HUB_DROP" : options.firstMile,
@@ -288,15 +325,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       lastMile: options.lastMile,
       notifications: options.notifications,
     };
-    if (scope.merchantId) await this.checkServices(scope.merchantId, services);
-    if (scope.merchantId) {
-      const merchant = await this.prisma.merchant.findUnique({ where: { id: scope.merchantId }, select: { status: true, type: true, name: true } });
-      if (!merchant) throw notFound("Merchant");
-      if (merchant.status !== "ACTIVE") throw forbidden("This merchant account is not active yet");
-      const expected = options.kind === "document" ? "BANKING_FINANCIAL" : "ECOMMERCE";
-      if (merchant.type !== expected)
-        throw new AppError("WRONG_TEMPLATE", `${merchant.name} is ${merchant.type === "BANKING_FINANCIAL" ? "a document" : "an e-commerce"} merchant: use the ${merchant.type === "BANKING_FINANCIAL" ? "document" : "e-commerce"} template`, 422);
-    }
+    // First / last mile, drop hub and messages: only what the file's package offers.
+    await this.checkServices(scope.merchantId, options.kind, services);
 
     const started = Date.now();
     const fileName = (("fileName" in upload && upload.fileName) || options.fileName || "upload").slice(0, 200);
@@ -310,7 +340,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       return this.objectsToRows(options.kind, upload.rows);
     });
     if (!parsed.rows.length) throw new AppError("EMPTY_FILE", "The file has no orders below the header row.", 422);
-    const ctx = await this.engine.context({ kind: options.kind, forOps: scope.forOps, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
+    const ctx = await this.engine.context({ kind: options.kind, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
     const results = await this.engine.validate(ctx, parsed.rows);
     const parsedMs = Date.now() - started;
 
@@ -376,9 +406,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
     return { ...(await this.view(job)), rows: await this.rowsPage(job, { filter: "all", page: 1, pageSize: 50 }), timings: { validateMs: parsedMs } };
   }
 
-  /** A merchant file's choices against its package (SERVICE_NOT_IN_PACKAGE before anything is parsed). */
-  private async checkServices(merchantId: string, services: ImportServiceOptions) {
-    const pkg = await this.packages.effective({ merchantId });
+  /** The modal's choices against the file's package (the merchant's, or the Customer default): SERVICE_NOT_IN_PACKAGE before anything is parsed. */
+  private async checkServices(merchantId: string | null, kind: ImportKindKey, services: ImportServiceOptions) {
+    const pkg = await this.packages.effective(merchantId ? { merchantId } : { segment: segmentOf(kind) });
     const { problems } = resolveSelection(pkg.segment, pkg.services, { firstMile: services.firstMile, lastMile: services.lastMile, notifications: services.notifications });
     if (problems.length) throw this.packages.selectionError(problems);
   }
@@ -398,8 +428,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
   // ───────────── reading ─────────────
 
   private headerOf(job: Pick<ImportJob, "kind">) {
-    const cols = columnsFor(kindKeyOf(job.kind), true);
-    return (key: string) => cols.find(c => c.key === key)?.header ?? (key === "row" ? "Row" : key);
+    const cols = COLUMNS[kindKeyOf(job.kind)];
+    const other: Record<string, string> = { row: "Row", cod_amount: "COD amount", merchant: "Merchant" };
+    return (key: string) => cols.find(c => c.key === key)?.header ?? other[key] ?? key;
   }
 
   async view(job: ImportJob) {
@@ -411,7 +442,6 @@ export class ImportJobsService implements OnApplicationBootstrap {
     ]);
     const settings = job.settings as unknown as ImportSettings & { forOps?: boolean; ignoredColumns?: string[]; services?: ImportServiceOptions };
     const kind = kindKeyOf(job.kind);
-    const forOps = settings.forOps ?? job.source === "OPERATIONS";
     const toBook = job.validRows + job.incompleteRows;
     // The price of every row that will be (or was) booked: the preview total.
     const totals = await this.prisma.importRow.aggregate({ where: { jobId: job.id, status: { in: ["VALID", "INCOMPLETE", "CREATED"] } }, _sum: { charge: true }, _count: { _all: true } });
@@ -440,7 +470,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
         failed: job.failedCount,
         notCreated: job.status === "COMPLETED" ? job.totalRows - job.createdCount : job.errorRows + job.failedCount,
       },
-      columns: columnsFor(kind, forOps).map(c => ({ key: c.key, header: c.header, required: !!settings.templates?.[kind]?.[c.key]?.required })),
+      kindLabel: KIND_LABEL[kind],
+      columns: columnsFor(kind).map(c => ({ key: c.key, header: c.header, required: !!settings.templates?.[kind]?.[c.key]?.required })),
       ignoredColumns: settings.ignoredColumns ?? [],
       /** The import modal's choices (service packages) and the total delivery charge of the rows to book. */
       services: {
@@ -472,12 +503,12 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const headerOf = this.headerOf(job);
     // Products whose "Send SMS & email" switch is off: those rows are booked with no messages (the commit re-reads them).
     const silent = await this.prisma.parcelProduct.findMany({
-      where: { segment: job.kind === "DOCUMENT" ? "BANKING_FINANCIAL" : "ECOMMERCE", sendMessages: false },
+      where: { segment: productSegmentOf(kindKeyOf(job.kind)), sendMessages: false },
       select: { id: true, name: true },
     });
     const silentNames = new Set(silent.flatMap(p => [p.id, p.name.toLowerCase()]));
     const messagesOff = (cells: unknown) => {
-      const product = String((cells as Record<string, unknown> | null)?.product_type ?? "").trim().toLowerCase();
+      const product = productNameOfCell(String((cells as Record<string, unknown> | null)?.product_type ?? ""));
       return !!product && silentNames.has(product);
     };
     return {
@@ -544,18 +575,18 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const settings = job.settings as unknown as ImportSettings & { forOps?: boolean };
     const forOps = settings.forOps ?? job.source === "OPERATIONS";
     const headerOf = this.headerOf(job);
+    const live = await this.config.settings();
+    const ctx = await this.engine.context({ kind, settings: { ...live, templates: { ...live.templates, ...(settings.templates ?? {}) } }, merchantId: job.merchantId });
     const failed = rows.map(r => ({
       cells: r.cells as Partial<Record<ColumnKey, string>>,
       error: `Row ${r.rowNumber}: ${describeErrors((r.errors as { column: string; message: string }[] | null) ?? [], headerOf)}`,
     }));
     const base = `${job.number}-not-created`;
     if (format === "csv") {
-      const cols = columnsFor(kind, forOps);
+      const cols = ctx.columns;
       const csv = writeCsv([[...cols.map(c => c.header), "Error"], ...failed.map(f => [...cols.map(c => f.cells[c.key] ?? ""), f.error])]);
       return { buffer: Buffer.from(csv, "utf8"), fileName: `${base}.csv`, contentType: "text/csv; charset=utf-8" };
     }
-    const live = await this.config.settings();
-    const ctx = await this.engine.context({ kind, forOps, settings: { ...live, templates: settings.templates ?? live.templates }, merchantId: job.merchantId });
     const limits = this.limitsFor(live, forOps);
     return {
       buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, rows: failed }),
@@ -680,8 +711,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       // The required columns and defaults shown in the preview; live catalog, merchants and prices.
       const ctx = await this.engine.context({
         kind,
-        forOps: stored.forOps ?? job.source === "OPERATIONS",
-        settings: { ...settings, templates: stored.templates ?? settings.templates, defaultDestination: stored.defaultDestination ?? settings.defaultDestination },
+        settings: { ...settings, templates: { ...settings.templates, ...(stored.templates ?? {}) }, defaultDestination: stored.defaultDestination ?? settings.defaultDestination },
         merchantId: job.merchantId,
         dropOffHubId: job.dropOffHubId,
         services: stored.services,
@@ -744,18 +774,26 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const ok: { row: ImportRow; result: RowResult }[] = [];
     const refused: { row: ImportRow; errors: { column: string; message: string }[] }[] = [];
     for (const [i, result] of results.entries()) {
-      if (result.status === "ERROR" || !result.booking || !result.merchantId) refused.push({ row: rows[i], errors: result.errors });
+      if (result.status === "ERROR" || !result.booking || (!result.merchantId && ctx.kind !== "customer")) refused.push({ row: rows[i], errors: result.errors });
       else ok.push({ row: rows[i], result });
     }
+    // Merchant files book as the merchant (channel by who uploads); customer parcels as operations, with no merchant.
+    const contextKey = (result: RowResult) => result.merchantId ?? "customer";
     for (const { result } of ok)
-      if (!contexts.has(result.merchantId!)) contexts.set(result.merchantId!, await this.parcels.importContext(actor, result.merchantId!));
+      if (!contexts.has(contextKey(result)))
+        contexts.set(
+          contextKey(result),
+          result.merchantId
+            ? await this.parcels.importContext(actor, result.merchantId)
+            : { channel: "OPERATIONS", customerId: null, merchantId: null, segment: "CUSTOMER", discountPercent: 0, actorLabel: `${actor.name} (operations)` },
+        );
 
     const bookAll = async (items: typeof ok) => {
       const after = this.workflow.newAfterCommit();
       await this.prisma.$transaction(
         async tx => {
           for (const { row, result } of items) {
-            const parcel = await this.parcels.bookImported(actor, contexts.get(result.merchantId!)!, result.booking!, meta, {
+            const parcel = await this.parcels.bookImported(actor, contexts.get(contextKey(result))!, result.booking!, meta, {
               tx,
               after,
               notify: false,

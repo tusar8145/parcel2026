@@ -129,9 +129,10 @@ test("stage counts, the New orders filter, the next action, the drawer from the 
   await expect(page.locator("#stageBulkUpdate")).toBeVisible();
   await expect(page.locator("#courierImport")).toBeVisible();
   await page.click("#stageBulkUpdate");
-  // The page's own bulk file: New orders parcels and actions only (bridge-bulk.js, /bulk-updates/kinds).
+  // The page's own bulk actions, one file each (bridge-bulk.js, /bulk-updates/actions?kind=new_orders).
   await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update New orders by Excel");
-  await expect(page.locator("#dfiKindInfo")).toHaveAttribute("data-kind", "new_orders");
+  await expect(page.locator("#dfiActions")).toHaveAttribute("data-kind", "new_orders");
+  await expect(page.locator('#dfiActions [data-action="accept_pickup"]')).toContainText("Accept & assign pickup rider");
   await page.click('[data-dfi="close"]');
 
   // ── Next action: "Accept & assign rider" on the pending order opens the existing assign dialog ──

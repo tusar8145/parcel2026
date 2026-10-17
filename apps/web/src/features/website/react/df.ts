@@ -90,10 +90,12 @@ export interface Catalog {
 
 export interface CustomerPackage {
   options: { firstMiles: string[]; lastMiles: string[]; speeds: string[]; cod: boolean; defaultFirstMile?: string; defaultLastMile?: string };
-  labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string> };
+  labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
   notifications: { code: string; title: string }[];
   dropHubs: { id: string; name: string; address: string }[];
   collectHubs: { id: string; name: string; address: string }[];
+  /** Active Customer & E-commerce products with their type (REGULAR, DOCUMENT, BOOKS). */
+  products?: { name: string; type: string; sendMessages: boolean }[];
 }
 
 interface WebsiteBridge {

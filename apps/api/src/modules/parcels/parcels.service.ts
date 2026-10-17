@@ -60,7 +60,7 @@ export interface BookingOptions {
   /** Already priced and checked against the package (imports re-check each row with PackagesService.quote). */
   quote?: PackageQuote;
   /** The product, when already resolved (null = none). */
-  product?: { id: string; name: string; type: string; mutedNotifications: string[] } | null;
+  product?: { id: string; name: string; type: string; sendMessages: boolean } | null;
 }
 
 /** A booking whose delivery details may be missing (imports book incomplete orders; see parcels/incomplete.ts). */

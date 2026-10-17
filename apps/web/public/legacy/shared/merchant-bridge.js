@@ -966,7 +966,7 @@
       const box = document.createElement("div");
       box.id = "dfOrderServices";
       box.style.display = "contents";
-      box.innerHTML = services.block(S.pkg, { prefix: "merchantSvc" });
+      box.innerHTML = services.block(S.pkg, { prefix: "merchantSvc", productSelect: "merchantProduct" });
       hint.before(box);
     }
     for (const id of ["merchantServiceLevel", "merchantDocumentType"]) {
@@ -974,7 +974,7 @@
       if (f) f.hidden = true;
     }
     const product = $("merchantProduct");
-    if (product && S.pkg.products.length && product.dataset.pkg !== S.pkg.package.versionId) {
+    if (product && product.dataset.pkg !== S.pkg.package.versionId) {
       // Optional: the product's type (Regular, Document, Books) prices the order; none = Regular.
       product.innerHTML = `<option value="">No product (Regular)</option>${S.pkg.products.map(p => option(p.name, `${p.name} · ${S.pkg.labels.productType?.[p.type] || p.type}`)).join("")}`;
       product.dataset.pkg = S.pkg.package.versionId;
@@ -1752,7 +1752,7 @@
     }
     if (t.id === "merchantDistrict") cascadeZones();
     if (t.id === "merchantZone") cascadeAreas();
-    if (t.closest?.("#dfOrderServices")) window.DFOrderServices?.sync("merchantSvc");
+    if (t.closest?.("#dfOrderServices") || t.id === "merchantProduct") window.DFOrderServices?.sync("merchantSvc");
     if (t.closest?.("#orderForm")) updateQuote();
     if (t.id === "chartPeriod") {
       S.period = { "Last 7 days": "7d", "Last 30 days": "30d", "This year": "year" }[t.value] || "7d";
@@ -1814,7 +1814,7 @@
         }, { dfNarrowed: true });
       }
       if (S.catalog.packaging?.length) merchantCatalogs.ecommercePackaging = S.catalog.packaging;
-      if (S.catalog.products?.length) merchantCatalogs.ecommerceProducts = S.catalog.products;
+      // Products: only the package's parcel products (prepareServices), never the booking catalog.
     }
     // Geography changes in super admin (new / renamed / deactivated places) reach the order form at once.
     DF.events.on("catalog.updated", async () => {

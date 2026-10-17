@@ -68,7 +68,6 @@
   /** Registration decisions made in this session, so the queue shows them like the original did. */
   const decided = new Map();
   let currentPage = "Overview";
-  let savedServices = JSON.stringify(serviceRows);
 
   DF.showSignedInUser("Super admin");
 
@@ -155,7 +154,6 @@
     }
     return pageSetItem.call(this, key, value);
   };
-  const patchConfig = patch => config.save({ ...config.current(), ...patch });
 
   // ───────────── loading ─────────────
   async function all(path) {
@@ -437,9 +435,6 @@
     applyCatalog();
     applyPricing();
     applyPlans();
-    const services = config.current().serviceCatalog;
-    if (Array.isArray(services) && services.every(r => Array.isArray(r) && r.length === 5)) replaceAll(serviceRows, services);
-    savedServices = JSON.stringify(serviceRows);
     updateApprovalCount();
   }
 
@@ -453,7 +448,6 @@
     geoHierarchy.zonesByDistrict = structuredClone(c.zonesByDistrict);
     geoHierarchy.areasByZone = structuredClone(c.areasByZone);
     replaceAll(ecommercePackaging, c.packaging);
-    replaceAll(ecommerceProducts, c.products);
     replaceAll(
       deliveryServices,
       LEVELS.map(([, label]) => label),
@@ -840,19 +834,14 @@
         const list = form.dataset.catalogForm;
         const value = String(new FormData(form).get("item") || "").trim();
         const parent = String(new FormData(form).get("parent") || "").trim();
-        if (list === "deliveryServices") {
-          stop(event);
-          showToast("Delivery service levels are fixed: Regular, Same day and Express. Set their fees in Service plans & pricing.");
-          return;
-        }
-        if (!["district", "zone", "area", "ecommercePackaging", "ecommerceProducts"].includes(list) || !S.catalog || !value) return;
+        if (!["district", "zone", "area", "ecommercePackaging"].includes(list) || !S.catalog || !value) return;
         const c = structuredClone(S.catalog);
         const next = {
           districts: c.districts,
           zonesByDistrict: c.zonesByDistrict,
           areasByZone: c.areasByZone,
           packaging: c.packaging,
-          products: c.products,
+          products: c.products, // legacy field of the setting; product lists are the parcel products (Service plans)
           weightsKg: c.weightsKg,
         };
         const has = (items, v) => items.some(item => item.toLowerCase() === v.toLowerCase());
@@ -868,9 +857,8 @@
           if (!zones.includes(parent) || has(next.areasByZone[parent] || [], value)) return;
           (next.areasByZone[parent] ||= []).push(value);
         } else {
-          const items = list === "ecommercePackaging" ? next.packaging : next.products;
-          if (has(items, value)) return;
-          items.push(value);
+          if (has(next.packaging, value)) return;
+          next.packaging.push(value);
         }
         stop(event);
         void busy(form.querySelector('[type="submit"]'), async () => {
@@ -878,8 +866,8 @@
             await DF.api("/catalog", { method: "PUT", body: next });
             await load("catalog", "audit");
             // The page adds the item to its own lists and saves the platform settings.
-            if (list === "district" || list === "ecommercePackaging" || list === "ecommerceProducts") {
-              const own = list === "district" ? geoCatalog.district : list === "ecommercePackaging" ? ecommercePackaging : ecommerceProducts;
+            if (list === "district" || list === "ecommercePackaging") {
+              const own = list === "district" ? geoCatalog.district : ecommercePackaging;
               if (own.includes(value)) own.splice(own.indexOf(value), 1);
             }
             if (list === "zone") geoHierarchy.zonesByDistrict[parent] = geoHierarchy.zonesByDistrict[parent].filter(z => z !== value);
@@ -1022,16 +1010,6 @@
     },
     true,
   );
-
-  // Service catalog rows (01.js) aren't part of the page's saved config; keep them in the platform settings.
-  const saveServicesIfChanged = () => {
-    const now = JSON.stringify(serviceRows);
-    if (now === savedServices) return;
-    savedServices = now;
-    patchConfig({ serviceCatalog: serviceRows });
-  };
-  document.addEventListener("click", saveServicesIfChanged);
-  document.addEventListener("submit", saveServicesIfChanged);
 
   window.addEventListener(
     "change",

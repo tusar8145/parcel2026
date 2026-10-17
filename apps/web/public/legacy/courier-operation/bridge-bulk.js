@@ -67,6 +67,9 @@
     };
   }
 
+  // The journey stage pages (bridge-nav.js) open the same dialog with their own filter preset.
+  Ops.bulkConfig = config;
+
   window.addEventListener(
     "click",
     event => {

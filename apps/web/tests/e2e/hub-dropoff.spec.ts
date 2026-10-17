@@ -1,5 +1,5 @@
 import { type Page } from "@playwright/test";
-import { API_ORIGIN, Fixtures, expect, sql, test, type TempMerchant, type TempUser } from "./support";
+import { API_ORIGIN, Fixtures, expect, opsNav, rowAction, sql, test, type TempMerchant, type TempUser } from "./support";
 
 // Hub drop-off: a merchant brings parcels and a spreadsheet to the Gulshan hub. The hub operator
 // imports it as a drop-off, prints the labels and receives the parcel by typing its ID.
@@ -40,12 +40,11 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   page.on("console", message => {
     if (message.type() === "error" && !/status of 401|Failed to load resource|tile\.openstreetmap/.test(message.text())) errors.push(message.text());
   });
-  const nav = (name: string) => page.click(`#navigation [data-page="${name}"]`);
   // E2E_API_ORIGIN: the page's API calls are forwarded by `test` from support.ts.
   await signIn(page, hubOp);
 
   // ── Import with "Drop-off at hub" (a hub operator's own hub is preselected; shared/importer.js) ──
-  await nav("E-commerce operations");
+  await opsNav(page, "ecommerce");
   await page.click("#courierImport");
   await expect(page.locator("#dfImportTitle")).toHaveText("Import orders from Excel");
   await page.selectOption("#dfiIntake", "DROP_OFF");
@@ -96,9 +95,9 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   await expect(row).toContainText("Awaiting drop-off at Gulshan Sorting Hub", { timeout: 20_000 });
   await expect(row.locator("[data-customer-confirm]")).toHaveCount(0);
 
-  // ── Hubs → receive desk: type the ID (lower case) and press Enter ──
+  // ── Hub desk → Drop-off receive: type the ID (lower case) and press Enter ──
   await page.fill("#shipmentSearch", "");
-  await nav("Hubs");
+  await opsNav(page, "dropOffReceive");
   await expect(page.locator("#receiveDesk")).toBeVisible();
   await expect(page.locator("#rdHub option:checked")).toHaveText("Gulshan Sorting Hub");
   await page.selectOption("#rdBatch", parcel.bookingBatchId);
@@ -125,7 +124,7 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
 
   // The shipment register follows live: At hub.
   await page.locator("#rdCode").blur();
-  await nav("E-commerce operations");
+  await opsNav(page, "ecommerce");
   await page.fill("#shipmentSearch", trackingId);
   await expect(page.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`)).toContainText("At hub", { timeout: 20_000 });
   expect(errors).toEqual([]);
@@ -159,13 +158,13 @@ test("switches a booked pickup to hub drop-off and back from the shipment regist
     MERCHANT.id,
   );
   const trackingId = booked.trackingId;
-  await page.click('#navigation [data-page="E-commerce operations"]');
+  await opsNav(page, "ecommerce");
   await page.fill("#shipmentSearch", trackingId);
   const row = page.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`);
   await expect(row.locator("[data-intake-change]")).toHaveText("Change to drop-off", { timeout: 20_000 });
 
-  // Row action → drop-off at the operator's own hub.
-  await row.locator("[data-intake-change]").click();
+  // Row action (under "More") → drop-off at the operator's own hub.
+  await rowAction(row, "[data-intake-change]");
   await expect(page.locator("#modalTitle")).toHaveText(`Change to drop-off · ${trackingId}`);
   await expect(page.locator("#icIntake")).toHaveValue("DROP_OFF");
   await expect(page.locator("#icHub option:checked")).toHaveText("Gulshan Sorting Hub");
@@ -179,7 +178,7 @@ test("switches a booked pickup to hub drop-off and back from the shipment regist
   expect(notices[0]?.body).toContain("Gulshan Sorting Hub");
 
   // Parcel detail (tracking history) → back to rider pickup.
-  await row.locator("[data-track]").click();
+  await rowAction(row, "[data-track]");
   const detail = page.locator("#courierHistoryBackdrop [data-intake-detail]");
   await expect(detail).toContainText("Drop-off at Gulshan Sorting Hub");
   await expect(page.locator("#courierHistoryBackdrop")).toContainText("Changed to drop-off at Gulshan Sorting Hub");

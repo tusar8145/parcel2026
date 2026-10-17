@@ -1,11 +1,13 @@
 import { request as playwrightRequest, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, API_BASE, expect, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, apiUrl, API_BASE, expect, opsNav, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 /**
  * Service packages & pricing (spec v2) through the real UI:
  *  - a super admin creates an E-commerce package and assigns it to a merchant (maker-checker: a
  *    second super admin approves through the API), and the merchant's order form prices with it;
+ *  - products have one "Send SMS & email" switch; a product with it off disables the messages
+ *    checklist on the order form and its parcel stores no messages;
  *  - a Hub Pickup parcel waits at its collection hub and the hub operator hands it over at the
  *    Hub Pickup counter (Courier Operations → Hubs).
  * Every account is temporary (support.ts); the package the test creates is deleted afterwards.
@@ -14,6 +16,8 @@ const WEB = { "x-df-client": "web" };
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 const fx = new Fixtures();
 const PACKAGE_NAME = `E2E Gold ${fx.stamp}`;
+/** A product the test creates with "Send SMS & email" off (deleted afterwards). */
+const QUIET_PRODUCT = `E2E Quiet ${fx.stamp}`;
 let maker: TempUser;
 let checkerUser: TempUser;
 let checker: APIRequestContext;
@@ -42,6 +46,7 @@ test.afterAll(async () => {
   await fx.cleanup();
   // The package only this test used (its versions cascade; the merchant's assignment went with the merchant).
   await sql(`DELETE FROM service_packages WHERE name = $1`, [PACKAGE_NAME]);
+  await sql(`DELETE FROM parcel_products WHERE name = $1 AND NOT EXISTS (SELECT 1 FROM parcels WHERE "productId" = parcel_products.id)`, [QUIET_PRODUCT]);
 });
 
 const toast = (page: Page) => page.locator("#toast");
@@ -124,6 +129,26 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await row.locator("[data-pkg-assign]").click();
   await expect(toast(page)).toContainText(/approval/i);
   await approvePending();
+
+  // ── Products: one "Send SMS & email" switch (add form + list) ──
+  const products = page.locator("#pkgProductsPanel");
+  await expect(products.locator("#pkgProducts thead")).toContainText("MESSAGES");
+  await expect(products.locator("#pkgProducts thead")).not.toContainText("MESSAGES NOT SENT");
+  await expect(products.locator("[data-pkg-product-mutes]")).toHaveCount(0);
+  await products.locator("#pkgProductName").fill(QUIET_PRODUCT);
+  await expect(products.locator("#pkgProductSendMessages")).toBeChecked();
+  await products.locator("#pkgProductSendMessages").uncheck();
+  await products.locator('#pkgProductForm button[type="submit"]').click();
+  await expect(toast(page)).toContainText(`${QUIET_PRODUCT} added.`);
+  const quietRow = () => page.locator(`#pkgProducts tr[data-pkg-product="${QUIET_PRODUCT}"]`);
+  await expect(quietRow()).toContainText("Messages: Off");
+  const [created] = await sql<{ id: string; sendMessages: boolean }>(`SELECT id, "sendMessages" FROM parcel_products WHERE name = $1`, [QUIET_PRODUCT]);
+  expect(created.sendMessages).toBe(false);
+  await quietRow().locator("[data-pkg-product-messages]").check();
+  await expect(quietRow()).toContainText("Messages: On");
+  expect((await sql<{ sendMessages: boolean }>(`SELECT "sendMessages" FROM parcel_products WHERE id = $1`, [created.id]))[0].sendMessages).toBe(true);
+  await quietRow().locator("[data-pkg-product-messages]").uncheck();
+  await expect(quietRow()).toContainText("Messages: Off");
   await page.context().close();
 
   // ── The merchant's order form: live breakdown from the new package (same district ৳55) ──
@@ -142,11 +167,24 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   const breakdown = merchantPage.locator("#merchantPriceHint [data-price-breakdown]");
   await expect(breakdown).toContainText(PACKAGE_NAME, { timeout: 15_000 });
   await expect(breakdown).toContainText("Inside same district");
+  // Every message in the package is pre-ticked; a product with messages off disables the checklist.
+  const checklist = merchantPage.locator("#merchantSvcNotifications");
+  await expect(checklist.locator("[data-svc-notify]:not(:checked)")).toHaveCount(0);
+  await expect(checklist.locator("[data-svc-notify]").first()).toBeEnabled();
+  await merchantPage.selectOption("#merchantProduct", QUIET_PRODUCT);
+  await expect(checklist.locator("summary")).toContainText("this product doesn't send messages");
+  await expect(checklist.locator("[data-svc-notify]:enabled")).toHaveCount(0);
+  await checklist.locator("summary").click();
+  await expect(checklist.locator("[data-svc-notify-off]")).toBeVisible();
   await merchantPage.click('#orderForm button[type="submit"]');
   await expect(toast(merchantPage)).toContainText(/created · delivery charge ৳/);
   const trackingId = (await toast(merchantPage).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
-  const [parcel] = await sql<{ snapshot: { packageName?: string; engine?: string } }>(`SELECT "pricingSnapshot" AS snapshot FROM parcels WHERE "trackingId" = $1`, [trackingId]);
+  const [parcel] = await sql<{ snapshot: { packageName?: string; engine?: string }; productName: string; notifications: string[] }>(
+    `SELECT "pricingSnapshot" AS snapshot, "productName", notifications FROM parcels WHERE "trackingId" = $1`,
+    [trackingId],
+  );
   expect(parcel.snapshot).toMatchObject({ engine: "package-v2", packageName: PACKAGE_NAME });
+  expect(parcel).toMatchObject({ productName: QUIET_PRODUCT, notifications: [] });
   expect(errors).toEqual([]);
 });
 
@@ -180,11 +218,11 @@ test("a Hub Pickup parcel waits at its hub and the hub operator hands it over", 
   expect(picked.ok(), await picked.text()).toBeTruthy();
   await expect.poll(async () => (await sql<{ status: string }>(`SELECT status FROM parcels WHERE "trackingId" = $1`, [trackingId]))[0].status).toBe("READY_FOR_COLLECTION");
 
-  // ── Courier Operations → Hubs → Hub Pickup counter ──
+  // ── Courier Operations → Hub desk → Hub Pickup counter ──
   const errors: string[] = [];
   const page = await newPage(browser, errors);
   await signIn(page, hubOperator, /\/courier-operation/);
-  await page.click('#navigation [data-page="Hubs"]');
+  await opsNav(page, "hubPickupCounter");
   const counter = page.locator("#collectCounter");
   await expect(counter.locator(`tr[data-collect-row="${trackingId}"]`)).toBeVisible();
   await counter.locator(`[data-collect-open="${trackingId}"]`).click();

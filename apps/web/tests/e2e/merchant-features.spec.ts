@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, apiUrl, expect, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, expect, opsNav, test, type TempUser } from "./support";
 
 /**
  * Merchant panel features on the real API: product catalogue, reports, recurring pickups,
@@ -120,11 +120,12 @@ test("e-commerce merchant: business verification and scoped API keys", async ({ 
 
 test("operations: returns and scheduled pickups pages", async ({ browser }) => {
   const { page, errors } = await signIn(browser, await fx.staff("OPS_MANAGER"), /\/courier-operation/);
-  await page.click('#navigation [data-page="Returns"]');
-  await expect(page.locator("#mainContent h1")).toContainText("Returns (RTO)");
+  await opsNav(page, "returns");
+  await expect(page.locator("#mainContent h1")).toHaveText("Returns");
   await expect(page.locator("#mainContent")).toContainText("Return runs");
-  await page.click('#navigation [data-page="Scheduled pickups"]');
-  await expect(page.locator("#mainContent h1")).toContainText("Scheduled pickups");
+  await opsNav(page, "scheduledPickups");
+  await expect(page.locator("#mainContent h1")).toHaveText("Pickup");
+  await expect(page.locator("#mainContent table")).toContainText("PICKUP");
   await page.click("[data-pu-generate]");
   await expect(toast(page)).toContainText("created from recurring schedules");
   expect(errors).toEqual([]);

@@ -90,7 +90,11 @@ model ParcelProduct {
   /// Fixed product type: REGULAR | DOCUMENT | BOOKS (packages/shared PRODUCT_TYPES); it prices the parcel.
   type               String   @default("REGULAR")
   active             Boolean  @default(true)
-  /// Parcel notification codes this product never sends (products can only switch messages off).
+  /// "Send SMS & email for this product": false = no parcel messages at all for its parcels (booked
+  /// with an empty `Parcel.notifications`). Which messages go is chosen per parcel at booking.
+  sendMessages       Boolean  @default(true)
+  /// DEPRECATED (2026-10-17, replaced by `sendMessages`): no longer read or written. Kept only because
+  /// the schema lock refuses data-dropping migrations; drop it with a reviewed migration.
   mutedNotifications String[] @default([])
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

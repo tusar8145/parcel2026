@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRODUCT_TYPES, packagePricesSchema, PACKAGE_SEGMENTS, PARCEL_NOTIFICATIONS, quoteRequestSchema } from "@delivery-fast/shared";
+import { PRODUCT_TYPES, packagePricesSchema, PACKAGE_SEGMENTS, quoteRequestSchema } from "@delivery-fast/shared";
 
 export const segmentSchema = z.enum(PACKAGE_SEGMENTS, "Choose ECOMMERCE, BANKING_FINANCIAL or CUSTOMER");
 const name = z.string().trim().min(2, "Use at least 2 characters").max(80, "Use at most 80 characters");
@@ -79,17 +79,22 @@ export const hubGroupHubsSchema = z.object({ hubIds: z.array(z.uuid()).max(500) 
 export const hubHubGroupSchema = z.object({ hubGroupId: z.uuid().nullable() });
 
 // ── products ──
-const PARCEL_NOTIFICATION_CODES = PARCEL_NOTIFICATIONS.map(n => n.code) as [string, ...string[]];
 export const productSchema = z.object({
   /** The list: ECOMMERCE (Customer + E-commerce) or BANKING_FINANCIAL. */
   segment: z.enum(["ECOMMERCE", "BANKING_FINANCIAL"], "Choose ECOMMERCE or BANKING_FINANCIAL"),
   name: z.string().trim().min(1, "Enter the product name").max(120, "Use at most 120 characters"),
   /** One of the three fixed product types; it prices the parcel. */
   type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").default("REGULAR"),
-  /** Parcel notifications this product never sends. */
-  mutedNotifications: z.array(z.enum(PARCEL_NOTIFICATION_CODES, "Unknown notification")).max(40).default([]),
+  /** "Send SMS & email for this product": false = its parcels get no parcel messages at all. */
+  sendMessages: z.boolean().default(true),
 });
-export const updateProductSchema = productSchema.omit({ segment: true }).partial().extend({ active: z.boolean().optional() });
+// Explicit (not `.partial()`): zod applies defaults inside optional fields, which would reset type / sendMessages on every edit.
+export const updateProductSchema = z.object({
+  name: productSchema.shape.name.optional(),
+  type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").optional(),
+  sendMessages: z.boolean().optional(),
+  active: z.boolean().optional(),
+});
 export const listProductsQuerySchema = z.object({
   segment: z.enum(["ECOMMERCE", "BANKING_FINANCIAL", "CUSTOMER"]).optional(),
   includeInactive: z

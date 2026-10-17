@@ -200,6 +200,29 @@ test.describe("super admin", () => {
     await admin.context().close();
   });
 
+  test("shared catalogs keep only the lists forms read; products and services point to Service plans", async ({ browser }) => {
+    const admin = await open(browser, "/", errors);
+    await signInAsAdmin(admin);
+    await nav(admin, "Pricing & catalogs");
+    const main = admin.locator("#mainContent");
+    await expect(main.locator("#catalogProductsPointer")).toContainText("Service plans → Products");
+    // The old product, service level and document type lists are gone; the lists real forms read stay.
+    for (const list of ["ecommerceProducts", "documentProducts", "deliveryServices", "documentTypes"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(0);
+    for (const title of ["E-commerce products", "Document products", "Delivery service levels", "Document type catalog"]) await expect(main.getByText(title, { exact: true })).toHaveCount(0);
+    for (const list of ["returnReasons", "receiverRelations", "ecommercePackaging", "documentPackaging"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(1);
+    await expect(main.locator("#geoAdmin")).toBeAttached();
+    await main.locator("[data-open-products]").click();
+    await expect(admin.locator("#pkgProductsPanel")).toBeVisible();
+    await expect(admin.locator("#pkgProductsPanel .panel-title")).toHaveText("Customer & E-commerce products");
+    // The demo service table is gone; the page holds the spreadsheet import settings.
+    await nav(admin, "Import settings");
+    await expect(main.locator("h1")).toHaveText("Spreadsheet imports");
+    await expect(main.locator("#importSettingsPointer")).toContainText("Services and prices: Service plans");
+    await expect(main.locator('[data-action="newService"]')).toHaveCount(0);
+    await expect(main.locator("#importSettings")).toBeVisible();
+    await admin.context().close();
+  });
+
   test("the Customer default package drives the website price preview and booking quote", async ({ browser, api }) => {
     // The owner's current customer price is put back afterwards (as another version).
     const before = await quote(api);

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import fs from "node:fs";
 import { type BrowserContext, type Page } from "@playwright/test";
-import { API_BASE, Fixtures, expect, test, type TempUser } from "./support";
+import { API_BASE, Fixtures, expect, opsNav, test, type TempUser } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -27,6 +27,8 @@ const MERCHANT = { id: randomUUID(), code: `E2E-IMP-${stamp}`, name: `E2E Import
 const OWNER = { id: "", phone: `+88019${String(Date.now()).slice(-8)}`, password: `Imp-${randomBytes(9).toString("base64url")}` };
 const ADMIN = { id: "", phone: `+88018${String(Date.now() + 5).slice(-8)}`, password: `Sa-${randomBytes(9).toString("base64url")}` };
 let previousImportConfig: unknown = undefined;
+/** A temporary product with "Send SMS & email" off: its row is booked with no messages. */
+const QUIET_PRODUCT = `E2E Quiet Import ${stamp}`;
 
 async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []) {
   const db = new pg.Client({ connectionString: DATABASE_URL });
@@ -59,6 +61,7 @@ test.beforeAll(async () => {
   }
   previousImportConfig = (await sql<{ value: unknown }>(`SELECT value FROM settings WHERE key = 'import-config'`))[0]?.value;
   hubOp = await fx.staff("HUB_OPERATOR", "Gulshan Sorting Hub");
+  await sql(`INSERT INTO parcel_products (id, segment, name, type, "sendMessages", "updatedAt") VALUES (gen_random_uuid(), 'ECOMMERCE', $1, 'REGULAR', false, now())`, [QUIET_PRODUCT]);
 });
 
 test.afterAll(async () => {
@@ -82,6 +85,7 @@ test.afterAll(async () => {
   await sql(`DELETE FROM outbox_messages WHERE "to" = ANY($1::text[]) OR "userId" = ANY($2::uuid[])`, [[OWNER.phone, ADMIN.phone], [OWNER.id, ADMIN.id].filter(Boolean)]);
   await sql(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [[OWNER.id, ADMIN.id].filter(Boolean)]);
   await sql(`DELETE FROM merchants WHERE id = $1`, [MERCHANT.id]);
+  await sql(`DELETE FROM parcel_products WHERE name = $1 AND NOT EXISTS (SELECT 1 FROM parcels WHERE "productId" = parcel_products.id)`, [QUIET_PRODUCT]);
   await fx.cleanup();
 });
 
@@ -159,7 +163,8 @@ test.describe.serial("spreadsheet imports", () => {
     // ── Upload: 55 valid, 3 incomplete (no address or destination; the first also no name), 2 invalid ──
     const tag = stamp.slice(-5);
     const rows = [
-      ...Array.from({ length: 55 }, (_, i) => `IMP-${tag}-${i},Valid ${i},0181${String(3000000 + i)},House ${i},Dhaka Central,Dhanmondi,Regular,1,500,Fashion & Apparel`),
+      // Row 3 (IMP-…-1) uses a product whose messages are off.
+      ...Array.from({ length: 55 }, (_, i) => `IMP-${tag}-${i},Valid ${i},0181${String(3000000 + i)},House ${i},Dhaka Central,Dhanmondi,Regular,1,500,${i === 1 ? QUIET_PRODUCT : "Fashion & Apparel"}`),
       ...Array.from({ length: 3 }, (_, i) => `INC-${tag}-${i},${i ? `Needs Info ${i}` : ""},0171${String(4000000 + i)},,,,,,,`),
       `BAD-${tag}-1,Bad Phone,12345,House 1,Dhaka Central,Dhanmondi,Regular,1,0,Fashion & Apparel`,
       `BAD-${tag}-2,Bad District,01812000000,House 2,Atlantis,Dhanmondi,Regular,1,0,Fashion & Apparel`,
@@ -168,6 +173,10 @@ test.describe.serial("spreadsheet imports", () => {
     await expect(page.locator("#dfiLimits")).toContainText("Max 5,000 rows and 10 MB per file");
     await expect(page.locator("#dfiLimits")).toContainText("Customer phone");
     await page.setInputFiles("#dfiFile", { name: `orders-${tag}.csv`, mimeType: "text/csv", buffer: csv(rows) });
+    // Messages: every one in the package is ticked; untick "Pickup request received" for this file.
+    const messages = page.locator("#dfiNotifications");
+    await expect(messages.locator("[data-dfi-notify]:not(:checked)")).toHaveCount(0);
+    await messages.locator('[data-dfi-notify="notify.booked"]').uncheck();
     await page.click('[data-dfi="check"]');
 
     // ── Preview: summary, 50 rows per page, page controls and jump-to-page ──
@@ -177,6 +186,8 @@ test.describe.serial("spreadsheet imports", () => {
     await expect(page.locator('#dfiSummary [data-count="errors"]')).toHaveText("2 with errors");
     await expect(page.locator("#dfiRows tbody tr")).toHaveCount(50);
     await expect(page.locator("#dfiPageInfo")).toHaveText("Page 1 of 2 · 60 rows");
+    await expect(page.locator('#dfiRows tr[data-row="3"] [data-messages-off]')).toHaveText("This product doesn't send messages");
+    await expect(page.locator('#dfiRows tr[data-row="2"] [data-messages-off]')).toHaveCount(0);
     await page.click('[data-dfi="page"]:has-text("Next")');
     await expect(page.locator("#dfiPageInfo")).toHaveText("Page 2 of 2 · 60 rows");
     await expect(page.locator("#dfiRows tbody tr")).toHaveCount(10);
@@ -205,6 +216,15 @@ test.describe.serial("spreadsheet imports", () => {
     expect(sheet).toContain(`BAD-${tag}-1`);
     expect(sheet).toContain("Row 60: Customer phone:");
     expect((await sql(`SELECT 1 FROM parcels WHERE "merchantId" = $1`, [MERCHANT.id])).length).toBe(58);
+    // Stored per parcel: the modal's selection, or none for the product with messages off.
+    const stored = await sql<{ ref: string; notifications: string[] }>(`SELECT "merchantOrderRef" AS ref, notifications FROM parcels WHERE "merchantId" = $1 AND "merchantOrderRef" = ANY($2::text[])`, [
+      MERCHANT.id,
+      [`IMP-${tag}-0`, `IMP-${tag}-1`],
+    ]);
+    const byRef = Object.fromEntries(stored.map(r => [r.ref, r.notifications]));
+    expect(byRef[`IMP-${tag}-0`]).toContain("notify.delivered");
+    expect(byRef[`IMP-${tag}-0`]).not.toContain("notify.booked");
+    expect(byRef[`IMP-${tag}-1`]).toEqual([]);
     await page.click('[data-dfi="close"]:has-text("Done")');
 
     // ── Orders: "Needs info" filter and badge; complete one order ──
@@ -241,7 +261,7 @@ test.describe.serial("spreadsheet imports", () => {
     test.setTimeout(240_000);
     const errors = await prepare(context, page);
     await signIn(page, hubOp.login, hubOp.password, /\/courier-operation/);
-    await page.click('#navigation [data-page="E-commerce operations"]');
+    await opsNav(page, "ecommerce");
     await page.click("#courierImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 10,000 rows");
     await page.selectOption("#dfiIntake", "DROP_OFF");
@@ -318,7 +338,7 @@ test.describe.serial("spreadsheet imports", () => {
     expect(enabled.ok(), await enabled.text()).toBe(true);
     await page.goto("/super-admin");
     await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.click('#navigation [data-page="Service catalog"]');
+    await page.click('#navigation [data-page="Import settings"]');
     const panel = page.locator("#importSettings");
     await expect(panel).toBeVisible();
     const district = panel.locator('[data-import-required="district"]');

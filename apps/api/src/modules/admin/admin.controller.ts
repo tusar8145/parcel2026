@@ -11,10 +11,10 @@ import type { SubmitResult } from "../approvals/approvals.service";
 import { createCustomRoleSchema, rolePermissionsSchema, RolesService, updateCustomRoleSchema } from "./roles.service";
 import { ImpersonationService, listImpersonationsQuerySchema, startImpersonationSchema } from "./impersonation.service";
 import { platformConfigSchema, PLATFORM_CONFIG_MAX_BYTES, type PlatformConfig } from "./admin.schemas";
-import { DERIVED_KEYS, PlatformConfigService } from "./platform-config.service";
+import { DERIVED_KEYS, PlatformConfigService, RETIRED_KEYS } from "./platform-config.service";
 import { OverviewService } from "./overview.service";
 
-const DERIVED_NOTE = `Server-owned settings (${DERIVED_KEYS.join(", ")}) and the route/weight fields of merchantPricing and deliveryRates always reflect PUT /catalog and the rate cards in force.`;
+const DERIVED_NOTE = `Server-owned settings (${DERIVED_KEYS.join(", ")}) and the route/weight fields of merchantPricing and deliveryRates always reflect PUT /catalog and the rate cards in force. Retired lists (${RETIRED_KEYS.join(", ")}) are never stored or returned: products are the parcel products (/parcel-products).`;
 
 @ApiTags("settings")
 @Controller("settings")

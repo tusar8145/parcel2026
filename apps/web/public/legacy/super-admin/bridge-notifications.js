@@ -105,7 +105,7 @@
           g.events
             .map(
               e =>
-                `<tr data-nt-event="${esc(e.event)}" data-nt-row-group="${esc(g.name)}" data-nt-channels="${esc(Object.keys(e.channels).join(" "))}" data-nt-search="${esc(`${e.label} ${e.event} ${e.audience} ${g.name}`.toLowerCase())}"><td><div class="primary-cell"><strong>${esc(e.label)}</strong> ${badges(e)}<span class="subcell">${esc(e.event)} · ${esc(channelList(e))}</span></div></td><td>${esc(e.audience)}</td>${cell(e, "sms")}${cell(e, "email")}</tr>`,
+                `<tr data-nt-event="${esc(e.event)}" data-nt-row-group="${esc(g.name)}" data-nt-channels="${esc(Object.keys(e.channels).join(" "))}" data-nt-search="${esc(`${e.label} ${e.event} ${e.audience} ${g.name}`.toLowerCase())}"><td><div class="primary-cell" data-nt-hover="${esc(e.event)}" tabindex="0" aria-describedby="ntTemplateCard" style="cursor:help"><strong>${esc(e.label)}</strong> ${badges(e)}<span class="subcell">${esc(e.event)} · ${esc(channelList(e))}</span></div></td><td>${esc(e.audience)}</td>${cell(e, "sms")}${cell(e, "email")}</tr>`,
             )
             .join(""),
       )
@@ -251,9 +251,84 @@
     });
   }
 
+  // Hover (or keyboard focus) on a message name shows its current SMS / email text.
+  const PREVIEW_LIMIT = 700;
+  const clip = text => (text.length > PREVIEW_LIMIT ? `${text.slice(0, PREVIEW_LIMIT).trimEnd()}… (Edit shows the full text)` : text);
+  function templateCardHtml(e) {
+    const block = (title, c, parts) =>
+      `<div style="display:grid;gap:4px"><div style="display:flex;gap:6px;align-items:center"><strong style="font-size:12px;letter-spacing:.04em;text-transform:uppercase">${esc(title)}</strong>${c.customized ? pill("Customised", "blue") : '<span class="panel-subtitle">Default text</span>'}${!c.locked && !c.enabledByAdmin ? pill("Off", "warn") : ""}</div>${parts}</div>`;
+    const text = value => `<div style="white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.5;color:#3c4859">${esc(clip(value || ""))}</div>`;
+    const sections = [];
+    if (e.channels.sms) sections.push(block("SMS", e.channels.sms, text(e.channels.sms.body)));
+    if (e.channels.email)
+      sections.push(block("Email", e.channels.email, `<div style="font-size:13px"><span class="panel-subtitle">Subject:</span> ${esc(e.channels.email.subject || "")}</div>${text(e.channels.email.body)}`));
+    return `<div style="font-size:13px;font-weight:700">${esc(e.label)}</div>${sections.join('<hr style="border:0;border-top:1px solid var(--line,#e4e8ee);margin:2px 0">') || '<p class="panel-subtitle">No template.</p>'}`;
+  }
+  function templateCard() {
+    let card = document.getElementById("ntTemplateCard");
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "ntTemplateCard";
+      card.setAttribute("role", "tooltip");
+      card.style.cssText =
+        "position:fixed;z-index:60;max-width:min(440px,calc(100vw - 32px));max-height:min(420px,calc(100vh - 32px));overflow:auto;display:none;gap:10px;padding:12px 14px;background:#fff;border:1px solid var(--line,#e4e8ee);border-radius:10px;box-shadow:0 14px 40px #1018282e;pointer-events:none";
+      document.body.appendChild(card);
+    }
+    return card;
+  }
+  let hoverAnchor = null;
+  function showTemplateCard(anchor) {
+    const e = S.catalog?.events.find(x => x.event === anchor.dataset.ntHover);
+    if (!e) return;
+    const card = templateCard();
+    card.innerHTML = templateCardHtml(e);
+    card.style.display = "grid";
+    hoverAnchor = anchor;
+    placeTemplateCard(card, anchor);
+  }
+  function placeTemplateCard(card, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const w = card.offsetWidth;
+    const h = card.offsetHeight;
+    const left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16));
+    const below = r.bottom + 8;
+    card.style.left = `${left}px`;
+    card.style.top = `${below + h > window.innerHeight - 16 ? Math.max(16, r.top - h - 8) : below}px`;
+  }
+  const hideTemplateCard = () => {
+    hoverAnchor = null;
+    const card = document.getElementById("ntTemplateCard");
+    if (card) card.style.display = "none";
+  };
+  // Follow the message while the page scrolls; hide once it is gone from the page.
+  window.addEventListener(
+    "scroll",
+    () => {
+      const card = document.getElementById("ntTemplateCard");
+      if (!card || card.style.display === "none") return;
+      if (hoverAnchor?.isConnected) placeTemplateCard(card, hoverAnchor);
+      else hideTemplateCard();
+    },
+    true,
+  );
+
   function wireEvents() {
     const table = document.getElementById("notificationEventsTable");
     if (!table) return;
+    table.addEventListener("mouseover", event => {
+      const anchor = event.target.closest("[data-nt-hover]");
+      if (anchor && !anchor.contains(event.relatedTarget)) showTemplateCard(anchor);
+    });
+    table.addEventListener("mouseout", event => {
+      const anchor = event.target.closest("[data-nt-hover]");
+      if (anchor && !anchor.contains(event.relatedTarget)) hideTemplateCard();
+    });
+    table.addEventListener("focusin", event => {
+      const anchor = event.target.closest("[data-nt-hover]");
+      if (anchor) showTemplateCard(anchor);
+    });
+    table.addEventListener("focusout", hideTemplateCard);
+    table.addEventListener("keydown", event => event.key === "Escape" && hideTemplateCard());
     const search = document.getElementById("ntSearch");
     search?.addEventListener("input", () => {
       F.q = search.value;

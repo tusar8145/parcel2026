@@ -552,7 +552,8 @@ model Parcel {
   productType             String?
   /// The package's services at booking.
   services                String[]  @default([])
-  /// Parcel notifications that may be sent (package ∩ booking choice − product mutes).
+  /// Parcel notifications that may be sent: the booking's ticked messages (default every message in the
+  /// package; empty when the product has `sendMessages = false`). NotifyService sends only these.
   notifications           String[]  @default([])
   /// Collect from hub: the collection hub, the code the recipient shows, and the hold period.
   collectHubId            String?   @db.Uuid

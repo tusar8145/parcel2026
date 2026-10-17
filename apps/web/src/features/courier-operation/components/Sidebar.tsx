@@ -1,3 +1,43 @@
+/** The original pages (internal names the page scripts use) and their old labels. */
+const LEGACY_PAGES: [string, string][] = [
+  ["Overview", "Live overview"],
+  ["Shipments", "Shipments"],
+  ["Dispatch", "Dispatch & routes"],
+  ["Exceptions", "Exceptions"],
+  ["Returns", "Returns (RTO)"],
+  ["Scheduled pickups", "Scheduled pickups"],
+  ["Customer parcels", "Customer parcels"],
+  ["E-commerce operations", "E-commerce operations"],
+  ["Banking & Financial operations", "Banking & Financial operations"],
+  ["CN stock", "CN stock"],
+  ["Riders", "Riders & fleet"],
+  ["Hubs", "Hubs & zones"],
+  ["Linehaul", "Linehaul"],
+  ["Merchants", "Merchant accounts"],
+  ["COD & finance", "COD & finance"],
+  ["Analytics", "Analytics & SLA"],
+  ["Reports", "Reports"],
+  ["Settings", "Admin settings"],
+];
+
+/** One menu item: data-nav names the view; data-stage-count holds the live count of a journey stage. */
+function NavItem({ nav, icon, label, step, count, active }: { nav: string; icon: string; label: string; step?: string; count?: boolean; active?: boolean }) {
+  return (
+    <button type="button" className={active ? "nav-item active" : "nav-item"} data-nav={nav}>
+      <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+        <use href={`#i-${icon}`} />
+      </svg>
+      {step ? (
+        <span className="nav-step" aria-hidden="true" style={{ minWidth: 16, color: "#a0a9b6", fontSize: 12, fontWeight: 600 }}>
+          {step}
+        </span>
+      ) : null}
+      {label}
+      {count ? <span className="nav-count" data-stage-count={nav} /> : null}
+    </button>
+  );
+}
+
 export default function Sidebar() {
   return (
     <aside className="sidebar" id="sidebar">
@@ -39,126 +79,48 @@ export default function Sidebar() {
       </button>{" "}
       <nav id="navigation">
         {" "}
-        <div className="nav-group">
-          <div className="nav-label">Command center</div>{" "}
-          <button className="nav-item active" data-page="Overview">
-            <svg fill="none" stroke="currentColor" strokeWidth="1.7">
-              <use href="#i-grid" />
-            </svg>
-            Live overview
-          </button>{" "}
-          <button className="nav-item" data-page="Shipments">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            Shipments<span className="nav-count">1,284</span>
-          </button>{" "}
-          <button className="nav-item" data-page="Dispatch">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-route" />
-            </svg>
-            {"Dispatch & routes"}
-            <span className="nav-count">18</span>
-          </button>{" "}
-          <button className="nav-item" data-page="Exceptions">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-alert" />
-            </svg>
-            Exceptions<span className="nav-count">12</span>
-          </button>{" "}
-          <button className="nav-item" data-page="Returns">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            {"Returns (RTO)"}
-          </button>{" "}
-          <button className="nav-item" data-page="Scheduled pickups">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-clock" />
-            </svg>
-            {"Scheduled pickups"}
-          </button>{" "}
+        {/* Courier Operations navigation, organised around the parcel journey. Each item opens a
+            view (public/legacy/courier-operation/bridge-nav.js) drawn by the original page
+            renderers; the counts are the parcels at that stage, kept live. */}
+        <div className="nav-group" data-nav-group="today">
+          <NavItem nav="Today" icon="grid" label="Today" active />
         </div>{" "}
-        <div className="nav-group">
-          <div className="nav-label">Service operations</div>{" "}
-          <button className="nav-item" data-page="Customer parcels">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            Customer parcels
-          </button>{" "}
-          <button className="nav-item" data-page="E-commerce operations">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            E-commerce operations
-          </button>{" "}
-          <button className="nav-item" data-page="Banking & Financial operations">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-pin" />
-            </svg>
-            Banking & Financial operations
-          </button>{" "}
-          <button className="nav-item" data-page="CN stock">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            CN stock
-          </button>{" "}
+        <div className="nav-group" data-nav-group="journey">
+          <div className="nav-label">Parcel journey</div>
+          <NavItem nav="New orders" icon="box" step="1" label="New orders" count />
+          <NavItem nav="Pickup" icon="clock" step="2" label="Pickup" count />
+          <NavItem nav="Hub desk" icon="pin" step="3" label="Hub desk" count />
+          <NavItem nav="Transfers" icon="truck" step="4" label="Transfers" count />
+          <NavItem nav="Delivery" icon="route" step="5" label="Delivery" count />
+          <NavItem nav="Problems" icon="alert" step="6" label="Problems" count />
+          <NavItem nav="Returns" icon="box" step="7" label="Returns" count />
         </div>{" "}
-        <div className="nav-group">
-          <div className="nav-label">Network</div>{" "}
-          <button className="nav-item" data-page="Riders">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-users" />
-            </svg>
-            {"Riders & fleet"}
-          </button>{" "}
-          <button className="nav-item" data-page="Hubs">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-pin" />
-            </svg>
-            {"Hubs & zones"}
-          </button>{" "}
-          <button className="nav-item" data-page="Linehaul">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-truck" />
-            </svg>
-            Linehaul
-          </button>{" "}
-          <button className="nav-item" data-page="Merchants">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-users" />
-            </svg>
-            Merchant accounts
-          </button>{" "}
+        <div className="nav-group" data-nav-group="money">
+          <div className="nav-label">Money</div>
+          <NavItem nav="COD & settlement" icon="wallet" step="8" label="COD & settlement" />
         </div>{" "}
-        <div className="nav-group">
-          <div className="nav-label">Business</div>{" "}
-          <button className="nav-item" data-page={"COD & finance"}>
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-wallet" />
-            </svg>
-            {"COD & finance"}
-          </button>{" "}
-          <button className="nav-item" data-page="Analytics">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-chart" />
-            </svg>
-            {"Analytics & SLA"}
-          </button>{" "}
-          <button className="nav-item" data-page="Reports">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-download" />
-            </svg>
-            Reports
-          </button>{" "}
-          <button className="nav-item" data-page="Settings">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-settings" />
-            </svg>
-            Admin settings
-          </button>{" "}
+        <div className="nav-group" data-nav-group="find">
+          <div className="nav-label">{"Find & report"}</div>
+          <NavItem nav="All parcels" icon="search" label="All parcels" />
+          <NavItem nav="Reports" icon="chart" label="Reports" />
+        </div>{" "}
+        <div className="nav-group" data-nav-group="manage">
+          <div className="nav-label">Manage</div>
+          <NavItem nav="Riders" icon="users" label="Riders" />
+          <NavItem nav="Merchants" icon="users" label="Merchants" />
+          <NavItem nav="Hubs & zones" icon="pin" label="Hubs & zones" />
+          <NavItem nav="CN stock" icon="box" label="CN stock" />
+          <NavItem nav="Settings" icon="settings" label="Settings" />
+        </div>{" "}
+        {/* The original page buttons, kept hidden: the page scripts mark the page on screen
+            here (".nav-item.active", "[data-page=Hubs].active") and write their badges. */}
+        <div className="nav-group" id="legacyNav" hidden aria-hidden="true">
+          {LEGACY_PAGES.map(([page, label]) => (
+            <button key={page} type="button" className={page === "Overview" ? "nav-item active" : "nav-item"} data-page={page} tabIndex={-1}>
+              {label}
+              {["Shipments", "Dispatch", "Exceptions"].includes(page) ? <span className="nav-count" /> : null}
+            </button>
+          ))}
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">

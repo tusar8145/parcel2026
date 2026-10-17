@@ -148,8 +148,15 @@ export class ReturnsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  reasons() {
-    return { reasons: RETURN_REASONS };
+  /**
+   * The reasons offered on return requests: the list super admins keep in Shared catalogs &
+   * locations (platform-config `returnReasons`), else the standard ones. Free text is accepted too.
+   */
+  async reasons(): Promise<{ reasons: string[] }> {
+    const setting = await this.prisma.setting.findUnique({ where: { key: "platform-config" } });
+    const saved = (setting?.value as { returnReasons?: unknown } | null)?.returnReasons;
+    const list = Array.isArray(saved) ? [...new Set(saved.filter((r): r is string => typeof r === "string").map(r => r.trim()).filter(r => r.length >= 3 && r.length <= 300))] : [];
+    return { reasons: list.length ? list : [...RETURN_REASONS] };
   }
 
   private scope(actor: Actor): Prisma.ParcelWhereInput {

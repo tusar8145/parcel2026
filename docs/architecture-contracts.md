@@ -183,8 +183,10 @@ Event types in use: `parcel.created`, `parcel.updated`, `rider.location`, `ticke
 ## Spreadsheet imports (modules/imports, web: public/legacy/shared/importer.js)
 One engine for both merchant panels, merchant API keys (`parcels:write`) and Courier Operations.
 - Templates: `GET /imports/templates/ecommerce|document` → .xlsx generated from live data (catalog
-  districts/zones/areas/products/packaging, service levels, document types and receiver relations from
-  platform-config and the document rate card, active merchants for operations). Sheets: the data sheet
+  districts/zones/areas and packaging, the segment's parcel products only, the package's services,
+  document packaging and receiver relations from platform-config, active merchants for operations).
+  Old document types ("Cheque book", …) are still read in the Service column of old files (fixed list in
+  the engine); platform-config `documentTypes` / `documentProducts` are no longer read. Sheets: the data sheet
   (`Orders` / `Consignments`; required headers red with `*`, frozen header row, dropdowns as Excel data
   validation, zone dependent on district via `INDIRECT`, numbers/phone checked), `Instructions` (every
   column: required, allowed values, default, example) and the hidden `Lists` sheet the dropdowns read.
@@ -219,7 +221,7 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   (history: merchants their own imports, operations the operations imports, `mine=true`),
   `DELETE /imports/:id` (drop a validated file). Validated files nobody submits are discarded after a
   day; rows of finished imports are kept 90 days.
-- Settings (super admin → Service catalog → Spreadsheet imports): `GET /imports/config`,
+- Settings (super admin → Import settings, page "Spreadsheet imports"): `GET /imports/config`,
   `PUT /imports/config` (config:manage, audited `import_config.update`) — per template `{ column:
   { required, default } }`, `defaultDestination` (`MERCHANT_CITY` = the merchant's pickup zone, or a
   `FIXED` district/zone) and `limits`. `GET /imports/limits` gives the caller's limits for the upload screen.
@@ -356,7 +358,7 @@ through `PricingService.catalog()`); the geography state next to it is Setting `
   PATCH takes `{ name?, active?, lat?, lng? }`. `DELETE /geography/{districts|zones|areas}?district=
   &zone=&area=` only when unused, else 409 `IN_USE` with `details.usage` and a message offering
   deactivation. Places are named in body/query (names may contain "/"), matched case-insensitively.
-- `PUT /catalog` (packaging/products lists) keeps deactivated places the client can't see and refuses
+- `PUT /catalog` (packaging list; its `products` field is legacy and read by nothing) keeps deactivated places the client can't see and refuses
   removing a used place (409 `IN_USE`); both writers serialise on `lockGeography(tx)`.
 - Every change publishes `catalog.updated` (staffPermission `support:create`, i.e. every signed-in
   panel): `shared/api.js` reloads the catalog and the platform-config overlay, merchant panels, the
@@ -370,6 +372,29 @@ through `PricingService.catalog()`); the geography state next to it is Setting `
   counted, so new tables are covered; 409 `IN_USE` otherwise). Hub changes publish `network.updated`.
 - The BD seed (`npm run db:seed:geo`) skips tombstoned places and hub codes (deleted or renamed away),
   so it never brings them back.
+
+## Shared catalogs & locations (super admin, `super-admin/02.js` `pricingConfigPage()`)
+Cleaned up 2026-10-17: the page keeps only lists that real forms read.
+- **Products:** not on this page. The only product lists are the parcel products (`/parcel-products`,
+  Service plans → Products; the page has a pointer button, `DFPackages.openProducts`). Every product
+  dropdown reads them: merchant forms (`/packages/me`; "No product (Regular)" when the package has none),
+  Courier Operations booking (`/packages/effective`), the website (`GET /catalog` `products` = Customer &
+  E-commerce parcel products, no fallback), imports (engine `lists.products`). Platform-config no longer
+  returns `ecommerceProducts`, and `RETIRED_KEYS` (`admin/derived-keys.ts`: `ecommerceProducts`,
+  `documentProducts`, `documentProductTypes`, `merchantProducts`, `parcelProducts`, `documentTypes`,
+  `serviceCatalog`; the last ones were written by the retired plan editor in `03.js`) are dropped on save and left out
+  of every read. The Setting `catalog` `products` field stays in the schema only for compatibility.
+- **Removed:** delivery service levels (fixed Regular / Same day / Express labels, superseded by the
+  package's speed options) and document types (superseded by the package's handling options B2B / Trade /
+  Corporate Urgent). Merchant forms hide both once the package loads; their static fallbacks no longer
+  read the config.
+- **Kept (stored server-side):** return reasons (platform-config `returnReasons`; `GET /returns/reasons`
+  returns them, else the standard `RETURN_REASONS`; free text still accepted), receiver relationships
+  (`receiverRelations`: merchant forms' `merchantRelation` select and the Banking import column), e-commerce
+  packaging (Setting `catalog` via `PUT /catalog`: merchant forms, website, imports) and document packaging
+  (`documentPackaging`: Banking form and import column), plus the delivery address hierarchy (`bridge-geo.js`).
+- The old "Service catalog" page (demo service table) is now **Import settings** ("Spreadsheet imports",
+  `bridge-imports.js`) with a pointer to Service plans; its demo rows are no longer saved.
 
 ## Banking & Financial merchants (renamed from "Document / corporate", 2026-10-17)
 - Enum values: `MerchantType.BANKING_FINANCIAL` and `Segment.BANKING_FINANCIAL` (was `CORPORATE_DOCUMENT`),
@@ -396,12 +421,16 @@ The owner's spec "Service packages & pricing v2" (2026-10-17).
 ### Categories, products, routes
 - **Categories** = the Prisma `Segment`: `CUSTOMER` (website senders, walk-ins), `ECOMMERCE`, `BANKING_FINANCIAL`.
   A merchant's category comes from its `MerchantType` (`segmentOfMerchantType`).
-- **Products** (`ParcelProduct { segment, name, type, active, mutedNotifications[] }`): two lists — `ECOMMERCE`
+- **Products** (`ParcelProduct { segment, name, type, active, sendMessages }`): two lists — `ECOMMERCE`
   (shared by Customer and E-commerce) and `BANKING_FINANCIAL`; each product has one of the three fixed types
   `REGULAR | DOCUMENT | BOOKS` (`PRODUCT_TYPES`). Super admin: `GET/POST/PATCH/DELETE /parcel-products`
-  (delete only if unused, else deactivate). `mutedNotifications` lists the parcel messages that are never sent
-  for it (the editor shows one "may be sent" checkbox per message). The product is optional in every booking
-  surface; none = type Regular. Seed: `SEED_PRODUCTS` (owner's lists), idempotent.
+  (delete only if unused, else deactivate). `sendMessages` (default `true`) is the one "Send SMS & email for this
+  product" switch: off = its parcels get no parcel messages at all. Which messages go is chosen per parcel at
+  booking (below). The old per-message `mutedNotifications` column is deprecated and unused (migration
+  `20261017112404_product_send_messages` added `sendMessages` = true for every existing product, including ones
+  that had some messages muted; the column stays only because the schema lock refuses data-dropping changes).
+  The product is optional in every booking surface; none = type Regular. Seed: `SEED_PRODUCTS` (owner's lists),
+  idempotent.
 - **Routes** (district only, never zone): `normalizeDistrict()` maps Dhaka North / Central / South to "Dhaka";
   `DHAKA_SUBURBAN_DISTRICTS` = Gazipur, Narayanganj, Dhaka (Sub-urban) (a constant). `routeTier(pickup, delivery)`:
   `DHAKA_SUBURBAN` (Dhaka ↔ a sub-urban district, either way) → `SAME_DISTRICT` → `DIFFERENT_DISTRICT`.
@@ -420,7 +449,8 @@ The owner's spec "Service packages & pricing v2" (2026-10-17).
   { services[], prices (packagePricesSchema), effectiveFrom }`, `PackageAssignment { merchantId, packageId|null,
   effectiveFrom }`. Three defaults (one per category); no assignment = the category default.
 - Parcel columns: `packageVersionId`, `firstMile`, `lastMile`, `speedOption`, `openBox`, `onDemand`, `productId`,
-  `productName`, `productType`, `services[]`, `notifications[]` (package ∩ booking choice − product mutes),
+  `productName`, `productType`, `services[]`, `notifications[]` (the messages that may be sent: see "Parcel
+  messages" below),
   `collectHubId`, `collectionCodeEncrypted`, `readyForCollectionAt`, `collectionDueAt`, `collectionReminderAt`,
   `reattemptCharge`. `pricingSnapshot` (engine `package-v2`): package/version, prices, services, tier, pickup and
   delivery districts, drop / collection hub, selection, `lines`, delivery charge, COD fee, total (older `package`
@@ -450,9 +480,28 @@ segment=`. Quotes: `POST /pricing/quote` (customer), `POST /merchants/me/quote`,
 box, Weight only for Customer / E-com); the preview shows each row's `lines` and `totals`. Forms: both merchant
 panels and Courier Operations booking (`shared/order-services.js`), the website booking (React).
 
+### Parcel messages (stored per parcel)
+- Every booking surface (merchant single forms and Courier Operations booking via `shared/order-services.js`, the
+  website booking, the Excel import modal, the API `POST /parcels` `notifications`) shows the package's parcel
+  messages all pre-ticked; the user unticks what shouldn't go. Field omitted (API) = every message in the package.
+- `Parcel.notifications` is the source of truth, written at booking by `PackagesService.parcelFields`: the ticked
+  messages, or `[]` when the parcel's product has `sendMessages = false` (forms then show the checklist disabled
+  with "This product doesn't send messages"; `GET /packages/me|effective` `products[].sendMessages`, website
+  catalog `productsWithoutMessages`). Imports: each row stores the modal's selection, or `[]` when that row's
+  product has messages off; the preview rows carry `messagesOff` / `messagesNote` ("This product doesn't send
+  messages").
+- `NotifyService.notify({ parcel })` sends a parcel message only when the global toggle is on ∧ its code is in
+  `Parcel.notifications` ∧ the recipient hasn't opted out. Package and product were applied when the list was
+  stored. This covers the events that happen after booking too (pickup / out for delivery / delivered / failed
+  attempt, cancel, return scheduled / returned, feedback, changed to drop-off / pickup, Hub Pickup "ready for
+  collection" and its reminder). Parcels booked before packages (`packageVersionId` null) aren't gated.
+- "Ready for collection / collection reminder" (`notify.collection`) is an ordinary checklist entry, offered when
+  the package has it and pre-ticked like the rest; it only ever fires for Hub Pickup parcels. "Changed to hub
+  drop-off / rider pickup" work the same way.
+- No "Delivery code" in the list: no code SMS, and OTP isn't one of the parcel's proof methods.
+
 ### Behaviour
-Notifications (`NotifyService.notify({ parcel | pkg })`: global toggle ∧ package ∧ not unticked ∧ product allows ∧
-recipient preference), proof methods (`proofMethodsFor`; no OTP without the delivery code;
+Notifications (above; package-level messages such as support use `NotifyService.notify({ pkg })`), proof methods (`proofMethodsFor`; no OTP without the delivery code;
 `PROOF_METHOD_NOT_ALLOWED`), Hub Pickup (`READY_FOR_COLLECTION` at the collection hub, code SMS, `GET
 /ops/collections`, `POST /parcels/:id/collect`, `POST /parcels/:id/collection-code`, hold period and reminder in
 `GET/PUT /packages/settings`, job `collect-from-hub`; Courier Operations → Hubs → Hub Pickup counter), on-demand
@@ -463,7 +512,8 @@ priority (dispatch and rider lists sort it first; no instant-dispatch engine yet
 ### Administration
 Super admin → Service plans & pricing (`super-admin/bridge-packages.js`): packages per category, checkboxes, price
 fields in the owner's groups, version with effective date, default, archive, assignment to merchants, simulator,
-products, Hub Pickup hold period. Create / version / default / archive / assign are maker-checker
+products (list column "Messages: On / Off" with a "Send SMS & email" checkbox that saves at once; the add form has
+the same checkbox, on by default), Hub Pickup hold period. Create / version / default / archive / assign are maker-checker
 (`package.*`). Everything is audited. The merchant lists (super admin, Courier Operations → Merchants:
 `GET /ops/merchants` `package`) show each merchant's package; the super-admin account dialog shows it read-only
 (`GET /merchants/:id/package`) with "Change", which opens the merchant's row in the assignments table
@@ -475,3 +525,50 @@ answer 410 `PRICING_RETIRED`; merchant tariffs and platform-config plan entitlem
 packages are archived and their merchants moved back to their default. v1 products are deleted if unused, else
 deactivated. Ledger entries, audit logs and parcel history are never touched.
 
+
+## Courier Operations navigation (web: courier-operation/bridge-nav.js, bridge-parcel.js)
+UI only (2026-10-17): the menu follows the parcel journey; every page keeps its renderer, API calls,
+permissions and actions. A menu item opens a view; a view's tabs are original pages shown with a filter, a
+mode or a subset of their sections. The page scripts keep the old internal names (`render("Hubs")`,
+`DFOps.page()`, hidden `#breadcrumbPage` / `#legacyNav`), and every old name still opens the right place:
+`render(oldName)`, alert links (`data-page-link`) and `/courier-operation?page=<old or new name>[&tab=<tab>]`.
+
+| Old page | New place |
+|---|---|
+| Live overview | Today (stage cards with live counts, then the old overview and map) |
+| Shipments | All parcels › All |
+| E-commerce operations | All parcels › E-commerce |
+| Banking & Financial operations | All parcels › Banking & Financial |
+| Customer parcels | All parcels › Customer |
+| Dispatch & routes | Pickup › Assign pickup rider (pickup half of the queue) and Delivery (delivery half, map, route planner); `?page=Dispatch` → Delivery |
+| Scheduled pickups | Pickup › Scheduled pickups |
+| Hubs & zones (hub operations) | Hub desk › Receive (scan, receive, transfer, hub register, transfer report) · Drop-off receive (receive desk) · Hub Pickup counter; Hubs & zones (hub register, capacity, zones, routes, network setup); `?page=Hubs` → Hub desk |
+| Linehaul | Transfers |
+| Exceptions | Problems › Exceptions (also Failed delivery, Needs info, SLA late-risk) |
+| Returns (RTO) | Returns |
+| COD & finance | COD & settlement |
+| Analytics & SLA | Reports › Analytics & SLA |
+| Reports | Reports › Reports |
+| Riders & fleet, Merchant accounts, CN stock, Admin settings | Riders, Merchants, CN stock, Settings |
+| (new) New orders | Shipments page limited to Pending operations confirmation (all lines) |
+
+- Stage counts (menu badges, Today cards): `GET /ops/overview` `shipments.byStatus` (database counts,
+  reloaded after `parcel.*` events): New orders = PENDING_CONFIRMATION; Pickup = PICKUP_ASSIGNED +
+  PICKUP_CONFIRMED + PICKED_UP; Hub desk = AT_HUB + READY_FOR_COLLECTION; Transfers = IN_TRANSIT;
+  Delivery = ASSIGNED + OUT_FOR_DELIVERY; Problems = EXCEPTION + RETRY_SCHEDULED + open "Needs info" orders
+  of the working set; Returns = RETURN_SCHEDULED. Without the overview they come from the working set.
+- Menu per role (permissions unchanged; hidden pages stay reachable by link): super admin / operations
+  manager everything; hub operator Today, the seven stages, COD & settlement (rider cash handovers),
+  All parcels, Riders (with `rider:read`); finance COD & settlement (first, landing page), All parcels,
+  Reports, Merchants; support Today, All parcels and Support.
+- Next action (`DFOps.nextAction(parcel)`): Pending → Accept & assign rider (assign dialog); awaiting
+  drop-off → Receive (Hub desk › Drop-off receive); At hub → Assign rider, or Add to transfer when a hub
+  of the delivery zone other than the current one is known (Transfers); Exception → Resolve; Needs info →
+  Edit details; Ready for collection → Hand over (Hub Pickup counter); Return scheduled without a run →
+  Add to return run (Returns › Return a parcel). Rows show it, then Details (drawer) and More.
+- Parcel drawer `DFOps.drawer.open(trackingId)` (summary, actions, price lines, proof via
+  `GET /parcels/:id/proof`, staff notes, tracking history); the top-bar search (tracking ID / CN /
+  phone, Enter) opens it using the working set, `GET /parcels/:id` and `GET /parcels?q=`.
+- Stage pages have "Bulk update by Excel" with the stage preset (`DFOps.bulkConfig()` from bridge-bulk.js).
+- Browser tests: `opsNav(page, area)` and `OPS_NAV` in `apps/web/tests/e2e/support.ts`; `rowAction` /
+  `headingAction` open "More" menus.

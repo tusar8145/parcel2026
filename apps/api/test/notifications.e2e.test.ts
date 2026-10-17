@@ -2,6 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { decrypt } from "../src/common/crypto";
 import { OutboxService } from "../src/modules/notifications/outbox.service";
+import { NotifyService } from "../src/modules/notifications/notify.service";
 import { SmsRateLimiter } from "../src/modules/notifications/rate-limiter";
 import { NotificationSettingsService } from "../src/modules/notifications/notification-settings.service";
 import { GatewayError, MailjetEmailGateway, MramSmsGateway, parseMramResponse } from "../src/modules/notifications/providers";
@@ -177,6 +178,23 @@ describe("notifications (e2e)", () => {
     const locked = await ctx.api("PUT", "/notifications/templates/parcel.delivery_code/sms", { token: a.token, body: { enabled: false } });
     expect(locked.status).toBe(422);
     expect(locked.body.error.code).toBe("NOTIFICATION_LOCKED");
+  });
+
+  it("sends a parcel message only when the global switch is on, it is in the parcel's stored list and the recipient didn't opt out", async () => {
+    const notify = ctx.app.get(NotifyService);
+    const c = await customer();
+    const send = (notifications: string[], packageVersionId: string | null = "00000000-0000-7000-8000-000000000001") =>
+      notify.notify(ctx.prisma, { event: "parcel.delivered", to: { userId: c.user.id }, vars: { trackingId: "DF-T1", trackingUrl: "x" }, channels: ["sms"], parcel: { packageVersionId, notifications } });
+    expect(await send(["notify.delivered"])).toHaveLength(1);
+    expect(await send(["notify.booked"])).toHaveLength(0); // unticked at booking
+    expect(await send([])).toHaveLength(0); // product with messages off
+    expect(await send([], null)).toHaveLength(1); // booked before packages: not gated
+    await ctx.api("PUT", "/me/notification-preferences", { token: c.token, body: { preferences: [{ event: "parcel.delivered", channel: "sms", enabled: false }] } });
+    expect(await send(["notify.delivered"])).toHaveLength(0);
+    await ctx.prisma.notificationPreference.deleteMany({ where: { userId: c.user.id } });
+    const a = await admin();
+    await ctx.api("PUT", "/notifications/templates/parcel.delivered/sms", { token: a.token, body: { enabled: false } });
+    expect(await send(["notify.delivered"])).toHaveLength(0);
   });
 
   it("migrates switched-off events from the old platform settings once", async () => {

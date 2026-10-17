@@ -164,7 +164,9 @@
       select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     };
-    setSelect($("merchantProduct"), doc() ? p.name : p.category || p.name);
+    // The product dropdown lists only the package's parcel products: pick one only when the saved item matches it.
+    const wanted = doc() ? p.name : p.category || p.name;
+    if ([...($("merchantProduct")?.options || [])].some(o => o.value && o.value === wanted)) setSelect($("merchantProduct"), wanted);
     if (doc()) setSelect($("merchantDocumentType"), p.category && [...$("merchantDocumentType").options].some(o => o.value === p.category) ? p.category : undefined);
     setSelect($("merchantPackaging"), p.packaging);
     const weight = $("merchantWeight");

@@ -9,11 +9,11 @@ import type { Prisma } from "../../generated/prisma/client";
 import { PricingService, type Catalog, type CurrentCard } from "../pricing/pricing.service";
 import type { PlatformConfig } from "./admin.schemas";
 import { PackagesService } from "../packages/packages.service";
-import { DERIVED_KEYS } from "./derived-keys";
+import { DERIVED_KEYS, NOT_STORED_KEYS, RETIRED_KEYS } from "./derived-keys";
 
 export const PLATFORM_CONFIG_KEY = "platform-config";
 
-export { DERIVED_KEYS };
+export { DERIVED_KEYS, RETIRED_KEYS };
 
 const unique = (items: string[]) => [...new Set(items)];
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -34,20 +34,19 @@ export class PlatformConfigService {
 
   /** The stored configuration with the server-owned settings filled in; 404 until first saved. */
   async get(): Promise<PlatformConfig> {
-    const [setting, catalog, cards, products] = await Promise.all([
+    const [setting, catalog, cards] = await Promise.all([
       this.prisma.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } }),
       this.pricing.catalog(),
       this.packages.legacyCards(),
-      this.packages.products("ECOMMERCE"),
     ]);
     if (!setting || !isObject(setting.value)) throw notFound("Platform configuration");
-    // Website customers use the e-commerce product list once super admins set one up (service packages).
-    return withServerData(setting.value, products.length ? { ...catalog, products: products.map(p => p.name) } : catalog, cards);
+    // No product lists here: forms read the parcel products (GET /catalog, /packages/me, /parcel-products).
+    return withServerData(setting.value, catalog, cards);
   }
 
-  /** Replaces the stored configuration (server-owned settings are dropped, see DERIVED_KEYS). */
+  /** Replaces the stored configuration (server-owned settings and retired lists are dropped, see derived-keys.ts). */
   async save(actor: Actor, input: PlatformConfig, meta: RequestMeta): Promise<PlatformConfig> {
-    const stored = Object.fromEntries(Object.entries(input).filter(([key]) => !DERIVED_KEYS.includes(key))) as Prisma.InputJsonObject;
+    const stored = Object.fromEntries(Object.entries(input).filter(([key]) => !NOT_STORED_KEYS.includes(key))) as Prisma.InputJsonObject;
     await this.prisma.$transaction(async tx => {
       const previous = await tx.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } });
       const before = objectAt(previous?.value);
@@ -84,12 +83,11 @@ function withServerData(
   // Follow the district order (JSONB doesn't keep object key order).
   const zones = unique(catalog.districts.flatMap(d => catalog.zonesByDistrict[d] ?? []));
   return {
-    ...stored,
+    ...Object.fromEntries(Object.entries(stored).filter(([key]) => !RETIRED_KEYS.includes(key))),
     deliveryServices: SERVICE_LEVELS.map(level => SERVICE_LEVEL_LABEL[level]),
     geoCatalog: { district: catalog.districts, zone: zones, area: unique(zones.flatMap(z => catalog.areasByZone[z] ?? [])) },
     geoHierarchy: { zonesByDistrict: catalog.zonesByDistrict, areasByZone: catalog.areasByZone },
     ecommercePackaging: catalog.packaging,
-    ecommerceProducts: catalog.products,
     customerParcelPricing: {
       sameZone: customer.sameZone,
       crossZone: customer.crossZone,

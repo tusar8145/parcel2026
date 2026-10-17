@@ -184,7 +184,7 @@
     return `<fieldset id="dfiNotifications" style="border:1px solid #e3e8ef;border-radius:10px;padding:10px 12px;margin:0"><legend style="font-weight:600;font-size:13px;padding:0 4px">${esc(notificationLegend())}</legend>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px 12px;font-size:13px">${pkg.notifications
         .map(n => `<label style="display:flex;gap:7px;align-items:center"><input type="checkbox" data-dfi-notify="${esc(n.code)}" ${ui.notifications.has(n.code) ? "checked" : ""}> ${esc(n.title)}</label>`)
-        .join("")}</div></fieldset>`;
+        .join("")}</div><p class="panel-subtitle" style="margin:6px 0 0;font-size:12px">Rows whose product doesn't send messages are booked without any.</p></fieldset>`;
   }
   const notificationLegend = () => `Messages to send for these ${noun(ui.cfg)} (${ui.notifications.size} of ${ui.pkg.notifications.length})`;
   const lastMileNote = () =>
@@ -377,13 +377,15 @@
             : r.trackingId
               ? `<span class="tracking">${esc(r.trackingId)}</span>`
               : "";
+        // The row's product has "Send SMS & email" off: booked with no messages, whatever is ticked above.
+        const quiet = r.messagesOff && r.status !== "ERROR" ? `<div data-messages-off style="color:#637083">${esc(r.messagesNote || "This product doesn't send messages")}</div>` : "";
         // The row's price, with its breakdown (service packages) one click away.
         const charge = r.lines?.length
           ? `<details data-price="${esc(r.charge)}"><summary title="${esc(r.lines.map(l => `${l.label}: ${l.amount < 0 ? "−" : ""}৳${Math.abs(l.amount)}`).join("\n"))}" style="cursor:pointer">${esc(taka(r.charge))}</summary><div style="font-size:11px;line-height:1.5;color:#637083;white-space:nowrap">${r.lines
               .map(l => `<div>${esc(l.label)} · ${l.amount < 0 ? "−" : ""}৳${esc(Math.abs(l.amount))}</div>`)
               .join("")}</div></details>`
           : esc(taka(r.charge));
-        return `<tr data-row="${r.rowNumber}" data-status="${r.status}"><td>${r.rowNumber}</td><td>${pill(cfg, label, key)}</td>${cells}<td style="white-space:nowrap" data-col="charge">${charge}</td><td style="min-width:260px;font-size:12px;line-height:1.45">${problems}</td></tr>`;
+        return `<tr data-row="${r.rowNumber}" data-status="${r.status}"><td>${r.rowNumber}</td><td>${pill(cfg, label, key)}</td>${cells}<td style="white-space:nowrap" data-col="charge">${charge}</td><td style="min-width:260px;font-size:12px;line-height:1.45">${problems}${quiet}</td></tr>`;
       })
       .join("");
     const empty = `<tr><td colspan="${shown.length + 4}" class="empty-state">No rows match this filter.</td></tr>`;

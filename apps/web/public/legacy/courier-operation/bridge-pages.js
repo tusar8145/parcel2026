@@ -156,6 +156,8 @@
     if (queue) {
       const waiting = shipments
         .filter(s => s.rider === "Unassigned" && !CLOSED.includes(s.status) && (!s._api.currentHub || Ops.inMyHubs(s._api.currentHub.id)))
+        // Pickup and Delivery (bridge-nav.js) each show their half of the queue.
+        .filter(s => !Ops.dispatchQueueFilter || Ops.dispatchQueueFilter(s._api))
         .sort((a, b) => (RANK[a.sla] ?? 3) - (RANK[b.sla] ?? 3) || String(a._api.createdAt).localeCompare(String(b._api.createdAt)));
       const shown = waiting.slice(0, 8);
       const list = q(".alert-list", queue);

@@ -30,4 +30,16 @@ Courier Operations, drawn with each panel's own modal/table/status classes; in b
 steps run Courier Operations' "Bulk update by Excel" on /bulk-updates, see courier-operation/bridge-bulk.js) and
 `shared/scanner.js` (barcode scanning).
 
+Courier Operations navigation (around the parcel journey) is the last pair of scripts:
+`courier-operation/bridge-parcel.js` (parcel drawer `DFOps.drawer.open(id)`, the "next action" per parcel
+`DFOps.nextAction(parcel)` / `DFOps.runNext(kind, id)` with the row's other buttons under "More", and the
+top-bar search: tracking ID, CN or phone → drawer) and `courier-operation/bridge-nav.js` (the menu in
+`Sidebar.tsx`, `data-nav` views with `data-nav-tab` tabs, live stage counts, the role's menu, stage bulk
+updates, `DFOps.navigate(view, tab)`). The original pages keep their internal names: `render("Hubs")`,
+`DFOps.page()`, the hidden `#breadcrumbPage` (the visible label is `#breadcrumbLabel`) and the hidden
+`#legacyNav` buttons that the page scripts mark active. Old names (in `render()` calls and
+`/courier-operation?page=<old or new name>&tab=<tab>`) open the view that now holds the page; the map is in
+docs/architecture-contracts.md ("Courier Operations navigation"). Browser tests navigate with `opsNav(page,
+area)` from `tests/e2e/support.ts` (`OPS_NAV`).
+
 As a feature is rebuilt in React, delete its code here and from `scripts.ts`.

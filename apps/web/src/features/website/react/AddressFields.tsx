@@ -13,7 +13,7 @@ export function catalog(): Catalog {
       zonesByDistrict: {},
       areasByZone: {},
       packaging: ["Small carton", "Large carton", "Box", "Poly mailer"],
-      products: ["General merchandise", "Fragile item", "Clothing", "Electronics"],
+      products: [], // only the parcel products from GET /catalog
       weightsKg: [0.5, 1, 2, 5],
       serviceLevels: { REGULAR: "Regular", SAME_DAY: "Same day", EXPRESS: "Express" },
     }

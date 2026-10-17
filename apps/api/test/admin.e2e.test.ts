@@ -144,8 +144,21 @@ describe("admin: platform settings, pricing and overview", () => {
       expect(config.geoCatalog).toEqual({ district: ["Dhaka North", "Sylhet"], zone: ["Gulshan", "Zindabazar"], area: ["Lamabazar"] });
       expect(config.geoHierarchy.areasByZone).toEqual({ Zindabazar: ["Lamabazar"] });
       expect(config.ecommercePackaging).toEqual(["Box"]);
-      // Products come from the Customer + E-commerce product list (service packages v2).
-      expect(config.ecommerceProducts).toContain("Fashion & Apparel");
+      // No product lists in the platform config: forms read the parcel products. Retired lists are never stored.
+      expect(config.ecommerceProducts).toBeUndefined();
+      expect((await ctx.api("GET", "/catalog")).body.products).toContain("Fashion & Apparel");
+      expect((await ctx.api("GET", "/catalog")).body.products).not.toContain("Clothing");
+      await ctx.api("PUT", "/settings/platform-config", {
+        token,
+        body: { channels: { sms: true }, ecommerceProducts: ["Old"], documentProducts: ["Old"], documentTypes: ["Curtout"], serviceCatalog: [], returnReasons: ["Shop closed"] },
+      });
+      const stored = (await ctx.prisma.setting.findUnique({ where: { key: "platform-config" } }))!.value as Record<string, unknown>;
+      expect(Object.keys(stored).sort()).toEqual(["channels", "returnReasons"]);
+      const after = (await ctx.api("GET", "/settings/platform-config")).body;
+      expect(after.documentTypes).toBeUndefined();
+      expect(after.documentProducts).toBeUndefined();
+      // Return requests offer the saved return reasons.
+      expect((await ctx.api("GET", "/returns/reasons", { token })).body.reasons).toEqual(["Shop closed"]);
     });
 
     it("keeps the hierarchy consistent", async () => {

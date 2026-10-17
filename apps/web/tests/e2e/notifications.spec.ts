@@ -175,6 +175,17 @@ test.describe.serial("super admin notifications", () => {
       await expect(drop).toContainText("SMS + Email");
       await expect(drop.locator('[data-nt-badge="customised"]')).toBeVisible();
 
+      // Hovering a message name shows its current texts; leaving hides them.
+      const card = page.locator("#ntTemplateCard");
+      await drop.locator("[data-nt-hover]").hover();
+      await expect(card).toBeVisible();
+      await expect(card).toContainText("Changed to hub drop-off");
+      await expect(card).toContainText("{{trackingId}}: bring it to {{hub}}. Tk {{charge}}.");
+      await expect(card).toContainText("Customised");
+      await expect(card).toContainText("Subject:");
+      await page.locator("#ntShowing").hover();
+      await expect(card).toBeHidden();
+
       // Search across name, key and audience; empty groups hide.
       await page.fill("#ntSearch", "drop-off");
       await expect(drop).toBeVisible();

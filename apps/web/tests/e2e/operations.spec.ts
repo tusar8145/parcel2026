@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, OPS_NAV, expect, opsNav, test, type OpsArea, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 // Every account is temporary (support.ts): the operations manager, the Gulshan hub operator,
 // finance and support staff, the merchant and the rider are created in the database before the
@@ -71,7 +71,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   const riderLabel = `${rider.code} · ${rider.name}`;
   // ── Operations books an e-commerce order for the (temporary) merchant ──
   const ops = await signedIn(browser, OPS, /\/courier-operation/, errors);
-  await nav(ops, "E-commerce operations");
+  await opsNav(ops, "ecommerce");
   await ops.click('[data-action="newEcommerce"]');
   await chooseOption(ops, "#bkMerchant", shop.name);
   await ops.fill("#bkRecipient", recipient);
@@ -86,11 +86,11 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   const trackingId = (await toast(ops).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
   // It's a merchant parcel: listed under E-commerce operations, not Customer parcels.
   await expect(ops.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`)).toContainText(shop.name);
-  await nav(ops, "Customer parcels");
+  await opsNav(ops, "customerParcels");
   await expect(ops.locator(`#shipmentBody tr[data-shipment-id="${trackingId}"]`)).toHaveCount(0);
 
-  // ── Dispatch assigns the pickup to the rider ──
-  await nav(ops, "Dispatch");
+  // ── Pickup: dispatch assigns the pickup to the rider ──
+  await opsNav(ops, "pickup");
   await ops.click('.heading-actions [data-action="assign"]');
   await ops.selectOption("#assignShipment", trackingId);
   await chooseOption(ops, "#assignRider", rider.code);
@@ -108,7 +108,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
 
   // ── Gulshan's hub operator transfers it to Dhanmondi ──
   const hub = await signedIn(browser, HUB_GULSHAN, /\/courier-operation/, errors);
-  await nav(hub, "Hubs");
+  await opsNav(hub, "hubReceive");
   await expect(hub.locator("#hubShipmentRows")).toContainText(trackingId);
   // Hub operators scan and receive only at their own hub.
   await expect(hub.locator("#hubScanLocation option")).toHaveText(["Gulshan Sorting Hub"]);
@@ -121,7 +121,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
 
   // ── Dhanmondi receives it (operations manager at the hub console) ──
   await reload(ops);
-  await nav(ops, "Hubs");
+  await opsNav(ops, "hubReceive");
   await ops.fill('#hubReceiveForm input[name="tracking"]', trackingId);
   await ops.fill('#hubReceiveForm input[name="sender"]', shop.name);
   await ops.fill('#hubReceiveForm input[name="recipient"]', recipient);
@@ -136,8 +136,8 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await ops.click('#hubScanForm button[type="submit"]');
   await expect(ops.locator("#hubScanFeedback")).toContainText(`${trackingId} is already at Dhanmondi Hub`);
 
-  // ── Dispatch assigns the delivery to the rider ──
-  await nav(ops, "Dispatch");
+  // ── Delivery: dispatch assigns the delivery to the rider ──
+  await opsNav(ops, "delivery");
   await ops.click('.heading-actions [data-action="assign"]');
   await ops.selectOption("#assignShipment", trackingId);
   await chooseOption(ops, "#assignRider", rider.code);
@@ -171,7 +171,7 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
 
   // ── Gulshan receives the rider's cash ──
   await reload(hub);
-  await nav(hub, "COD & finance");
+  await opsNav(hub, "cod");
   const row = hub.locator("#codRiderCash tr", { hasText: rider.code });
   await row.locator("[data-cod-receive]").click();
   await expect(hub.locator("#codCollections")).toContainText(trackingId);
@@ -191,12 +191,15 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
 
 test("every operations page renders live data for each staff role", async ({ browser }) => {
   test.setTimeout(420_000);
-  const pages = ["Overview", "Shipments", "Dispatch", "Exceptions", "Customer parcels", "E-commerce operations", "Banking & Financial operations", "Riders", "Hubs", "Merchants", "COD & finance", "Analytics", "Settings"];
+  // Every area in each role's menu (ops-navigation.spec.ts checks which areas each role sees).
+  const areas = Object.keys(OPS_NAV) as OpsArea[];
   for (const account of [OPS, HUB_GULSHAN, FINANCE, SUPPORT]) {
     const errors: string[] = [];
     const page = await signedIn(browser, account, /\/courier-operation/, errors);
-    for (const name of pages) {
-      await nav(page, name);
+    await page.evaluate(() => (window as unknown as { DF: { bridgeReady: Promise<unknown> } }).DF.bridgeReady);
+    for (const area of areas) {
+      if (!(await page.locator(`#navigation [data-nav="${OPS_NAV[area][0]}"]`).isVisible())) continue;
+      await opsNav(page, area);
       await expect(page.locator("#mainContent")).not.toContainText(/sample (records|shipments|data|register)|Demo data/i);
     }
     // Finance can't see riders (403 for the boot-time rider list is expected).

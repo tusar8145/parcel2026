@@ -6,9 +6,14 @@
  * plus the live price breakdown of a quote (lines + total). See docs/architecture-contracts.md.
  *
  *   DFOrderServices.load(path)                    → package view (cached a minute per path)
- *   DFOrderServices.block(view, { prefix, hubs })  → HTML for the form (ids `${prefix}FirstMile`, …)
+ *   DFOrderServices.block(view, { prefix, hubs, productSelect })  → HTML for the form (ids `${prefix}FirstMile`, …)
  *   DFOrderServices.read(view, prefix)            → { firstMile, dropHubId, lastMile, collectHubId, speed, openBox, cod, notifications? }
- *   DFOrderServices.sync(prefix)                  → shows / hides the hub selects after a change
+ *   DFOrderServices.sync(prefix)                  → shows / hides the hub selects after a change; disables the
+ *                                                   messages checklist when the chosen product sends no messages
+ *
+ * Messages: every message in the package is pre-ticked; the user unticks what shouldn't go and the
+ * parcel stores the final list. A product with "Send SMS & email" off sends nothing: the checklist
+ * is disabled with "This product doesn't send messages" (the API stores an empty list).
  *   DFOrderServices.breakdown(quote)              → HTML list of the price lines and the total
  */
 (() => {
@@ -18,6 +23,15 @@
   const taka = n => `৳${Number(n || 0).toLocaleString("en-BD")}`;
   const cache = new Map();
   const $ = id => document.getElementById(id);
+  /** prefix → { view, productSelect }: which select holds the product (`${prefix}Product` or the form's own). */
+  const forms = new Map();
+  const silentProduct = prefix => {
+    const f = forms.get(prefix);
+    const value = f && $(f.productSelect)?.value;
+    if (!value) return null;
+    const product = (f.view.products || []).find(p => p.name === value || p.id === value);
+    return product && product.sendMessages === false ? product : null;
+  };
 
   async function load(path) {
     const hit = cache.get(path);
@@ -35,8 +49,9 @@
    * fields): only an "On-demand pickup" choice is added when the package offers it. `product: true` adds
    * the product select (the merchant forms already have one).
    */
-  function block(view, { prefix, hubs, firstMile = true, product = false } = {}) {
+  function block(view, { prefix, hubs, firstMile = true, product = false, productSelect } = {}) {
     if (!view) return "";
+    forms.set(prefix, { view, productSelect: productSelect || `${prefix}Product` });
     const o = view.options;
     const L = view.labels;
     const hubList = hubs || view.dropHubs || view.collectHubs || [];
@@ -62,7 +77,7 @@
       parts.push(
         `<details class="form-field full" id="${prefix}Notifications"><summary style="cursor:pointer;font-weight:600">Messages to send (${view.notifications.length} of ${view.notifications.length})</summary><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:5px 12px;margin-top:6px;font-size:13px">${view.notifications
           .map(n => `<label style="display:flex;gap:7px;align-items:center"><input type="checkbox" data-svc-notify="${esc(n.code)}" checked> ${esc(n.title)}</label>`)
-          .join("")}</div></details>`,
+          .join("")}</div><p data-svc-notify-off hidden style="margin:6px 0 0;color:#8792a2;font-size:12px">This product doesn't send messages</p></details>`,
       );
     return parts.join("");
   }
@@ -77,9 +92,13 @@
     if (collect && last) collect.hidden = last !== "HUB_COLLECT";
     const box = $(`${prefix}Notifications`);
     if (box) {
-      const all = box.querySelectorAll("[data-svc-notify]");
-      const on = [...all].filter(i => i.checked).length;
-      box.querySelector("summary").textContent = `Messages to send (${on} of ${all.length})`;
+      const all = [...box.querySelectorAll("[data-svc-notify]")];
+      const off = !!silentProduct(prefix);
+      for (const i of all) i.disabled = off;
+      box.querySelector("[data-svc-notify-off]").hidden = !off;
+      box.toggleAttribute("data-messages-off", off);
+      const on = all.filter(i => i.checked).length;
+      box.querySelector("summary").textContent = off ? "Messages to send (none: this product doesn't send messages)" : `Messages to send (${on} of ${all.length})`;
     }
   }
 
@@ -101,8 +120,9 @@
       ...($(`${prefix}Product`)?.value ? { product: $(`${prefix}Product`).value } : {}),
       openBox: !!$(`${prefix}OpenBox`)?.checked,
       cod: o.cod ? ($(`${prefix}Cod`) ? $(`${prefix}Cod`).checked : true) : false,
-      // Only a changed checklist is sent (default: every message in the package).
-      ...(boxes.length && ticked.length !== boxes.length ? { notifications: ticked } : {}),
+      // Only a changed checklist is sent (default: every message in the package). A product that sends no
+      // messages needs nothing: the API stores an empty list for it.
+      ...(boxes.length && ticked.length !== boxes.length && !silentProduct(prefix) ? { notifications: ticked } : {}),
     };
   }
 

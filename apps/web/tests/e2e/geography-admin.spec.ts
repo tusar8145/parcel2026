@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, sql, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, expect, opsNav, sql, test, type TempUser } from "./support";
 
 // Geography admin (super admin → Shared catalogs & locations) and the hub register (Courier
 // Operations → Hubs & zones). Everything is created with unique names by temporary accounts and
@@ -181,7 +181,7 @@ test("operations: hub register: add, edit, deactivate, delete only when unused",
   const { page, errors } = await openPanel(browser);
   page.on("dialog", dialog => dialog.accept());
   await signIn(page, ops, /\/courier-operation/);
-  await page.click('#navigation [data-page="Hubs"]');
+  await opsNav(page, "hubsZones");
   const register = page.locator("#hubRegister");
   await expect(register).toContainText("Hub register");
   await expect(register).toContainText("Gulshan Sorting Hub", { timeout: 20_000 });

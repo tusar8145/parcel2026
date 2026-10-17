@@ -176,6 +176,8 @@ export default function BookingView() {
     },
   );
   const v = form.values;
+  // A product with "Send SMS & email" off: no parcel messages (the API stores an empty list).
+  const productSilent = !!v.requestProduct && !!cat.productsWithoutMessages?.includes(v.requestProduct);
 
   // Pickup slots for the chosen district (capacity is per district).
   useEffect(() => {
@@ -296,7 +298,7 @@ export default function BookingView() {
       packaging: v.requestPackaging || undefined,
       contents: v.requestProduct || undefined,
       ...packageChoices(),
-      ...(pkg && unticked.length ? { notifications: pkg.notifications.map(n => n.code).filter(code => !unticked.includes(code)) } : {}),
+      ...(pkg && unticked.length && !productSilent ? { notifications: pkg.notifications.map(n => n.code).filter(code => !unticked.includes(code)) } : {}),
       codAmount: v.requestCodEnabled === "1" ? Number(v.requestCodAmount) || 0 : 0,
       instructions: v.requestInstructions.trim() || undefined,
       ...(start && end ? { pickupWindow: { start, end } } : {}),
@@ -535,14 +537,17 @@ export default function BookingView() {
           <FieldError id="requestInstructions" message={form.error("requestInstructions")} />
         </div>
         {pkg && pkg.notifications.length ? (
-          <details className="field full" id="requestNotifications">
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>{`Messages we send (${pkg.notifications.length - unticked.length} of ${pkg.notifications.length})`}</summary>
+          <details className="field full" id="requestNotifications" data-messages-off={productSilent ? "" : undefined}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+              {productSilent ? "Messages we send (none: this product doesn't send messages)" : `Messages we send (${pkg.notifications.length - unticked.length} of ${pkg.notifications.length})`}
+            </summary>
             {pkg.notifications.map(n => (
               <label className="checkline" key={n.code}>
-                <input type="checkbox" checked={!unticked.includes(n.code)} onChange={e => setUnticked(list => (e.target.checked ? list.filter(c => c !== n.code) : [...list, n.code]))} />
+                <input type="checkbox" disabled={productSilent} checked={!unticked.includes(n.code)} onChange={e => setUnticked(list => (e.target.checked ? list.filter(c => c !== n.code) : [...list, n.code]))} />
                 {` ${n.title}`}
               </label>
             ))}
+            {productSilent ? <p style={{ margin: "6px 0 0", color: "#8792a2", fontSize: 12 }}>{"This product doesn't send messages"}</p> : null}
           </details>
         ) : null}
         <div className="field full">

@@ -1,6 +1,6 @@
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, sql, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, expect, opsNav, sql, test, type TempUser } from "./support";
 
 // The nationwide geography (npm run db:seed:geo) in the panels: the super admin's geography admin
 // lists the districts and shows one district's zones / one zone's areas (or a search) at a time, and hubs carry the catalog zone drop-offs
@@ -62,7 +62,7 @@ test("super admin browses the country's districts, zones and areas without rende
 test("operations add a hub with its zone from the district's zones and change it later", async ({ browser }) => {
   const ops = await fx.user(`E2E-Geo-Ops-${stamp} Test`, [{ role: "OPS_MANAGER" }]);
   const page = await panel(browser, ops, "/courier-operation");
-  await nav(page, "Hubs");
+  await opsNav(page, "hubsZones");
   const name = `E2E Geo Hub ${stamp}`;
   await page.selectOption('#hubConfigForm select[name="kind"]', "hub");
   await page.fill('#hubConfigForm input[name="name"]', name);

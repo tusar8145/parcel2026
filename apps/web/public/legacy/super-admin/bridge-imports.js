@@ -1,5 +1,5 @@
 /*
- * Super admin → Service catalog → "Spreadsheet imports": which columns of the e-commerce and the
+ * Super admin → Import settings → "Spreadsheet imports": which columns of the e-commerce and the
  * document import templates are required, the value used when a cell is empty, where orders
  * without a destination are priced to, and the file limits (GET/PUT /imports/config, audited).
  * Templates, validation and the instructions sheet follow the settings at once; the template
@@ -27,7 +27,7 @@
   window.showPage = showPage = function (page) {
     baseShowPage(page);
     current = page;
-    if (page === "Service catalog") void load();
+    if (page === "Import settings") void load();
   };
 
   // The default-destination dropdowns follow geography changes.
@@ -39,7 +39,7 @@
     } catch (error) {
       return toast(DF.describe(error));
     }
-    if (current === "Service catalog") draw();
+    if (current === "Import settings") draw();
   }
 
   function columnRows(kind) {

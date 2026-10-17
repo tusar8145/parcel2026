@@ -67,7 +67,25 @@
     row.style.background = "#f3f6ff";
     row.querySelector("select")?.focus();
   }
-  window.DFPackages = { openAssignment };
+  /** Opens the product list of a segment (Shared catalogs & locations links here: products are parcel products, not catalog chips). */
+  async function openProducts(segment = "ECOMMERCE") {
+    S.segment = segment;
+    S.editing = null;
+    S.draft = null;
+    S.simResult = null;
+    showPage(PAGE);
+    if (loading) await loading;
+    if (!active) return;
+    render();
+    document.getElementById("pkgProductsPanel")?.scrollIntoView({ block: "start" });
+  }
+  document.addEventListener("click", event => {
+    const button = event.target.closest?.("[data-open-products]");
+    if (!button) return;
+    event.preventDefault();
+    void openProducts(button.dataset.openProducts || "ECOMMERCE");
+  });
+  window.DFPackages = { openAssignment, openProducts };
 
   async function load(...only) {
     const want = name => !only.length || only.includes(name);
@@ -154,7 +172,7 @@
         ${S.editing ? panel(S.editing === "new" ? `New ${segLabel(seg)} package` : `Edit ${esc(S.packages.find(p => p.id === S.editing)?.name || "")}`, "Saving creates a new version from its effective date.", editor(seg), "", "pkgEditorPanel", true) : ""}
         ${panel("Price simulator", S.editing ? "Prices this draft would charge (before you save it)." : "Prices of the default package, or of the package you are editing.", simulator(seg), "", "pkgSimulatorPanel")}
         ${seg !== "CUSTOMER" ? panel(`${segLabel(seg)} merchants`, "Assign a package from a date (empty = now). Merchants without one use the default package.", assignmentsTable(seg), "", "pkgAssignmentsPanel") : ""}
-        ${panel(seg === "BANKING_FINANCIAL" ? "Banking & Financial products" : "Customer & E-commerce products", "Optional in bookings; the product's type (Regular, Document, Books) prices the parcel. Untick a message to never send it for that product.", productsPanel(seg === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"), "", "pkgProductsPanel", true)}
+        ${panel(seg === "BANKING_FINANCIAL" ? "Banking & Financial products" : "Customer & E-commerce products", "Optional in bookings; the product's type (Regular, Document, Books) prices the parcel. Switch off 'Send SMS & email' to send no messages for its parcels.", productsPanel(seg === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"), "", "pkgProductsPanel", true)}
         ${panel("Hub Pickup", "How long a parcel waits at the collection hub, and when the reminder SMS goes out.", settingsPanel(), "", "pkgSettingsPanel")}
       </div>`;
   }
@@ -168,7 +186,7 @@
     if (!rows.length) return `<p class="panel-subtitle">No packages yet.</p>`;
     return `<div class="table-scroll"><table id="pkgTable"><thead><tr><th>PACKAGE</th><th>IN FORCE</th><th>MERCHANTS</th><th>NEXT CHANGE</th><th></th></tr></thead><tbody>${rows
       .map(p => {
-        const status = p.status === "ARCHIVED" ? `<span class="status gray">Archived</span>` : p.isDefault ? `<span class="status status-good">Default</span>` : `<span class="status status-blue">Active</span>`;
+        const status = p.status === "ARCHIVED" ? `<span class="status status-warn">Archived</span>` : p.isDefault ? `<span class="status status-good">Default</span>` : `<span class="status status-blue">Active</span>`;
         const next = p.scheduled?.[0] ? `v${p.scheduled[0].version} from ${fmtDate(p.scheduled[0].effectiveFrom)}` : "—";
         const actions = [
           p.status === "ACTIVE" ? `<button type="button" class="button button-sm" data-pkg-edit="${p.id}">Edit</button>` : "",
@@ -280,31 +298,21 @@
       .join("")}</tbody></table></div>`;
   }
 
-  /** One checkbox per parcel message: checked = may be sent for this product. */
-  function allowChecks(muted, attr) {
-    const list = S.catalog.notifications || [];
-    return `<div class="service-plan-checks">${list
-      .filter(n => n.code !== "notify.guest_verification")
-      .map(n => `<label class="config-check"><input type="checkbox" ${attr}="${esc(n.code)}" ${muted.includes(n.code) ? "" : "checked"}> ${esc(`${n.label} (${n.audience})`)}</label>`)
-      .join("")}</div>`;
-  }
-
   function productsPanel(segment) {
     const rows = S.products.filter(p => p.segment === segment);
     const types = S.catalog.productTypes || [];
     const typeLabel = code => types.find(t => t.code === code)?.label || code;
-    const label = code => S.catalog.notifications.find(n => n.code === code)?.label || code;
     const list = rows.length
-      ? `<div class="table-scroll"><table id="pkgProducts"><thead><tr><th>PRODUCT</th><th>TYPE</th><th>MESSAGES NOT SENT</th><th>PARCELS</th><th></th></tr></thead><tbody>${rows
+      ? `<div class="table-scroll"><table id="pkgProducts"><thead><tr><th>PRODUCT</th><th>TYPE</th><th>MESSAGES</th><th>PARCELS</th><th></th></tr></thead><tbody>${rows
           .map(
-            p => `<tr data-pkg-product="${esc(p.name)}"><td class="primary-cell">${esc(p.name)} ${p.active ? "" : `<span class="status gray">Inactive</span>`}</td><td>${esc(typeLabel(p.type))}</td><td>${p.mutedNotifications.length ? p.mutedNotifications.map(c => `<span class="config-chip">${esc(label(c))}</span>`).join(" ") : "All may be sent"}
-            <details><summary class="subcell" style="cursor:pointer">Messages</summary>${allowChecks(p.mutedNotifications, `data-pkg-allow-${p.id}`)}<button type="button" class="button button-sm" data-pkg-product-mutes="${p.id}" style="margin-top:6px">Save messages</button></details></td>
+            p => `<tr data-pkg-product="${esc(p.name)}"><td class="primary-cell">${esc(p.name)} ${p.active ? "" : `<span class="status status-warn">Inactive</span>`}</td><td>${esc(typeLabel(p.type))}</td><td data-pkg-product-messages-cell><span class="status ${p.sendMessages ? "status-good" : "status-warn"}">Messages: ${p.sendMessages ? "On" : "Off"}</span>
+            <label class="config-check" style="margin-top:5px"><input type="checkbox" data-pkg-product-messages="${p.id}" ${p.sendMessages ? "checked" : ""}> Send SMS &amp; email</label></td>
             <td>${p.parcels}</td><td><div style="display:flex;gap:5px;flex-wrap:wrap"><button type="button" class="button button-sm" data-pkg-product-toggle="${p.id}">${p.active ? "Deactivate" : "Activate"}</button>${p.parcels ? "" : `<button type="button" class="button button-sm button-danger" data-pkg-product-delete="${p.id}">Delete</button>`}</div></td></tr>`,
           )
           .join("")}</tbody></table></div>`
       : `<p class="panel-subtitle">No products yet.</p>`;
     return `${list}<form id="pkgProductForm" class="config-form" style="margin-top:10px" data-segment="${segment}"><div class="form-grid"><div class="field"><label for="pkgProductName">New product</label><input id="pkgProductName" name="productName" maxlength="120" placeholder="${segment === "BANKING_FINANCIAL" ? "e.g. Credit Cards" : "e.g. Fashion & Apparel"}" required></div><div class="field"><label for="pkgProductType">Type</label><select id="pkgProductType" name="productType">${types.map(t => `<option value="${t.code}">${esc(t.label)}</option>`).join("")}</select></div></div>
-      <details><summary class="subcell" style="cursor:pointer">Messages that may be sent for it</summary>${allowChecks([], "data-pkg-new-allow")}</details><div class="modal-actions"><button type="submit" class="button button-primary">Add product</button></div></form>`;
+      <label class="config-check"><input type="checkbox" name="sendMessages" id="pkgProductSendMessages" checked> Send SMS &amp; email for this product</label><p class="panel-subtitle" style="margin:4px 0 0">Off: parcels of this product get no messages. Which messages go is chosen on each booking.</p><div class="modal-actions"><button type="submit" class="button button-primary">Add product</button></div></form>`;
   }
 
   function settingsPanel() {
@@ -415,17 +423,6 @@
           render();
         });
       }
-      if ((b = btn("[data-pkg-product-mutes]"))) {
-        stop(event);
-        const id = b.dataset.pkgProductMutes;
-        const muted = [...document.querySelectorAll(`[data-pkg-allow-${id}]`)].filter(i => !i.checked).map(i => i.getAttribute(`data-pkg-allow-${id}`));
-        return busy(b, async () => {
-          await DF.api(`/parcel-products/${id}`, { method: "PATCH", body: { mutedNotifications: muted } });
-          toast("Product messages saved.");
-          await load("products");
-          render();
-        });
-      }
       if ((b = btn("[data-pkg-group-save]"))) {
         stop(event);
         const id = b.dataset.pkgGroupSave;
@@ -466,6 +463,24 @@
       const t = event.target;
       if (!active || !(t instanceof Element)) return;
       if (t.closest("#pkgEditor")) return readEditor();
+      if (t.matches?.("[data-pkg-product-messages]")) {
+        const p = S.products.find(x => x.id === t.dataset.pkgProductMessages);
+        if (!p) return;
+        const sendMessages = t.checked;
+        t.disabled = true;
+        void DF.api(`/parcel-products/${p.id}`, { method: "PATCH", body: { sendMessages } })
+          .then(async () => {
+            toast(sendMessages ? `${p.name}: SMS & email will be sent.` : `${p.name}: no SMS or email for its parcels.`);
+            await load("products");
+            render();
+          })
+          .catch(error => {
+            t.checked = !sendMessages;
+            t.disabled = false;
+            fail(error);
+          });
+        return;
+      }
       const key = t.dataset?.sim;
       if (!key) return;
       S.sim[key] = t.type === "checkbox" ? t.checked : t.value;
@@ -540,9 +555,9 @@
         stop(event);
         const name = form.elements.productName.value.trim();
         if (!name) return toast("Enter the product name.");
-        const muted = [...form.querySelectorAll("[data-pkg-new-allow]")].filter(i => !i.checked).map(i => i.dataset.pkgNewAllow);
+        const sendMessages = form.elements.sendMessages.checked;
         return busy(form.querySelector("button[type=submit]"), async () => {
-          await DF.api("/parcel-products", { method: "POST", body: { segment: form.dataset.segment, name, type: form.elements.productType.value, mutedNotifications: muted } });
+          await DF.api("/parcel-products", { method: "POST", body: { segment: form.dataset.segment, name, type: form.elements.productType.value, sendMessages } });
           toast(`${name} added.`);
           await load("products");
           render();

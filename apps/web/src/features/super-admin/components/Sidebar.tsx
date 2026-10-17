@@ -107,11 +107,11 @@ export default function Sidebar() {
             </svg>
             {"Admin users & roles"}
           </button>{" "}
-          <button className="nav-item" data-page="Service catalog">
+          <button className="nav-item" data-page="Import settings">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-box" />
             </svg>
-            Service catalog
+            Import settings
           </button>{" "}
           <button className="nav-item" data-page="Platform settings">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

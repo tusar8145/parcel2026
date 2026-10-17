@@ -78,6 +78,8 @@ export interface Catalog {
   areasByZone: Record<string, string[]>;
   packaging: string[];
   products: string[];
+  /** Products whose "Send SMS & email" switch is off (no parcel messages for them). */
+  productsWithoutMessages?: string[];
   weightsKg: number[];
   serviceLevels: Record<string, string>;
   /** The website customer package (service packages): the choices it offers, labels, messages and hubs. */

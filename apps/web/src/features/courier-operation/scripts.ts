@@ -29,5 +29,9 @@ export const scripts = [
   "/legacy/courier-operation/bridge-collect.js",
   "/legacy/shared/importer.js",
   "/legacy/courier-operation/bridge-imports.js",
-  "/legacy/courier-operation/bridge-bulk.js"
+  "/legacy/courier-operation/bridge-bulk.js",
+  // Last: the parcel drawer / next action / global search, then the journey navigation (menu,
+  // tabs, counts, role menu, old page names), which wrap everything above.
+  "/legacy/courier-operation/bridge-parcel.js",
+  "/legacy/courier-operation/bridge-nav.js"
 ];

@@ -263,9 +263,9 @@ export class PackagesService implements OnModuleInit {
     segment: PackageSegment,
     raw: string | null | undefined,
     db: Db = this.prisma,
-    list?: { id: string; name: string; type: string; mutedNotifications: string[] }[],
+    list?: { id: string; name: string; type: string; sendMessages: boolean }[],
     fallback?: string | null,
-  ): Promise<{ id: string; name: string; type: string; mutedNotifications: string[] } | null> {
+  ): Promise<{ id: string; name: string; type: string; sendMessages: boolean } | null> {
     const products = list ?? (await this.products(segment, db));
     const wanted = (raw ?? fallback)?.trim().toLowerCase();
     if (!wanted) return null;
@@ -402,8 +402,7 @@ export class PackagesService implements OnModuleInit {
   }
 
   /** Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). */
-  parcelFields(q: PackageQuote, product: { id: string; name: string; mutedNotifications: string[] } | null) {
-    const muted = new Set(product?.mutedNotifications ?? []);
+  parcelFields(q: PackageQuote, product: { id: string; name: string; sendMessages: boolean } | null) {
     return {
       baseCharge: q.columns.baseCharge,
       weightCharge: q.columns.weightCharge,
@@ -421,7 +420,8 @@ export class PackagesService implements OnModuleInit {
       productName: product?.name ?? null,
       productType: q.selection.productType,
       services: q.services,
-      notifications: q.selection.notifications.filter(n => !muted.has(n)),
+      // The booking's ticked messages (default: every message in the package); none when the product sends no messages.
+      notifications: product && !product.sendMessages ? [] : q.selection.notifications,
       collectHubId: q.collectHub?.id ?? null,
       serviceLevel: q.serviceLevel,
     };
@@ -444,7 +444,7 @@ export class PackagesService implements OnModuleInit {
       options,
       labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, speed: SPEED_LABEL, tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
       notifications: PARCEL_NOTIFICATIONS.filter(n => options.notifications.includes(n.code)).map(n => ({ code: n.code, label: n.label, audience: n.audience, title: `${n.label} (${n.audience})` })),
-      products: products.map(p => ({ id: p.id, name: p.name, type: p.type })),
+      products: products.map(p => ({ id: p.id, name: p.name, type: p.type, sendMessages: p.sendMessages })),
       prices: pkg.prices,
       dropHubs: options.firstMiles.includes("HUB_DROP") ? hubs : [],
       collectHubs: options.lastMiles.includes("HUB_COLLECT") ? hubs : [],

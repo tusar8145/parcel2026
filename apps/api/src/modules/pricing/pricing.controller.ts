@@ -39,8 +39,11 @@ export class PricingController {
     const [catalog, view] = await Promise.all([this.pricing.catalog(), this.packages.bookingView({ segment: "CUSTOMER" })]);
     return {
       ...catalog,
-      // Website customers use the e-commerce product list once super admins set one up.
-      products: view.products.length ? view.products.map(p => p.name) : catalog.products,
+      // Products are the Customer & E-commerce parcel products only (Service plans → Products), never the
+      // old catalog list (its `products` field is legacy and not read).
+      products: view.products.map(p => p.name),
+      /** Products whose "Send SMS & email" switch is off: the booking form disables its messages checklist. */
+      productsWithoutMessages: view.products.filter(p => !p.sendMessages).map(p => p.name),
       serviceLevels: SERVICE_LEVEL_LABEL,
       customerRateCard: legacyCardOf(view.prices),
       customerPackage: { options: view.options, labels: view.labels, notifications: view.notifications, collectHubs: view.collectHubs, dropHubs: view.dropHubs, package: view.package },

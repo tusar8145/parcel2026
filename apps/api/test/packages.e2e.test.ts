@@ -149,6 +149,8 @@ describe("service packages", () => {
       expect(sheet).toContain("<t>Service</t>");
       expect(sheet).not.toContain("<t>COD amount (৳)</t>");
       expect(sheet).not.toContain("<t>Cash on delivery</t>");
+      // A product whose messages are off: its row is booked with none, whatever the modal ticks.
+      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Academic Materials" } }, data: { sendMessages: false } });
       const res = await ctx.api("POST", "/imports/validate", {
         token: owner.token,
         body: {
@@ -158,6 +160,7 @@ describe("service packages", () => {
           rows: [
             { order_ref: "PK-1", phone: "01812000000", "Customer name": "A", address: "Road 1", district: "Dhaka South", zone: "Motijheel", "Open box": "Yes", Product: "Books" },
             { order_ref: "PK-2", phone: "01812000001", "Customer name": "B", address: "Road 2", district: "Chattogram", zone: "Agrabad", Service: "Express" },
+            { order_ref: "PK-3", phone: "01812000002", "Customer name": "C", address: "Road 3", district: "Dhaka South", zone: "Motijheel", Product: "Academic Materials" },
           ],
         },
       });
@@ -168,32 +171,80 @@ describe("service packages", () => {
       // Express to another district isn't possible: the row is an error and isn't created.
       expect(rows[1].status).toBe("ERROR");
       expect(rows[1].errors[0]).toMatchObject({ column: "service_level" });
-      expect(res.body.totals).toEqual({ rows: 1, charge: P.sameDistrict + 12 });
+      expect(rows[0]).toMatchObject({ messagesOff: false, messagesNote: null });
+      expect(rows[2]).toMatchObject({ status: "VALID", messagesOff: true, messagesNote: "This product doesn't send messages" });
+      expect(res.body.totals).toEqual({ rows: 2, charge: P.sameDistrict + 12 + rows[2].charge });
       expect(res.body.services).toMatchObject({ lastMile: "DOORSTEP", notifications: ["notify.delivered"] });
       await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-1" } });
       expect(parcel).toMatchObject({ openBox: true, productName: "Books", productType: "BOOKS", notifications: ["notify.delivered"] });
+      expect(await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-3" } })).toMatchObject({ productName: "Academic Materials", notifications: [] });
     });
   });
 
   describe("notifications, proof, gating", () => {
-    it("sends a parcel message only when the package includes it, it wasn't unticked and the product allows it", async () => {
+    it("products have one Send SMS & email switch (default on); editing other fields keeps it", async () => {
+      const { token } = await admin();
+      await ctx.api("GET", "/packages", { token }); // set-up
+      const created = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Quiet goods", type: "REGULAR", sendMessages: false } });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      expect(created.body).toMatchObject({ name: "Quiet goods", sendMessages: false });
+      const plain = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Loud goods" } });
+      expect(plain.body).toMatchObject({ sendMessages: true, type: "REGULAR" });
+      // A PATCH of another field doesn't reset the switch (or the type) to its default.
+      await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { type: "BOOKS" } });
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ sendMessages: false, type: "BOOKS" });
+      const on = await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { sendMessages: true } });
+      expect(on.body).toMatchObject({ sendMessages: true, type: "BOOKS" });
+      await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { active: false } });
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ sendMessages: true, type: "BOOKS", active: false });
+      // The old per-message field is no longer part of the API (ignored).
+      const old = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Old style", mutedNotifications: ["notify.booked"] } });
+      expect(old.body).toMatchObject({ sendMessages: true, mutedNotifications: [] });
+      expect(await ctx.prisma.auditLog.count({ where: { action: "parcel_product.update", entityId: created.body.id } })).toBe(3);
+    });
+
+    it("stores the parcel's messages at booking (default all, unticked left out, none for a silent product) and only sends those", async () => {
       const { owner } = await merchant();
-      const product = await ctx.prisma.parcelProduct.findFirst({ where: { segment: "ECOMMERCE", name: "Books" } });
-      await ctx.api("GET", "/packages/me", { token: owner.token }); // set-up
-      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Books" } }, data: { mutedNotifications: ["notify.delivery_code"] } });
-      void product;
-      const unticked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ notifications: ["notify.delivered"] }) });
+      const view = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { notifications: { code: string }[]; products: { name: string; sendMessages: boolean }[] };
+      const all = view.notifications.map(n => n.code);
+      expect(all).toEqual(expect.arrayContaining(["notify.booked", "notify.cancelled", "notify.delivery_code", "notify.collection"]));
+      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Books" } }, data: { sendMessages: false } });
+      const products = (await ctx.api("GET", "/packages/me", { token: owner.token })).body.products as { name: string; sendMessages: boolean }[];
+      expect(products.find(p => p.name === "Books")?.sendMessages).toBe(false);
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const sent = (template: string, trackingId: string) => ctx.prisma.outboxMessage.count({ where: { template, body: { contains: trackingId } } });
+
+      // Field omitted: every message in the package.
+      const full = await ctx.api("POST", "/parcels", { token: owner.token, body: order() });
+      expect(full.status, JSON.stringify(full.body)).toBe(201);
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: full.body.trackingId } })).notifications).toEqual(all);
+      expect(await sent("parcel.booked", full.body.trackingId)).toBeGreaterThan(0);
+
+      // Unticked "Pickup request received" and "Pickup cancelled": neither goes, at booking or later.
+      const picked = all.filter(c => c !== "notify.booked" && c !== "notify.cancelled");
+      const unticked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ notifications: picked }) });
       expect(unticked.status, JSON.stringify(unticked.body)).toBe(201);
-      const stored = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: unticked.body.trackingId } });
-      expect(stored.notifications).toEqual(["notify.delivered"]);
-      const muted = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ product: "Books" }) });
-      const mutedStored = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: muted.body.trackingId } });
-      expect(mutedStored.notifications).not.toContain("notify.delivery_code");
-      expect(mutedStored.notifications).toContain("notify.booked");
-      // No delivery code for the muted parcel: OTP isn't one of its proof methods.
-      expect(muted.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
-      expect(unticked.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: unticked.body.trackingId } })).notifications).toEqual(picked);
+      expect(await sent("parcel.booked", unticked.body.trackingId)).toBe(0);
+      expect(unticked.body.proofMethods).toContain("OTP"); // the delivery code is still sent
+
+      // A product with messages off: an empty list whatever was ticked; nothing sent; no OTP proof.
+      const silent = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ product: "Books", notifications: all }) });
+      expect(silent.status, JSON.stringify(silent.body)).toBe(201);
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: silent.body.trackingId } })).notifications).toEqual([]);
+      expect(await sent("parcel.booked", silent.body.trackingId)).toBe(0);
+      expect(silent.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
+
+      // Later events follow the stored list.
+      for (const p of [full, unticked, silent]) expect((await ctx.api("POST", `/parcels/${p.body.trackingId}/cancel`, { token: ops.token, body: { reason: "Test" } })).status).toBe(200);
+      expect(await sent("parcel.cancelled", full.body.trackingId)).toBeGreaterThan(0);
+      expect(await sent("parcel.cancelled", unticked.body.trackingId)).toBe(0);
+      expect(await sent("parcel.cancelled", silent.body.trackingId)).toBe(0);
+
+      // No delivery code ticked: OTP isn't offered as proof.
+      const noCode = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ notifications: ["notify.delivered"] }) });
+      expect(noCode.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
     });
 
     it("refuses a proof method the parcel's package doesn't offer; charges re-attempts beyond the free ones", async () => {
@@ -267,6 +318,18 @@ describe("service packages", () => {
       expect(await sweeper.sweep(six)).toMatchObject({ reminded: 1, returned: 0 });
       expect(await sweeper.sweep(new Date(Date.now() + 8 * 86_400_000))).toMatchObject({ returned: 1 });
       expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: other.body.trackingId } })).status).toBe("RETURN_SCHEDULED");
+
+      // "Ready for collection" unticked at booking (or a product with messages off): no SMS when it arrives.
+      const view = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { notifications: { code: string }[] };
+      const quiet = await ctx.api("POST", "/parcels", {
+        token: owner.token,
+        body: order({ lastMile: "HUB_COLLECT", collectHubId: gulshan.id, codAmount: 0, notifications: view.notifications.map(n => n.code).filter(c => c !== "notify.collection") }),
+      });
+      expect(quiet.status, JSON.stringify(quiet.body)).toBe(201);
+      await ctx.prisma.parcel.update({ where: { trackingId: quiet.body.trackingId }, data: { status: "IN_TRANSIT" } });
+      const ready = await ctx.api("POST", `/parcels/${quiet.body.trackingId}/status`, { token: ops.token, body: { status: "AT_HUB", hubId: gulshan.id } });
+      expect(ready.body.status).toBe("READY_FOR_COLLECTION");
+      expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.ready_for_collection", body: { contains: quiet.body.trackingId } } })).toBe(0);
     });
   });
 

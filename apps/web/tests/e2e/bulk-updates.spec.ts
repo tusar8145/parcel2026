@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Page } from "@playwright/test";
-import { expect, Fixtures, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { expect, Fixtures, headingAction, opsNav, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 // The API's own spreadsheet reader and writer (no dependency): read the download, fill it in like Excel would.
 import { readXlsx } from "../../../api/src/modules/imports/xlsx/xlsx-reader";
 import { writeXlsx } from "../../../api/src/modules/imports/xlsx/xlsx-writer";
@@ -75,7 +75,7 @@ test("filter Pending → download → accept & assign riders in Excel → upload
   }
 
   await signIn(page, ops);
-  await page.click('#navigation [data-page="E-commerce operations"]');
+  await opsNav(page, "ecommerce");
   await expect(page.locator("#courierBulkUpdate")).toBeVisible();
   await page.click("#courierBulkUpdate");
   await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update by Excel");
@@ -148,7 +148,7 @@ test("filter Pending → download → accept & assign riders in Excel → upload
   await expect(page.locator(`#shipmentBody tr[data-shipment-id="${ids[1]}"]`)).toContainText("Pickup assigned");
 
   // History lists it with its download.
-  await page.click("#courierBulkHistory");
+  await headingAction(page, "#courierBulkHistory");
   await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"]`)).toContainText("Completed");
   await page.click('[data-dfi="close"]');
   fs.rmSync(filled, { force: true });
@@ -180,7 +180,7 @@ test("the preview re-prices rows that change the price: before → after per row
   const before = { pickup: await charge(pickup), needs: await charge(needs.trackingId) };
 
   await signIn(page, ops);
-  await page.click('#navigation [data-page="E-commerce operations"]');
+  await opsNav(page, "ecommerce");
   await page.click("#courierBulkUpdate");
   await page.selectOption("#dfiBMerchant", shop.id);
   const file = await downloaded(page, () => page.click("#dfiBDownload"));

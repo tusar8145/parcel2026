@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, expect, test, type TempRider, type TempUser } from "./support";
+import { Fixtures, expect, opsNav, test, type TempRider, type TempUser } from "./support";
 
 // The operations manager and the rider are temporary, and the customer who signs up is deleted
 // afterwards with the parcel, its COD and messages (support.ts).
@@ -89,7 +89,7 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await signIn(ops, OPS.login, OPS.password);
   await expect(ops).toHaveURL(/\/courier-operation/);
   await ops.waitForSelector("html.legacy-ready", { state: "attached" });
-  await ops.click('#navigation [data-page="Customer parcels"]');
+  await opsNav(ops, "customerParcels");
   await ops.click(`[data-customer-confirm="${trackingId}"]`);
   await chooseOption(ops, "#assignRider", riderAccount.code);
   await ops.click("#modalSubmit");

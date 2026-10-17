@@ -78,7 +78,7 @@ export interface RowResult {
   destination?: { district: string; zone: string };
   /** Priced and checked against the merchant's package. */
   quote?: PackageQuote;
-  product?: { id: string; name: string; type: string; mutedNotifications: string[] } | null;
+  product?: { id: string; name: string; type: string; sendMessages: boolean } | null;
 }
 
 export interface EngineContext {
@@ -116,8 +116,10 @@ const PARCEL_TYPE_LABELS = ["E-commerce parcel", "Fragile parcel", "Domestic par
 const ADDRESS_TYPES: Record<string, "HOME" | "OFFICE" | "OTHER"> = { home: "HOME", house: "HOME", office: "OFFICE", work: "OFFICE", other: "OTHER" };
 const YES = new Set(["yes", "y", "true", "1", "cod", "হ্যাঁ"]);
 const NO = new Set(["no", "n", "false", "0", "prepaid", "না"]);
-const DEFAULT_DOCUMENT_TYPES = ["B2B Document", "Trade Service Document", "Corporate Urgent Document", "ATM card", "Cheque book"];
-const DEFAULT_DOCUMENT_ITEMS = ["ATM card", "Cheque book", "Contract", "Trade document"];
+/** Old document types still read in the Service column of old files (document types are now the package's handling options). */
+const OLD_DOCUMENT_TYPES = ["B2B Document", "Trade Service Document", "Corporate Urgent Document", "ATM card", "Cheque book"];
+/** Suggestions for the free-text document description (not a product list: products are the parcel products). */
+const DOCUMENT_ITEM_SUGGESTIONS = ["ATM card", "Cheque book", "Contract", "Trade document"];
 const DEFAULT_RELATIONS = ["Self", "Family member", "Colleague", "Reception", "Authorized representative"];
 const DEFAULT_DOCUMENT_PACKAGING = ["Document envelope", "Security pouch", "Rigid document mailer"];
 /** Quote / package problems → the template column they belong to. */
@@ -211,14 +213,14 @@ export class ImportEngineService {
       areas: unique(zones.flatMap(z => catalog.areasByZone[z] ?? [])),
       addressTypes: ["Home", "Office", "Other"],
       parcelTypes: PARCEL_TYPE_LABELS,
-      // The segment's products (service packages); before any are set up, the booking catalog's suggestions.
-      products: products.length ? products.map(p => p.name) : input.kind === "document" ? [] : catalog.products,
+      // The segment's parcel products (Service plans → Products) only.
+      products: products.map(p => p.name),
       speeds: speeds.map(s => SPEED_LABEL[s]),
       weights: [...new Set(catalog.weightsKg)].sort((a, b) => a - b).map(String),
       yesNo: ["Yes", "No"],
       packaging: input.kind === "document" ? unique([...(strings(pc.documentPackaging).length ? strings(pc.documentPackaging) : DEFAULT_DOCUMENT_PACKAGING), ...catalog.packaging]) : catalog.packaging,
-      documentTypes: unique(strings(pc.documentTypes)).length ? unique(strings(pc.documentTypes)) : DEFAULT_DOCUMENT_TYPES,
-      documentItems: strings(pc.documentProducts).length ? strings(pc.documentProducts) : DEFAULT_DOCUMENT_ITEMS,
+      documentTypes: OLD_DOCUMENT_TYPES,
+      documentItems: DOCUMENT_ITEM_SUGGESTIONS,
       relations: strings(pc.receiverRelations).length ? strings(pc.receiverRelations) : DEFAULT_RELATIONS,
     };
     const services: ImportServiceOptions = { ...input.services, ...(input.dropOffHubId ? { firstMile: "HUB_DROP" as const, dropHubId: input.dropOffHubId } : {}) };

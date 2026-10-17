@@ -1,5 +1,5 @@
 import { type Browser } from "@playwright/test";
-import { Fixtures, expect, test, type TempUser } from "./support";
+import { Fixtures, expect, opsNav, test, type TempUser } from "./support";
 
 /**
  * Finance tools on the "COD & finance" page and the support desk extras, through the real UI.
@@ -36,7 +36,7 @@ test("finance staff see approvals, invoices, disputes, reconciliation, ledger an
   test.setTimeout(240_000);
   const errors: string[] = [];
   const page = await signedIn(browser, await fx.staff("FINANCE"), errors);
-  await page.click('#navigation [data-page="COD & finance"]');
+  await opsNav(page, "cod");
   const main = page.locator("#mainContent");
   for (const id of ["#finSettlements", "#finInvoices", "#finDisputes", "#finRecon", "#finLedger", "#finSchedules"]) await expect(main.locator(id)).toBeVisible();
   await expect(main.locator("#finLedger")).toContainText(/Balanced · debits|No postings this month/);
@@ -54,7 +54,7 @@ test("operations without finance rights don't get the finance tools; support age
   test.setTimeout(240_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, await fx.staff("OPS_MANAGER"), errors);
-  await ops.click('#navigation [data-page="COD & finance"]');
+  await opsNav(ops, "cod");
   await expect(ops.locator("#mainContent")).toBeVisible();
   await expect(ops.locator("#finSettlements")).toHaveCount(0);
   await ops.context().close();

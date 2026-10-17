@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { test as base, expect, type APIRequestContext, type Browser, type BrowserContext } from "@playwright/test";
+import { test as base, expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { hash as argonHash } from "@node-rs/argon2";
 import pg from "pg";
 
@@ -65,6 +65,67 @@ export const test = base.extend<{ api: APIRequestContext }, { browser: Browser }
   },
 });
 export { expect };
+
+// ───────────── Courier Operations navigation ─────────────
+
+/**
+ * Where each Courier Operations area lives in the menu: [view, tab?] (public/legacy/courier-operation/
+ * bridge-nav.js). Specs navigate by these keys, so a rename in the menu is a one-line change here.
+ */
+export const OPS_NAV = {
+  today: ["Today"],
+  newOrders: ["New orders"],
+  pickup: ["Pickup", "Assign pickup rider"],
+  scheduledPickups: ["Pickup", "Scheduled pickups"],
+  hubReceive: ["Hub desk", "Receive"],
+  dropOffReceive: ["Hub desk", "Drop-off receive"],
+  hubPickupCounter: ["Hub desk", "Hub Pickup counter"],
+  transfers: ["Transfers"],
+  delivery: ["Delivery"],
+  exceptions: ["Problems", "Exceptions"],
+  failedDelivery: ["Problems", "Failed delivery"],
+  needsInfo: ["Problems", "Needs info"],
+  slaRisk: ["Problems", "SLA late-risk"],
+  returns: ["Returns"],
+  cod: ["COD & settlement"],
+  allParcels: ["All parcels", "All"],
+  ecommerce: ["All parcels", "E-commerce"],
+  banking: ["All parcels", "Banking & Financial"],
+  customerParcels: ["All parcels", "Customer"],
+  reports: ["Reports", "Reports"],
+  analytics: ["Reports", "Analytics & SLA"],
+  riders: ["Riders"],
+  merchants: ["Merchants"],
+  hubsZones: ["Hubs & zones"],
+  cnStock: ["CN stock"],
+  settings: ["Settings"],
+} as const satisfies Record<string, readonly [string] | readonly [string, string]>;
+export type OpsArea = keyof typeof OPS_NAV;
+
+/** Opens a Courier Operations area from the menu (and its tab), e.g. `opsNav(page, "ecommerce")`. */
+export async function opsNav(page: Page, area: OpsArea) {
+  const [view, tab] = OPS_NAV[area] as readonly string[];
+  await page.click(`#navigation [data-nav="${view}"]`);
+  await expect(page.locator("#breadcrumbLabel")).toHaveText(view);
+  if (tab) {
+    const button = page.locator(`#mainContent [data-nav-tab="${tab}"]`);
+    // Single-tab views have no tab bar.
+    if (await button.count()) await button.click();
+    if (await button.count()) await expect(button).toHaveAttribute("aria-selected", "true");
+  }
+}
+
+/** Clicks an action in a parcel row (or any block with a "More" menu), opening "More" when the action sits in it. */
+export async function rowAction(scope: Locator, selector: string) {
+  const target = scope.locator(selector).first();
+  if (!(await target.isVisible())) await scope.locator("details.df-more > summary").first().click();
+  await target.click();
+}
+
+/** Clicks a page-heading button, opening the heading's "More actions" menu when the button sits in it. */
+export async function headingAction(page: Page, selector: string) {
+  await rowAction(page.locator("#mainContent .page-heading"), selector);
+}
 
 export async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []) {
   const db = new pg.Client({ connectionString: DATABASE_URL });

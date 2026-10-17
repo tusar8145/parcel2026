@@ -470,6 +470,16 @@ export class ImportJobsService implements OnApplicationBootstrap {
       this.prisma.importRow.findMany({ where, orderBy: { rowNumber: "asc" }, skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
     ]);
     const headerOf = this.headerOf(job);
+    // Products whose "Send SMS & email" switch is off: those rows are booked with no messages (the commit re-reads them).
+    const silent = await this.prisma.parcelProduct.findMany({
+      where: { segment: job.kind === "DOCUMENT" ? "BANKING_FINANCIAL" : "ECOMMERCE", sendMessages: false },
+      select: { id: true, name: true },
+    });
+    const silentNames = new Set(silent.flatMap(p => [p.id, p.name.toLowerCase()]));
+    const messagesOff = (cells: unknown) => {
+      const product = String((cells as Record<string, unknown> | null)?.product_type ?? "").trim().toLowerCase();
+      return !!product && silentNames.has(product);
+    };
     return {
       filter: query.filter,
       page: query.page,
@@ -487,6 +497,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
           charge: r.charge == null ? null : Number(r.charge),
           lines: (r.priceLines as { code: string; label: string; amount: number }[] | null) ?? null,
           trackingId: r.trackingId,
+          /** The row's product has "Send SMS & email" off: no parcel messages for it, whatever the modal ticks. */
+          messagesOff: messagesOff(r.cells),
+          messagesNote: messagesOff(r.cells) ? "This product doesn't send messages" : null,
         };
       }),
     };

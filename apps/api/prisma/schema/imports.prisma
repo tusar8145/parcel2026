@@ -36,45 +36,45 @@ enum ImportRowStatus {
 }
 
 model ImportJob {
-  id               String        @id @default(uuid(7)) @db.Uuid
+  id                String        @id @default(uuid(7)) @db.Uuid
   /// IMP-YYMMDD-NNN, shared with the booking batch it creates.
-  number           String        @unique
-  kind             ImportKind
-  status           ImportStatus  @default(VALIDATED)
+  number            String        @unique
+  kind              ImportKind
+  status            ImportStatus  @default(VALIDATED)
   /// MERCHANT_PORTAL, MERCHANT_API or OPERATIONS.
-  source           ParcelChannel
+  source            ParcelChannel
   /// The merchant of every row (merchant uploads; operations when chosen for the whole file).
-  merchantId       String?       @db.Uuid
-  intake           ParcelIntake  @default(PICKUP)
-  dropOffHubId     String?       @db.Uuid
-  bookingBatchId   String?       @unique @db.Uuid
-  fileName         String?
-  fileSha256       String?
-  fileBytes        Int           @default(0)
-  totalRows        Int           @default(0)
-  validRows        Int           @default(0)
-  incompleteRows   Int           @default(0)
-  errorRows        Int           @default(0)
+  merchantId        String?       @db.Uuid
+  intake            ParcelIntake  @default(PICKUP)
+  dropOffHubId      String?       @db.Uuid
+  bookingBatchId    String?       @unique @db.Uuid
+  fileName          String?
+  fileSha256        String?
+  fileBytes         Int           @default(0)
+  totalRows         Int           @default(0)
+  validRows         Int           @default(0)
+  incompleteRows    Int           @default(0)
+  errorRows         Int           @default(0)
   /// Rows handled by the booking job so far (progress).
-  processedRows    Int           @default(0)
-  createdCount     Int           @default(0)
-  createdIncomplete Int          @default(0)
+  processedRows     Int           @default(0)
+  createdCount      Int           @default(0)
+  createdIncomplete Int           @default(0)
   /// Valid rows refused while booking.
-  failedCount      Int           @default(0)
+  failedCount       Int           @default(0)
   /// Required columns, defaults and limits in force when the file was validated.
-  settings         Json
+  settings          Json
   /// Who uploaded it, to act as them in the background: { kind, userId?, apiKeyId?, name }.
-  actor            Json
-  createdById      String?       @db.Uuid
-  error            String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  queuedAt         DateTime?
-  startedAt        DateTime?
-  completedAt      DateTime?
-  rowsPurgedAt     DateTime?
-  rows             ImportRow[]
-  bookingBatch     BookingBatch? @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
+  actor             Json
+  createdById       String?       @db.Uuid
+  error             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  queuedAt          DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  rowsPurgedAt      DateTime?
+  rows              ImportRow[]
+  bookingBatch      BookingBatch? @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
 
   @@index([merchantId, createdAt])
   @@index([createdById, createdAt])

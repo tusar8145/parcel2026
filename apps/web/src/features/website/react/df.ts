@@ -39,6 +39,11 @@ interface DFClient {
   auth: {
     user: SessionUser | null;
     hasRole(...roles: string[]): boolean;
+    /** Customer-area access: the CUSTOMER role and no panel of its own (merchants, staff and riders use their panel). */
+    isWebsiteCustomer(): boolean;
+    /** Re-reads the session (new roles after a merchant application); the user or null. */
+    refresh(): Promise<SessionUser | null>;
+    logout(): Promise<void>;
     requestOtp(phone: string, purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET"): Promise<OtpSent>;
     login(identifier: string, password: string): Promise<SessionUser | MfaChallenge>;
     loginWithOtp(phone: string, otp: string): Promise<SessionUser | MfaChallenge>;
@@ -92,8 +97,8 @@ export interface CustomerPackage {
   options: { firstMiles: string[]; lastMiles: string[]; speeds: string[]; cod: boolean; defaultFirstMile?: string; defaultLastMile?: string };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
   notifications: { code: string; title: string }[];
-  dropHubs: { id: string; name: string; address: string }[];
-  collectHubs: { id: string; name: string; address: string }[];
+  dropHubs: { id: string; name: string; address: string; type?: string }[];
+  collectHubs: { id: string; name: string; address: string; type?: string }[];
   /** Active Customer & E-commerce products with their type (REGULAR, DOCUMENT, BOOKS). */
   products?: { name: string; type: string; sendMessages: boolean }[];
 }
@@ -106,6 +111,10 @@ interface WebsiteBridge {
   /** Re-reads parcels and saved addresses into the page scripts' data. */
   refreshAccount(): Promise<void>;
   applicationSent(title: string, message: string): void;
+  /** After a merchant application: re-reads the session and opens the merchant panel (else the "received" view). */
+  merchantApplied(title: string, message: string): Promise<void>;
+  /** Rider / franchise application sent: refreshes the session and opens the application page (/application). */
+  partnerApplied(title: string, message: string, opening?: string, only?: string): Promise<void>;
 }
 
 declare global {

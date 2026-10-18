@@ -71,7 +71,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     if (event.customerId && event.customerId === actor.userId) return true;
     if (actor.riderId && event.riderIds?.includes(actor.riderId)) return true;
     if (event.userIds?.includes(actor.userId)) return true;
-    const hubs = actor.roles.filter(r => r.role === "HUB_OPERATOR" && r.hubId).map(r => r.hubId);
+    // Hub operators and franchise accounts: events of their own hubs.
+    const hubs = actor.roles.filter(r => (r.role === "HUB_OPERATOR" || r.role === "FRANCHISE") && r.hubId).map(r => r.hubId);
     return !!event.hubIds?.some(h => h && hubs.includes(h));
   }
 }

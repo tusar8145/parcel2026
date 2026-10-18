@@ -51,8 +51,8 @@ export class NetworkController {
   @RequirePermissions("rider:read")
   @Get("riders")
   @ApiZodQuery(listRidersQuerySchema)
-  listRiders(@ZQuery(listRidersQuerySchema) query: z.infer<typeof listRidersQuerySchema>) {
-    return this.network.listRiders(query);
+  listRiders(@CurrentActor() actor: Actor, @ZQuery(listRidersQuerySchema) query: z.infer<typeof listRidersQuerySchema>) {
+    return this.network.listRiders(query, actor);
   }
 
   @RequirePermissions("rider:read")

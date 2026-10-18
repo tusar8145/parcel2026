@@ -82,11 +82,11 @@
     if (o.firstMiles.length > 1) parts.push(field(`${prefix}FirstMile`, "First mile", select(`${prefix}FirstMile`, o.firstMiles.map(f => [f, L.firstMile[f]]), o.defaultFirstMile)));
     if (o.firstMiles.includes("HUB_DROP")) {
       const preferred = dropHubId || (dropHubs.length === 1 ? dropHubs[0].id : "");
-      parts.push(field(`${prefix}DropHub`, "Drop-off hub", select(`${prefix}DropHub`, [["", "Choose the hub"], ...dropHubs.map(h => [h.id, h.name])], preferred), o.defaultFirstMile !== "HUB_DROP"));
+      parts.push(field(`${prefix}DropHub`, "Drop-off hub", select(`${prefix}DropHub`, [["", "Choose the hub"], ...dropHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name])], preferred), o.defaultFirstMile !== "HUB_DROP"));
     }
     if (o.lastMiles.length > 1) parts.push(field(`${prefix}LastMile`, "Last mile", select(`${prefix}LastMile`, o.lastMiles.map(l => [l, L.lastMile[l]]), o.defaultLastMile)));
     if (o.lastMiles.includes("HUB_COLLECT"))
-      parts.push(field(`${prefix}CollectHub`, "Collection hub", select(`${prefix}CollectHub`, [["", "The hub serving the recipient's zone"], ...collectHubs.map(h => [h.id, h.name])], ""), o.defaultLastMile !== "HUB_COLLECT"));
+      parts.push(field(`${prefix}CollectHub`, "Collection hub", select(`${prefix}CollectHub`, [["", "The hub serving the recipient's zone"], ...collectHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name])], ""), o.defaultLastMile !== "HUB_COLLECT"));
     if (o.speeds.length > 1) parts.push(field(`${prefix}Speed`, "Service", select(`${prefix}Speed`, o.speeds.map(s => [s, L.speed[s]]), "REGULAR")));
     const checks = [];
     if (o.cod) checks.push(`<label class="df-check" style="display:flex;gap:7px;align-items:center;font-weight:600"><input type="checkbox" id="${prefix}Cod" ${codChecked ? "checked" : ""} style="width:auto;padding:0"> Collect cash on delivery (COD)</label>`);

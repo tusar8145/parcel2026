@@ -53,12 +53,14 @@ export const SYSTEM_ACCOUNTS = [
   { systemKey: "RIDER_PAYROLL_PAYABLE", code: "2020", name: "Rider payroll payable", type: "LIABILITY" },
   { systemKey: "VAT_PAYABLE", code: "2030", name: "VAT payable (output tax)", type: "LIABILITY" },
   { systemKey: "CUSTOMER_REFUNDS_PAYABLE", code: "2040", name: "Refunds and claims payable", type: "LIABILITY" },
+  { systemKey: "FRANCHISE_PAYABLE", code: "2050", name: "Franchise commission payable", type: "LIABILITY" },
   { systemKey: "OWNER_EQUITY", code: "3010", name: "Owner's equity", type: "EQUITY" },
   { systemKey: "DELIVERY_REVENUE", code: "4010", name: "Delivery revenue", type: "REVENUE" },
   { systemKey: "COD_FEE_REVENUE", code: "4020", name: "COD fee revenue", type: "REVENUE" },
   { systemKey: "RIDER_PAYROLL_EXPENSE", code: "5010", name: "Rider payroll expense", type: "EXPENSE" },
   { systemKey: "REFUNDS_EXPENSE", code: "5020", name: "Refunds", type: "EXPENSE" },
   { systemKey: "CLAIMS_EXPENSE", code: "5030", name: "Claims (lost / damaged parcels)", type: "EXPENSE" },
+  { systemKey: "FRANCHISE_COMMISSION_EXPENSE", code: "5040", name: "Franchise commission", type: "EXPENSE" },
 ] as const satisfies readonly { systemKey: string; code: string; name: string; type: LedgerAccountType }[];
 
 export type AccountKey = (typeof SYSTEM_ACCOUNTS)[number]["systemKey"];

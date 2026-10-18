@@ -3,12 +3,20 @@
 import { useEffect, useState } from "react";
 import { df, describe, site, toast } from "./df";
 import { inviteToken } from "./PartnerView";
+import { AlreadySignedIn, pendingPartnerRoute, useAlreadySignedIn } from "./LoginView";
 import { FieldError, PhoneInput, TextInput, cooldownFrom, e164, rules, useBusy, useCountdown, useForm } from "./form";
 
 const linkStyle = { color: "var(--green)", fontWeight: 700, cursor: "pointer" } as const;
 
 /** Customer sign-up: details → SMS code (resend after the server's cooldown) → account, then email verification. */
 export default function SignupView() {
+  // Already signed in: go to the panel / account instead (sign out first to create another account).
+  const signedIn = useAlreadySignedIn();
+  if (signedIn !== null) return <AlreadySignedIn user={signedIn} />;
+  return <SignupForm />;
+}
+
+function SignupForm() {
   // Old invitation links (/#/signup?invite=…): sign up, then continue to the merchant application.
   useEffect(() => {
     if (!inviteToken()) return;
@@ -16,6 +24,7 @@ export default function SignupView() {
       sessionStorage.setItem("deliveryfast-customer-return-route", "merchant");
     } catch {}
   }, []);
+  const [pendingApplication] = useState(() => pendingPartnerRoute() || (inviteToken() ? "merchant" : ""));
   const [codeFor, setCodeFor] = useState<{ phone: string; hint: string } | null>(null);
   const countdown = useCountdown();
   const form = useForm(
@@ -84,7 +93,12 @@ export default function SignupView() {
 
   return (
     <div className="route-card">
-      <h2>Join as a customer</h2>
+      <h2>{pendingApplication ? "Create your Delivery Fast account" : "Join as a customer"}</h2>
+      {pendingApplication ? (
+        <p className="route-note" id="signupReturnNote">
+          {`After you confirm your number we'll bring you back to your ${pendingApplication} application with what you typed.`}
+        </p>
+      ) : null}
       <form ref={form.formRef} id="signupForm" className="route-form" data-form="signup" data-react="1" noValidate onSubmit={submit}>
         {field("signupName", "Full name", "Your name", "text", true, "name")}
         <div className="field">
@@ -130,7 +144,7 @@ export default function SignupView() {
           <a className="route-choice route-link" href="/become-a-rider" data-route="rider">
             {"Apply as a rider →"}
           </a>
-          <a className="route-choice route-link" href="/franchise" data-route="franchise">
+          <a className="route-choice route-link" href="/become-a-franchise" data-route="franchise">
             {"Become a franchise partner →"}
           </a>
           <a className="route-choice route-link" href="/login" data-route="login">

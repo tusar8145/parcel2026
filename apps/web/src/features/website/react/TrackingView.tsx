@@ -264,7 +264,7 @@ function SearchForm({ initial }: { initial: string }) {
 
 /** Signed-in customers get their recent parcels as shortcuts. */
 function RecentParcels() {
-  const recent = df().auth.hasRole("CUSTOMER") ? df().parcels.cache.slice(0, 2).map((p: { trackingId: string }) => p.trackingId) : [];
+  const recent = df().auth.isWebsiteCustomer() ? df().parcels.cache.slice(0, 2).map((p: { trackingId: string }) => p.trackingId) : [];
   if (!recent.length) return null;
   return (
     <div className="track-hint">

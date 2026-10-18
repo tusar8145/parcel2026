@@ -1,7 +1,8 @@
 import type { z } from "zod";
 import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { AllowApiKey, CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
+import { AllowApiKey, CurrentActor, CurrentUser, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
+import { Throttle } from "@nestjs/throttler";
 import { RequireApiKeyScope } from "./api-key-scopes";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
@@ -19,6 +20,7 @@ import {
   merchantSelectorSchema,
   merchantStatsQuerySchema,
   pageWithSelectorSchema,
+  pickupHubQuerySchema,
   planSchema,
   updateMyMerchantSchema,
   updatePlanSchema,
@@ -28,6 +30,7 @@ import { MerchantsService } from "./merchants.service";
 import { MerchantIntegrationsService } from "./merchant-integrations.service";
 import { PlansService } from "./plans.service";
 import { MerchantStatsService } from "./merchant-stats.service";
+import { MerchantPlanService } from "./merchant-plan.service";
 
 type Selector = z.infer<typeof merchantSelectorSchema>;
 
@@ -41,6 +44,18 @@ export class MerchantsController {
   @ApiZodBody(merchantApplicationSchema)
   apply(@CurrentUser() actor: UserActor, @ZBody(merchantApplicationSchema) body: z.infer<typeof merchantApplicationSchema>, @ReqMeta() meta: RequestMeta) {
     return this.merchants.apply(actor, body, meta);
+  }
+
+  /**
+   * The hub serving pickups in a district / zone (/ area): the application form shows it for
+   * "Drop at hub". Public (hub names and addresses are public); the place must be in the catalog.
+   */
+  @Public()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Get("pickup-hub")
+  @ApiZodQuery(pickupHubQuerySchema)
+  pickupHub(@ZQuery(pickupHubQuerySchema) query: z.infer<typeof pickupHubQuerySchema>) {
+    return this.merchants.pickupHubFor(query);
   }
 
   @RequirePermissions("merchant:read:any")
@@ -73,6 +88,7 @@ export class MerchantSelfController {
     private readonly merchants: MerchantsService,
     private readonly integrations: MerchantIntegrationsService,
     private readonly stats: MerchantStatsService,
+    private readonly plans: MerchantPlanService,
   ) {}
 
   /** Owners and staff. */
@@ -95,6 +111,16 @@ export class MerchantSelfController {
   @ApiZodQuery(merchantStatsQuerySchema)
   dashboard(@CurrentActor() actor: Actor, @ZQuery(merchantStatsQuerySchema) query: z.infer<typeof merchantStatsQuerySchema>) {
     return this.stats.stats(actor, query);
+  }
+
+  /**
+   * "Services & pricing": the merchant's package in plain words — what every merchant gets, what the
+   * package includes and doesn't, the messages (to whom, SMS / email), prices and worked examples.
+   */
+  @Get("plan")
+  @ApiZodQuery(merchantSelectorSchema)
+  plan(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector) {
+    return this.plans.plan(actor, query.merchantId);
   }
 
   /** Price preview for the booking form, from the merchant's rate card and plan discount. The booking itself is priced again on the server. */

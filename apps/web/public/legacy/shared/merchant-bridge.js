@@ -88,6 +88,16 @@
   const isOwner = () => S.merchant?.myRole === "MERCHANT_OWNER";
   const q = (sep = "?") => (S.merchant ? `${sep}merchantId=${S.merchant.id}` : "");
 
+  // ───────────── not active ─────────────
+  //
+  // Until the merchant account is active (under review, information requested, not approved, suspended) the panel
+  // is a single screen, "Account verification" (shared/merchant-verification.js): the status, business
+  // verification uploads, messages from Delivery Fast and the read-only profile. No menu, search or bell; every
+  // page asked for (menu, address, link) opens that screen. The API refuses the rest (MERCHANT_NOT_ACTIVE).
+  const VERIFY_PAGE = "Account verification";
+  const locked = () => !!S.merchant && S.merchant.status !== "ACTIVE";
+  const applyLock = () => document.body.classList.toggle("df-merchant-locked", locked());
+
   // ───────────── formatting ─────────────
 
   const taka = n => `৳ ${(Math.round(Number(n || 0) * 100) / 100).toLocaleString("en-BD")}`;
@@ -292,7 +302,9 @@
     const team = S.members ? `${S.members.length} team member${S.members.length === 1 ? "" : "s"} · ${new Set(S.members.map(x => x.role)).size} role(s)` : isOwner() ? "Loading…" : "Managed by workspace owners";
     const activeKeys = S.keys ? S.keys.filter(k => !k.revokedAt).length : 0;
     const integrations = S.keys || S.webhooks ? `${activeKeys} active API key${activeKeys === 1 ? "" : "s"} · ${S.webhooks?.length ?? 0} webhook${S.webhooks?.length === 1 ? "" : "s"}` : "API keys and webhooks";
-    const profile = [S.cfg.document ? "Corporate account" : "Store profile", `${m.name} · ${m.pickupArea}, ${m.pickupDistrict}`, dateOnly(m.updatedAt), "Manage"];
+    // Structured address (pickup zone, district); older free-text addresses ask to be completed.
+    const where = m.addressComplete === false ? `${m.pickupArea}, ${m.pickupDistrict} · complete your address` : `${m.pickup?.zone || m.pickupArea}, ${m.pickupDistrict}${m.pickupHub ? ` · hub ${m.pickupHub.name}` : ""}`;
+    const profile = [S.cfg.document ? "Corporate account" : "Store profile", `${m.name} · ${where}`, dateOnly(m.updatedAt), "Manage"];
     const rows = [profile];
     if (S.cfg.document) rows.push(["Billing profile", "Monthly consolidated invoices · due 15 days after issue", "—", "Manage"]);
     else rows.push(["Payout account", payout, "—", "Manage"]);
@@ -1022,9 +1034,10 @@
   }
   const zonesOf = district => S.catalog?.zonesByDistrict?.[district] || [];
   const areasOf = zone => S.catalog?.areasByZone?.[zone] || [];
-  /** The catalog zone of the merchant's pickup address. */
+  /** The catalog zone of the merchant's pickup address (structured since 2026-10-18; older text is guessed). */
   function pickupZone() {
     const m = S.merchant;
+    if (m.pickup?.zone) return m.pickup.zone;
     const zones = zonesOf(m.pickupDistrict);
     return zones.find(z => z === m.pickupArea || areasOf(z).includes(m.pickupArea) || String(m.pickupAddress).toLowerCase().includes(z.toLowerCase())) || zones[0] || m.pickupArea;
   }
@@ -1136,8 +1149,8 @@
     const { cod, codAmount, ...choices } = svc;
     return {
       ...choices,
-      sender: { name: m.name, phone: m.contactPhone },
-      pickup: { category: "Office", street: m.pickupAddress, area: m.pickupArea || undefined, zone: pickupZone(), district: m.pickupDistrict },
+      sender: { name: m.name, phone: m.pickupContactPhone || m.contactPhone },
+      pickup: { category: "Office", street: m.pickupAddress, area: (m.pickup?.zone ? m.pickup.area : m.pickupArea) || undefined, zone: pickupZone(), district: m.pickupDistrict, ...(m.pickup?.lat != null ? { lat: m.pickup.lat, lng: m.pickup.lng } : {}) },
       recipient: { name: $("customerName").value.trim(), phone: $("customerPhone").value.trim() },
       delivery: { category: $("merchantAddressType")?.value || (doc ? "Office" : "Home"), street: $("deliveryAddress").value.trim(), area, zone: $("merchantZone").value, district: $("merchantDistrict").value },
       type: doc ? "DOCUMENT" : "ECOMMERCE",
@@ -1433,11 +1446,19 @@
 
   function openProfile() {
     const m = S.merchant;
-    dialog(
+    const A = window.DFMerchantAddress;
+    const backdrop = dialog(
       S.cfg.document ? "Corporate account" : "Store profile",
       `${esc(m.name)} · ${esc(m.code)}`,
-      `<form id="dfProfileForm"><div class="form-grid" style="margin-top:12px">${field("dfContactName", "Contact name", m.contactName, "required minlength=2")}${field("dfContactPhone", "Contact phone", phone(m.contactPhone), "required")}${field("dfContactEmail", "Contact email", m.contactEmail, 'type="email"')}<div class="form-field"><label for="dfPickupDistrict">Pickup district</label><select id="dfPickupDistrict">${(S.catalog?.districts || [m.pickupDistrict]).map(d => option(d, d, d === m.pickupDistrict)).join("")}</select></div>${field("dfPickupArea", "Pickup area", m.pickupArea, "required minlength=2")}<div class="form-field full"><label for="dfPickupAddress">Pickup address</label><input id="dfPickupAddress" value="${esc(m.pickupAddress)}" required minlength="5"></div></div><div class="modal-actions"><button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save changes</button></div></form>`,
+      `<form id="dfProfileForm" novalidate><div class="form-grid" style="margin-top:12px">${field("dfContactName", "Contact name", m.contactName, "required minlength=2")}${field("dfContactPhone", "Contact phone", String(m.contactPhone || "").replace(/^\+880/, ""), "required")}${field("dfContactEmail", "Contact email", m.contactEmail, 'type="email"')}${A ? A.formHtml(m) : ""}</div><div class="modal-actions"><button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save changes</button></div></form>`,
+      720,
     );
+    const form = backdrop.querySelector("form");
+    DF.phoneInput($("dfContactPhone"));
+    const address = A ? A.wire(form, m, S.catalog) : null;
+    const own = DF.validate(form, { dfContactName: v => (v.trim().length < 2 ? "Enter the contact name" : ""), dfContactEmail: v => (v.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? "Enter a valid email address" : "") });
+    form.dfAddress = address;
+    form.dfCheck = () => [own(), address ? address.check() : true].every(Boolean);
   }
 
   function openPayout() {
@@ -1499,15 +1520,36 @@
       }
     };
     if (form.id === "dfProfileForm") {
+      if (form.dfCheck && !form.dfCheck()) {
+        if (button) button.disabled = false;
+        return form.querySelector("[aria-invalid=true]")?.focus();
+      }
       const email = $("dfContactEmail").value.trim();
-      return done(
-        () =>
-          DF.api(`/merchants/me${q()}`, {
-            method: "PATCH",
-            body: { contactName: $("dfContactName").value.trim(), contactPhone: $("dfContactPhone").value.trim(), contactEmail: email || null, pickupAddress: $("dfPickupAddress").value.trim(), pickupArea: $("dfPickupArea").value.trim(), pickupDistrict: $("dfPickupDistrict").value },
-          }),
-        "Profile saved.",
-      );
+      const address = form.dfAddress ? form.dfAddress.body() : {};
+      try {
+        const before = S.merchant.pickupHub?.id || null;
+        const saved = await DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { contactName: $("dfContactName").value.trim(), contactPhone: $("dfContactPhone").value.trim(), contactEmail: email || null, ...address } });
+        const hubNote = (saved.pickupHub?.id || null) !== before ? (saved.pickupHub ? ` Your pickups are now served by ${saved.pickupHub.name}.` : " No hub serves the new pickup area yet; operations will assign one.") : "";
+        return done(async () => {}, `Profile saved.${hubNote}`);
+      } catch (error) {
+        // Field errors (business.zone, pickupContactPhone…) appear under their fields.
+        const details = Array.isArray(error?.details) ? error.details : [];
+        let shown = false;
+        for (const d of details) {
+          const input = d.path === "contactPhone" ? $("dfContactPhone") : d.path === "contactName" ? $("dfContactName") : d.path === "contactEmail" ? $("dfContactEmail") : form.dfAddress?.fieldFor(d.path);
+          const box = input && (input.closest(".df-phone") || input).nextElementSibling;
+          if (box?.classList.contains("df-field-error")) {
+            box.textContent = d.message;
+            input.setAttribute("aria-invalid", "true");
+            input.style.borderColor = "#c2410c";
+            if (!shown) input.focus();
+            shown = true;
+          }
+        }
+        if (!shown) showToast(DF.describe(error));
+        if (button) button.disabled = false;
+        return;
+      }
     }
     if (form.id === "dfPayoutForm") {
       const method = $("dfPayoutMethod").value;
@@ -1562,6 +1604,7 @@
     };
     const render = window.renderPage;
     window.renderPage = function (page) {
+      if (locked()) page = VERIFY_PAGE;
       if (page !== S.page && S.revealed) S.revealed = null; // secrets are shown once
       S.page = page;
       render(page);
@@ -1911,19 +1954,25 @@
       showToast("This account isn't a member of a merchant workspace.");
       return;
     }
+    applyLock();
+    if (locked()) {
+      // Not active: the verification screen only (it loads its own data); approval reloads into the full panel.
+      renderPage(VERIFY_PAGE);
+      DF.live(["merchant.updated"], () => window.DFMerchantVerification?.reload());
+      return;
+    }
     await Promise.allSettled([loadParcels(), loadStats(), loadFinance(), loadIntegrations(), loadPackage()]);
     applyData();
     renderPage("Overview");
-    if (S.merchant.status !== "ACTIVE")
-      showToast(
-        {
-          PENDING_REVIEW: "Your merchant account is being reviewed. You can book once it's approved.",
-          INFO_REQUESTED: "Delivery Fast needs more information about your application. See the message on the dashboard.",
-          REJECTED: "Your merchant application wasn't approved. See the dashboard for the reason.",
-        }[S.merchant.status] || "This merchant account is suspended. Contact Delivery Fast support.",
-      );
     // Live updates (server events + reconnect + slow safety poll) instead of fast polling.
-    DF.live(["parcel.updated", "parcel.created", "merchant.updated"], () => refresh());
+    DF.live(["parcel.updated", "parcel.created"], () => refresh());
+    // The account itself: suspended (or otherwise no longer active) → the verification screen at once.
+    DF.live(["merchant.updated"], async () => {
+      const fresh = await DF.api(`/merchants/me${q()}`).catch(() => null);
+      if (fresh && fresh.status !== "ACTIVE") return void location.reload();
+      if (fresh) S.merchant = fresh;
+      return refresh();
+    });
   }
 
   /** Zero counters for an account without a workspace (e.g. a super admin opening the panel). */
@@ -1970,5 +2019,7 @@
     dialog,
     closeDialog,
     merchantQuery: q,
+    /** True while the merchant account isn't active: only the "Account verification" screen is open. */
+    locked,
   };
 })();

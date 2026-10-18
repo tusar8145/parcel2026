@@ -1,0 +1,166 @@
+// Franchise hubs: a hub run by a partner (Hub.type = FRANCHISE) with one account (Role FRANCHISE), its own riders,
+// commission on the delivery charge (pickup / delivery / return), counter (walk-in) charges and cash deposits at any
+// company hub. See docs/architecture-contracts.md, "Franchise hubs".
+
+enum HubType {
+  COMPANY
+  FRANCHISE
+}
+
+enum FranchiseStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum FranchiseCommissionType {
+  PICKUP
+  DELIVERY
+  RETURN
+}
+
+enum FranchiseRemittanceStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
+}
+
+enum FranchiseInvoiceSettlement {
+  /// DEDUCT mode: the commission was kept from cash deposits.
+  DEDUCTED
+  /// BILL mode: Delivery Fast pays it.
+  PAYABLE
+}
+
+enum FranchiseInvoiceStatus {
+  ISSUED
+  APPROVED
+  PAID
+  VOID
+}
+
+/// A franchise partner: its hub, its one account and its commission rates (percent of the delivery charge, with a minimum).
+model Franchise {
+  id                String                   @id @default(uuid(7)) @db.Uuid
+  code              String                   @unique // FR-1001
+  hubId             String                   @unique @db.Uuid
+  ownerId           String                   @unique @db.Uuid
+  name              String
+  contactName       String
+  contactPhone      String
+  contactEmail      String?
+  status            FranchiseStatus          @default(ACTIVE)
+  applicationId     String?                  @unique @db.Uuid
+  pickupPercent     Decimal                  @default(0) @db.Decimal(5, 2)
+  pickupMin         Decimal                  @default(0) @db.Decimal(12, 2)
+  deliveryPercent   Decimal                  @default(0) @db.Decimal(5, 2)
+  deliveryMin       Decimal                  @default(0) @db.Decimal(12, 2)
+  returnPercent     Decimal                  @default(0) @db.Decimal(5, 2)
+  returnMin         Decimal                  @default(0) @db.Decimal(12, 2)
+  /// What the franchise pays its own riders per task (set in the franchise panel; outside Delivery Fast payroll).
+  riderPickupRate   Decimal                  @default(0) @db.Decimal(12, 2)
+  riderDeliveryRate Decimal                  @default(0) @db.Decimal(12, 2)
+  riderReturnRate   Decimal                  @default(0) @db.Decimal(12, 2)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  hub               Hub                      @relation(fields: [hubId], references: [id])
+  owner             User                     @relation("FranchiseOwner", fields: [ownerId], references: [id])
+  commissions       FranchiseCommission[]
+  counterCharges    FranchiseCounterCharge[]
+  remittances       FranchiseRemittance[]
+  invoices          FranchiseInvoice[]
+
+  @@map("franchises")
+}
+
+/// Commission earned on one parcel event; counts once per (type, parcel).
+model FranchiseCommission {
+  id           String                  @id @default(uuid(7)) @db.Uuid
+  franchiseId  String                  @db.Uuid
+  parcelId     String                  @db.Uuid
+  type         FranchiseCommissionType
+  /// The parcel's delivery charge the commission is computed from.
+  base         Decimal                 @db.Decimal(12, 2)
+  percent      Decimal                 @db.Decimal(5, 2)
+  minimum      Decimal                 @db.Decimal(12, 2)
+  amount       Decimal                 @db.Decimal(12, 2)
+  sourceKey    String                  @unique // PICKUP:<parcelId>
+  invoiceId    String?                 @db.Uuid
+  /// DEDUCT mode: the deposit that kept it.
+  remittanceId String?                 @db.Uuid
+  earnedAt     DateTime                @default(now())
+  franchise    Franchise               @relation(fields: [franchiseId], references: [id])
+  parcel       Parcel                  @relation(fields: [parcelId], references: [id])
+  invoice      FranchiseInvoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  remittance   FranchiseRemittance?    @relation(fields: [remittanceId], references: [id], onDelete: SetNull)
+
+  @@index([franchiseId, earnedAt])
+  @@index([invoiceId])
+  @@map("franchise_commissions")
+}
+
+/// The delivery charge a walk-in sender paid at the franchise counter (cash the franchise holds until it deposits it).
+model FranchiseCounterCharge {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  franchiseId  String               @db.Uuid
+  parcelId     String               @unique @db.Uuid
+  amount       Decimal              @db.Decimal(12, 2)
+  remittanceId String?              @db.Uuid
+  createdAt    DateTime             @default(now())
+  franchise    Franchise            @relation(fields: [franchiseId], references: [id])
+  parcel       Parcel               @relation(fields: [parcelId], references: [id])
+  remittance   FranchiseRemittance? @relation(fields: [remittanceId], references: [id], onDelete: SetNull)
+
+  @@index([franchiseId, remittanceId])
+  @@map("franchise_counter_charges")
+}
+
+/// Cash the franchise deposits at a company hub (COD from its riders + counter charges), confirmed by that hub.
+model FranchiseRemittance {
+  id                 String                    @id @default(uuid(7)) @db.Uuid
+  number             String                    @unique // FRM-2610-0001
+  franchiseId        String                    @db.Uuid
+  hubId              String                    @db.Uuid
+  gross              Decimal                   @db.Decimal(12, 2)
+  commissionDeducted Decimal                   @default(0) @db.Decimal(12, 2)
+  net                Decimal                   @db.Decimal(12, 2)
+  status             FranchiseRemittanceStatus @default(PENDING)
+  collectionIds      String[]                  @db.Uuid
+  note               String?
+  requestedAt        DateTime                  @default(now())
+  receivedById       String?                   @db.Uuid
+  receivedAt         DateTime?
+  franchise          Franchise                 @relation(fields: [franchiseId], references: [id])
+  hub                Hub                       @relation("FranchiseRemittanceHub", fields: [hubId], references: [id])
+  commissions        FranchiseCommission[]
+  counterCharges     FranchiseCounterCharge[]
+
+  @@index([franchiseId, status])
+  @@index([hubId, status])
+  @@map("franchise_remittances")
+}
+
+/// A commission invoice for a period (generated by the franchise or Finance). BILL mode: Finance approves and pays it.
+model FranchiseInvoice {
+  id            String                     @id @default(uuid(7)) @db.Uuid
+  number        String                     @unique // FIN-2610-0001
+  franchiseId   String                     @db.Uuid
+  periodFrom    DateTime
+  periodTo      DateTime
+  amount        Decimal                    @db.Decimal(12, 2)
+  settlement    FranchiseInvoiceSettlement
+  status        FranchiseInvoiceStatus     @default(ISSUED)
+  createdById   String?                    @db.Uuid
+  approvedById  String?                    @db.Uuid
+  approvedAt    DateTime?
+  paidById      String?                    @db.Uuid
+  paidAt        DateTime?
+  paymentMethod String?
+  reference     String?
+  createdAt     DateTime                   @default(now())
+  franchise     Franchise                  @relation(fields: [franchiseId], references: [id])
+  commissions   FranchiseCommission[]
+
+  @@index([franchiseId, createdAt])
+  @@index([status])
+  @@map("franchise_invoices")
+}

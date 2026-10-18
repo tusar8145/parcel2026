@@ -29,6 +29,8 @@ interface Source {
   areaInDistrict?: boolean;
   /** Merchants: the free-text pickup area naming a zone counts as using it. */
   zoneIsText?: boolean;
+  /** Not counted per district (another source already counts the same rows' district). */
+  noDistrictLevel?: boolean;
 }
 
 const SOURCES: Source[] = [
@@ -36,6 +38,8 @@ const SOURCES: Source[] = [
   { key: "parcels.delivery", label: "Parcels (delivery address)", table: "parcels", district: "deliveryDistrict", zone: "deliveryZone", area: "deliveryArea" },
   { key: "addresses", label: "Saved addresses (address books)", table: "addresses", district: "district", zone: "zone", area: "area" },
   { key: "merchants", label: "Merchant pickup addresses", table: "merchants", district: "pickupDistrict", zone: "pickupArea", area: "pickupArea", areaInDistrict: true, zoneIsText: true },
+  { key: "merchants.pickup_zone", label: "Merchant pickup addresses (structured zone)", table: "merchants", district: "pickupDistrict", zone: "pickupZone", area: null, noDistrictLevel: true },
+  { key: "merchants.business", label: "Merchant business addresses", table: "merchants", district: "businessDistrict", zone: "businessZone", area: "businessArea" },
   { key: "pickup_schedules", label: "Merchant pickup schedules", table: "pickup_schedules", district: "district", zone: "zone", area: "area" },
   { key: "pickup_requests", label: "Pickup requests", table: "pickup_requests", district: "district", zone: "zone", area: "area" },
   { key: "hubs", label: "Hubs", table: "hubs", district: "district", zone: "zone", area: null },
@@ -53,6 +57,7 @@ async function grouped(db: Db, source: Source, level: GeoLevel, parent: { distri
   let sql: string | null = null;
   let params: string[] = [];
   const t = `"${source.table}"`;
+  if (level === "district" && source.noDistrictLevel) return out;
   if (level === "district") {
     // Riders name a zone only: grouped by zone and mapped to districts by the caller.
     sql = source.district ? `SELECT ${col(source.district)} AS k, count(*)::int AS n FROM ${t} WHERE "${source.district}" IS NOT NULL GROUP BY 1` : `SELECT ${col(source.zone!)} AS k, count(*)::int AS n FROM ${t} WHERE "${source.zone}" IS NOT NULL GROUP BY 1`;

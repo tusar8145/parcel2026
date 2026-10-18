@@ -12,6 +12,10 @@ export const ROLES = [
   "FINANCE",
   "SUPPORT_AGENT",
   "SUPER_ADMIN",
+  /** The one account of a franchise hub: its own panel, scoped to that hub (no network-wide access). */
+  "FRANCHISE",
+  /** Applied to ride or run a franchise and waits for approval: sees only the application page (/application). */
+  "APPLICANT",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -51,6 +55,9 @@ export const PERMISSIONS = [
   "user:login-as", // "Log in as" a merchant member or rider, read-only (operations managers)
   "change:approve", // approve another administrator's sensitive change (maker-checker)
   "analytics:read", // website traffic and tracking-lookup analytics
+  // franchise hubs
+  "franchise:self", // the franchise panel: its own hub's parcels, riders, walk-ins, cash and commission
+  "franchise:manage", // create franchises, set commission rates and the settlement mode, suspend
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -66,6 +73,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   FINANCE: ["parcel:read:any", "merchant:read:any", "finance:read", "finance:manage", "cod:receive", "audit:read"],
   SUPPORT_AGENT: ["parcel:read:any", "merchant:read:any", "rider:read", "support:create", "support:manage", "user:read"],
   SUPER_ADMIN: [...PERMISSIONS],
+  FRANCHISE: ["franchise:self", "support:create"],
+  APPLICANT: ["support:create"],
 };
 
 export function permissionsFor(roles: readonly Role[]): Set<Permission> {
@@ -139,6 +148,8 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string 
   "user:login-as": { group: "Security", label: "Log in as a merchant or rider (read-only)" },
   "change:approve": { group: "Security", label: "Approve sensitive changes (second approver)" },
   "analytics:read": { group: "Administration", label: "Website and tracking analytics" },
+  "franchise:self": { group: "Franchise", label: "Franchise panel (own hub)" },
+  "franchise:manage": { group: "Franchise", label: "Create and manage franchises" },
 };
 
 /** Which web panel a role signs in to, in priority order. */
@@ -148,8 +159,10 @@ export const PANEL_FOR_ROLE: [Role, string][] = [
   ["HUB_OPERATOR", "/courier-operation"],
   ["FINANCE", "/courier-operation"],
   ["SUPPORT_AGENT", "/courier-operation"],
+  ["FRANCHISE", "/franchise"],
   ["RIDER", "/rider"],
   ["MERCHANT_OWNER", "/ecommerce-merchant"],
   ["MERCHANT_STAFF", "/ecommerce-merchant"],
+  ["APPLICANT", "/application"],
   ["CUSTOMER", "/account"],
 ];

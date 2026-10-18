@@ -152,7 +152,7 @@ describe("in-app notifications", () => {
     const applicant = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "New Shop Owner");
     const apply = await ctx.api("POST", "/merchants/applications", {
       token: applicant.token,
-      body: { type: "ECOMMERCE", name: "Fresh Shop", contactName: "Owner", contactPhone: "01711111112", pickupAddress: "Road 1", pickupArea: "Gulshan 1", pickupDistrict: "Dhaka North" },
+      body: { type: "ECOMMERCE", name: "Fresh Shop", contactName: "Owner", contactPhone: "01711111112", business: { district: "Dhaka North", zone: "Uttara", street: "Road 1, Sector 3" }, pickupTime: "MORNING" },
     });
     if (apply.status === 201) {
       const list = await ctx.api("GET", "/me/notifications", { token: admin.token });

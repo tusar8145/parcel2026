@@ -11,6 +11,9 @@ const UNSCOPED_CASH_ROLES = new Set(["SUPER_ADMIN", "OPS_MANAGER", "FINANCE"]);
 export function cashHubScope(actor: Actor): string[] | null {
   if (actor.kind !== "user") return [];
   if (actor.roles.some(r => UNSCOPED_CASH_ROLES.has(r.role))) return null;
+  // A franchise account is always limited to its own (franchise) hub.
+  const franchise = actor.roles.filter(r => r.role === "FRANCHISE");
+  if (franchise.length) return franchise.flatMap(r => (r.hubId ? [r.hubId] : []));
   const hubRoles = actor.roles.filter(r => r.role === "HUB_OPERATOR");
   if (hubRoles.some(r => !r.hubId)) return null;
   return hubRoles.map(r => r.hubId!);

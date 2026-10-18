@@ -6,6 +6,7 @@ import { RealtimeService } from "../../common/realtime.service";
 import { nextCounter } from "../../common/counters";
 import { sha256 } from "../../common/crypto";
 import { AppError, conflict, forbidden, notFound } from "../../common/errors";
+import { merchantNotActive } from "./merchant-status";
 import { pageArgs, toPage } from "../../common/pagination";
 import { actorLabel, merchantIdsOf, type Actor, type UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
@@ -16,6 +17,10 @@ import { OutboxService } from "../notifications/outbox.service";
 import { InboxService } from "../notifications/inbox.service";
 import { SessionService } from "../auth/session.service";
 import { memberInclude, memberView, merchantView } from "./merchant.views";
+import { PricingService } from "../pricing/pricing.service";
+import { businessColumns, matchLegacyPickup, pickupColumns, pickupHubInclude, resolveMerchantPlace, servingHub, type HubRef, type MerchantPlaceInput, type ResolvedPlace } from "./merchant-address";
+import type { Merchant } from "../../generated/prisma/client";
+import { resolvePlace } from "../parcels/places";
 import type { MerchantKycService } from "./merchant-kyc.service";
 import type {
   addMemberSchema,
@@ -51,6 +56,8 @@ export class MerchantsService {
   ) {}
 
   @Inject(InboxService) private readonly inbox!: InboxService;
+  /** The service catalog addresses are checked against (property injection keeps the constructor stable). */
+  @Inject(PricingService) private readonly pricing!: PricingService;
 
   /** Set by MerchantKycService (avoids a constructor cycle). */
   kyc?: MerchantKycService;
@@ -62,10 +69,18 @@ export class MerchantsService {
    * database). Members of several merchants must pass merchantId. API keys act for their
    * own merchant (only on routes that accept keys, e.g. webhooks with webhooks:manage).
    */
-  async resolveOwn(actor: Actor, merchantId: string | undefined, opts: { ownerOnly?: boolean } = {}) {
+  async resolveOwn(actor: Actor, merchantId: string | undefined, opts: { ownerOnly?: boolean; allowInactive?: boolean } = {}) {
+    const merchant = await this.resolveMember(actor, merchantId, opts);
+    // Until the account is active (under review, information requested, not approved, suspended) the merchant
+    // may only read its own account, its business verification and the review conversation (allowInactive).
+    if (!opts.allowInactive && merchant.status !== "ACTIVE") throw merchantNotActive(merchant.status);
+    return merchant;
+  }
+
+  private async resolveMember(actor: Actor, merchantId: string | undefined, opts: { ownerOnly?: boolean }) {
     if (actor.kind === "api_key") {
       if (merchantId && merchantId !== actor.merchantId) throw forbidden("This API key belongs to another merchant");
-      const merchant = await this.prisma.merchant.findUnique({ where: { id: actor.merchantId }, include: { plan: true } });
+      const merchant = await this.prisma.merchant.findUnique({ where: { id: actor.merchantId }, include: { plan: true, ...pickupHubInclude } });
       if (!merchant) throw notFound("Merchant");
       return merchant;
     }
@@ -82,9 +97,83 @@ export class MerchantsService {
     const allowed: Role[] = opts.ownerOnly ? ["MERCHANT_OWNER"] : MERCHANT_ROLES;
     const grant = await this.prisma.userRole.findFirst({ where: { userId: actor.userId, merchantId: id, role: { in: allowed } }, select: { id: true } });
     if (!grant) throw forbidden(opts.ownerOnly ? "Only merchant owners can do this" : "You're not a member of this merchant");
-    const merchant = await this.prisma.merchant.findUnique({ where: { id }, include: { plan: true } });
+    const merchant = await this.prisma.merchant.findUnique({ where: { id }, include: { plan: true, ...pickupHubInclude } });
     if (!merchant) throw notFound("Merchant");
     return merchant;
+  }
+
+  // ───────────── structured addresses ─────────────
+
+  /**
+   * Merchant columns for an address change: the business address, the pickup location (the
+   * business address when `pickupSameAsBusiness`, else its own), contact, time, handover, plus the
+   * re-derived serving hub whenever the pickup moves. Places are checked against the active catalog.
+   */
+  private async addressData(
+    db: Db,
+    input: {
+      business?: MerchantPlaceInput;
+      pickupSameAsBusiness?: boolean;
+      pickup?: MerchantPlaceInput;
+      pickupContactName?: string;
+      pickupContactPhone?: string;
+      pickupTime?: "MORNING" | "MIDDAY" | "AFTERNOON";
+      handover?: "RIDER_PICKUP" | "HUB_DROP";
+      businessCategory?: string | null;
+      websiteUrl?: string | null;
+    },
+    current: Merchant | null,
+  ): Promise<{ data: Prisma.MerchantUncheckedUpdateInput; pickupMoved: boolean; hub: HubRef | null | undefined }> {
+    const touches = input.business !== undefined || input.pickupSameAsBusiness !== undefined || input.pickup !== undefined;
+    const data: Prisma.MerchantUncheckedUpdateInput = {};
+    if (input.businessCategory !== undefined) data.businessCategory = input.businessCategory;
+    if (input.websiteUrl !== undefined) data.websiteUrl = input.websiteUrl;
+    if (input.pickupContactName !== undefined) data.pickupContactName = input.pickupContactName;
+    if (input.pickupContactPhone !== undefined) data.pickupContactPhone = input.pickupContactPhone;
+    if (input.pickupTime !== undefined) data.pickupTime = input.pickupTime;
+    if (input.handover !== undefined) data.handover = input.handover;
+    if (!touches) return { data, pickupMoved: false, hub: undefined };
+
+    const catalog = await this.pricing.catalog(db);
+    const business = input.business ? resolveMerchantPlace(catalog, input.business, "business") : null;
+    if (business) Object.assign(data, businessColumns(business));
+    const same = input.pickupSameAsBusiness ?? (input.pickup ? false : current ? current.pickupSameAsBusiness : true);
+    let pickup: ResolvedPlace | null = null;
+    if (same) {
+      const source = business ?? (current ? this.storedBusiness(current) : null);
+      if (!source)
+        throw new AppError("VALIDATION_FAILED", "Some fields need attention", HttpStatus.UNPROCESSABLE_ENTITY, [{ path: "business", message: "Add the business address first, or enter a separate pickup address" }]);
+      // Copied again only when the business address or the flag changed.
+      if (business || input.pickupSameAsBusiness !== undefined) pickup = source;
+    } else if (input.pickup) pickup = resolveMerchantPlace(catalog, input.pickup, "pickup");
+    data.pickupSameAsBusiness = same;
+    if (!pickup) return { data, pickupMoved: false, hub: undefined };
+    Object.assign(data, pickupColumns(pickup));
+    const hub = await servingHub(db, pickup);
+    data.pickupHubId = hub?.id ?? null;
+    return { data, pickupMoved: true, hub };
+  }
+
+  /** The stored business address as a resolved place (null for older merchants without one). */
+  private storedBusiness(m: Merchant): ResolvedPlace | null {
+    if (!m.businessDistrict || !m.businessZone || !m.businessStreet) return null;
+    return { district: m.businessDistrict, zone: m.businessZone, area: m.businessArea, areaOther: m.businessAreaOther, street: m.businessStreet, lat: m.businessLat, lng: m.businessLng };
+  }
+
+  /**
+   * The hub that would serve pickups at a place (the website's "Drop at hub" shows it before the
+   * application is sent). Public; the place must be in the active catalog.
+   */
+  async pickupHubFor(place: { district: string; zone: string; area?: string }) {
+    const catalog = await this.pricing.catalog();
+    const found = resolvePlace(catalog, place.district, place.zone);
+    if (!found.ok || !found.district || !found.zone)
+      throw new AppError("VALIDATION_FAILED", "Some fields need attention", HttpStatus.UNPROCESSABLE_ENTITY, [
+        { path: found.ok ? "zone" : found.column, message: found.ok ? "Choose the thana / upazila" : found.message },
+      ]);
+    const resolved = { district: found.district, zone: found.zone, area: place.area || null };
+    const hub = await servingHub(this.prisma, resolved);
+    return { district: resolved.district, zone: resolved.zone, hub, routeDistrict: hub?.district ?? resolved.district };
   }
 
   /** Live update for staff lists and the merchant's own members. */
@@ -95,7 +184,7 @@ export class MerchantsService {
   // ───────────── onboarding ─────────────
 
   async apply(actor: UserActor, input: z.infer<typeof merchantApplicationSchema>, meta: RequestMeta) {
-    const { inviteToken, ...fields } = input;
+    const { inviteToken, type, name, contactName, contactPhone, contactEmail } = input;
     const outbox: string[] = [];
     const merchant = await this.prisma.$transaction(async tx => {
       await advisoryLock(tx, `merchant-application:${actor.userId}`);
@@ -113,10 +202,25 @@ export class MerchantsService {
           HttpStatus.UNPROCESSABLE_ENTITY,
           { field: "type", expected: invite.type },
         );
+      const address = await this.addressData(
+        tx,
+        { ...input, pickupContactName: input.pickupContactName ?? contactName, pickupContactPhone: input.pickupContactPhone ?? contactPhone, pickup: input.pickupSameAsBusiness ? undefined : input.pickup },
+        null,
+      );
       const code = await this.nextMerchantCode(tx);
       const created = await tx.merchant.create({
-        data: { ...fields, code, status: "PENDING_REVIEW", members: { create: { userId: actor.userId, role: "MERCHANT_OWNER" } } },
-        include: { plan: true },
+        data: {
+          ...address.data,
+          type,
+          name,
+          contactName,
+          contactPhone,
+          contactEmail,
+          code,
+          status: "PENDING_REVIEW",
+          members: { create: { userId: actor.userId, role: "MERCHANT_OWNER" } },
+        } as Prisma.MerchantUncheckedCreateInput,
+        include: { plan: true, ...pickupHubInclude },
       });
       if (invite) await tx.merchantInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date(), merchantId: created.id } });
       outbox.push(
@@ -128,7 +232,22 @@ export class MerchantsService {
       );
       await this.audit.record(
         actor,
-        { action: "merchant.apply", entityType: "merchant", entityId: created.id, data: { code, type: input.type, name: input.name, inviteId: invite?.id ?? null } },
+        {
+          action: "merchant.apply",
+          entityType: "merchant",
+          entityId: created.id,
+          data: {
+            code,
+            type: input.type,
+            name: input.name,
+            inviteId: invite?.id ?? null,
+            business: { district: created.businessDistrict, zone: created.businessZone, area: created.businessArea },
+            pickup: { sameAsBusiness: created.pickupSameAsBusiness, district: created.pickupDistrict, zone: created.pickupZone, area: created.pickupArea },
+            pickupTime: created.pickupTime,
+            handover: created.handover,
+            pickupHubId: created.pickupHubId,
+          },
+        },
         meta,
         tx,
       );
@@ -145,7 +264,7 @@ export class MerchantsService {
   async validInvite(db: Db, token: string) {
     const invite = await db.merchantInvite.findUnique({ where: { tokenHash: sha256(token) } });
     if (!invite || invite.revokedAt) throw new AppError("INVITE_INVALID", "This invitation link isn't valid. Ask Delivery Fast for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
-    if (invite.acceptedAt) throw new AppError("INVITE_USED", "This invitation was already used", HttpStatus.CONFLICT);
+    if (invite.acceptedAt) throw new AppError("INVITE_USED", "This invitation was already used. If you sent the application, sign in to follow it; otherwise ask Delivery Fast for a new link.", HttpStatus.CONFLICT);
     if (invite.expiresAt < new Date()) throw new AppError("INVITE_EXPIRED", "This invitation has expired. Ask Delivery Fast for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
     return invite;
   }
@@ -180,7 +299,7 @@ export class MerchantsService {
             }
           : {}),
       },
-      include: { plan: true, _count: { select: { parcels: true } } },
+      include: { plan: true, ...pickupHubInclude, _count: { select: { parcels: true } } },
       ...pageArgs(query),
     });
     const page = toPage(rows, query.limit);
@@ -192,6 +311,7 @@ export class MerchantsService {
       where: { id },
       include: {
         plan: true,
+        ...pickupHubInclude,
         members: { where: { role: { in: MERCHANT_ROLES } }, include: memberInclude, orderBy: { createdAt: "asc" } },
         _count: { select: { parcels: true, apiKeys: { where: { revokedAt: null } }, webhooks: true, settlements: true, invoices: true, tickets: true, notes: true } },
       },
@@ -228,7 +348,9 @@ export class MerchantsService {
       }
       const approved = input.status === "ACTIVE" && current.status !== "ACTIVE";
       if (approved && current.status !== "SUSPENDED") await this.kyc?.assertAllowed(tx, current, "activation");
-      const data: Prisma.MerchantUpdateInput = { ...input };
+      const { status, planId, name, contactName, contactPhone, contactEmail } = input;
+      const address = await this.addressData(tx, input, current);
+      const data: Prisma.MerchantUncheckedUpdateInput = { status, planId, name, contactName, contactPhone, contactEmail, ...address.data };
       if (input.status && input.status !== "SUSPENDED") data.rejectionReason = null;
       const updated = await tx.merchant.update({ where: { id }, data });
       if (approved)
@@ -251,7 +373,12 @@ export class MerchantsService {
             authorName: actorLabel(actor),
           },
         });
-      await this.audit.record(actor, { action, entityType: "merchant", entityId: id, data: { changes: input, previousStatus: current.status } }, meta, tx);
+      await this.audit.record(
+        actor,
+        { action, entityType: "merchant", entityId: id, data: { changes: input, previousStatus: current.status, ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}) } },
+        meta,
+        tx,
+      );
     });
     await this.outbox.flush(outbox);
     this.publish(id, { status: input.status });
@@ -261,23 +388,27 @@ export class MerchantsService {
   // ───────────── self-service ─────────────
 
   async mine(actor: Actor, merchantId: string | undefined) {
-    const m = await this.resolveOwn(actor, merchantId);
+    const m = await this.resolveOwn(actor, merchantId, { allowInactive: true });
     const role = (actor as UserActor).roles.find(r => r.merchantId === m.id && r.role === "MERCHANT_OWNER") ? "MERCHANT_OWNER" : "MERCHANT_STAFF";
-    return { ...merchantView(m), myRole: role };
+    // Older free-text pickup addresses: a best-effort catalog match the Settings form preselects.
+    const pickupSuggestion = m.pickupZone ? null : matchLegacyPickup(await this.pricing.catalog(), m);
+    return { ...merchantView(m), myRole: role, pickupSuggestion };
   }
 
   async updateMine(actor: Actor, merchantId: string | undefined, input: z.infer<typeof updateMyMerchantSchema>, meta: RequestMeta) {
     const current = await this.resolveOwn(actor, merchantId, { ownerOnly: true });
-    const { payoutAccount, name, ...rest } = input;
+    const { payoutAccount, name, contactName, contactPhone, contactEmail, ...addressInput } = input;
+    const rest = { contactName, contactPhone, contactEmail };
     // The business name is reviewed: applicants may correct it until they're approved.
     if (name !== undefined && !(OPEN_APPLICATION_STATUSES as readonly string[]).includes(current.status))
       throw new AppError("NAME_LOCKED", "The business name can only change while the application is being reviewed. Contact support to rename an approved account.", HttpStatus.UNPROCESSABLE_ENTITY);
     const outbox: string[] = [];
     const merchant = await this.prisma.$transaction(async tx => {
+      const address = await this.addressData(tx, addressInput, current);
       const updated = await tx.merchant.update({
         where: { id: current.id },
-        data: { ...rest, ...(name !== undefined ? { name } : {}), ...(payoutAccount !== undefined ? { payoutAccount: payoutAccount === null ? Prisma.DbNull : payoutAccount } : {}) },
-        include: { plan: true },
+        data: { ...rest, ...address.data, ...(name !== undefined ? { name } : {}), ...(payoutAccount !== undefined ? { payoutAccount: payoutAccount === null ? Prisma.DbNull : payoutAccount } : {}) },
+        include: { plan: true, ...pickupHubInclude },
       });
       if (payoutAccount !== undefined)
         // Payout changes are a fraud target: tell the existing contact number.
@@ -290,6 +421,8 @@ export class MerchantsService {
         );
       const changes = {
         ...rest,
+        ...addressInput,
+        ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}),
         ...(name !== undefined ? { name } : {}),
         ...(payoutAccount !== undefined ? { payoutAccount: payoutAccount ? { method: payoutAccount.method, accountLast4: payoutAccount.accountNumber.slice(-4) } : null } : {}),
       };
@@ -321,14 +454,8 @@ export class MerchantsService {
       const user = existing ?? (await tx.user.create({ data: { name: input.name, phone: input.phone } }));
       const grant = await tx.userRole.create({ data: { userId: user.id, role: input.role, merchantId: m.id }, include: memberInclude });
       const roleLabel = input.role === "MERCHANT_OWNER" ? "an owner" : "a team member";
-      outbox.push(
-        ...(await this.notify.notify(
-          tx,
-          existing
-            ? { event: "merchant.member_added", to: { userId: user.id, phone: input.phone, name: user.name }, vars: { businessName: m.name, role: roleLabel, link: loginLink() } }
-            : { event: "account.invite", to: { userId: user.id, phone: input.phone, name: input.name }, vars: { inviter: m.name, role: `${roleLabel} of ${m.name}`, link: loginLink() } },
-        )),
-      );
+      if (existing) outbox.push(...(await this.notify.notify(tx, { event: "merchant.member_added", to: { userId: user.id, phone: input.phone, name: user.name }, vars: { businessName: m.name, role: roleLabel, link: loginLink() } })));
+      else outbox.push(...(await this.notify.notify(tx, { event: "account.invite", to: { userId: user.id, phone: input.phone, name: input.name }, vars: { inviter: m.name, role: `${roleLabel} of ${m.name}`, link: loginLink() } })));
       await this.audit.record(actor, { action: "merchant.member_add", entityType: "merchant", entityId: m.id, data: { userRoleId: grant.id, userId: user.id, role: input.role, invited: !existing } }, meta, tx);
       return { member: memberView(grant), invited: !existing };
     });

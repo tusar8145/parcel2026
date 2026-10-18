@@ -1,5 +1,7 @@
 import type { Db } from "../../common/prisma.service";
 import type { RiderPayMode } from "../../generated/prisma/client";
+import type { LedgerService } from "../finance/ledger.service";
+import { franchiseOfRider, franchiseRiderRate, recordFranchiseCommission } from "../franchise/franchise-commission";
 
 /**
  * Rider pay rules shared by the rider module and the parcel workflow (rider-tasks.service
@@ -106,8 +108,32 @@ export async function activePlan(db: Db, riderId: string, at = new Date()): Prom
 export async function recordTaskEarning(
   db: Db,
   input: { riderId: string; type: "DELIVERY" | "PICKUP"; parcel: { id: string; trackingId: string; merchantId: string | null }; at?: Date },
+  ledger?: LedgerService,
 ) {
   const at = input.at ?? new Date();
+  // Franchise riders: paid by their franchise at its rates; the franchise earns its commission.
+  const franchise = await franchiseOfRider(db, input.riderId);
+  if (franchise) {
+    const pay = franchiseRiderRate(franchise, input.type);
+    if (pay > 0)
+      await db.riderEarning.createMany({
+        data: [
+          {
+            riderId: input.riderId,
+            type: input.type,
+            amount: pay,
+            sourceKey: `${input.type}:${input.parcel.id}`,
+            parcelId: input.parcel.id,
+            trackingId: input.parcel.trackingId,
+            description: `${input.type === "PICKUP" ? "Pickup" : "Delivery"} · ${input.parcel.trackingId}`,
+            earnedAt: at,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    await recordFranchiseCommission(db, ledger, { franchise, parcelId: input.parcel.id, type: input.type, at });
+    return;
+  }
   const plan = await activePlan(db, input.riderId, at);
   let amount = 0;
   let line: ServiceLine | null = null;

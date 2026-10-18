@@ -39,7 +39,7 @@ model BulkUpdateJob {
   kind             String           @default("all")
   /// The action template the file was downloaded for (bulk-actions.ts): accept_pickup, cancel, …; null for files from before action templates (2026-10-18).
   action           String?
-  fileName       String?
+  fileName         String?
   fileSha256       String?
   fileBytes        Int              @default(0)
   /// Rows with an action (rows without one are ignored and only counted).

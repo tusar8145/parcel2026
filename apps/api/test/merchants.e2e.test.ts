@@ -10,9 +10,9 @@ const application = (overrides: Record<string, unknown> = {}) => ({
   contactName: "Nabila Ahmed",
   contactPhone: "01812-000000",
   contactEmail: "Nabila@Example.com",
-  pickupAddress: "House 12, Road 7, Dhanmondi",
-  pickupArea: "Dhanmondi",
-  pickupDistrict: "Dhaka Central",
+  business: { district: "Dhaka Central", zone: "Dhanmondi", area: "Dhanmondi Road 7", street: "House 12, Road 7" },
+  pickupSameAsBusiness: true,
+  pickupTime: "MORNING",
   ...overrides,
 });
 
@@ -76,7 +76,7 @@ describe("merchants", () => {
     });
 
     it("allows one open application per user and skips taken codes", async () => {
-      await ctx.prisma.merchant.create({ data: { ...application({ contactPhone: "+8801812000000", contactEmail: null }), type: "ECOMMERCE", code: "MR-1001" } });
+      await ctx.prisma.merchant.create({ data: { name: "Nabila Fashion House", contactName: "Nabila Ahmed", contactPhone: "+8801812000000", pickupAddress: "House 12, Road 7", pickupArea: "Dhanmondi", pickupDistrict: "Dhaka Central", type: "ECOMMERCE", code: "MR-1001" } });
       const u = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
       const first = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application() });
       expect(first.body.merchant.code).toBe("MR-1002");
@@ -100,10 +100,10 @@ describe("merchants", () => {
 
     it("validates the application and requires sign-in", async () => {
       const u = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-      const bad = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ type: "SHOP", contactPhone: "12345", contactEmail: "nope", pickupArea: "" }) });
+      const bad = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ type: "SHOP", contactPhone: "12345", contactEmail: "nope", business: { district: "Dhaka Central", zone: "Dhanmondi", street: "" } }) });
       expect(bad.status).toBe(422);
       const paths = bad.body.error.details.map((d: { path: string }) => d.path);
-      expect(paths).toEqual(expect.arrayContaining(["type", "contactPhone", "contactEmail", "pickupArea"]));
+      expect(paths).toEqual(expect.arrayContaining(["type", "contactPhone", "contactEmail", "business.street"]));
       expect(bad.body.error.details.find((d: { path: string }) => d.path === "contactPhone").message).toMatch(/Bangladeshi mobile/);
       expect((await ctx.api("POST", "/merchants/applications", { body: application() })).status).toBe(401);
     });
@@ -212,10 +212,10 @@ describe("merchants", () => {
       const { m, owner } = await ownedMerchant();
       const res = await ctx.api("PATCH", "/merchants/me", {
         token: owner.token,
-        body: { contactName: "New Contact", contactEmail: null, pickupArea: "Banani", payoutAccount: { method: "BKASH", accountNumber: "+880 1712-345678", accountName: "Shop Owner" } },
+        body: { contactName: "New Contact", contactEmail: null, pickupSameAsBusiness: false, pickup: { district: "Dhaka North", zone: "Banani", area: "Banani Block C", street: "House 3, Road 11" }, payoutAccount: { method: "BKASH", accountNumber: "+880 1712-345678", accountName: "Shop Owner" } },
       });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
-      expect(res.body).toMatchObject({ contactName: "New Contact", contactEmail: null, pickupArea: "Banani", payoutAccount: { method: "BKASH", accountNumber: "01712345678" } });
+      expect(res.body).toMatchObject({ contactName: "New Contact", contactEmail: null, pickupArea: "Banani Block C", pickup: { zone: "Banani", area: "Banani Block C" }, payoutAccount: { method: "BKASH", accountNumber: "01712345678" } });
       // The existing contact number is told about payout changes.
       const sms = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "merchant.payout_account_changed" } });
       expect(sms.to).toBe("+8801711111111");

@@ -65,6 +65,8 @@ export const NOTIFICATION_EVENTS = [
   // collect from hub (service packages, appended)
   "parcel.ready_for_collection",
   "parcel.collection_reminder",
+  // merchant invitations from super admin (appended)
+  "merchant.invite",
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];

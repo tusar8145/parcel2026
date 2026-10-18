@@ -692,6 +692,54 @@ Cleaned up 2026-10-17: the page keeps only lists that real forms read.
   page), Courier Operations ("Banking & Financial operations" page), the website and import templates
   ("Banking & Financial consignment import"). The import template key stays `document` (`/imports/templates/document`).
 
+## Merchant addresses (modules/merchants/merchant-address.ts; web: website/react/PartnerView.tsx + MerchantPlaceFields.tsx, shared/merchant-address.js) — 2026-10-18
+- Data (additive migration `20261018065016_merchant_structured_address`): the merchant row keeps the **business
+  address** (`businessDistrict/Zone/Area/AreaOther/Street/Lat/Lng`, plus `businessCategory`, `websiteUrl`) and ONE
+  **primary pickup location**: the original `pickupAddress` (street) / `pickupArea` / `pickupDistrict` columns that
+  booking defaults, pricing, imports and documents read, plus `pickupZone`, `pickupAreaOther`, `pickupLat/Lng`,
+  `pickupSameAsBusiness`, `pickupContactName/Phone`, `pickupTime` (MORNING | MIDDAY | AFTERNOON), `handover`
+  (RIDER_PICKUP | HUB_DROP) and the derived `pickupHubId` (FK hubs, SetNull). `pickupArea` holds the catalog area,
+  the "Other" text, or the zone name when no area was chosen. **Multiple pickup locations later:** a
+  `MerchantPickupLocation` table (same fields + `isPrimary`) whose primary row is mirrored into these columns, so
+  nothing that reads the merchant changes.
+- Validation (`resolveMerchantPlace`): district / zone / area against the ACTIVE catalog (case-insensitive, catalog
+  spelling stored); a zone that lists areas needs an area or `otherArea` (free text); pins must be in Bangladesh;
+  phones via `phoneSchema`. Errors are 422 `VALIDATION_FAILED` with `details[].path` like `business.zone`, `pickup.area`.
+- `POST /merchants/applications { type, name, contactName, contactPhone, contactEmail?, businessCategory?, websiteUrl?,
+  business, pickupSameAsBusiness = true, pickup? (required when false), pickupContactName? / pickupContactPhone?
+  (default: the contact), pickupTime, handover = RIDER_PICKUP, inviteToken? }`. The old flat pickup fields are no
+  longer accepted. The invitation still fixes the type (`INVITE_TYPE_MISMATCH`).
+- Invitations (super admin → Invite a merchant, `POST /merchants/invites`): SMS / email event `merchant.invite`
+  ("You're invited to join Delivery Fast as {{role}}. Create your account and apply here: {{link}}"); the contact
+  name may not be a phone number. `POST /merchants/invites/lookup` (public) adds `hasAccount` (the invited phone /
+  email already has an account). The website form (`/merchant?invite=…`): the invitation banner, type fixed; a
+  signed-out merchant creates the account (SMS code to the contact phone, `SIGNUP`) or signs in (password or SMS
+  code) in step 5 of the form and the application is sent in the same submit; two-step accounts and "forgot
+  password" go through the login page and come back. The draft (no passwords / codes) and the invitation token are
+  kept in sessionStorage until the application is sent. Validation problems show under the field and in a summary
+  at the top (`#merchantFormErrors`), API errors too; a used / expired link shows its message in the banner.
+- `PATCH /merchants/me` (owners) and `PATCH /merchants/:id` (merchant:manage) take the same address fields, all
+  optional (`pickupSameAsBusiness: true` copies the business address; changing the business moves a "same" pickup).
+  Whenever the pickup moves, the serving hub is **re-derived** (`servingHub`: the delivery zone of the pickup zone →
+  its active hub) and the audit row carries `pickupHubId` / `previousPickupHubId`.
+- Views (`merchantView`): `business`, `pickup`, `pickupSameAsBusiness`, contact, time, handover, `pickupHub
+  { id, code, name, district, address }`, `routeDistrict` (the hub's district for HUB_DROP, else the pickup
+  district), `addressComplete` (false = an older free-text address). `GET /merchants/me` adds `pickupSuggestion`
+  (best-effort catalog match, `matchLegacyPickup`: only an unambiguous district + zone, never "the first zone").
+- `GET /merchants/pickup-hub?district=&zone=` (public, throttled): `{ district, zone, hub | null, routeDistrict }`
+  for the application form's "Drop at hub".
+- Older merchants: their text stays as it is. `node apps/api/scripts/match-merchant-addresses.mjs [--apply]` fills
+  `pickupZone` + hub for unambiguous matches only (dry run by default; idempotent; audit `merchant.address_matched`).
+  Settings shows "Complete your address" with the suggestion preselected.
+- Readers: ops booking (`ops.service.book`) uses `pickupZone`, the pickup contact phone and the pin; imports and
+  pickup requests use `pickupZone` / the pickup contact; `/ops/merchants` returns the structured pickup and hub.
+  Geography renames update `merchants.pickupZone` and the business columns; usage counts include them.
+- UI: website `/merchant` (React; district / thana / area use the searchable select, "Other" area, optional map pin,
+  "Pickup from the business address", Drop at hub shows the serving hub); merchant panels → Settings → Store profile
+  / Corporate account (`DFMerchantAddress.formHtml/wire`); super admin review and account dialogs
+  (`DFMerchantAddress.summaryHtml`, `#dfmAddress`); Courier Operations → Merchants ("PICKUP & HUB" column) and the
+  booking form's merchant hint (`#bkMerchantPickup`).
+
 ## Hub groups (modules/packages)
 No longer used for pricing (spec v2 prices by district). The `HubGroup` model and its endpoints
 (`GET/POST/PATCH/DELETE /hub-groups`, `PUT /hub-groups/:id/hubs`, `GET/PUT /hubs/:id/hub-group`) are kept
@@ -1115,3 +1163,50 @@ Per-user notifications behind the bell of every panel (2026-10-18; migration `us
   as read, Load more). Courier Operations adds its live "Operations alerts" (breached SLA, problem counts) as a section
   of the dropdown (`DFNotify.addSection`, courier-operation/bridge-desk.js). The website has no bell (customers' copies
   are stored for a future account inbox). API tests: `test/user-notifications.e2e.test.ts`.
+
+## Merchant "Services & pricing" (merchants/merchant-plan.ts, merchant-plan.service.ts; web: public/legacy/shared/merchant-plan.js)
+
+- `GET /merchants/me/plan` (owners and staff, `?merchantId=` for several workspaces): the merchant's package in plain
+  words. `services` (the category's booking and
+  entitlement services in merchant-facing sections, each `included` / `always` with a description and its price from the
+  package), `messages` (parcel messages by stage with recipient, trigger and the SMS / email state from Global
+  notifications, and `samples` — each event's SMS and email exactly as the current templates render them, with a
+  sample tracking ID, the real `/track/…` link, the merchant's contact name in messages to the merchant and a customer
+  name in messages to the recipient; support messages; account messages outside packages, `always` for security ones; products whose
+  "Send SMS & email" is off), `prices` (route tiers, extra charges for included services, COD, failed deliveries and
+  returns), `examples` (priced with `priceParcel`, the booking formula), `calculator` (choices the package offers and
+  the districts), the package, its scheduled change and counts. The texts live in merchant-plan.ts (pure).
+- Web: both merchant panels get a "Services & pricing" menu item before Settings (`?page=services-and-pricing`) with
+  three tabs: Services (filter All / In your plan / Not in your plan; "Request this service" opens a prefilled support
+  ticket), SMS & email ("See sample message" per message and "Show all samples": the SMS as a phone bubble, the
+  email with its subject; on phones each message stacks), Pricing (calculator on `POST /merchants/me/quote`). Reloads on every visit and on
+  `merchant.updated`. Tests: `test/merchant-plan.e2e.test.ts`, `tests/e2e/merchant-plan.spec.ts`.
+
+## Website customer area is for customers only (web: shared/api.js `DF.auth.isWebsiteCustomer`, website/bridge.js)
+
+- A website customer is an account with the CUSTOMER role whose home panel is `/account`. Accounts with a panel
+  (merchant — including a merchant application under review — staff, rider) never use the customer area, even when
+  they hold CUSTOMER from signing up: the customer session, parcels and addresses aren't loaded for them, and the
+  customer pages (`account`, `orders`, `addresses`, `profile`, `request`) send them to their panel. Login and Sign up
+  while signed in send anyone to their own panel (LoginView `useAlreadySignedIn`); another account needs a sign-out.
+- After a merchant application the website re-reads the session (`DF.auth.refresh`, which now carries
+  MERCHANT_OWNER) and opens the merchant panel, where the review banner shows the application's status
+  (`DFWebsite.merchantApplied`; the "application received" view remains only as a fallback).
+
+## Merchant account not active (API: MerchantsService.resolveOwn; web: shared/merchant-verification.js)
+
+- A merchant that isn't ACTIVE (PENDING_REVIEW, INFO_REQUESTED, REJECTED, SUSPENDED) gets nothing but its own
+  account. API: `resolveOwn` refuses every merchant self-service call with 403 `MERCHANT_NOT_ACTIVE`
+  (`details.status`; message "isn't verified yet" / "suspended") unless the call opts in with `allowInactive`:
+  `GET /merchants/me`, business verification (`GET /merchants/me/kyc`, upload, submit, view own file) and the review
+  thread (`GET /merchants/me/review`, respond). Profile and payout changes, team, products, pickups, stats, quotes,
+  API keys, `GET /merchants/me/plan` and `GET /packages/me` are refused; booking and imports were already refused.
+  Helper: `merchantNotActive(status)` (merchants/merchant-status.ts).
+- Web: both merchant panels become one screen, "Account verification" (`?page=verification`): no sidebar, search or
+  bell; every page asked for (menu, address, `renderPage`) draws it. It states the status plainly ("Your account isn't
+  verified yet" / "Action needed" / "Your application wasn't approved" / "suspended"), the steps to activation, the
+  business verification documents (Upload / Replace / View per document, "Submit for review"; owners only; not
+  offered when rejected or suspended), messages from Delivery Fast with the reply form when information was
+  requested, and the business profile read-only (no inputs; corrections are made by Delivery Fast during review).
+  Sign out on the screen. On `merchant.updated` it reloads; once ACTIVE the panel reloads into the full panel.
+- Tests: `test/merchant-inactive.e2e.test.ts`, `test/merchant-plan.e2e.test.ts`, `tests/e2e/merchant-pending.spec.ts`.

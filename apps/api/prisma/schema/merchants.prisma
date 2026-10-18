@@ -1,6 +1,25 @@
 // ───────────────────────────── Merchant administration, KYC and merchant tools ─────────────────────────────
 // Owned by the merchants area (modules/merchants, modules/returns, modules/pickups).
 
+// ── Merchant addresses (2026-10-18) ──
+// The merchant row holds the business address and ONE primary pickup location (existing pickup*
+// columns plus pickupZone / pin / contact / time / handover / derived pickupHubId). Multiple pickup
+// locations later: add a MerchantPickupLocation table (same fields + isPrimary) and keep the primary
+// mirrored into these columns, so booking defaults, pricing and imports keep reading the merchant.
+
+/// Preferred pickup time window.
+enum PickupTimePreference {
+  MORNING // 9:00–12:00
+  MIDDAY // 12:00–15:00
+  AFTERNOON // 15:00–18:00
+}
+
+/// How the merchant hands parcels over: a rider collects them, or they bring them to the serving hub.
+enum MerchantHandover {
+  RIDER_PICKUP
+  HUB_DROP
+}
+
 enum MerchantKycStatus {
   NOT_SUBMITTED
   PENDING

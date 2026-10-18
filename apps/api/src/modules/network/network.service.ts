@@ -13,6 +13,7 @@ import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { ParcelStatus, Prisma } from "../../generated/prisma/client";
 import type { createRiderSchema, hubSchema, listRidersQuerySchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
+import { opsHubScope } from "../parcels/ops-scope";
 
 const OPEN_DELIVERY_STATUSES: ParcelStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"];
 
@@ -24,7 +25,7 @@ export const riderView = (r: {
   status: string;
   active: boolean;
   dailyCapacity?: number | null;
-  hub: { id: string; name: string; code: string } | null;
+  hub: { id: string; name: string; code: string; type?: string } | null;
   user: { name: string; phone: string };
   _count?: { pickups: number; deliveries: number };
 }) => ({
@@ -45,7 +46,7 @@ export const riderView = (r: {
 
 const riderInclude = {
   user: { select: { name: true, phone: true } },
-  hub: { select: { id: true, name: true, code: true } },
+  hub: { select: { id: true, name: true, code: true, type: true } },
   _count: {
     select: {
       pickups: { where: { status: { in: ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] as ParcelStatus[] } } },
@@ -166,10 +167,13 @@ export class NetworkService {
   }
 
   // ── riders ──
-  async listRiders(query: z.infer<typeof listRidersQuerySchema>) {
+  async listRiders(query: z.infer<typeof listRidersQuerySchema>, actor?: Actor) {
+    // Hub staff don't see other hubs' franchise riders (they work only for their franchise); operations managers do.
+    const scope = actor ? opsHubScope(actor) : null;
     const riders = await this.prisma.rider.findMany({
       where: {
         hubId: query.hubId,
+        ...(scope ? { OR: [{ hubId: null }, { hub: { type: "COMPANY" } }, { hubId: { in: scope } }] } : {}),
         status: query.status,
         active: query.active,
         ...(query.q

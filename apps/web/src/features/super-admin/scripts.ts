@@ -12,12 +12,16 @@ export const scripts = [
   "/legacy/super-admin/03.js",
   // In-app notifications: the bell (unread count, latest) and the Notifications page (before the bridges: the bell is its own).
   "/legacy/shared/notifications.js",
+  // Structured merchant addresses (DFMerchantAddress): Settings editor and the staff summary.
+  "/legacy/shared/merchant-address.js",
   "/legacy/super-admin/bridge.js",
   "/legacy/super-admin/bridge-merchants.js",
   "/legacy/super-admin/bridge-notifications.js",
   "/legacy/super-admin/bridge-imports.js",
   "/legacy/super-admin/bridge-geo.js",
   "/legacy/super-admin/bridge-packages.js",
+  // Franchises: partner-run hubs, their commission and the settlement settings (super-admin/bridge-franchise.js).
+  "/legacy/super-admin/bridge-franchise.js",
   // Rider plans › "Rider location": the location interval (2 / 5 / 10 min) and movement threshold.
   "/legacy/super-admin/bridge-location.js",
   "/legacy/shared/mfa.js",

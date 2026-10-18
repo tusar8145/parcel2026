@@ -19,6 +19,8 @@ export const scripts = [
   "/legacy/shared/scanner.js",
   "/legacy/shared/mfa.js",
   "/legacy/shared/order-services.js",
+  // Structured merchant addresses (DFMerchantAddress): Settings editor and the staff summary.
+  "/legacy/shared/merchant-address.js",
   "/legacy/courier-operation/bridge.js",
   "/legacy/courier-operation/bridge-pages.js",
   "/legacy/courier-operation/bridge-network.js",
@@ -37,6 +39,8 @@ export const scripts = [
 ,
   "/legacy/courier-operation/bridge-returns.js",
   "/legacy/courier-operation/bridge-finance.js",
+  // Franchise hubs: hub tag, hand a pickup to a franchise hub, franchise deposits and commission invoices.
+  "/legacy/courier-operation/bridge-franchise.js",
   "/legacy/courier-operation/bridge-intake.js",
   "/legacy/courier-operation/bridge-collect.js",
   "/legacy/shared/importer.js",

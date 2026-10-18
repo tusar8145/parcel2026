@@ -4,6 +4,7 @@ import { pageQuerySchema } from "../../common/pagination";
 import { WEBHOOK_EVENTS } from "../notifications/webhooks.service";
 import { apiKeyScopesSchema } from "./api-key-scopes";
 import { periodChecks, periodQueryShape } from "../../common/period";
+import { handoverSchema, merchantPlaceSchema, pickupFieldsShape, pickupTimeSchema, websiteSchema } from "./merchant-address";
 
 const text = (min: number, max: number) => z.string().trim().min(min, `Use at least ${min} characters`).max(max, `Use at most ${max} characters`);
 
@@ -18,19 +19,39 @@ const contactFields = {
   contactName: text(2, 120),
   contactPhone: phoneSchema,
   contactEmail: emailSchema,
-  pickupAddress: text(5, 300),
-  pickupArea: text(2, 80),
-  pickupDistrict: text(2, 80),
 };
 
-export const merchantApplicationSchema = z.object({
-  type: merchantTypeSchema,
-  name: text(2, 120),
-  ...contactFields,
-  contactEmail: contactFields.contactEmail.optional(),
-  /** From an invitation link (?invite=…): marks the invitation accepted. */
-  inviteToken: z.string().trim().min(10).max(200).optional(),
-});
+const pickupMissing = { code: "custom" as const, path: ["pickup"], message: "Enter the pickup address, or tick \"Pickup from the business address\"" };
+
+/**
+ * The merchant application (website /merchant): business details, the structured business address,
+ * the pickup location (the business address or its own), pickup contact / time and the handover.
+ * The serving hub and the pricing route district are derived on the server.
+ */
+export const merchantApplicationSchema = z
+  .object({
+    type: merchantTypeSchema,
+    name: text(2, 120),
+    contactName: contactFields.contactName,
+    contactPhone: contactFields.contactPhone,
+    contactEmail: contactFields.contactEmail.optional(),
+    /** Optional: a product type (Regular / Document / Books…) or, for Banking & Financial, the institution type. */
+    businessCategory: text(2, 80).optional(),
+    /** Optional Facebook page or website. */
+    websiteUrl: websiteSchema.optional(),
+    business: merchantPlaceSchema,
+    ...pickupFieldsShape,
+    pickupSameAsBusiness: pickupFieldsShape.pickupSameAsBusiness.default(true),
+    /** Defaults to the contact person / phone. */
+    pickupContactName: pickupFieldsShape.pickupContactName.optional(),
+    pickupContactPhone: pickupFieldsShape.pickupContactPhone.optional(),
+    handover: handoverSchema.default("RIDER_PICKUP"),
+    /** From an invitation link (?invite=…): marks the invitation accepted. */
+    inviteToken: z.string().trim().min(10).max(200).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.pickupSameAsBusiness && !v.pickup) ctx.addIssue(pickupMissing);
+  });
 
 /** bKash/Nagad wallets are BD mobile numbers, stored as 01XXXXXXXXX. */
 const walletNumber = z
@@ -62,19 +83,37 @@ export const payoutAccountSchema = z.discriminatedUnion(
 const nonEmpty = <T extends z.ZodObject>(schema: T) =>
   schema.refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
 
+/**
+ * Address changes (Settings and super admin): `business`, and the pickup location as a whole
+ * (`pickupSameAsBusiness` + `pickup` when it differs). Changing the pickup re-derives the serving hub.
+ */
+const addressUpdateShape = {
+  businessCategory: text(2, 80).nullable().optional(),
+  websiteUrl: websiteSchema.nullable().optional(),
+  business: merchantPlaceSchema.optional(),
+  pickupSameAsBusiness: z.boolean("Send true or false").optional(),
+  pickup: merchantPlaceSchema.optional(),
+  pickupContactName: text(2, 120).optional(),
+  pickupContactPhone: phoneSchema.optional(),
+  pickupTime: pickupTimeSchema.optional(),
+  handover: handoverSchema.optional(),
+};
+const addressChecks = (v: { pickupSameAsBusiness?: boolean; pickup?: unknown }, ctx: z.RefinementCtx) => {
+  if (v.pickupSameAsBusiness === false && !v.pickup) ctx.addIssue(pickupMissing);
+  if (v.pickupSameAsBusiness === true && v.pickup) ctx.addIssue({ code: "custom", path: ["pickup"], message: "The pickup is the business address: don't send a separate pickup address" });
+};
+
 export const updateMyMerchantSchema = nonEmpty(
   z.object({
     contactName: contactFields.contactName.optional(),
     contactPhone: contactFields.contactPhone.optional(),
     contactEmail: contactFields.contactEmail.nullable().optional(),
-    pickupAddress: contactFields.pickupAddress.optional(),
-    pickupArea: contactFields.pickupArea.optional(),
-    pickupDistrict: contactFields.pickupDistrict.optional(),
+    ...addressUpdateShape,
     payoutAccount: payoutAccountSchema.nullable().optional(),
     /** Only while the application is under review or information was requested. */
     name: text(2, 120).optional(),
   }),
-);
+).superRefine(addressChecks);
 
 export const adminUpdateMerchantSchema = nonEmpty(
   z.object({
@@ -84,11 +123,11 @@ export const adminUpdateMerchantSchema = nonEmpty(
     contactName: contactFields.contactName.optional(),
     contactPhone: contactFields.contactPhone.optional(),
     contactEmail: contactFields.contactEmail.nullable().optional(),
-    pickupAddress: contactFields.pickupAddress.optional(),
-    pickupArea: contactFields.pickupArea.optional(),
-    pickupDistrict: contactFields.pickupDistrict.optional(),
+    ...addressUpdateShape,
   }),
-);
+).superRefine(addressChecks);
+
+export const pickupHubQuerySchema = z.object({ district: text(2, 80), zone: text(1, 80), area: z.string().trim().max(80).optional() });
 
 export const listMerchantsQuerySchema = pageQuerySchema.extend({
   q: z.string().trim().max(80).optional(),
@@ -184,7 +223,8 @@ export const merchantNoteSchema = z.object({ body: text(1, 4000) });
 
 export const inviteMerchantSchema = z
   .object({
-    name: text(2, 120),
+    /** The contact person's name (greets them in the SMS / email and prefills the application). */
+    name: text(2, 120).refine(v => !/^[+\d\s()-]{7,}$/.test(v), "Enter the contact person's name. The mobile number goes in its own field."),
     businessName: text(2, 120).optional(),
     phone: phoneSchema.optional(),
     email: emailSchema.optional(),

@@ -23,6 +23,8 @@
     FINANCE: "Finance admin",
     SUPPORT_AGENT: "Merchant support",
     SUPER_ADMIN: "Super admin",
+    FRANCHISE: "Franchise",
+    APPLICANT: "Applicant (waiting for approval)",
   };
   const ALERT_ACTIONS = new Set(["auth.locked", "auth.mfa_locked", "auth.mfa_failed", "auth.login_failed"]);
   const me = () => DF.auth.user;

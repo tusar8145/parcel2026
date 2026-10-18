@@ -12,7 +12,7 @@ import type { NotificationEvent } from "./events";
  * delivery codes, guest and email verification) never get one, and the copies never contain codes.
  */
 
-export type Panel = "/super-admin" | "/courier-operation" | "/rider" | "/ecommerce-merchant" | "/banking-merchant" | "/account";
+export type Panel = "/super-admin" | "/courier-operation" | "/rider" | "/ecommerce-merchant" | "/banking-merchant" | "/account" | "/franchise" | "/application";
 
 /** Where an item opens: a page / tab of the panel (slugs from the panels' URL scheme), a parcel or a ticket. */
 export interface Target {

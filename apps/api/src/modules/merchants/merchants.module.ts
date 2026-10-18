@@ -9,6 +9,7 @@ import { MerchantsService } from "./merchants.service";
 import { MerchantIntegrationsService } from "./merchant-integrations.service";
 import { PlansService } from "./plans.service";
 import { MerchantStatsService } from "./merchant-stats.service";
+import { MerchantPlanService } from "./merchant-plan.service";
 import { MerchantKycService } from "./merchant-kyc.service";
 import { MerchantReviewService } from "./merchant-review.service";
 import { MerchantToolsService } from "./merchant-tools.service";
@@ -17,7 +18,7 @@ import { MerchantToolsService } from "./merchant-tools.service";
   imports: [AuthModule, PricingModule, ParcelsModule],
   // Static paths (merchants/invites, merchants/kyc-policy, merchants/me/...) before merchants/:id.
   controllers: [MerchantSelfController, MerchantSelfReviewController, MerchantToolsController, MerchantAdminController, MerchantsController, PlansController],
-  providers: [MerchantsService, MerchantIntegrationsService, MerchantStatsService, PlansService, MerchantKycService, MerchantReviewService, MerchantToolsService],
+  providers: [MerchantsService, MerchantIntegrationsService, MerchantStatsService, MerchantPlanService, PlansService, MerchantKycService, MerchantReviewService, MerchantToolsService],
   exports: [MerchantsService, MerchantKycService],
 })
 export class MerchantsModule {}

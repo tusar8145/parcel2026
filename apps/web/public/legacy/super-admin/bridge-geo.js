@@ -268,7 +268,7 @@
         submit: "Add zone",
         fields:
           field("geoName", "Zone name", `<input id="geoName" maxlength="80" required placeholder="e.g. Thanchi">`) +
-          field("geoHub", "Serving hub (optional)", `<select id="geoHub"><option value="">No serving hub yet</option>${S.hubs.map(h => `<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.code)}</option>`).join("")}</select>`) +
+          field("geoHub", "Serving hub (optional)", `<select id="geoHub"><option value="">No serving hub yet</option>${S.hubs.map(h => `<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.code)}${h.type === "FRANCHISE" ? " · Franchise" : ""}</option>`).join("")}</select>`) +
           coordFields(),
         onSubmit: async () => {
           const name = $("geoName").value.trim();

@@ -233,7 +233,7 @@
       email: m.contactEmail || "—",
       phone: phone(m.contactPhone),
       type: m.type === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : "E-commerce",
-      city: m.pickupDistrict,
+      city: m.pickup?.zone ? `${m.pickup.zone}, ${m.pickupDistrict}` : m.pickupDistrict,
       plan: packageLabel(m),
       submitted: when(m.createdAt),
       status,
@@ -645,6 +645,13 @@
     if (RETIRED.has(page)) return;
     currentPage = page;
     decorate(page);
+    // Admin users: re-read the staff list on opening (sign-ins and status changes happen elsewhere).
+    if (page === "Admin users" && Date.now() - (showPage.staffAt || 0) > 3000) {
+      showPage.staffAt = Date.now();
+      void load("staff")
+        .then(changed => changed && currentPage === "Admin users" && !document.getElementById("modalBackdrop")?.classList.contains("open") && showPage("Admin users"))
+        .catch(() => undefined);
+    }
   };
 
   // ───────────── actions ─────────────
@@ -1043,6 +1050,68 @@
       closeModal();
       if (window.DFPackages) void window.DFPackages.openAssignment(m.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE", m.code);
       else showPage("Service plans");
+    },
+    true,
+  );
+
+  // Admin users → "Manage": the staff member's account, with Suspend / Reactivate (PATCH /users/:id; suspending ends
+  // their sessions at once). Rows follow S.staff (same order as adminUsers).
+  function closeStaffDialog() {
+    document.getElementById("dfStaffDialog")?.remove();
+  }
+  function openStaffDialog(u) {
+    closeStaffDialog();
+    const roles = u.roles.filter(r => STAFF_ROLES.includes(r.role));
+    const status = u.status === "ACTIVE" ? (u.lastLoginAt ? "Active" : "Invited") : u.status === "SUSPENDED" ? "Suspended" : "Disabled";
+    const self = DF.auth.user?.id === u.id;
+    const row = (k, v) => `<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #eef1f5"><span style="color:#778293">${escapeHtml(k)}</span><span>${v}</span></div>`;
+    const action = self
+      ? `<p class="panel-subtitle" style="margin:0">You can't suspend your own account.</p>`
+      : u.status === "ACTIVE"
+        ? `<button type="button" class="button" data-staff-close>Close</button><button type="button" class="button button-primary" data-staff-status="SUSPENDED" style="background:#c34d4d;border-color:#c34d4d">Suspend account</button>`
+        : `<button type="button" class="button" data-staff-close>Close</button><button type="button" class="button button-primary" data-staff-status="ACTIVE">Reactivate account</button>`;
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<div id="dfStaffDialog" role="dialog" aria-modal="true" aria-labelledby="dfStaffTitle" style="position:fixed;inset:0;z-index:100;background:#14203380;display:grid;place-items:center;padding:18px">
+        <section style="width:min(520px,100%);max-height:85vh;overflow:auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 24px 70px #10182840">
+          <header style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px"><div><h2 id="dfStaffTitle" style="margin:0;font-size:18px">${escapeHtml(u.name)}</h2><p style="margin:4px 0 0;color:#778293">${escapeHtml(roles.map(r => ROLE_LABEL[r.role]).join(" · "))}</p></div>${statusPill(status)}</header>
+          ${row("Mobile", escapeHtml(phone(u.phone)))}${row("Email", escapeHtml(u.email || "—"))}${row("Scope", escapeHtml([...new Set(roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role])))].join(" · ")))}${row("Last sign-in", escapeHtml(u.lastLoginAt ? when(u.lastLoginAt) : "Not signed in yet"))}
+          ${u.status === "ACTIVE" ? `<p class="panel-subtitle" style="margin:12px 0 0">Suspending signs ${escapeHtml(u.name)} out everywhere at once; they can't sign in until the account is reactivated.</p>` : `<p class="panel-subtitle" style="margin:12px 0 0">This account is ${escapeHtml(status.toLowerCase())}. Reactivating lets ${escapeHtml(u.name)} sign in again.</p>`}
+          <div class="modal-actions" style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px">${action}</div>
+        </section></div>`,
+    );
+    const box = document.getElementById("dfStaffDialog");
+    box.addEventListener("click", event => {
+      if (event.target === box || event.target.closest("[data-staff-close]")) return closeStaffDialog();
+      const button = event.target.closest("[data-staff-status]");
+      if (!button) return;
+      const next = button.dataset.staffStatus;
+      const confirmed = next === "SUSPENDED" ? DF.confirm({ title: `Suspend ${u.name}?`, message: "They are signed out everywhere and can't sign in until you reactivate the account.", confirm: "Suspend", danger: true }) : Promise.resolve(true);
+      void confirmed.then(ok =>
+        ok &&
+        busy(button, async () => {
+          try {
+            await DF.api(`/users/${u.id}`, { method: "PATCH", body: { status: next } });
+            await load("staff", "audit");
+            closeStaffDialog();
+            showPage("Admin users");
+            showToast(next === "SUSPENDED" ? `${u.name} is suspended and signed out.` : `${u.name} can sign in again.`);
+          } catch (error) {
+            fail(error);
+          }
+        }),
+      );
+    });
+  }
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target instanceof Element && event.target.closest("#mainContent [data-admin]");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const u = S.staff[Number(button.dataset.admin)];
+      if (u) openStaffDialog(u);
     },
     true,
   );

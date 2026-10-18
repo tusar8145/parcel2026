@@ -203,26 +203,35 @@ test("partner applications: a visitor signs up, returns to the form, and staff s
   await visitor.fill("#partnerEmail", `shop-${id}@example.com`);
   const phone = freshPhone();
   await visitor.fill("#partnerPhone", phone);
-  await visitor.selectOption("#partnerArea", "Dhaka");
-  await visitor.fill("#partnerPickupAddress", "House 12, Road 7, Gulshan 1");
-  await visitor.fill("#partnerPickupArea", "Gulshan");
+  await visitor.selectOption("#bizDistrict", "Dhaka North");
+  await visitor.selectOption("#bizZone", "Gulshan");
+  await visitor.selectOption("#bizArea", "Gulshan 1");
+  await visitor.fill("#bizStreet", "House 12, Road 7");
+  await visitor.check("#pickupTime");
+  // Signed out: the account is created at the end of the form (SMS code to the contact phone), then the application goes.
+  await visitor.fill("#accountPassword", "E2ePassword2026");
   await visitor.click('form[data-form="merchant"] button[type="submit"]');
-
-  // Signed out: asked to sign in first, then brought back to the form with what they typed.
-  await expect(visitor).toHaveURL(/\/login$/);
-  await expect(toast(visitor)).toContainText("sign in or create an account to send your application");
-  await visitor.click('form[data-form="login"] a[data-route="signup"]');
-  await completeSignup(visitor, `Owner ${id}`, phone);
+  const code = visitor.locator(".field", { has: visitor.locator("#accountOtp") });
+  await expect(code).toContainText("Development code:");
   await expect(visitor).toHaveURL(/\/merchant$/);
-  await fx.adoptUser(phone);
   await expect(visitor.locator("#partnerName")).toHaveValue(business);
-  await expect(visitor.locator("#partnerEmail")).toHaveValue(`shop-${id}@example.com`);
-  await expect(visitor.locator("#partnerPickupArea")).toHaveValue("Gulshan");
+  await expect(visitor.locator("#bizArea")).toHaveValue("Gulshan 1");
+  await visitor.fill("#accountOtp", (await code.textContent())!.match(/Development code: (\d{6})/)![1]);
   await visitor.click('form[data-form="merchant"] button[type="submit"]');
-  await expect(visitor).toHaveURL(/\/application-received$/);
+  // The new merchant goes straight to the merchant panel (pending review), never the customer area.
+  await expect(visitor).toHaveURL(/\/ecommerce-merchant/, { timeout: 20_000 });
+  await fx.adoptUser(phone);
   await fx.adoptMerchant(business);
-  await expect(toast(visitor)).toContainText(/Your e-commerce merchant application MR-\d+ was received/);
-  await expect(visitor.locator("#pageView .route-card")).toContainText(/Application received[\s\S]*merchant application MR-\d+ was received/);
+  await expect(visitor.locator("#dfvStatus")).toContainText("isn't verified yet", { timeout: 20_000 });
+  await expect(visitor.locator("#dfvProfile")).toContainText(business);
+  // The website's customer pages send a merchant back to the panel.
+  for (const path of ["/account", "/account/orders", "/request"]) {
+    await visitor.goto(path);
+    await expect(visitor).toHaveURL(/\/ecommerce-merchant/, { timeout: 15_000 });
+    // Let the panel finish restoring the session before the next jump (no request cut off mid-refresh).
+    await visitor.waitForSelector("html.legacy-ready", { state: "attached" });
+    await expect(visitor.locator("#breadcrumbPage")).toHaveText("Account verification");
+  }
 
   // A rider application from the same person, contact details prefilled.
   await visitor.goto("/become-a-rider");
@@ -240,7 +249,7 @@ test("partner applications: a visitor signs up, returns to the form, and staff s
   // The search may also return similarly named merchants from earlier runs; this run's must be there once.
   const ours = merchants.items.filter((m: { name: string }) => m.name === business);
   expect(ours).toHaveLength(1);
-  expect(ours[0]).toMatchObject({ name: business, type: "ECOMMERCE", status: "PENDING_REVIEW", pickupArea: "Gulshan", pickupDistrict: "Dhaka" });
+  expect(ours[0]).toMatchObject({ name: business, type: "ECOMMERCE", status: "PENDING_REVIEW", pickupArea: "Gulshan 1", pickupDistrict: "Dhaka North", pickup: { zone: "Gulshan" } });
   const applications = await api(ops, "/applications?kind=RIDER&limit=50");
   const application = applications.items.find((a: { number: string }) => a.number === riderNumber);
   expect(application).toMatchObject({ kind: "RIDER", status: "SUBMITTED", ticketStatus: "OPEN", details: { name: `Owner ${id}`, area: "Dhaka North", vehicle: "BICYCLE" } });

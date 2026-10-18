@@ -203,3 +203,31 @@ test("staff signing in on the website form open their panel (role → panel)", a
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await expect(page).toHaveURL(/\/courier-operation/); // the panel accepts the session (no bounce to /login)
 });
+
+test("someone already signed in who opens Login or Sign up goes to their own panel", async ({ browser }) => {
+  // Staff: back to the website's Login / Sign up → straight back to Courier Operations, no second sign-in.
+  const ops = await fx.staff("OPS_MANAGER");
+  const page = await open(browser, "/login");
+  await page.fill("#loginIdentity", ops.login);
+  await page.fill("#loginPassword", ops.password);
+  await page.click('form[data-form="login"] button[type="submit"]');
+  await expect(page).toHaveURL(/\/courier-operation/);
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  for (const path of ["/login", "/signup"]) {
+    await page.goto(path);
+    await expect(page.locator('form[data-form="login"], form[data-form="signup"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/courier-operation/, { timeout: 15_000 });
+  }
+
+  // Customers land on their account; "sign out first" brings the login form back.
+  const customer = await fx.user(`E2E Signed-in Customer ${fx.stamp}`, [{ role: "CUSTOMER" }]);
+  const cpage = await open(browser, "/login");
+  await cpage.fill("#loginIdentity", customer.login);
+  await cpage.fill("#loginPassword", customer.password);
+  await cpage.click('form[data-form="login"] button[type="submit"]');
+  await expect(cpage).toHaveURL(/\/account/);
+  await cpage.goto("/login");
+  await expect(cpage).toHaveURL(/\/account/, { timeout: 15_000 });
+  await cpage.goto("/signup");
+  await expect(cpage).toHaveURL(/\/account/, { timeout: 15_000 });
+});

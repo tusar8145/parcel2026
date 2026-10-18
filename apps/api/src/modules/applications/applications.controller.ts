@@ -34,6 +34,15 @@ export class ApplicationsController {
     return this.applications.mine(actor);
   }
 
+  /** After a rejection: close the application page and use the account as before (removes the APPLICANT role). */
+  @ApiBearerAuth()
+  @Post("leave")
+  @HttpCode(200)
+  @ApiConflictResponse({ description: "APPLICATION_PENDING" })
+  leave(@CurrentUser() actor: UserActor, @ReqMeta() meta: RequestMeta) {
+    return this.applications.leave(actor, meta);
+  }
+
   /** Staff: applications, newest first, with the submitted details. */
   @RequirePermissions("support:manage")
   @Get()

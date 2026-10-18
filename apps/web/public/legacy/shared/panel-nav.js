@@ -84,6 +84,7 @@
       };
     });
     if (!list.some(p => p.name === "Notifications")) list.push({ name: "Notifications", slug: "notifications" });
+    if (window.DFMerchantPanel?.locked?.()) list.push({ name: "Account verification", slug: "verification" });
     if (!list.some(p => p.name === "Support")) list.push({ name: "Support", slug: "support" });
     return list;
   }
@@ -143,6 +144,14 @@
     if (typeof base !== "function") return;
     window[CONFIG.renderer] = function (next, ...rest) {
       const result = base.call(this, next, ...rest);
+      // A merchant panel that isn't active draws "Account verification" instead of other pages: the address follows the screen.
+      const shown = window.DFMerchantPanel?.state?.page;
+      if (shown && shown !== next && window.DFMerchantPanel?.locked?.()) {
+        page = shown;
+        renderedAt = Date.now();
+        DF.nav.entered(shown, null, { replace: true });
+        return result;
+      }
       page = next;
       renderedAt = Date.now();
       if (TABS[next]?.detect) tabState[next] = TABS[next].detect();
@@ -177,7 +186,9 @@
       window[CONFIG.renderer](want.page);
       if (want.tab) clickTab(want.page, want.tab);
     } else {
-      page = document.querySelector("#navigation .nav-item.active")?.dataset.page || $("breadcrumbPage")?.textContent || "Overview";
+      page = window.DFMerchantPanel?.locked?.()
+        ? window.DFMerchantPanel.state.page
+        : document.querySelector("#navigation .nav-item.active")?.dataset.page || $("breadcrumbPage")?.textContent || "Overview";
       DF.nav.entered(page, null);
     }
     DF.nav.extras();

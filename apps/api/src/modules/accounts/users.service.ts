@@ -13,6 +13,7 @@ import { MfaService, mfaRequiredFor } from "../auth/mfa.service";
 import { PermissionService } from "../../common/auth/permissions.service";
 import { NotifyService } from "../notifications/notify.service";
 import { emailInUse, isUniqueViolation } from "./profile.service";
+import { env } from "../../config/env";
 import type { createUserSchema, listUsersQuerySchema, RoleGrantInput, updateUserSchema } from "./accounts.schemas";
 
 const MERCHANT_ROLES: Role[] = ["MERCHANT_OWNER", "MERCHANT_STAFF"];
@@ -61,6 +62,15 @@ const userView = (u: ListedUser) => ({
 });
 
 const unprocessable = (code: string, message: string) => new AppError(code, message, HttpStatus.UNPROCESSABLE_ENTITY);
+
+/** Staff roles as the panels name them (super admin "Admin users & roles"). */
+const STAFF_ROLE_LABEL: Partial<Record<Role, string>> = {
+  SUPER_ADMIN: "Super Administrator",
+  OPS_MANAGER: "Operations Administrator",
+  HUB_OPERATOR: "Hub Manager",
+  FINANCE: "Finance Administrator",
+  SUPPORT_AGENT: "Merchant Support",
+};
 
 @Injectable()
 export class UsersService {
@@ -130,6 +140,17 @@ export class UsersService {
         );
         return created;
       });
+      // Staff accounts: tell the new person they have an account, as what, and where to sign in
+      // ("Account invitation", SMS + email; without a password they sign in with an SMS code).
+      const staff = [...new Set(input.roles.map(g => STAFF_ROLE_LABEL[g.role as Role]).filter(Boolean))];
+      if (staff.length)
+        await this.notify
+          .notifyNow({
+            event: "account.invite",
+            to: { userId: user.id, phone: input.phone, email: input.email, name: input.name },
+            vars: { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", role: staff.join(" and "), link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
+          })
+          .catch(() => undefined);
       return this.get(user.id);
     } catch (error) {
       if (isUniqueViolation(error, "phone")) throw conflict("PHONE_IN_USE", "This phone number already has an account");

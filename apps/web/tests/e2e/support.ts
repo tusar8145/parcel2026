@@ -326,8 +326,9 @@ export class Fixtures {
   async cleanup() {
     const M = this.merchants.map(m => m.id);
     const U = this.users.map(u => u.id);
-    const R = this.riders.map(r => r.riderId);
     if (!M.length && !U.length && !this.trackingIds.length) return;
+    // Our riders, and riders our accounts became through the UI (an approved rider application).
+    const R = [...new Set([...this.riders.map(r => r.riderId), ...(U.length ? (await sql<{ id: string }>(`SELECT id FROM riders WHERE "userId" = ANY($1::uuid[])`, [U])).map(r => r.id) : [])])];
     const db = new pg.Client({ connectionString: DATABASE_URL });
     await db.connect();
     const q = (text: string, values: unknown[] = []) => db.query(text, values);
@@ -361,7 +362,8 @@ export class Fixtures {
       await q(`DELETE FROM partner_applications WHERE "ticketId" IN (${tickets}) OR "applicantId" = ANY($3::uuid[])`, [P, M, U]);
       await q(`DELETE FROM support_tickets WHERE id IN (${tickets})`, [P, M, U]);
       await q(`DELETE FROM delivery_attempts WHERE "parcelId" = ANY($1::uuid[]) OR "riderId" = ANY($2::uuid[])`, [P, R]);
-      await q(`DELETE FROM merchant_kyc_documents WHERE "merchantId" = ANY($1::uuid[])`, [M]);
+      // Also documents uploaded by our users (an applicant's merchant may be adopted late or not at all).
+      await q(`DELETE FROM merchant_kyc_documents WHERE "merchantId" = ANY($1::uuid[]) OR "uploadedById" = ANY($2::uuid[]) OR "fileId" IN (SELECT id FROM stored_files WHERE "uploadedById" = ANY($2::uuid[]))`, [M, U]);
       await q(`DELETE FROM rider_kyc_documents WHERE "riderId" = ANY($1::uuid[])`, [R]);
       await q(`DELETE FROM delivery_proofs WHERE "parcelId" = ANY($1::uuid[])`, [P]);
       await q(`DELETE FROM stored_files WHERE "uploadedById" = ANY($1::uuid[])`, [U]);

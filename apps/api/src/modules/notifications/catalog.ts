@@ -280,6 +280,20 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       text: "Hi {{name}},\n\nThanks for applying to ship with Delivery Fast. We received the application for {{businessName}} (reference {{reference}}) and will review it shortly.",
     },
   },
+  "merchant.invite": {
+    label: "Merchant invitation",
+    group: "Merchant",
+    audience: "Invited merchant",
+    mandatory: true,
+    vars: ["role", "link"],
+    required: ["link"],
+    sample: { role: "an E-commerce merchant (Northstar Store)", link: "https://deliveryfast.example/merchant?invite=abc" },
+    sms: "You're invited to join Delivery Fast as {{role}}. Create your account and apply here: {{link}}",
+    email: {
+      subject: "Your invitation to join Delivery Fast",
+      text: "Hi {{name}},\n\nYou're invited to join Delivery Fast as {{role}}.\n\nOpen this link to create your account and send your merchant application (the link works once): {{link}}",
+    },
+  },
   "merchant.approved": {
     label: "Merchant approved",
     group: "Merchant",

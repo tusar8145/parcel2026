@@ -118,7 +118,7 @@ export class MerchantReviewService {
 
   /** The applicant's view: status, rejection reason and the conversation with Delivery Fast. */
   async myReview(actor: Actor, merchantId: string | undefined) {
-    const m = await this.merchants.resolveOwn(actor, merchantId);
+    const m = await this.merchants.resolveOwn(actor, merchantId, { allowInactive: true });
     const messages = await this.prisma.merchantNote.findMany({ where: { merchantId: m.id, internal: false }, orderBy: { createdAt: "asc" }, take: 200 });
     return {
       merchantId: m.id,
@@ -131,7 +131,7 @@ export class MerchantReviewService {
 
   /** Answers an information request; the application goes back to review. */
   async respond(actor: Actor, merchantId: string | undefined, input: z.infer<typeof applicantResponseSchema>, meta: RequestMeta) {
-    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true });
+    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true, allowInactive: true });
     await this.prisma.$transaction(async tx => {
       const { count } = await tx.merchant.updateMany({ where: { id: m.id, status: "INFO_REQUESTED" }, data: { status: "PENDING_REVIEW" } });
       if (!count) throw conflict("NO_INFO_REQUESTED", "Delivery Fast hasn't asked for more information");
@@ -193,9 +193,9 @@ export class MerchantReviewService {
       });
       outbox.push(
         ...(await this.notify.notify(tx, {
-          event: "account.invite",
+          event: "merchant.invite",
           to: { phone: input.phone, email: input.email, name: input.name },
-          vars: { inviter: "Delivery Fast", role: `${input.type === "BANKING_FINANCIAL" ? "a Banking & Financial" : "an E-commerce"} merchant${input.businessName ? ` (${input.businessName})` : ""}`, link },
+          vars: { role: `${input.type === "BANKING_FINANCIAL" ? "a Banking & Financial" : "an E-commerce"} merchant${input.businessName ? ` (${input.businessName})` : ""}`, link },
         })),
       );
       await this.audit.record(actor, { action: "merchant.invite", entityType: "merchant_invite", entityId: created.id, data: { name: input.name, type: input.type, phone: input.phone ?? null, email: input.email ?? null } }, meta, tx);
@@ -242,6 +242,9 @@ export class MerchantReviewService {
       if (error instanceof AppError) throw new AppError(error.code, error.message, HttpStatus.NOT_FOUND);
       throw error;
     });
-    return { name: invite.name, businessName: invite.businessName, type: invite.type, phone: invite.phone, email: invite.email, message: invite.message, expiresAt: invite.expiresAt };
+    // Whether the invited number / email already has an account, so the application form offers
+    // "sign in" instead of "create your account". Only the holder of the one-time link learns it.
+    const account = invite.phone || invite.email ? await this.prisma.user.findFirst({ where: { OR: [...(invite.phone ? [{ phone: invite.phone }] : []), ...(invite.email ? [{ email: invite.email }] : [])] }, select: { id: true } }) : null;
+    return { name: invite.name, businessName: invite.businessName, type: invite.type, phone: invite.phone, email: invite.email, message: invite.message, expiresAt: invite.expiresAt, hasAccount: !!account };
   }
 }

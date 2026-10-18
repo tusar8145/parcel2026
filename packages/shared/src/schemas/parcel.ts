@@ -138,6 +138,12 @@ export const assignRiderSchema = z.object({
   note: optionalText(300),
 });
 
+/** A pickup handed to a hub (e.g. a franchise hub, which then assigns one of its riders); null takes it back. */
+export const assignPickupHubSchema = z.object({
+  hubId: z.uuid().nullable(),
+  note: optionalText(300),
+});
+
 export const updateStatusSchema = z.object({
   status: statusSchema,
   hubId: z.uuid().optional(),

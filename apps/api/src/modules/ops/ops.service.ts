@@ -1,3 +1,4 @@
+import { merchantPickupArea } from "../merchants/merchant-address";
 import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
@@ -553,7 +554,7 @@ export class OpsService {
   async merchants() {
     const month = dhakaMonthStart();
     const [merchants, mtd, active, ecommerce, banking] = await Promise.all([
-      this.prisma.merchant.findMany({ orderBy: { name: "asc" }, take: 1000 }),
+      this.prisma.merchant.findMany({ orderBy: { name: "asc" }, take: 1000, include: { pickupHub: { select: { id: true, code: true, name: true } } } }),
       this.prisma.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, createdAt: { gte: month } }, _count: { _all: true }, _sum: { codAmount: true } }),
       this.prisma.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, status: { in: ACTIVE_STATUSES } }, _count: { _all: true } }),
       this.packages.assignments("ECOMMERCE"),
@@ -575,6 +576,14 @@ export class OpsService {
         contactPhone: m.contactPhone,
         pickupDistrict: m.pickupDistrict,
         pickupArea: m.pickupArea,
+        /** Structured pickup (null zone: an older free-text address not completed yet). */
+        pickupZone: m.pickupZone,
+        pickupAddress: m.pickupAddress,
+        pickupContactName: m.pickupContactName,
+        pickupContactPhone: m.pickupContactPhone,
+        pickupTime: m.pickupTime,
+        handover: m.handover,
+        pickupHub: m.pickupHub,
         parcelsThisMonth: month?._count._all ?? 0,
         codThisMonth: Number(month?._sum.codAmount ?? 0),
         activeParcels: active.find(r => r.merchantId === m.id)?._count._all ?? 0,
@@ -597,13 +606,15 @@ export class OpsService {
     if (merchantId) {
       const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
       if (!merchant) throw notFound("Merchant");
-      body.sender ??= { name: merchant.name, phone: merchant.contactPhone };
+      // Sender and pickup default to the merchant's primary pickup location (contact, structured zone, pin).
+      body.sender ??= { name: merchant.name, phone: merchant.pickupContactPhone ?? merchant.contactPhone };
       body.pickup ??= {
         category: "OFFICE",
         street: merchant.pickupAddress,
-        area: merchant.pickupArea,
-        zone: await this.zoneFor(merchant.pickupDistrict, merchant.pickupArea),
+        area: merchant.pickupZone ? (merchantPickupArea(merchant) ?? undefined) : merchant.pickupArea,
+        zone: merchant.pickupZone ?? (await this.zoneFor(merchant.pickupDistrict, merchant.pickupArea)),
         district: merchant.pickupDistrict,
+        ...(merchant.pickupLat != null && merchant.pickupLng != null ? { lat: merchant.pickupLat, lng: merchant.pickupLng } : {}),
       };
     }
     const input = createParcelSchema.parse(body); // ZodError -> 422 VALIDATION_FAILED

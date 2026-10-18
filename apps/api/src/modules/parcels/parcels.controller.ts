@@ -3,6 +3,7 @@ import { ApiHeader, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import type { z } from "zod";
 import {
+  assignPickupHubSchema,
   assignRiderSchema,
   cancelParcelSchema,
   createParcelSchema,
@@ -88,6 +89,14 @@ export class ParcelsController {
   }
 
   // ── operations ──
+
+  @RequirePermissions("parcel:dispatch")
+  @Post("parcels/:trackingId/pickup-hub")
+  @HttpCode(200)
+  @ApiZodBody(assignPickupHubSchema)
+  assignPickupHub(@CurrentActor() actor: Actor, @Param("trackingId") trackingId: string, @ZBody(assignPickupHubSchema) body: z.infer<typeof assignPickupHubSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.parcels.assignPickupHub(actor, trackingId, body, meta);
+  }
 
   @RequirePermissions("parcel:dispatch")
   @Post("parcels/:trackingId/assign-pickup")

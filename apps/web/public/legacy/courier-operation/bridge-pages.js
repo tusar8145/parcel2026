@@ -263,7 +263,7 @@
     const schedules = loadSchedules();
     const showCycle = Ops.can("financeStaff");
     // Service packages replaced service plans: the column shows the package each merchant books with.
-    genericPages.Merchants.cols = ["MERCHANT", "ACCOUNT ID", "PACKAGE", "SHIPMENTS MTD", ...(showCycle ? ["COD CYCLE"] : []), "ACCOUNT OWNER", "STATUS"];
+    genericPages.Merchants.cols = ["MERCHANT", "ACCOUNT ID", "PACKAGE", "PICKUP & HUB", "SHIPMENTS MTD", ...(showCycle ? ["COD CYCLE"] : []), "ACCOUNT OWNER", "STATUS"];
     const cycleOf = m => {
       if (!schedules) return Ops.lazyError("fin-schedules") ? "—" : "…";
       const s = schedules.find(x => x.merchant.id === m.id);
@@ -273,6 +273,8 @@
       `${m.name} · ${m.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`,
       m.code,
       m.package ? `${m.package.name}${m.package.isDefault ? " (default)" : ""}` : "Default package",
+      // Structured pickup (zone, district), the derived serving hub and the handover; older free text is flagged.
+      `${m.pickupZone || m.pickupArea}, ${m.pickupDistrict}${m.pickupZone ? "" : " (address not completed)"} · ${m.pickupHub ? m.pickupHub.name : "no hub"}${m.handover === "HUB_DROP" ? " · drops at hub" : ""}`,
       Ops.num(m.parcelsThisMonth),
       ...(showCycle ? [cycleOf(m)] : []),
       m.contactName,
@@ -404,7 +406,7 @@
     return [
       bkSection("Sender"),
       lineSelect,
-      bkField("bkMerchant", "Merchant account", `<select id="bkMerchant"></select>`, { full: true, cls: "df-bk-merchant" }),
+      bkField("bkMerchant", "Merchant account", `<select id="bkMerchant"></select><small id="bkMerchantPickup" style="color:#64748b;font-size:12px"></small>`, { full: true, cls: "df-bk-merchant" }),
       bkField("bkSenderName", "Sender name", `<input id="bkSenderName" maxlength="120" autocomplete="off" placeholder="Walk-in sender's name">`, { cls: "df-bk-walkin" }),
       bkField("bkSenderPhone", "Sender phone", `<input id="bkSenderPhone">`, { cls: "df-bk-walkin" }),
       bkField("bkPickupDistrict", "Sender district", placeSelect("bkPickupDistrict"), { cls: "df-bk-walkin" }),
@@ -598,6 +600,16 @@
     }
   }
 
+  /** Under the merchant select: where the sender / pickup defaults come from (the merchant's primary pickup location). */
+  function showMerchantPickup() {
+    const box = $("bkMerchantPickup");
+    const m = bookingMerchant();
+    if (!box) return;
+    box.textContent = m
+      ? `Picks up from ${[m.pickupAddress, m.pickupZone && m.pickupArea === m.pickupZone ? "" : m.pickupArea, m.pickupZone, m.pickupDistrict].filter(Boolean).join(", ")} · ${m.pickupContactName || m.contactName} ${m.pickupContactPhone || m.contactPhone || ""}${m.pickupHub ? ` · hub ${m.pickupHub.name}` : ""}`
+      : "";
+  }
+
   /** The quote body: the same places and choices the booking sends (product included, so the price matches). */
   function bookingQuoteBody() {
     const line = lineNow();
@@ -648,7 +660,7 @@
       applyLine();
       return void loadBookingPackage();
     }
-    if (id === "bkMerchant") return void loadBookingPackage();
+    if (id === "bkMerchant") return void (showMerchantPickup(), loadBookingPackage());
     if (id === "bkDistrict" || id === "bkPickupDistrict") cascade(id === "bkDistrict" ? "bk" : "bkPickup");
     if (id === "bkZone" || id === "bkPickupZone") cascadeAreas(id === "bkZone" ? "bk" : "bkPickup");
     svcApi()?.sync("bkSvc");

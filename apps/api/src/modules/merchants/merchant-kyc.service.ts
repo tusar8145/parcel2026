@@ -151,7 +151,7 @@ export class MerchantKycService {
   }
 
   async mine(actor: Actor, merchantId: string | undefined) {
-    const m = await this.merchants.resolveOwn(actor, merchantId);
+    const m = await this.merchants.resolveOwn(actor, merchantId, { allowInactive: true });
     return this.summary(m, { staff: false });
   }
 
@@ -162,7 +162,7 @@ export class MerchantKycService {
   }
 
   async upload(actor: Actor, merchantId: string | undefined, input: z.infer<typeof uploadKycDocumentSchema>, meta: RequestMeta) {
-    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true });
+    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true, allowInactive: true });
     if (m.kycStatus === "APPROVED") throw conflict("KYC_LOCKED", "Your documents are verified. Contact support to update a verified document.");
     const userId = actor.kind === "user" ? actor.userId : undefined;
     await this.prisma.$transaction(async tx => {
@@ -175,7 +175,7 @@ export class MerchantKycService {
   }
 
   async submit(actor: Actor, merchantId: string | undefined, meta: RequestMeta) {
-    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true });
+    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true, allowInactive: true });
     const outbox: string[] = [];
     await this.prisma.$transaction(async tx => {
       const current = await tx.merchant.findUniqueOrThrow({ where: { id: m.id } });
@@ -243,7 +243,7 @@ export class MerchantKycService {
   }
 
   async myDocumentFile(actor: Actor, merchantId: string | undefined, documentId: string) {
-    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true });
+    const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true, allowInactive: true });
     return this.documentFile(m.id, documentId);
   }
 

@@ -17,8 +17,14 @@ export const scripts = [
   "/legacy/shared/support.js",
   // In-app notifications: the bell (unread count, latest) and the Notifications page (before the bridges: the bell is its own).
   "/legacy/shared/notifications.js",
+  // "Services & pricing": the plan, its services, messages and prices (DFMerchantPlan; menu item before Settings).
+  "/legacy/shared/merchant-plan.js",
+  // Not active yet (or suspended): the whole panel is the "Account verification" screen (DFMerchantVerification).
+  "/legacy/shared/merchant-verification.js",
   "/legacy/shared/importer.js",
   "/legacy/shared/order-services.js",
+  // Structured merchant addresses (DFMerchantAddress): Settings editor and the staff summary.
+  "/legacy/shared/merchant-address.js",
   "/legacy/shared/merchant-bridge.js",
   "/legacy/ecommerce-merchant/bridge.js",
   "/legacy/shared/merchant-features.js",

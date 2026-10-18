@@ -269,9 +269,14 @@ test.describe("super admin", () => {
         name: business,
         contactName: "E2E Applicant",
         contactPhone: phone,
-        pickupAddress: "House 5, Road 2, Gulshan",
-        pickupArea: "Gulshan",
-        pickupDistrict: "Dhaka North",
+        businessCategory: "Regular",
+        business: { district: "Dhaka North", zone: "Gulshan", area: "Gulshan 2", street: "House 5, Road 2", lat: 23.7925, lng: 90.4078 },
+        pickupSameAsBusiness: false,
+        pickup: { district: "Dhaka North", zone: "Uttara", otherArea: "E2E Lane 9", street: "Warehouse 4, Sector 7" },
+        pickupContactName: "E2E Store Keeper",
+        pickupContactPhone: phone,
+        pickupTime: "AFTERNOON",
+        handover: "HUB_DROP",
       },
     });
     expect(application.status()).toBe(201);
@@ -285,6 +290,17 @@ test.describe("super admin", () => {
     await expect(row).toContainText("Pending review");
     await row.locator("[data-review]").click();
     await expect(admin.locator("#modalTitle")).toHaveText(`Review ${business}`);
+    // The structured addresses with the derived hub and route district (bridge-merchants.js, shared/merchant-address.js).
+    const summary = admin.locator("#dfmAddress");
+    await expect(summary).toContainText("House 5, Road 2, Gulshan 2, Gulshan, Dhaka North");
+    await expect(summary).toContainText("Warehouse 4, Sector 7, E2E Lane 9, Uttara, Dhaka North");
+    await expect(summary).toContainText("area typed");
+    await expect(summary).toContainText("E2E Store Keeper");
+    await expect(summary).toContainText("Afternoon");
+    await expect(summary).toContainText("Drop at hub");
+    await expect(summary).toContainText("Uttara Delivery Hub (DHK-UTT)");
+    await expect(summary.locator("text=Route district")).toBeVisible();
+    await expect(summary.locator("[data-dfma-map]")).toHaveAttribute("href", /mlat=23.7925/);
     // The merchant books with its category's default package unless another one is chosen.
     await expect(admin.locator("#approvalPlan option").first()).toContainText("(default)");
     await admin.click("#modalSubmit");

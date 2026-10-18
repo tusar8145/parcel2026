@@ -13,7 +13,11 @@
   const PROOF = { SIGNATURE: "Signature", OTP: "OTP", PHOTO: "Photo" };
   const PARTNER_ROUTES = ["merchant", "rider", "franchise"];
   const ACCOUNT_ROUTES = ["account", "orders"];
-  const isCustomer = () => DF.auth.hasRole("CUSTOMER");
+  /** The customer area: only website customers use it; merchants, staff and riders go to their panel. */
+  const CUSTOMER_ONLY_ROUTES = ["account", "orders", "addresses", "profile", "request"];
+  /** Account pages: signed-out visitors are asked to log in first. */
+  const SIGNED_IN_ROUTES = ["account", "orders", "addresses", "profile"];
+  const isCustomer = () => DF.auth.isWebsiteCustomer();
   const currentRoute = () => DF.route.path().split("/")[0] || "home";
 
   // Routes the original page didn't have.
@@ -65,6 +69,48 @@
     showToast(message);
   }
 
+  /** Signed in with a panel (merchant, staff, rider) on a customer-only page: open the panel instead. */
+  let leaving = false;
+  function guardCustomerArea() {
+    const user = DF.auth.user;
+    const route = currentRoute();
+    // Signed out (never signed in, signed out elsewhere, or the account was suspended): the account pages ask
+    // to log in and come back afterwards. Booking stays open to guests (SMS-verified guest booking).
+    if (!leaving && !user && SIGNED_IN_ROUTES.includes(route)) {
+      leaving = true;
+      setTimeout(() => {
+        leaving = false;
+        askToSignIn(DF.route.path() || route, "Please log in to see your account.");
+      }, 0);
+      return true;
+    }
+    if (leaving || !user || isCustomer() || !CUSTOMER_ONLY_ROUTES.includes(route)) return false;
+    leaving = true;
+    showToast(`The customer area is for customers. Opening your ${user.merchant ? "merchant panel" : "workspace"}…`);
+    setTimeout(() => location.replace(DF.auth.destination()), 400);
+    return true;
+  }
+
+  /**
+   * A partner application was sent. Merchants now hold the merchant role (pending review); rider and franchise
+   * applicants the APPLICANT role. Re-read the session and open that panel (merchant panel, or /application),
+   * where the application status and next steps are shown; never the customer area. `only`: open that panel only
+   * (someone who already has another panel, e.g. a merchant applying to ride, stays and sees "received").
+   */
+  async function partnerApplied(title, message, opening = "your merchant panel", only = null) {
+    const user = await DF.auth.refresh().catch(() => null);
+    if (user?.panel && user.panel !== "/account" && (!only || user.panel === only)) {
+      try {
+        sessionStorage.removeItem(RETURN_ROUTE_KEY);
+      } catch {}
+      leaving = true;
+      showToast(`${title} Opening ${opening}…`);
+      setTimeout(() => (location.href = user.panel), 600);
+      return;
+    }
+    applicationSent(title, message);
+  }
+
   let lastApplication = null;
   function applicationSent(title, message) {
     lastApplication = { title, message };
@@ -76,6 +122,8 @@
     signedIn,
     askToSignIn,
     applicationSent,
+    merchantApplied: partnerApplied,
+    partnerApplied,
     async refreshAccount() {
       await refreshAccount().catch(() => undefined);
       if (DF.auth.user && isCustomer()) {
@@ -207,6 +255,7 @@
   // ───────────── page changes ─────────────
 
   function onRoute() {
+    if (guardCustomerArea()) return;
     decorateRoute();
     homeSamples();
     if (ACCOUNT_ROUTES.includes(currentRoute())) refreshAccountView().catch(error => console.error("Your account data could not be refreshed.", error));
@@ -216,6 +265,7 @@
   const originalRenderRoute = renderRoute;
   renderRoute = function () {
     originalRenderRoute();
+    if (guardCustomerArea()) return;
     decorateRoute();
   };
   onRoute();

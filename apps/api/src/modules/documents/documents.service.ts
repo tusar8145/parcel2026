@@ -28,7 +28,7 @@ import { A4, dhakaToday, PdfWriter } from "./pdf/writer";
 import { drawLabels, LABEL_PAGE, labelPages, type LabelData } from "./render/labels";
 import { drawShipmentInvoices, drawShipmentList, type ShipmentDoc } from "./render/shipments";
 import { BAG_LABEL_SIZE, drawBagLabel, drawCnSheet, drawManifest, drawReturnRun, drawRunSheet, drawTableDoc, type RunSheetDoc } from "./render/operations";
-import { drawFinanceInvoice, drawSettlement, drawStatement } from "./render/finance";
+import { drawFinanceInvoice, drawSettlement, drawStatement, drawFranchiseInvoice, type FranchiseInvoiceDoc } from "./render/finance";
 import { MAX_INVOICES, MAX_LABELS, MAX_LIST_ROWS, type cnSheetQuerySchema, type invoicesQuerySchema, type labelsQuerySchema, type parcelListQuerySchema, type runSheetQuerySchema, type slaReportQuerySchema, type statementQuerySchema } from "./documents.schemas";
 
 /** A generated PDF: streamed to the client as it is written. */
@@ -196,6 +196,12 @@ export class DocumentsService {
           ...(zones.length ? [{ OR: zoneMatch("pickupDistrict", "pickupZone") }, { OR: zoneMatch("deliveryDistrict", "deliveryZone") }] : []),
         ],
       };
+    }
+    // A franchise: labels and receipts for parcels of its own hub (walk-ins at its counter, its riders' parcels).
+    const franchiseHubs = actor.kind === "user" ? actor.roles.flatMap(r => (r.role === "FRANCHISE" && r.hubId ? [r.hubId] : [])) : [];
+    if (franchiseHubs.length) {
+      const inHubs = { in: franchiseHubs };
+      return { OR: [{ currentHubId: inHubs }, { dropOffHubId: inHubs }, { collectHubId: inHubs }, { pickupHubId: inHubs }, { pickupRider: { hubId: inHubs } }, { deliveryRider: { hubId: inHubs } }] };
     }
     if (!actor.permissions.has("parcel:read:own")) throw forbidden("You can't print parcel documents");
     const or: Prisma.ParcelWhereInput[] = [];
@@ -577,6 +583,15 @@ export class DocumentsService {
     };
     const pdf = new PdfWriter({ size: A4, title: `Tax invoice ${i.number}`, bufferPages: true });
     return { fileName: `delivery-fast-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFinanceInvoice(pdf, brand, doc, docMeta)) };
+  }
+
+  /** A franchise commission invoice (the caller loads and authorises it: modules/franchise). */
+  async franchiseInvoice(actor: Actor, i: FranchiseInvoiceDoc & { id: string }, meta: RequestMeta): Promise<PdfFile> {
+    const brand = await this.brand();
+    await this.record(actor, "franchise_invoice", { number: i.number }, meta, i.id, "franchise_invoice");
+    const docMeta = this.meta(actor, "Franchise commission invoice", { number: i.number, date: i.createdAt, subtitle: `${i.franchise.name} · ${i.status.toLowerCase()}` });
+    const pdf = new PdfWriter({ size: A4, title: `Franchise invoice ${i.number}`, bufferPages: true });
+    return { fileName: `delivery-fast-franchise-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFranchiseInvoice(pdf, brand, i, docMeta)) };
   }
 
   async settlement(actor: Actor, id: string, meta: RequestMeta): Promise<PdfFile> {

@@ -10,8 +10,80 @@ const isChallenge = (r: SessionUser | MfaChallenge): r is MfaChallenge => "mfaTo
 
 const linkStyle = { color: "var(--green)", fontWeight: 700, cursor: "pointer" } as const;
 
+/** A partner application waiting for this sign-in ("merchant", "rider", "franchise"), if any. */
+export function pendingPartnerRoute(): string {
+  try {
+    const route = (sessionStorage.getItem("deliveryfast-customer-return-route") || "").split("/")[0];
+    return ["merchant", "rider", "franchise"].includes(route) ? route : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Someone already signed in who opens Login or Sign up goes straight to their own panel (or account),
+ * the same way a fresh sign-in would. Using another account means signing out first.
+ * Returns the signed-in user once the session check is done (null when signed out), or undefined while checking.
+ */
+export function useAlreadySignedIn(): SessionUser | null | undefined {
+  const [state, setState] = useState<SessionUser | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    // Wait for "legacy-ready": the session is restored and the website bridge (DFWebsite) has loaded.
+    const finish = () => {
+      if (!live) return;
+      const user = (window as unknown as { DF?: { auth?: { user?: SessionUser | null } } }).DF?.auth?.user ?? null;
+      setState(user);
+      if (user) void site()?.signedIn(user);
+    };
+    const root = document.documentElement;
+    if (root.classList.contains("legacy-ready")) {
+      finish();
+      return () => {
+        live = false;
+      };
+    }
+    const observer = new MutationObserver(() => {
+      if (!root.classList.contains("legacy-ready")) return;
+      observer.disconnect();
+      finish();
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, []);
+  return state;
+}
+
+/** Shown instead of the form while an already signed-in user is sent on to their panel. */
+export function AlreadySignedIn({ user }: { user: SessionUser | null | undefined }) {
+  if (user === undefined) return <div className="route-card route-form" aria-busy="true" style={{ minHeight: 120 }} />;
+  if (!user) return null;
+  return (
+    <div className="route-card route-form" id="alreadySignedIn" role="status">
+      <p style={{ margin: 0 }}>{`You're signed in as ${user.name}. Opening your workspace…`}</p>
+      <p style={{ margin: "10px 0 0", fontSize: 13 }}>
+        {"To use a different account, "}
+        <span
+          role="button"
+          tabIndex={0}
+          style={linkStyle}
+          onClick={() => void df().auth.logout().then(() => location.reload())}
+          onKeyDown={e => (e.key === "Enter" || e.key === " ") && void df().auth.logout().then(() => location.reload())}
+        >
+          {"sign out first"}
+        </span>
+        {"."}
+      </p>
+    </div>
+  );
+}
+
 /** Sign-in: password or SMS code, forgot password, and the two-step verification screens. */
 export default function LoginView() {
+  const signedIn = useAlreadySignedIn();
   const [step, setStep] = useState<Step>("password");
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
   const [recovery, setRecovery] = useState<{ codes: string[]; user: SessionUser } | null>(null);
@@ -27,6 +99,8 @@ export default function LoginView() {
     await site()?.signedIn(result);
   };
 
+  // Already signed in (and not mid-way through a two-step sign-in started on this page): go to the panel.
+  if (signedIn !== null && step === "password") return <AlreadySignedIn user={signedIn} />;
   if (step === "mfa" && challenge) return <MfaForm challenge={challenge} onBack={() => setStep("password")} />;
   if (step === "mfaSetup" && challenge)
     return (
@@ -47,6 +121,7 @@ export default function LoginView() {
 function PasswordForm({ onSession, onFlow }: { onSession: (r: SessionUser | MfaChallenge) => Promise<void>; onFlow: (s: Step) => void }) {
   const form = useForm({ loginIdentity: "", loginPassword: "" }, { loginIdentity: rules.identifier, loginPassword: v => (v ? "" : "Enter your password") });
   const { busy, run } = useBusy();
+  const [pendingApplication] = useState(pendingPartnerRoute);
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.validate()) return;
@@ -61,6 +136,14 @@ function PasswordForm({ onSession, onFlow }: { onSession: (r: SessionUser | MfaC
   };
   return (
     <form ref={form.formRef} id="loginForm" className="route-card route-form" data-form="login" data-react="1" noValidate onSubmit={submit}>
+      {pendingApplication ? (
+        <p className="field full route-reassure" id="loginReturnNote" style={{ margin: 0 }}>
+          {`Sign in to send your ${pendingApplication} application. We'll bring you back to it with what you typed. New to Delivery Fast? `}
+          <a href="/signup" data-route="signup">
+            {"Create an account →"}
+          </a>
+        </p>
+      ) : null}
       <Field label="Email or phone" required htmlFor="loginIdentity" error={form.error("loginIdentity")}>
         <TextInput bound={form.bind("loginIdentity")} error={form.error("loginIdentity")} placeholder="you@example.com or 017XXXXXXXX" autoComplete="username" />
       </Field>

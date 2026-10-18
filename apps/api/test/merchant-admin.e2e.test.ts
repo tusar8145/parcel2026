@@ -147,7 +147,7 @@ describe("merchant administration", () => {
       // A rejected applicant may apply again.
       const again = await ctx.api("POST", "/merchants/applications", {
         token: owner.token,
-        body: { type: "ECOMMERCE", name: "Second try", contactName: "Owner", contactPhone: "01711111111", pickupAddress: "House 1, Road 2", pickupArea: "Gulshan", pickupDistrict: "Dhaka North" },
+        body: { type: "ECOMMERCE", name: "Second try", contactName: "Owner", contactPhone: "01711111111", business: { district: "Dhaka North", zone: "Gulshan", area: "Road 4 Gulshan", street: "House 1, Road 2" }, pickupTime: "MIDDAY" },
       });
       expect(again.status, JSON.stringify(again.body)).toBe(201);
     });
@@ -158,29 +158,46 @@ describe("merchant administration", () => {
       expect(invited.status, JSON.stringify(invited.body)).toBe(201);
       expect(invited.body.status).toBe("PENDING");
       const token = new URL(invited.body.link.replace("#/", "")).searchParams.get("invite")!;
-      expect((await outboxEvents()).filter(t => t === "account.invite")).toHaveLength(1);
+      expect((await outboxEvents()).filter(t => t === "merchant.invite")).toHaveLength(1);
+      // A clear invitation text (not "Delivery Fast added you to Delivery Fast"), linking to the application form.
+      const sms = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "merchant.invite", channel: "SMS" } });
+      expect(sms.body).toBe(`You're invited to join Delivery Fast as an E-commerce merchant (Karim Gadgets). Create your account and apply here: ${invited.body.link}`);
+      // The contact name must be a name, not the phone number typed into the wrong field.
+      const phoneAsName = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "01912345670", phone: "01912345670", type: "ECOMMERCE" } });
+      expect(phoneAsName.status).toBe(422);
+      expect(JSON.stringify(phoneAsName.body.error.details)).toContain("contact person's name");
       expect((await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Dup", phone: "+8801912345678", type: "ECOMMERCE" } })).body.error.code).toBe("INVITE_PENDING");
 
       const lookup = await ctx.api("POST", "/merchants/invites/lookup", { body: { token } });
-      expect(lookup.body).toMatchObject({ name: "Karim Store", businessName: "Karim Gadgets", type: "ECOMMERCE" });
+      // A brand-new number: the form offers "create your account".
+      expect(lookup.body).toMatchObject({ name: "Karim Store", businessName: "Karim Gadgets", type: "ECOMMERCE", hasAccount: false });
       expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token: "nope-nope-nope" } })).status).toBe(404);
 
       const applicant = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Karim");
+      // Invited by a number that already has an account: the form offers "sign in" instead.
+      const forExisting = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Karim Existing", businessName: "Karim Two", phone: applicant.phone, type: "ECOMMERCE" } });
+      expect(forExisting.status, JSON.stringify(forExisting.body)).toBe(201);
+      const existingToken = new URL(forExisting.body.link).searchParams.get("invite")!;
+      expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token: existingToken } })).body).toMatchObject({ businessName: "Karim Two", hasAccount: true });
       // The invitation fixes the merchant type: a Banking & Financial application is refused.
       const wrongType = await ctx.api("POST", "/merchants/applications", {
         token: applicant.token,
-        body: { type: "BANKING_FINANCIAL", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", pickupAddress: "House 3, Road 4", pickupArea: "Uttara", pickupDistrict: "Dhaka North", inviteToken: token },
+        body: { type: "BANKING_FINANCIAL", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", business: { district: "Dhaka North", zone: "Uttara", street: "House 3, Road 4" }, pickupTime: "MIDDAY", inviteToken: token },
       });
       expect(wrongType.status).toBe(422);
       expect(wrongType.body.error.code).toBe("INVITE_TYPE_MISMATCH");
       const app = await ctx.api("POST", "/merchants/applications", {
         token: applicant.token,
-        body: { type: "ECOMMERCE", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", pickupAddress: "House 3, Road 4", pickupArea: "Uttara", pickupDistrict: "Dhaka North", inviteToken: token },
+        body: { type: "ECOMMERCE", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", business: { district: "Dhaka North", zone: "Uttara", street: "House 3, Road 4" }, pickupTime: "MIDDAY", inviteToken: token },
       });
       expect(app.status, JSON.stringify(app.body)).toBe(201);
       const list = await ctx.api("GET", "/merchants/invites?status=ACCEPTED", { token: sa.token });
       expect(list.body.items[0]).toMatchObject({ status: "ACCEPTED", merchantId: app.body.merchant.id });
-      expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token } })).body.error.code).toBe("INVITE_USED");
+      const used = await ctx.api("POST", "/merchants/invites/lookup", { body: { token } });
+      expect(used.body.error).toMatchObject({ code: "INVITE_USED", message: expect.stringContaining("already used") });
+      // The application is linked to the invitation and the super admins are told.
+      expect(await ctx.prisma.merchantInvite.findFirstOrThrow({ where: { name: "Karim Store" } })).toMatchObject({ merchantId: app.body.merchant.id, acceptedAt: expect.any(Date) });
+      expect(await ctx.prisma.userNotification.count({ where: { userId: sa.user.id, title: "New merchant registration: Karim Gadgets" } })).toBe(1);
     });
   });
 

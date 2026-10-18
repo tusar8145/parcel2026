@@ -14,7 +14,7 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
 import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
-import { opsHubScope } from "./ops-scope";
+import { assertRiderAssignable, opsHubScope } from "./ops-scope";
 import { failureWhere, forHubsWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
@@ -106,6 +106,12 @@ export class ParcelsService {
     if (actor.kind === "user") {
       if (hasRole(actor, "CUSTOMER")) or.push({ customerId: actor.userId });
       if (actor.riderId) or.push({ pickupRiderId: actor.riderId }, { deliveryRiderId: actor.riderId });
+      // A franchise account: parcels at, dropped at, collected from or assigned for pickup to its hub, or carried by its riders.
+      const hubs = actor.roles.flatMap(r => (r.role === "FRANCHISE" && r.hubId ? [r.hubId] : []));
+      if (hubs.length) {
+        const inHubs = { in: hubs };
+        or.push({ currentHubId: inHubs }, { dropOffHubId: inHubs }, { collectHubId: inHubs }, { pickupHubId: inHubs }, { pickupRider: { hubId: inHubs } }, { deliveryRider: { hubId: inHubs } });
+      }
     }
     return or.length ? { OR: or } : { id: "00000000-0000-0000-0000-000000000000" };
   }
@@ -335,14 +341,16 @@ export class ParcelsService {
       if (!merchants.includes(merchantId) && !isStaff(actor)) throw forbidden("You can't book for this merchant");
       return this.merchantContext(actor.userId, merchantId, isStaff(actor) && !merchants.includes(merchantId) ? "OPERATIONS" : "MERCHANT_PORTAL", actor.name);
     }
-    if (!hasRole(actor, "CUSTOMER") && !isStaff(actor)) throw forbidden("Only customers and merchants can book parcels");
+    // A franchise books walk-ins at its counter like hub staff (website customer prices); it has no merchants of its own.
+    const franchise = hasRole(actor, "FRANCHISE");
+    if (!hasRole(actor, "CUSTOMER") && !isStaff(actor) && !franchise) throw forbidden("Only customers and merchants can book parcels");
     return {
-      channel: isStaff(actor) && !hasRole(actor, "CUSTOMER") ? ("OPERATIONS" as const) : ("WEBSITE" as const),
-      customerId: hasRole(actor, "CUSTOMER") ? actor.userId : null,
+      channel: (isStaff(actor) || franchise) && !hasRole(actor, "CUSTOMER") ? ("OPERATIONS" as const) : ("WEBSITE" as const),
+      customerId: hasRole(actor, "CUSTOMER") && !franchise ? actor.userId : null,
       merchantId: null,
       segment: "CUSTOMER" as Segment,
       discountPercent: 0,
-      actorLabel: "Customer",
+      actorLabel: franchise ? "Franchise counter" : "Customer",
     };
   }
 
@@ -536,7 +544,7 @@ export class ParcelsService {
 
   async assignPickup(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
-      const rider = await this.activeRider(tx, input.riderId);
+      const rider = await this.activeRider(tx, input.riderId, actor);
       await this.workflow.transition(
         tx,
         parcel,
@@ -555,10 +563,25 @@ export class ParcelsService {
     });
   }
 
+  /** Hands a waiting pickup to a hub (a franchise hub assigns its own rider); null takes it back to operations. */
+  async assignPickupHub(actor: Actor, trackingId: string, input: { hubId: string | null; note?: string }, meta: RequestMeta) {
+    return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
+      if (parcel.intake !== "PICKUP" || parcel.status !== "PENDING_CONFIRMATION")
+        throw new AppError("NOT_AWAITING_PICKUP", `${parcel.trackingId} isn't a rider pickup waiting to be assigned`, 422);
+      const hub = input.hubId ? await tx.hub.findUnique({ where: { id: input.hubId }, select: { id: true, name: true, active: true, type: true } }) : null;
+      if (input.hubId && (!hub || !hub.active)) throw notFound("Hub");
+      const scope = opsHubScope(actor);
+      if (scope && input.hubId && !scope.includes(input.hubId)) throw forbidden("You can only hand pickups to your own hub");
+      const updated = await tx.parcel.update({ where: { id: parcel.id }, data: { pickupHubId: input.hubId, version: { increment: 1 } } });
+      await this.audit.record(actor, { action: "parcel.pickup_hub", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, hubId: input.hubId, hub: hub?.name ?? null, franchise: hub?.type === "FRANCHISE", note: input.note ?? null } }, meta, tx);
+      after.realtime.push(parcelEvent({ ...updated, pickupHubId: input.hubId ?? parcel.pickupHubId }));
+    });
+  }
+
   async assignDelivery(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
       await this.assertHubAccess(tx, actor, parcel);
-      const rider = await this.activeRider(tx, input.riderId);
+      const rider = await this.activeRider(tx, input.riderId, actor);
       const hub = parcel.currentHubId ? await tx.hub.findUnique({ where: { id: parcel.currentHubId } }) : null;
       await this.workflow.transition(
         tx,
@@ -733,9 +756,10 @@ export class ParcelsService {
     return this.detail(actor, trackingId);
   }
 
-  private async activeRider(db: Db, riderId: string) {
+  private async activeRider(db: Db, riderId: string, actor: Actor) {
     const rider = await db.rider.findUnique({ where: { id: riderId }, include: { user: { select: { name: true, status: true } } } });
     if (!rider || !rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", 422);
+    await assertRiderAssignable(db, actor, rider.id);
     return { id: rider.id, label: `${rider.code} · ${rider.user.name}` };
   }
 }

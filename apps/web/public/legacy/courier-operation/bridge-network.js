@@ -22,7 +22,7 @@
     input: (id, attrs = "") => `<input id="${id}" ${attrs}>`,
     select: (id, options, selected, attrs = "") =>
       `<select id="${id}" ${attrs}>${options.map(o => (typeof o === "string" ? { value: o, label: o } : o)).map(o => `<option value="${esc(o.value)}" ${String(o.value) === String(selected ?? "") ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`,
-    hubOptions: (hubs = Ops.myHubs() || DF.state.hubs, empty) => [...(empty ? [{ value: "", label: empty }] : []), ...hubs.map(h => ({ value: h.id, label: h.name }))],
+    hubOptions: (hubs = Ops.myHubs() || DF.state.hubs, empty) => [...(empty ? [{ value: "", label: empty }] : []), ...hubs.map(h => ({ value: h.id, label: h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name }))],
     panel: (title, subtitle, body, tools = "", attrs = "") =>
       `<section class="panel table-panel" ${attrs}><div class="panel-heading"><div><h2 class="panel-title">${esc(title)}</h2>${subtitle ? `<p class="panel-subtitle">${esc(subtitle)}</p>` : ""}</div>${tools ? `<div class="table-tools">${tools}</div>` : ""}</div>${body}</section>`,
     table: (cols, rows, empty, span = cols.length) =>

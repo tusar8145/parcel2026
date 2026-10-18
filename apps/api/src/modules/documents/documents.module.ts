@@ -14,5 +14,6 @@ import { DocumentsService } from "./documents.service";
   imports: [FinanceModule, LinehaulModule, CnStockModule, ReturnsModule, ReportsModule, SlaModule, HubReconciliationModule],
   controllers: [DocumentsController],
   providers: [DocumentsService],
+  exports: [DocumentsService],
 })
 export class DocumentsModule {}

@@ -10,6 +10,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import type { createHandoverSchema, listCashRidersQuerySchema, listHandoversQuerySchema } from "./finance.schemas";
 import { cashHubScope, money, scopedHubIds, sum } from "./finance.scope";
 import { LedgerService } from "./ledger.service";
+import { cashHubProblem } from "../parcels/ops-scope";
 
 const handoverInclude = {
   rider: { select: { id: true, code: true, user: { select: { name: true } } } },
@@ -86,6 +87,9 @@ export class CodService {
         const [rider, hub] = await Promise.all([tx.rider.findUnique({ where: { id: input.riderId } }), tx.hub.findUnique({ where: { id: input.hubId } })]);
         if (!rider) throw notFound("Rider");
         if (!hub || !hub.active) throw notFound("Hub");
+        const riderHub = rider.hubId ? await tx.hub.findUnique({ where: { id: rider.hubId }, select: { type: true, name: true } }) : null;
+        const problem = cashHubProblem({ hubId: rider.hubId, hub: riderHub }, hub);
+        if (problem) throw new AppError("WRONG_CASH_HUB", problem, HttpStatus.UNPROCESSABLE_ENTITY);
 
         const rows = await tx.codCollection.findMany({ where: { id: { in: input.collectionIds } } });
         const available = rows.filter(c => c.riderId === input.riderId && c.state === "WITH_RIDER" && !c.handoverId);

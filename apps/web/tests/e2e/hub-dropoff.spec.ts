@@ -219,6 +219,8 @@ test("merchant dashboards show drop-offs as awaiting drop-off, not awaiting pick
   const stats = await (await page.request.get(`${apiOrigin}/api/v1/merchants/me/stats`, { headers: { authorization: `Bearer ${ownerLogin.accessToken}` } })).json();
   expect(stats.parcels.awaitingDropOff).toBeGreaterThanOrEqual(1);
 
+  // The API logins above left a session cookie; someone signed in can't open the login form.
+  await context.clearCookies();
   await page.goto("/login");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.fill("#loginIdentity", owner.login);

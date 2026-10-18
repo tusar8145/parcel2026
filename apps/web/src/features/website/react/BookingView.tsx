@@ -106,7 +106,7 @@ const PATHS = {
  */
 export default function BookingView() {
   const user = df().auth.user;
-  const isCustomer = df().auth.hasRole("CUSTOMER");
+  const isCustomer = df().auth.isWebsiteCustomer();
   const cat = catalog();
   // The website customer package (service packages): its services, first / last mile choices and messages.
   const pkg = cat.customerPackage;
@@ -503,7 +503,7 @@ export default function BookingView() {
         {pkg && v.requestFirstMile === "HUB_DROP" ? (
           <div className="field">
             <label htmlFor="requestDropHub">Drop-off hub *</label>
-            <Select bound={form.bind("requestDropHub")} error={form.error("requestDropHub")} options={[["", "Choose the hub"] as [string, string], ...pkg.dropHubs.map(h => [h.id, h.name] as [string, string])]} />
+            <Select bound={form.bind("requestDropHub")} error={form.error("requestDropHub")} options={[["", "Choose the hub"] as [string, string], ...pkg.dropHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name] as [string, string])]} />
             <FieldError id="requestDropHub" message={form.error("requestDropHub")} />
           </div>
         ) : null}
@@ -516,7 +516,7 @@ export default function BookingView() {
         {pkg && v.requestLastMile === "HUB_COLLECT" ? (
           <div className="field">
             <label htmlFor="requestCollectHub">Collection hub</label>
-            <Select bound={form.bind("requestCollectHub")} error={form.error("requestCollectHub")} options={[["", "The hub serving the receiver's zone"] as [string, string], ...pkg.collectHubs.map(h => [h.id, h.name] as [string, string])]} />
+            <Select bound={form.bind("requestCollectHub")} error={form.error("requestCollectHub")} options={[["", "The hub serving the receiver's zone"] as [string, string], ...pkg.collectHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name] as [string, string])]} />
             <small className="field-hint">{"The receiver gets an SMS with the hub address and a collection code."}</small>
             <FieldError id="requestCollectHub" message={form.error("requestCollectHub")} />
           </div>

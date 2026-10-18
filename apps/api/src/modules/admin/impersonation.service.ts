@@ -48,6 +48,8 @@ const ROLE_LABEL: Partial<Record<Role, string>> = {
   HUB_OPERATOR: "Hub operator",
   FINANCE: "Finance",
   SUPPORT_AGENT: "Support agent",
+  FRANCHISE: "Franchise",
+  APPLICANT: "Applicant",
 };
 
 /** Who may start a session, and how: full support access (super admin) or read-only "Log in as". */

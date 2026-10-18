@@ -13,7 +13,8 @@ import type { Parcel, Prisma, ReturnRun } from "../../generated/prisma/client";
 import { WebhooksService } from "../notifications/webhooks.service";
 import { LedgerService } from "../finance/ledger.service";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "../parcels/parcel-workflow.service";
-import { opsHubScope } from "../parcels/ops-scope";
+import { assertRiderAssignable, opsHubScope } from "../parcels/ops-scope";
+import { recordFranchiseReturn } from "../franchise/franchise-commission";
 import { returnChargeFor } from "./return-charge";
 
 /** Standard reasons (free text is also accepted). */
@@ -296,10 +297,11 @@ export class ReturnsService {
     return runView(run);
   }
 
-  private async rider(db: Db, riderId: string | undefined) {
+  private async rider(db: Db, riderId: string | undefined, actor?: Actor) {
     if (!riderId) return null;
     const rider = await db.rider.findUnique({ where: { id: riderId }, include: { user: { select: { status: true } } } });
     if (!rider || !rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", HttpStatus.UNPROCESSABLE_ENTITY);
+    if (actor) await assertRiderAssignable(db, actor, rider.id);
     return rider;
   }
 
@@ -312,7 +314,7 @@ export class ReturnsService {
       async tx => {
         const merchant = await tx.merchant.findUnique({ where: { id: input.merchantId }, select: { id: true } });
         if (!merchant) throw notFound("Merchant");
-        await this.rider(tx, input.riderId);
+        await this.rider(tx, input.riderId, actor);
         const ids = [...new Set(input.trackingIds.map(t => t.toUpperCase()))];
         const parcels = await this.runnable(tx, ids, input.merchantId, input.reason, hubs);
         const run = await tx.returnRun.create({
@@ -433,7 +435,7 @@ export class ReturnsService {
       if (run.status !== "PLANNED") throw conflict("RUN_NOT_PLANNED", "Only planned runs can be dispatched");
       const riderId = input.riderId ?? run.riderId;
       if (!riderId) throw new AppError("RIDER_REQUIRED", "Choose the rider taking the parcels back", HttpStatus.UNPROCESSABLE_ENTITY);
-      await this.rider(tx, riderId);
+      await this.rider(tx, riderId, actor);
       await tx.returnRun.update({ where: { id }, data: { status: "OUT_FOR_RETURN", riderId, dispatchedAt: new Date() } });
       await this.audit.record(actor, { action: "return_run.dispatch", entityType: "return_run", entityId: id, data: { riderId } }, meta, tx);
     });
@@ -469,6 +471,8 @@ export class ReturnsService {
           const charge = returned.returnCharge == null ? 0 : Number(returned.returnCharge);
           if (charge > 0)
             await this.ledger.record(tx, { type: "DELIVERY_CHARGE_EARNED", amount: charge, reference: `${returned.trackingId}:return`, merchantId: returned.merchantId, hubId: run.hubId, memo: "Return charge" });
+          // A franchise rider took it back: the rider's return pay and the franchise's return commission.
+          if (run.riderId) await recordFranchiseReturn(tx, this.ledger, { riderId: run.riderId, parcel: returned });
         }
         await tx.returnRun.update({ where: { id }, data: { status: "COMPLETED", completedAt: new Date(), note: input.note ?? run.note } });
         await this.audit.record(actor, { action: "return_run.complete", entityType: "return_run", entityId: id, data: { notReturned: [...notReturned] } }, meta, tx);

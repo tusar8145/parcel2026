@@ -126,6 +126,7 @@
     const name = $("inviteOwner")?.value.trim();
     const businessName = $("inviteBusiness")?.value.trim();
     if (!name || name.length < 2) return toast("Enter the primary contact's name.");
+    if (/^[+\d\s()-]{7,}$/.test(name)) return toast("Enter the primary contact's name. The mobile number goes in its own field.");
     if (!phone && !email) return toast("Enter a mobile number or an email address.");
     if (phone && DF.phoneProblem(phone)) return toast(DF.phoneProblem(phone));
     const type = $("inviteType")?.value;
@@ -267,6 +268,12 @@
     const fields = $("modalFields");
     if (!m || !fields) return;
     // The page's status options don't include the review states; keep them read-only there.
+    // Structured addresses: business, pickup (or "same as business"), contact, time, handover, derived hub and route district.
+    // The review dialog grows with the summary and history: keep it inside the screen and scrollable.
+    const modal = fields.closest(".modal");
+    if (modal) Object.assign(modal.style, { maxHeight: "calc(100vh - 40px)", overflowY: "auto", maxWidth: "620px" });
+    if (window.DFMerchantAddress)
+      fields.insertAdjacentHTML("beforeend", `<div class="field full" id="dfmAddress"><label>Addresses, pickup and serving hub</label>${window.DFMerchantAddress.summaryHtml(m)}</div>`);
     fields.insertAdjacentHTML(
       "beforeend",
       `<div class="field full" id="dfmPanel"><label>Verification and account history</label><div id="dfmPanelBody" style="font-size:13px;color:#475569">Loading…</div></div>`,
@@ -358,6 +365,8 @@
   // Extra fields in the page's own dialogs.
   const baseOpenModal = window.openModal;
   window.openModal = openModal = function (type, id) {
+    const modal = document.querySelector("#modalBackdrop .modal");
+    if (modal) Object.assign(modal.style, { maxHeight: "", overflowY: "", maxWidth: "" });
     baseOpenModal(type, id);
     if (type === "inviteMerchant") enhanceInviteModal();
     if (type === "registration" || type === "merchant") void enhanceMerchantModal(type, id);

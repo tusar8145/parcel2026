@@ -78,7 +78,11 @@ export class PackagesController {
   @Get("packages/me")
   async me(@OptionalActor() actor?: Actor) {
     const merchants = actor ? merchantIdsOf(actor) : [];
-    if (actor && merchants.length && !hasRole(actor, "CUSTOMER")) return this.packages.bookingView({ merchantId: merchants[0] });
+    if (actor && merchants.length && !hasRole(actor, "CUSTOMER")) {
+      // Prices and services open once the merchant account is active.
+      await this.packages.assertActiveMerchant(merchants[0]);
+      return this.packages.bookingView({ merchantId: merchants[0] });
+    }
     return this.packages.bookingView({ segment: "CUSTOMER" });
   }
 

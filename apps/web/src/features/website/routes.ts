@@ -100,7 +100,8 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   },
   {
     legacy: "franchise",
-    path: "franchise",
+    // /franchise is the franchise hubs' panel.
+    path: "become-a-franchise",
     title: "Delivery Fast — Operate a local delivery hub",
     description: "Run a Delivery Fast franchise: manage a territory, hub, riders, merchants and local parcel operations.",
     index: true,

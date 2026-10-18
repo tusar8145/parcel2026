@@ -1,3 +1,4 @@
+import { merchantNotActive } from "../merchants/merchant-status";
 import { HttpStatus, Injectable, OnModuleInit } from "@nestjs/common";
 import {
   CORE_SERVICES,
@@ -429,11 +430,18 @@ export class PackagesService implements OnModuleInit {
   }
 
   /** Everything a booking form needs for this merchant / category (GET /packages/me, /packages/effective). */
+  /** Merchant-facing package reads: only for active merchants (see MerchantsService.resolveOwn). */
+  async assertActiveMerchant(merchantId: string) {
+    const m = await this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { status: true } });
+    if (!m) throw notFound("Merchant");
+    if (m.status !== "ACTIVE") throw merchantNotActive(m.status);
+  }
+
   async bookingView(who: PackageSubject, db: Db = this.prisma) {
     const pkg = await this.effective(who, db);
     const [products, hubs] = await Promise.all([
       this.products(pkg.segment, db),
-      db.hub.findMany({ where: { active: true }, select: { id: true, code: true, name: true, address: true, district: true }, orderBy: { name: "asc" } }),
+      db.hub.findMany({ where: { active: true }, select: { id: true, code: true, name: true, address: true, district: true, type: true }, orderBy: { name: "asc" } }),
     ]);
     const options = packageOptions(pkg.segment, pkg.services);
     const has = new Set(pkg.services);

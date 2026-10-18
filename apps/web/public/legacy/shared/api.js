@@ -25,6 +25,9 @@
     "ecommerce-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
     "banking-merchant": ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"],
     "super-admin": ["SUPER_ADMIN"],
+    franchise: ["FRANCHISE"],
+    // Rider / franchise applicants waiting for approval: only their application page.
+    application: ["APPLICANT"],
   };
 
   let accessToken = null;
@@ -193,6 +196,14 @@
       return state.user;
     },
     hasRole: (...roles) => !!state.user && state.user.roles.some(r => roles.includes(r)),
+    /**
+     * The website's customer area (account, orders, addresses, profile, booking as a customer) is for
+     * customers only: an account whose home is a panel (merchant, staff, rider) never uses it, even
+     * when it also holds the CUSTOMER role from signing up on the website.
+     */
+    isWebsiteCustomer: () => !!state.user && state.user.roles.includes("CUSTOMER") && (!state.user.panel || state.user.panel === "/account"),
+    /** Re-reads the session (e.g. after a merchant application adds the merchant role); resolves to the user or null. */
+    refresh: () => refresh(),
     requestOtp: (phone, purpose) => rawFetch("/auth/otp", { method: "POST", body: { phone, purpose }, auth: false }),
     login: async (identifier, password) => sessionOrChallenge(await rawFetch("/auth/login", { method: "POST", body: { identifier, password }, auth: false })),
     loginWithOtp: async (phone, otp) => sessionOrChallenge(await rawFetch("/auth/login/otp", { method: "POST", body: { phone, otp }, auth: false })),
@@ -674,10 +685,10 @@
     const jobs = [rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined)];
     if (app === "website") {
       jobs.push(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
-      setCustomerSession(auth.hasRole("CUSTOMER") ? user : null);
+      setCustomerSession(auth.isWebsiteCustomer() ? user : null);
       memory.set(PARCELS_KEY, "[]");
       memory.set(ADDRESS_KEY, "[]");
-      if (auth.hasRole("CUSTOMER")) {
+      if (auth.isWebsiteCustomer()) {
         jobs.push(parcels.reload().catch(() => undefined));
         jobs.push(api("/me/addresses").then(setAddressBook).catch(() => undefined));
       }

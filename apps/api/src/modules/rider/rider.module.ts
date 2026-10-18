@@ -17,6 +17,6 @@ import { RiderKycService } from "./kyc.service";
   imports: [ParcelsModule],
   controllers: [RiderAppController, RiderAdminController],
   providers: [RiderLocationService, ProofService, RiderPayService, HandoverRequestsService, RiderKycService],
-  exports: [RiderKycService, RiderLocationService],
+  exports: [RiderKycService, RiderLocationService, HandoverRequestsService],
 })
 export class RiderModule {}

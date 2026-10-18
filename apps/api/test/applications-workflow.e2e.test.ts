@@ -75,4 +75,42 @@ describe("partner applications: review workflow", () => {
     expect(await ctx.prisma.outboxMessage.count({ where: { template: "partner.application_status" } })).toBeGreaterThan(0);
     expect((await status(applicant.token, f.number, { status: "REJECTED", message: "x" })).status).toBe(403);
   });
+
+  it("keeps applicants on the application page (APPLICANT role) until approval, then opens their panel", async () => {
+    const { applicant, agent, ops } = await setup();
+    const h = await hub(ctx, "HUB-APL");
+    const panel = async () => (await ctx.api("GET", "/auth/me", { token: applicant.token })).body.panel;
+    const applicantRoles = () => ctx.prisma.userRole.count({ where: { userId: applicant.user.id, role: "APPLICANT" } });
+    expect(await panel()).toBe("/account");
+
+    // Applying makes /application the account's home (rider and franchise share the one grant).
+    const r = (await ctx.api("POST", "/applications", { token: applicant.token, body: rider })).body.application;
+    const f = (await ctx.api("POST", "/applications", { token: applicant.token, body: franchise })).body.application;
+    expect(await applicantRoles()).toBe(1);
+    expect(await panel()).toBe("/application");
+
+    // Nothing to leave while an application is open.
+    const early = await ctx.api("POST", "/applications/leave", { token: applicant.token });
+    expect(early.status).toBe(409);
+    expect(early.body.error.code).toBe("APPLICATION_PENDING");
+
+    // Withdrawing one keeps the page while the other is still reviewed.
+    await ctx.api("POST", `/applications/${f.number}/withdraw`, { token: applicant.token });
+    expect(await applicantRoles()).toBe(1);
+
+    // Rider approval: the rider app becomes the home and the grant is gone.
+    const approved = await status(ops.token, r.number, { status: "APPROVED", hubId: h.id });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(await applicantRoles()).toBe(0);
+    expect(await panel()).toBe("/rider");
+
+    // A rejected applicant keeps the page (to read the decision) and may close it.
+    const other = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Nadia Rahman");
+    const o = (await ctx.api("POST", "/applications", { token: other.token, body: franchise })).body.application;
+    await status(agent.token, o.number, { status: "REJECTED", message: "No territory free in Sylhet yet" });
+    expect(await ctx.prisma.userRole.count({ where: { userId: other.user.id, role: "APPLICANT" } })).toBe(1);
+    const left = await ctx.api("POST", "/applications/leave", { token: other.token });
+    expect(left.body).toEqual({ released: true });
+    expect((await ctx.api("GET", "/auth/me", { token: other.token })).body.panel).toBe("/account");
+  });
 });

@@ -13,5 +13,6 @@ import { StageCountsService } from "./stage-counts.service";
   imports: [ParcelsModule, PricingModule, LinehaulModule],
   controllers: [OpsController, HubIntakeController],
   providers: [OpsService, HubIntakeService, StageCountsService],
+  exports: [OpsService, HubIntakeService],
 })
 export class OpsModule {}

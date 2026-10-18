@@ -1,3 +1,4 @@
+import { merchantPickupArea, merchantPickupZone } from "../merchants/merchant-address";
 import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import {
@@ -27,7 +28,7 @@ import type { MerchantType, ParcelProduct } from "../../generated/prisma/client"
 import { PricingService, type Catalog } from "../pricing/pricing.service";
 import type { BookingInput } from "../parcels/parcels.service";
 import type { MissingField } from "../parcels/incomplete";
-import { resolvePlace, zoneForArea } from "../parcels/places";
+import { resolvePlace } from "../parcels/places";
 import { PackagesService, type HubRef, type PackageQuote, type PackageSubject } from "../packages/packages.service";
 import type { PackageView } from "../packages/package-resolver";
 import { columnsFor, KIND_LABEL, segmentOf, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
@@ -189,9 +190,9 @@ export class ImportEngineService {
           status: m.status,
           contactPhone: m.contactPhone,
           pickupAddress: m.pickupAddress,
-          pickupArea: m.pickupArea,
+          pickupArea: merchantPickupArea(m) ?? "",
           pickupDistrict: m.pickupDistrict,
-          pickupZone: zoneForArea(catalog, m.pickupDistrict, m.pickupArea),
+          pickupZone: merchantPickupZone(catalog, m),
         }
       : null;
     const pkg = await this.packages.effective(fileMerchant ? { merchantId: fileMerchant.id } : { segment }, db);

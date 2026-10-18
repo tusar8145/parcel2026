@@ -1,3 +1,4 @@
+import { merchantPickupArea } from "../merchants/merchant-address";
 import { HttpStatus, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { z } from "zod";
 import { phoneSchema } from "@delivery-fast/shared";
@@ -9,6 +10,7 @@ import { nextNumber } from "../../common/counters";
 import { AppError, conflict, notFound } from "../../common/errors";
 import { pageArgs, pageQuerySchema, toPage } from "../../common/pagination";
 import type { Actor } from "../../common/auth/actor";
+import { assertRiderAssignable } from "../parcels/ops-scope";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { env, runsJobs } from "../../config/env";
 import type { Merchant, PickupRequest, PickupSchedule, Prisma } from "../../generated/prisma/client";
@@ -325,11 +327,11 @@ export class PickupsService implements OnApplicationBootstrap {
           windowStart,
           windowEnd: at(input.date, input.windowEnd),
           street: input.street ?? m.pickupAddress,
-          area: input.area ?? m.pickupArea,
-          zone: input.zone ?? m.pickupArea,
+          area: input.area ?? (input.zone ? undefined : merchantPickupArea(m)),
+          zone: input.zone ?? m.pickupZone ?? m.pickupArea,
           district: input.district ?? m.pickupDistrict,
-          contactName: input.contactName ?? m.contactName,
-          contactPhone: input.contactPhone ?? m.contactPhone,
+          contactName: input.contactName ?? m.pickupContactName ?? m.contactName,
+          contactPhone: input.contactPhone ?? m.pickupContactPhone ?? m.contactPhone,
           expectedParcels: input.expectedParcels,
           note: input.note,
         },
@@ -356,6 +358,7 @@ export class PickupsService implements OnApplicationBootstrap {
       if (r.status !== "REQUESTED" && r.status !== "ASSIGNED") throw conflict("PICKUP_CLOSED", `This pickup is already ${r.status.toLowerCase()}`);
       const rider = await tx.rider.findUnique({ where: { id: input.riderId }, include: { user: { select: { status: true } } } });
       if (!rider || !rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", HttpStatus.UNPROCESSABLE_ENTITY);
+      await assertRiderAssignable(tx, actor, rider.id);
       const saved = await tx.pickupRequest.update({ where: { id }, data: { status: "ASSIGNED", riderId: rider.id }, include: requestInclude });
       await this.audit.record(actor, { action: "pickup_request.assign", entityType: "pickup_request", entityId: id, data: { riderId: rider.id } }, meta, tx);
       return saved;

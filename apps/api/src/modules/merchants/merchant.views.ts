@@ -1,4 +1,5 @@
 import type { ApiKey, Merchant, Prisma, ServicePlan, WebhookDelivery, WebhookEndpoint } from "../../generated/prisma/client";
+import { addressView, type HubRef } from "./merchant-address";
 
 export const planView = (p: ServicePlan) => ({
   id: p.id,
@@ -12,7 +13,7 @@ export const planView = (p: ServicePlan) => ({
   updatedAt: p.updatedAt,
 });
 
-export const merchantView = (m: Merchant & { plan?: ServicePlan | null }) => ({
+export const merchantView = (m: Merchant & { plan?: ServicePlan | null; pickupHub?: HubRef | null }) => ({
   id: m.id,
   code: m.code,
   type: m.type,
@@ -24,6 +25,8 @@ export const merchantView = (m: Merchant & { plan?: ServicePlan | null }) => ({
   pickupAddress: m.pickupAddress,
   pickupArea: m.pickupArea,
   pickupDistrict: m.pickupDistrict,
+  /** Structured business / pickup addresses, contact, time, handover, derived hub and route district. */
+  ...addressView(m),
   plan: m.plan ? { id: m.plan.id, name: m.plan.name, segment: m.plan.segment, monthlyFee: Number(m.plan.monthlyFee), discountPct: Number(m.plan.discountPct) } : null,
   payoutAccount: m.payoutAccount,
   rejectionReason: m.rejectionReason,

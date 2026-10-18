@@ -10,6 +10,7 @@ import { Prisma } from "../../generated/prisma/client";
 import { cashHubScope } from "../finance/finance.scope";
 import { InboxService } from "../notifications/inbox.service";
 import type { completeHandoverRequestSchema, handoverRequestSchema, handoverRequestsQuerySchema } from "./rider.schemas";
+import { cashHubProblem } from "../parcels/ops-scope";
 
 const include = {
   rider: { select: { id: true, code: true, user: { select: { name: true, phone: true } } } },
@@ -55,6 +56,9 @@ export class HandoverRequestsService {
     const request = await this.prisma.$transaction(async tx => {
       const hub = await tx.hub.findUnique({ where: { id: input.hubId } });
       if (!hub || !hub.active) throw notFound("Hub");
+      const me = await tx.rider.findUniqueOrThrow({ where: { id: riderId }, select: { hubId: true, hub: { select: { type: true, name: true } } } });
+      const problem = cashHubProblem(me, hub);
+      if (problem) throw new AppError("WRONG_CASH_HUB", problem, HttpStatus.UNPROCESSABLE_ENTITY);
       // One pending request per rider: serialises concurrent taps.
       await tx.$queryRaw`SELECT id FROM riders WHERE id = ${riderId}::uuid FOR UPDATE`;
       const pending = await tx.cashHandoverRequest.findFirst({ where: { riderId, status: "PENDING" }, include });
@@ -65,10 +69,18 @@ export class HandoverRequestsService {
       const row = await tx.cashHandoverRequest.create({ data: { riderId, hubId: hub.id, amount, collectionIds: collections.map(c => c.id), note: input.note }, include });
       await this.audit.record(actor, { action: "cod.handover_request.create", entityType: "cash_handover_request", entityId: row.id, data: { hubId: hub.id, amount: amount.toFixed(2), collections: collections.length } }, meta, tx);
       // The hub's operators: cash to receive (Courier Operations › COD & settlement).
+      // A franchise hub's riders hand cash to the franchise (its panel › Money).
+      const franchiseHub = hub.type === "FRANCHISE";
       await this.inbox.toStaff(
         tx,
-        { roles: ["HUB_OPERATOR"], hubIds: [hub.id] },
-        { type: "staff.cash_handover", title: `Cash handover: ${row.rider.user.name}`, body: `Tk ${amount.toFixed(2)} · ${collections.length} COD collection${collections.length === 1 ? "" : "s"} · ${hub.name}`, target: { page: "cod-and-settlement" }, panel: "/courier-operation" },
+        { roles: [franchiseHub ? "FRANCHISE" : "HUB_OPERATOR"], hubIds: [hub.id] },
+        {
+          type: "staff.cash_handover",
+          title: `Cash handover: ${row.rider.user.name}`,
+          body: `Tk ${amount.toFixed(2)} · ${collections.length} COD collection${collections.length === 1 ? "" : "s"} · ${hub.name}`,
+          target: { page: franchiseHub ? "money" : "cod-and-settlement" },
+          panel: franchiseHub ? "/franchise" : "/courier-operation",
+        },
       );
       return row;
     });

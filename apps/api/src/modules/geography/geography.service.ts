@@ -473,6 +473,7 @@ async function renameReferences(tx: Db, from: { district: string; zone?: string;
       ["addresses", "district", "zone", "area"],
       ["pickup_schedules", "district", "zone", "area"],
       ["pickup_requests", "district", "zone", "area"],
+      ["merchants", "businessDistrict", "businessZone", "businessArea"],
     ])
       await run(`${t}.${ac}`, `UPDATE "${t}" SET "${ac}" = $2 WHERE ${eq(ac, 1)} AND ${eq(dc, 3)} AND ${eq(zc, 4)}`, old, to, d, z);
     await run("merchants.pickupArea", `UPDATE "merchants" SET "pickupArea" = $2 WHERE ${eq("pickupArea", 1)} AND ${eq("pickupDistrict", 3)}`, old, to, d);
@@ -496,6 +497,8 @@ async function renameReferences(tx: Db, from: { district: string; zone?: string;
       ["addresses", "district", "zone"],
       ["pickup_schedules", "district", "zone"],
       ["pickup_requests", "district", "zone"],
+      ["merchants", "pickupDistrict", "pickupZone"],
+      ["merchants", "businessDistrict", "businessZone"],
       ["hubs", "district", "zone"],
       ["delivery_zones", "district", "name"],
       ["sla_policies", "originDistrict", "originZone"],
@@ -515,6 +518,7 @@ async function renameReferences(tx: Db, from: { district: string; zone?: string;
     ["parcels", "deliveryDistrict"],
     ["addresses", "district"],
     ["merchants", "pickupDistrict"],
+    ["merchants", "businessDistrict"],
     ["pickup_schedules", "district"],
     ["pickup_requests", "district"],
     ["hubs", "district"],

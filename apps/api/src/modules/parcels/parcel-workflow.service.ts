@@ -18,6 +18,8 @@ import type { NotificationEvent } from "../notifications/events";
 import { signLiveLocationAccess, signParcelAccess, trackingUrl } from "./parcel-access";
 import { assertDetailsFor, pricedDestination } from "./incomplete";
 import { PackagesService } from "../packages/packages.service";
+import { LedgerService } from "../finance/ledger.service";
+import { franchiseOfHub, recordFranchiseCommission } from "../franchise/franchise-commission";
 
 /** "23 Oct" in Dhaka time (collection deadlines). */
 const dhakaDate = (d: Date) => d.toLocaleDateString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short" });
@@ -81,7 +83,7 @@ export interface AfterCommit {
 
 /** Who should see a parcel change live (see RealtimeService.canSee). */
 export function parcelEvent(
-  p: Pick<Parcel, "trackingId" | "status" | "merchantId" | "customerId" | "pickupRiderId" | "deliveryRiderId" | "currentHubId"> & Partial<Pick<Parcel, "dropOffHubId">>,
+  p: Pick<Parcel, "trackingId" | "status" | "merchantId" | "customerId" | "pickupRiderId" | "deliveryRiderId" | "currentHubId"> & Partial<Pick<Parcel, "dropOffHubId" | "pickupHubId" | "collectHubId">>,
   type = "parcel.updated",
 ): RealtimeEvent {
   return {
@@ -91,7 +93,7 @@ export function parcelEvent(
     customerId: p.customerId,
     riderIds: [p.pickupRiderId, p.deliveryRiderId],
     // The drop-off hub follows parcels it is waiting for.
-    hubIds: [p.currentHubId, ...(p.dropOffHubId ? [p.dropOffHubId] : [])],
+    hubIds: [p.currentHubId, ...(p.dropOffHubId ? [p.dropOffHubId] : []), ...(p.pickupHubId ? [p.pickupHubId] : []), ...(p.collectHubId ? [p.collectHubId] : [])],
     data: { status: p.status },
   };
 }
@@ -111,6 +113,8 @@ export class ParcelWorkflowService {
   @Inject(InboxService) private readonly inbox!: InboxService;
   /** Collect-from-hub hold period (service packages settings; global module). */
   @Inject(PackagesService) private readonly packageSettings!: PackagesService;
+  /** Finance ledger (global module): franchise commission on drop-offs received at a franchise hub. */
+  @Inject(LedgerService) private readonly ledger!: LedgerService;
 
   /**
    * The only way a parcel's status changes. Checks the lifecycle rules, applies
@@ -437,6 +441,9 @@ export class ParcelWorkflowService {
         message: "Drop-off received",
       },
     });
+    // Received at a franchise hub (merchant drop-off or walk-in at its counter): the franchise's pickup commission.
+    const franchise = await franchiseOfHub(db, input.hub.id);
+    if (franchise) await recordFranchiseCommission(db, this.ledger, { franchise, parcelId: parcel.id, type: "PICKUP", at: now });
     return updated;
   }
 

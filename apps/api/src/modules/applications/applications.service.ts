@@ -14,6 +14,7 @@ import { OutboxService } from "../notifications/outbox.service";
 import { NetworkService } from "../network/network.service";
 import { RiderKycService } from "../rider/kyc.service";
 import { STATUS_LABELS, SupportService } from "../support/support.service";
+import { grantApplicant, releaseApplicant } from "./applicant-role";
 import { OPEN_APPLICATION_STATUSES, type ApplicationInput, type ApplicationKind, type decideApplicationSchema, type listApplicationsQuerySchema } from "./applications.schemas";
 
 /**
@@ -26,6 +27,8 @@ import { OPEN_APPLICATION_STATUSES, type ApplicationInput, type ApplicationKind,
  * Approving a rider application creates the rider (NetworkService.createRider) and starts rider
  * onboarding / KYC (RiderKycService.startOnboarding). Merchant applications have their own
  * lifecycle (POST /merchants/applications).
+ * Until approved, the applicant holds the APPLICANT role (applicant-role.ts): their only page is
+ * /application (status, the conversation, withdraw), never the website customer area.
  */
 const CATEGORY: Record<ApplicationKind, string> = { RIDER: "Rider application", FRANCHISE: "Franchise application" };
 const SUBMIT_ACTION = "application.submit";
@@ -112,12 +115,13 @@ export class ApplicationsService {
       const application = await tx.partnerApplication.create({
         data: { number: ticket.number, kind, applicantId: actor.userId, ticketId: ticket.id, details: details as Prisma.InputJsonObject },
       });
+      await grantApplicant(tx, actor.userId);
       await this.audit.record(actor, { action: SUBMIT_ACTION, entityType: "support_ticket", entityId: ticket.id, data: { kind, number: ticket.number, applicationId: application.id, details } }, meta, tx);
       const outboxIds = await this.tell(tx, application, "We received your application and will review it soon.");
       return { number: ticket.number, outboxIds };
     });
     await this.outbox.flush(outboxIds);
-    this.publish(number);
+    this.publish(number, actor.userId);
     return {
       application: await this.view(await this.find(number)),
       message: `Application ${number} received. Our team will review it and contact you; you can follow up from your support page.`,
@@ -167,6 +171,8 @@ export class ApplicationsService {
         },
       });
       if (!updated.count) throw conflict("APPLICATION_CHANGED", "This application was just changed by someone else; reload it");
+      // An approved rider opens the rider app from now on.
+      if (riderId) await releaseApplicant(tx, app.applicantId);
 
       // The ticket follows the application, with the message to the applicant and a staff note.
       const ticket = await tx.supportTicket.findUniqueOrThrow({ where: { id: app.ticketId } });
@@ -200,7 +206,7 @@ export class ApplicationsService {
       return ids;
     });
     await this.outbox.flush(outboxIds);
-    this.publish(app.number);
+    this.publish(app.number, app.applicantId);
     return this.detail(app.number);
   }
 
@@ -214,10 +220,23 @@ export class ApplicationsService {
       if (!updated.count) throw conflict("APPLICATION_CHANGED", "This application was just changed; reload it");
       await tx.supportTicket.update({ where: { id: app.ticketId }, data: { status: "CLOSED", updatedAt: new Date() } });
       await tx.ticketMessage.create({ data: { ticketId: app.ticketId, authorId: null, authorLabel: "System", body: "Application withdrawn by the applicant" } });
+      await releaseApplicant(tx, actor.userId);
       await this.audit.record(actor, { action: "application.withdraw", entityType: "partner_application", entityId: app.id, data: { number: app.number } }, meta, tx);
     });
-    this.publish(app.number);
+    this.publish(app.number, actor.userId);
     return this.detail(app.number);
+  }
+
+  /** After a rejection: the applicant closes the application page and uses their account as before. */
+  async leave(actor: UserActor, meta: RequestMeta) {
+    const released = await this.prisma.$transaction(async tx => {
+      const open = await tx.partnerApplication.findFirst({ where: { applicantId: actor.userId, status: { in: [...OPEN_APPLICATION_STATUSES] } }, select: { number: true } });
+      if (open) throw conflict("APPLICATION_PENDING", `Your application ${open.number} is still being reviewed; withdraw it first`);
+      const done = await releaseApplicant(tx, actor.userId);
+      if (done) await this.audit.record(actor, { action: "application.leave", entityType: "user", entityId: actor.userId }, meta, tx);
+      return done;
+    });
+    return { released };
   }
 
   // ───────────── helpers ─────────────
@@ -251,11 +270,11 @@ export class ApplicationsService {
     const status = APPLICATION_STATUS_LABELS[app.status];
     return app.kind === "RIDER"
       ? this.notify.notify(db, { event: "rider.application_status", to: { userId: app.applicantId }, vars: { status, details } })
-      : this.notify.notify(db, { event: "partner.application_status", to: { userId: app.applicantId }, vars: { number: app.number, status, details, link: `${env().APP_URL}/#/support` } });
+      : this.notify.notify(db, { event: "partner.application_status", to: { userId: app.applicantId }, vars: { number: app.number, status, details, link: `${env().APP_URL}/application` } });
   }
 
-  private publish(number: string) {
-    this.realtime.publish({ type: "application.updated", id: number, staffPermission: "support:manage" });
+  private publish(number: string, applicantId: string) {
+    this.realtime.publish({ type: "application.updated", id: number, userIds: [applicantId], staffPermission: "support:manage" });
     void this.support.publish(number);
   }
 

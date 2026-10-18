@@ -51,6 +51,7 @@ import { PackagesModule } from "./modules/packages/packages.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { HubReconciliationModule } from "./modules/hub-reconciliation/hub-reconciliation.module";
 import { TrackingModule } from "./modules/tracking/tracking.module";
+import { FranchiseModule } from "./modules/franchise/franchise.module";
 
 @Module({
   imports: [
@@ -112,6 +113,7 @@ import { TrackingModule } from "./modules/tracking/tracking.module";
     DocumentsModule,
     HubReconciliationModule,
     TrackingModule,
+    FranchiseModule,
   ],
   controllers: [HealthController, EventsController],
   providers: [

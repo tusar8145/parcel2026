@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 
-const pages = ["courier-operation", "rider", "ecommerce-merchant", "banking-merchant", "super-admin"];
+const pages = ["courier-operation", "rider", "ecommerce-merchant", "banking-merchant", "super-admin", "franchise", "application"];
 
 // The API runs separately (apps/api). Proxying it under /api keeps the browser on one
 // origin, so the refresh-token cookie is first-party and no CORS is needed.

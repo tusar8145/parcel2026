@@ -44,6 +44,9 @@ export function useForm<V extends Record<string, string>>(initial: V, rules: Rul
     "aria-describedby": error(name) ? `${name}-error` : undefined,
   });
 
+  /** The given fields (all ruled fields by default) that currently have a problem, in rule order. */
+  const invalid = (names: (keyof V & string)[] = Object.keys(rules) as (keyof V & string)[]) => names.filter(n => problem(n));
+
   /** Validates the given fields (all ruled fields by default); focuses the first problem. */
   const validate = (names: (keyof V & string)[] = Object.keys(rules) as (keyof V & string)[]) => {
     setTouched(t => ({ ...t, ...Object.fromEntries(names.map(n => [n, true])) }));
@@ -68,10 +71,10 @@ export function useForm<V extends Record<string, string>>(initial: V, rules: Rul
     setServerErrors(mapped);
     const first = Object.keys(mapped)[0];
     if (first) requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`#${CSS.escape(first)}`)?.focus());
-    return { mapped: Object.keys(mapped).length > 0, rest };
+    return { mapped: Object.keys(mapped).length > 0, rest, fields: Object.keys(mapped) as (keyof V & string)[] };
   };
 
-  return { values, setValues, set, bind, error, validate, showServerError, setServerErrors, formRef, touched, setTouched };
+  return { values, setValues, set, bind, error, validate, invalid, showServerError, setServerErrors, formRef, touched, setTouched };
 }
 
 // ───────────── shared rules (same as the API) ─────────────
@@ -200,9 +203,10 @@ export function PhoneInput({ bound, error, placeholder = "17XXXXXXXX", disabled 
   );
 }
 
-export function Select({ bound, error, options, placeholder, disabled }: { bound: Bound; error?: string; options: (string | [string, string])[]; placeholder?: string; disabled?: boolean }) {
+/** `search`: a searchable list (shared/select-search.js turns it into DF.searchSelect's popup). */
+export function Select({ bound, error, options, placeholder, disabled, search }: { bound: Bound; error?: string; options: (string | [string, string])[]; placeholder?: string; disabled?: boolean; search?: boolean }) {
   return (
-    <select {...bound} style={invalidBorder(error)} disabled={disabled}>
+    <select {...bound} style={invalidBorder(error)} disabled={disabled} {...(search ? { "data-search": "" } : {})}>
       {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
       {options.map(o => {
         const [value, label] = Array.isArray(o) ? o : [o, o];

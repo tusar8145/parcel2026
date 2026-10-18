@@ -54,7 +54,7 @@ export default function SiteFooter() {
             <a href="/become-a-rider" data-route="rider">
               For riders
             </a>
-            <a href="/franchise" data-route="franchise">
+            <a href="/become-a-franchise" data-route="franchise">
               Franchise opportunities
             </a>
           </div>

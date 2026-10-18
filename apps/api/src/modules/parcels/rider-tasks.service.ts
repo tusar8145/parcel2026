@@ -114,7 +114,7 @@ export class RiderTasksService {
           meta,
           after,
         );
-        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel });
+        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel }, this.ledger);
       } else if (input.outcome === "COLLECTED_DELIVER_DIRECT") {
         await this.workflow.transition(
           tx,
@@ -131,7 +131,7 @@ export class RiderTasksService {
           meta,
           after,
         );
-        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel });
+        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel }, this.ledger);
       } else if (input.outcome === "COLLECTED_TO_HUB") {
         const hub = await tx.hub.findUnique({ where: { id: input.hubId } });
         if (!hub || !hub.active) throw notFound("Hub");
@@ -151,7 +151,7 @@ export class RiderTasksService {
           meta,
           after,
         );
-        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel });
+        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel }, this.ledger);
       } else {
         await this.workflow.transition(
           tx,
@@ -246,7 +246,7 @@ export class RiderTasksService {
         await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "DELIVERED", note: input.note } });
         if (cod > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: cod, collectedAt: now } });
         if (cod > 0) await this.ledger.record(tx, { type: "COD_COLLECTED", amount: parcel.codAmount, reference: parcel.trackingId, riderId, merchantId: parcel.merchantId, occurredAt: now });
-        await recordTaskEarning(tx, { riderId, type: "DELIVERY", parcel, at: now });
+        await recordTaskEarning(tx, { riderId, type: "DELIVERY", parcel, at: now }, this.ledger);
         return;
       }
 

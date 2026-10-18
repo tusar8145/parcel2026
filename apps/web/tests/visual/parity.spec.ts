@@ -51,7 +51,7 @@ const websiteRoutes: string[] = [];
  * footer links to the Privacy Policy, Terms of Service and cookie settings, and the document merchant is
  * now the Banking & Financial merchant.
  */
-const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider" };
+const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider", franchise: "/become-a-franchise" };
 async function applyIntendedWebsiteChanges(page: Page) {
   await page.evaluate(paths => {
     for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href^="#/"]')) {

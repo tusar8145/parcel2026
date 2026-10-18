@@ -1,6 +1,7 @@
 import {
   FIRST_MILE_LABEL,
   LAST_MILE_LABEL,
+  PARCEL_NOTIFICATIONS,
   proofMethodsFor,
   SPEED_LABEL,
   SERVICE_LEVEL_LABEL,
@@ -75,6 +76,8 @@ export function serviceView(p: ParcelWithRelations) {
     onDemand: p.onDemand,
     product: p.productName,
     notifications: p.notifications,
+    /** The stored messages by name, e.g. "Out for delivery (recipient)" (what the merchant parcel drawer lists). */
+    messages: PARCEL_NOTIFICATIONS.filter(n => p.notifications.includes(n.code)).map(n => `${n.label} (${n.audience})`),
     tier: snap?.tier ?? null,
     lines: snap?.lines ?? [],
     tracking: { liveLocation: has.has("tracking.live_location"), riderPhone: has.has("tracking.rider_phone") },
@@ -157,10 +160,21 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
     instructions: p.instructions,
     receiverRelation: p.receiverRelation,
     originBranchCode: p.originBranchCode,
-    /** Return to merchant (RTO), when one was requested or scheduled. */
+    /**
+     * Return to merchant (RTO), when one was requested or scheduled. `requestedBy` (a person's name, often
+     * staff) and the return run's id are staff only; merchants get `onReturnRun`.
+     */
     returnInfo:
       p.returnReason || p.returnRequestedAt || p.returnRunId
-        ? { reason: p.returnReason, requestedAt: p.returnRequestedAt, requestedBy: p.returnRequestedBy, charge: num(p.returnCharge), runId: p.returnRunId, receivedAt: p.returnReceivedAt }
+        ? {
+            reason: p.returnReason,
+            requestedAt: p.returnRequestedAt,
+            requestedBy: opts.internal ? p.returnRequestedBy : undefined,
+            charge: num(p.returnCharge),
+            runId: opts.internal ? p.returnRunId : undefined,
+            onReturnRun: !!p.returnRunId,
+            receivedAt: p.returnReceivedAt,
+          }
         : null,
     charges: {
       base: num(p.baseCharge),

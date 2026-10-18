@@ -40,7 +40,7 @@
                 <label>Collection code<input id="collectCode" inputmode="numeric" maxlength="8" placeholder="6-digit code from the receiver"></label>
                 <label>Collected by<input id="collectBy" maxlength="120" value="${esc(p.recipient?.name || "")}" required></label>
                 <label>Cash received (৳)<input id="collectCod" type="number" min="0" value="${esc(p.codAmount || 0)}"></label>
-                <label>No code? Photo of the receiver's ID<input id="collectPhoto" type="file" accept="image/*" capture="environment"></label>
+                <label>No code? Photo of the receiver's ID<input id="collectPhoto" type="file" accept="image/*" capture="environment" data-file-button="Take or choose photo"></label>
                 <div class="form-actions"><button class="button button-primary" type="submit">Confirm hand-over</button><button class="button" type="button" data-collect-cancel>Cancel</button></div>
               </form></td></tr>`
               : ""

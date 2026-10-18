@@ -422,8 +422,29 @@
     return changed;
   }
 
+  /**
+   * The dashboard period (shared/period.js): Today … This month (default) … a custom range, in the URL
+   * (?period=…) and remembered per panel. Booked / delivered / returned, COD, payable, success rate
+   * and the chart follow it (GET /merchants/me/stats?from&to → `range`); "In transit" and the
+   * delivery overview stay live.
+   */
+  function periodCtl() {
+    if (!DF.period || !S.cfg) return null;
+    if (!S.periodCtl)
+      S.periodCtl = DF.period.control(`merchant-${S.cfg.document ? "banking" : "ecommerce"}-overview`, {
+        defaultKey: "this_month",
+        onChange: () =>
+          loadStats()
+            .then(() => S.page === "Overview" && patchDashboard())
+            .catch(error => showToast(DF.describe(error))),
+      });
+    return S.periodCtl;
+  }
+
   async function loadStats() {
-    const next = await DF.api(`/merchants/me/stats?period=${S.period}${q("&")}`);
+    const period = periodCtl();
+    if (period && (!S.page || S.page === "Overview")) period.activate();
+    const next = await DF.api(`/merchants/me/stats?period=${S.period}${q("&")}${period ? `&${period.query()}` : ""}`);
     const changed = JSON.stringify({ ...next, generatedAt: 0 }) !== JSON.stringify({ ...(S.stats || {}), generatedAt: 0 });
     S.stats = next;
     return changed;
@@ -629,7 +650,14 @@
       const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
       heading.querySelector("h1").innerHTML = `${greeting}, ${esc(String(user?.name || "").split(/\s+/)[0])} <span style="font-size:20px">${hour < 17 ? "☀️" : "🌙"}</span>`;
       const dateButton = heading.querySelector(".date-button");
-      if (dateButton) {
+      const period = periodCtl();
+      if (period) {
+        // The period select replaces the static date button.
+        if (dateButton) dateButton.style.display = "none";
+        period.mount(heading.querySelector(".heading-actions"), "afterbegin");
+        const sub = heading.querySelector(".subtitle");
+        if (sub) sub.textContent = `${period.text()} · ${S.cfg.document ? "documents" : "orders"}, deliveries and COD in this period; "now" figures are live`;
+      } else if (dateButton) {
         const label = now.toLocaleDateString("en-US", { month: "short", day: "numeric" });
         dateButton.dataset.toast = `Showing today, ${now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} (Dhaka time).`;
         dateButton.innerHTML = `${icon("calendar")} Today, ${esc(label)} <span style="color:#a0a9b5">⌄</span>`;
@@ -637,6 +665,7 @@
     }
     if (!st) return;
     const metrics = main.querySelector(".metrics");
+    if (st.range && periodCtl()) return patchPeriodDashboard(main, st, metrics);
     const card = (label, value, iconName, foot, t) => metricCard(label, value, iconName, foot, t?.text || "").replace('<span class="trend">', `<span class="trend"${t?.down ? ' style="color:var(--red)"' : ""}>`);
     const success = st.thisMonth.deliverySuccessRate;
     const successTrend = success !== null && st.lastMonth.deliverySuccessRate !== null ? { text: `${success >= st.lastMonth.deliverySuccessRate ? "↑" : "↓"} ${Math.abs(success - st.lastMonth.deliverySuccessRate).toFixed(1)} pts`, down: success < st.lastMonth.deliverySuccessRate } : null;
@@ -679,6 +708,83 @@
     });
     const recentBody = main.querySelector(".content-grid .table-panel tbody");
     if (recentBody && !recent.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No document requests yet." : "No orders yet."}</td></tr>`;
+    const activity = main.querySelector(".activity-list");
+    if (activity) activity.innerHTML = activityItems();
+  }
+
+  /** The dashboard for the chosen period (st.range), with the live figures labelled "now". */
+  function patchPeriodDashboard(main, st, metrics) {
+    const r = st.range;
+    const p = periodCtl().get();
+    const prev = r.previous;
+    const card = (label, value, iconName, foot, t, key) =>
+      metricCard(label, value, iconName, foot, t?.text || "")
+        .replace('<span class="trend">', `<span class="trend"${t?.down ? ' style="color:var(--red)"' : ""}>`)
+        .replace('<article class="metric"', `<article class="metric" data-period-metric="${key}"`);
+    const pts = (now, before) => (now === null || before === null || before === undefined ? null : { text: `${now >= before ? "↑" : "↓"} ${Math.abs(now - before).toFixed(1)} pts`, down: now < before });
+    const noun = S.cfg.document ? "Documents" : "Orders";
+    const owner = r.money;
+    const first =
+      card(`${noun} booked`, r.created.toLocaleString("en-BD"), "orders", prev.created ? p.versus : p.words, trend(r.created, prev.created), "created") +
+      card("Delivered", r.delivered.toLocaleString("en-BD"), "truck", prev.delivered ? p.versus : p.words, trend(r.delivered, prev.delivered), "delivered") +
+      card("Returned", r.returned.toLocaleString("en-BD"), "box", `${r.cancelled} cancelled · ${p.words}`, null, "returned") +
+      card("Delivery success", pct(r.deliverySuccessRate), "chart", "delivered vs. returned", pts(r.deliverySuccessRate, prev.deliverySuccessRate), "success");
+    const transit = card("In transit", String(st.parcels.inTransit), "truck", "now · live", null, "inTransit");
+    const second = S.cfg.document
+      ? card("Delivery charges", taka(r.deliveryCharges), "wallet", `documents booked ${p.words}`, trend(r.deliveryCharges, prev.deliveryCharges), "charges") +
+        card("Unbilled charges", st.money ? taka(st.money.unbilled.charges) : "—", "wallet", st.money ? "now · ready for monthly bill" : "visible to owners", st.money ? { text: `${st.money.unbilled.parcels} consignment${st.money.unbilled.parcels === 1 ? "" : "s"}` } : null, "unbilled") +
+        card("Picked up", r.pickedUp.toLocaleString("en-BD"), "pin", p.words, null, "pickedUp") +
+        transit
+      : owner
+        ? card("COD collected", taka(owner.codCollected), "wallet", `${owner.collections} collection${owner.collections === 1 ? "" : "s"} · ${p.words}`, trend(owner.codCollected, prev.money?.codCollected), "codCollected") +
+          card("Payable to you", taka(owner.payable), "wallet", `COD less ${taka(owner.chargesOnCollected)} charges`, null, "payable") +
+          card("Paid out", taka(owner.paidOut), "check", `${owner.payouts} payout${owner.payouts === 1 ? "" : "s"} · ${p.words}`, null, "paidOut") +
+          transit
+        : card("Gross sales", taka(r.codValue), "wallet", `COD order value · ${p.words}`, trend(r.codValue, prev.codValue), "codValue") +
+          card("Delivery charges", taka(r.deliveryCharges), "wallet", p.words, null, "charges") +
+          card("Picked up", r.pickedUp.toLocaleString("en-BD"), "pin", p.words, null, "pickedUp") +
+          transit;
+    if (metrics) {
+      metrics.innerHTML = first;
+      metrics.dataset.periodMetrics = p.key;
+      let more = main.querySelector("#dfPeriodMore");
+      if (!more) {
+        metrics.insertAdjacentHTML("afterend", `<div class="metrics" id="dfPeriodMore"></div>`);
+        more = main.querySelector("#dfPeriodMore");
+      }
+      more.innerHTML = second;
+    }
+    // The chart follows the period (by hour for one day, by day, by month for long ranges).
+    const chartSelect = $("chartPeriod");
+    if (chartSelect) chartSelect.style.display = "none";
+    const chart = main.querySelector("svg.chart");
+    const chartSub = chart?.closest(".panel")?.querySelector(".panel-subtitle");
+    if (chartSub) chartSub.textContent = `${noun} per ${r.series.bucket} · ${p.text} vs. the previous period`;
+    drawChart(chart, r.series);
+
+    const overview = main.querySelector(".dispatch-summary")?.closest(".panel");
+    const overviewSub = overview?.querySelector(".panel-subtitle");
+    if (overviewSub) overviewSub.textContent = "Live now · not affected by the period";
+    const summary = main.querySelectorAll(".dispatch-summary strong");
+    const values = [st.today.shipments, st.today.delivered, st.parcels.needsAttention];
+    summary.forEach((el, i) => (el.textContent = String(values[i] ?? 0)));
+    const completion = st.today.completionRate ?? 0;
+    const progress = main.querySelector(".progress-label strong");
+    if (progress) progress.textContent = `${Math.round(completion)}%`;
+    const fill = main.querySelector(".progress-fill");
+    if (fill) fill.style.width = `${Math.min(100, completion)}%`;
+    const rows = main.querySelectorAll(".dispatch-row:not([data-df-dropoff]) strong");
+    [st.parcels.inTransit, st.today.delivered, st.parcels.awaitingPickup, st.parcels.needsAttention].forEach((n, i) => rows[i] && (rows[i].textContent = String(n)));
+    dropOffRow(main, st.parcels.awaitingDropOff ?? 0);
+    main.querySelectorAll(".content-grid .table-panel tbody tr").forEach((row, i) => {
+      const button = row.querySelector(".row-menu");
+      if (button && sampleOrders[i]) {
+        button.dataset.merchantHistory = sampleOrders[i].id;
+        button.setAttribute("aria-label", `Details for ${sampleOrders[i].id}`);
+      }
+    });
+    const recentBody = main.querySelector(".content-grid .table-panel tbody");
+    if (recentBody && !recentBody.children.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No document requests yet." : "No orders yet."}</td></tr>`;
     const activity = main.querySelector(".activity-list");
     if (activity) activity.innerHTML = activityItems();
   }
@@ -822,7 +928,10 @@
       const text = `Delivery failed ×${p.failedAttempts}${where}${last?.reason ? ` · Last reason: ${last.reason} (${when(last.at)})` : ""}`;
       grid.unshift(detail("Delivery attempts", text).replace("<div>", `<div data-df-failure="${p.failedAttempts}" style="grid-column:1/-1;padding:8px 10px;border-radius:8px;background:#fef3f2;color:#b42318">`));
     }
-    if (p.incomplete) grid.unshift(detail("Needs info", `Missing ${(p.missingLabels || []).join(", ")}. It won't go out for delivery until the recipient's name, phone, address and destination are all filled in.`));
+    // Out for delivery with "Live rider location" (package): the rider's latest position (GET /parcels/:id liveDelivery).
+    const live = liveRow(p);
+    if (live) grid.unshift(live);
+    if (p.incomplete) grid.unshift(detail("Needs info",`Missing ${(p.missingLabels || []).join(", ")}. It won't go out for delivery until the recipient's name, phone, address and destination are all filled in.`));
     // Shipping label (PDF in a new tab) while the parcel is still on its way; cancel / complete when allowed.
     const label = TERMINAL.includes(p.status) ? "" : `<button type="button" class="button" data-df-label="${esc(p.trackingId)}">Print label (PDF)</button>`;
     const actions = p.canCancel || complete || label ? `<div class="modal-actions" style="margin-top:0;flex-wrap:wrap">${label}${complete}${p.canCancel ? `<button type="button" class="button" data-df-cancel="${esc(p.trackingId)}">${doc ? "Cancel request" : "Cancel order"}</button>` : ""}</div>` : "";
@@ -833,8 +942,47 @@
     );
   }
 
+  /**
+   * The delivery rider's live position while out for delivery (only when the parcel's package has
+   * "Live rider location"; the API hides fixes older than 15 minutes and everything after delivery).
+   */
+  function liveRow(p) {
+    const live = p.liveDelivery;
+    if (!live || p.status !== "OUT_FOR_DELIVERY" || !live.locationStatus) return "";
+    const loc = live.location;
+    const mins = loc ? Math.floor((loc.ageSeconds || 0) / 60) : 0;
+    const text = loc
+      ? `Rider ${live.rider.name} · updated ${mins < 1 ? "just now" : `${mins} min ago`}`
+      : live.locationStatus === "STALE"
+        ? `Rider ${live.rider.name} · location not updated for over ${live.staleAfterMinutes || 15} minutes`
+        : live.locationStatus === "OFF_SHIFT"
+          ? `Rider ${live.rider.name} · not sharing a location right now`
+          : `Rider ${live.rider.name} · waiting for the rider's location`;
+    const link = loc ? ` <a data-df-live-map href="https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=16/${loc.lat}/${loc.lng}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600">Open map ↗</a>` : "";
+    return `<div data-df-live="${esc(live.locationStatus)}" style="grid-column:1/-1;padding:8px 10px;border-radius:8px;background:#ecfdf3;color:#05603a"><small style="color:#758195;display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase">Live rider location</small><strong style="font-size:13px;font-weight:600">${esc(text)}</strong>${link}</div>`;
+  }
+
+  // While a parcel's details are open and it's out for delivery: refresh the live position on each
+  // rider fix (parcel.rider_location) and every minute.
+  let liveOpen = null;
+  async function refreshLive() {
+    const id = liveOpen;
+    const box = document.querySelector("#merchantHistoryBackdrop [data-df-live]");
+    if (!id || !box) return void (liveOpen = null);
+    try {
+      const p = await DF.api(`/parcels/${encodeURIComponent(id)}`);
+      const html = liveRow(p);
+      const current = document.querySelector("#merchantHistoryBackdrop [data-df-live]");
+      if (current && liveOpen === id) html ? (current.outerHTML = html) : current.remove();
+    } catch {}
+  }
+  DF.events?.on("parcel.rider_location", data => void (liveOpen && (!data?.id || data.id === liveOpen) && refreshLive()));
+  setInterval(() => liveOpen && document.visibilityState === "visible" && void refreshLive(), 60_000);
+
   async function openHistory(id) {
     let p = byId(id);
+    // List rows don't carry the live position: load the parcel when it's out for delivery.
+    if (p && p.status === "OUT_FOR_DELIVERY") p = await DF.api(`/parcels/${encodeURIComponent(id)}`).catch(() => p);
     if (!p) {
       try {
         p = await DF.api(`/parcels/${encodeURIComponent(id)}`);
@@ -843,6 +991,7 @@
       }
     }
     showParcel(p);
+    liveOpen = p.liveDelivery?.locationStatus ? p.trackingId : null;
   }
 
   async function cancelParcel(id) {
@@ -1478,16 +1627,7 @@
       });
       return;
     }
-    if (hit("#notificationButton")) {
-      stop(event);
-      const st = S.stats;
-      if (!st) return showToast("You're all caught up on notifications.");
-      const notes = [];
-      if (st.parcels.needsAttention) notes.push(`${st.parcels.needsAttention} shipment(s) need attention`);
-      if (st.money?.invoices.overdueCount) notes.push(`${st.money.invoices.overdueCount} overdue invoice(s)`);
-      if (st.today.delivered) notes.push(`${st.today.delivered} delivered today`);
-      return showToast(notes.length ? `${notes.join(" · ")}.` : "You're all caught up on notifications.");
-    }
+    // The bell (#notificationButton) belongs to shared/notifications.js, which handles it first.
     if ((el = hit("#mainContent .page-table-panel button[data-toast]")) && S.page === "Settings") {
       stop(event);
       return settingsAction(el.closest("tr")?.cells[0]?.textContent || "");
@@ -1713,6 +1853,8 @@
 
   function onSearchKey(event) {
     if (event.key !== "Enter" || event.target.id !== "globalSearch") return;
+    // The top search and parcel drawer (shared/merchant-parcel.js) handle it when loaded.
+    if (window.DFMerchantParcel) return;
     const query = event.target.value.trim();
     if (!query) return;
     const lower = query.toLowerCase();

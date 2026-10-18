@@ -1,17 +1,19 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@delivery-fast/shared";
+import { AuditService } from "../../common/audit.service";
+import { actorLabel } from "../../common/auth/actor";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { StorageService } from "../../common/storage.service";
-import type { UserActor } from "../../common/auth/actor";
+import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
-import { AppError, forbidden, notFound } from "../../common/errors";
+import { AppError, conflict, forbidden, notFound } from "../../common/errors";
 import { decrypt, safeEqual } from "../../common/crypto";
-import { parcelInclude, parcelView, proofMethodsOf } from "./parcel.views";
-import { ParcelWorkflowService, type AfterCommit } from "./parcel-workflow.service";
+import { parcelInclude, parcelView, proofMethodsOf, type ParcelWithRelations } from "./parcel.views";
+import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { ParcelsService } from "./parcels.service";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
-import { addDays, dhakaDayStart, dhakaMonthStart, dhakaWeekStart } from "./ops-scope";
+import { addDays, dhakaDayStart, dhakaMonthStart, dhakaWeekStart, opsHubScope } from "./ops-scope";
 import { recordTaskEarning } from "../rider/earnings";
 import { LedgerService } from "../finance/ledger.service";
 
@@ -22,6 +24,26 @@ const lineOf = (merchantType: string | null | undefined): ServiceLine =>
 
 const PICKUP_STATUSES = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] as const;
 const DELIVERY_STATUSES = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"] as const;
+
+/**
+ * One pickup stop: a merchant (all its parcels assigned to the rider) or, for customer parcels, one
+ * sender. The rider app's "Pickup from merchant" scan sends it back as `expectedStop`.
+ */
+export const pickupStopKey = (p: Pick<Parcel, "merchantId" | "senderPhone">) => (p.merchantId ? `M:${p.merchantId}` : `S:${p.senderPhone}`);
+
+/** Tracking-event metadata kinds of the rider → hub handover list (no status change: the hub scans to receive). */
+const HANDOVER = "RIDER_HANDOVER";
+const HANDOVER_WITHDRAWN = "RIDER_HANDOVER_WITHDRAWN";
+type EventLike = { createdAt: Date; metadata: unknown };
+/** The rider's latest handover of a picked-up parcel to a hub, unless withdrawn since. */
+export function currentHandover(events: EventLike[]): { hubId: string; hubName: string; at: Date } | null {
+  for (const e of [...events].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
+    const m = (e.metadata ?? {}) as { kind?: string; hubId?: string; hubName?: string };
+    if (m.kind === HANDOVER_WITHDRAWN) return null;
+    if (m.kind === HANDOVER && m.hubId) return { hubId: m.hubId, hubName: m.hubName ?? "", at: e.createdAt };
+  }
+  return null;
+}
 
 /** Where and when the proof was captured (device clock + GPS). Offline captures may be synced days later. */
 function proofCapture(input: z.infer<typeof proofCaptureSchema> | undefined, now: Date) {
@@ -44,18 +66,28 @@ export class RiderTasksService {
 
   /** Finance ledger (global module; property injection keeps the constructor stable). */
   @Inject(LedgerService) private readonly ledger!: LedgerService;
+  @Inject(AuditService) private readonly audit!: AuditService;
 
   /** Pickup queue and delivery run for the signed-in rider. */
   async tasks(actor: UserActor) {
     const riderId = this.riderId(actor);
-    const [pickups, deliveries] = await Promise.all([
+    const [pickups, deliveries, carrying] = await Promise.all([
       // On-demand pickups / deliveries first (service packages), then oldest first.
       this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: { in: [...PICKUP_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
       this.prisma.parcel.findMany({ where: { deliveryRiderId: riderId, status: { in: [...DELIVERY_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
+      // Collected and still with the rider ("Pickup from merchant" scans) until a hub scans them in.
+      this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: "PICKED_UP" }, include: parcelInclude, orderBy: [{ pickedUpAt: "asc" }] }),
     ]);
+    const stop = (p: ParcelWithRelations) => ({
+      key: pickupStopKey(p),
+      name: p.merchant?.name ?? p.senderName,
+      address: [p.pickupStreet, p.pickupArea, p.pickupZone].filter(Boolean).join(", "),
+    });
     return {
-      pickups: pickups.map(p => parcelView(p, { internal: false })),
-      deliveries: deliveries.map(p => ({ ...parcelView(p, { internal: false }), devDeliveryCode: this.workflow.devDeliveryCode(p) })),
+      pickups: pickups.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p) })),
+      // deliveryCodeSent: the recipient holds a valid code (sent when the delivery started), so OTP proof works.
+      deliveries: deliveries.map(p => ({ ...parcelView(p, { internal: false }), deliveryCodeSent: Boolean(p.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(p) })),
+      carrying: carrying.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p), handover: currentHandover(p.events) })),
     };
   }
 
@@ -65,7 +97,25 @@ export class RiderTasksService {
       if (parcel.pickupRiderId !== riderId) throw forbidden("This pickup isn't assigned to you");
       const rider = await tx.rider.findUniqueOrThrow({ where: { id: riderId }, include: { user: { select: { name: true } } } });
       const label = `${rider.code} · ${rider.user.name}`;
-      if (input.outcome === "COLLECTED_DELIVER_DIRECT") {
+      if (input.outcome === "COLLECTED") {
+        if (input.expectedStop && input.expectedStop !== pickupStopKey(parcel)) {
+          const owner = parcel.merchantId ? (await tx.merchant.findUnique({ where: { id: parcel.merchantId }, select: { name: true } }))?.name : parcel.senderName;
+          throw new AppError("OTHER_PICKUP_STOP", `${parcel.trackingId} belongs to ${owner ?? "another sender"}, not this pickup. Scan it at its own stop.`, HttpStatus.CONFLICT);
+        }
+        // A repeated scan (or an offline replay) of a parcel already collected changes nothing.
+        if (parcel.status === "PICKED_UP") return;
+        if (!(PICKUP_STATUSES as readonly string[]).includes(parcel.status))
+          throw new AppError("NOT_AWAITING_PICKUP", `${parcel.trackingId} isn't waiting for pickup (${parcel.status.toLowerCase().replace(/_/g, " ")}).`, HttpStatus.CONFLICT);
+        await this.workflow.transition(
+          tx,
+          parcel,
+          { to: "PICKED_UP", actorRole: "rider", data: { pickedUpAt: new Date() }, description: `${label} collected the parcel.`, internalNote: input.note },
+          actor,
+          meta,
+          after,
+        );
+        await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel });
+      } else if (input.outcome === "COLLECTED_DELIVER_DIRECT") {
         await this.workflow.transition(
           tx,
           parcel,
@@ -115,7 +165,11 @@ export class RiderTasksService {
     });
   }
 
-  /** Leaving for the recipient: sends the delivery code by SMS if they don't have one. */
+  /**
+   * "Start delivery": leaving for the recipient. Every start (first attempt or a retry from
+   * RETRY_SCHEDULED / EXCEPTION) issues a FRESH delivery code and sends it by SMS, so the recipient's
+   * latest message always holds the valid code; any earlier code stops working. Assignment sends none.
+   */
   async startDelivery(actor: UserActor, trackingId: string, meta: RequestMeta) {
     const riderId = this.riderId(actor);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
@@ -126,7 +180,7 @@ export class RiderTasksService {
         {
           to: "OUT_FOR_DELIVERY",
           actorRole: "rider",
-          data: parcel.deliveryOtpEncrypted ? {} : { deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) },
+          data: { deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) },
         },
         actor,
         meta,
@@ -139,7 +193,10 @@ export class RiderTasksService {
     const riderId = this.riderId(actor);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
       if (parcel.deliveryRiderId !== riderId) throw forbidden("This delivery isn't assigned to you");
-      if (!["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"].includes(parcel.status)) throw new AppError("NOT_OUT_FOR_DELIVERY", "This parcel isn't out for delivery", HttpStatus.CONFLICT);
+      // Only once the delivery has started (the code is sent then); a retry keeps its code until the next start.
+      if (parcel.status === "ASSIGNED" || (parcel.status === "RETRY_SCHEDULED" && !parcel.deliveryOtpEncrypted))
+        throw new AppError("DELIVERY_NOT_STARTED", "Start the delivery first; the code is sent to the recipient then", HttpStatus.CONFLICT);
+      if (!["OUT_FOR_DELIVERY", "RETRY_SCHEDULED"].includes(parcel.status)) throw new AppError("NOT_OUT_FOR_DELIVERY", "This parcel isn't out for delivery", HttpStatus.CONFLICT);
       await tx.parcel.update({ where: { id: parcel.id }, data: { deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) } });
     });
   }
@@ -159,8 +216,11 @@ export class RiderTasksService {
         let fileId: string | undefined;
         let otpVerified = false;
         if (input.proof.method === "OTP") {
-          const expected = parcel.deliveryOtpEncrypted ? decrypt(parcel.deliveryOtpEncrypted) : undefined;
-          if (!expected || !safeEqual(expected, input.proof.otp)) throw new AppError("INVALID_DELIVERY_CODE", "The recipient's code is incorrect", 422);
+          // No code yet (e.g. still ASSIGNED): the recipient only gets one when the delivery starts.
+          if (!parcel.deliveryOtpEncrypted)
+            throw new AppError("DELIVERY_NOT_STARTED", "Start the delivery first; the code is sent to the recipient then", HttpStatus.CONFLICT);
+          const expected = decrypt(parcel.deliveryOtpEncrypted);
+          if (!safeEqual(expected, input.proof.otp)) throw new AppError("INVALID_DELIVERY_CODE", "The recipient's code is incorrect", 422);
           otpVerified = true;
         } else {
           const file = await this.storage.saveDataUrl(input.proof.image, `${parcel.trackingId}-${input.proof.method.toLowerCase()}`, actor.userId, tx);
@@ -235,6 +295,131 @@ export class RiderTasksService {
         );
       }
     });
+  }
+
+  /**
+   * "Hand over at hub": the rider puts a parcel they collected (PICKED_UP) on their handover list for a
+   * hub. No status change: the hub receives it by scanning (POST /ops/hub-receive → AT_HUB), so hub
+   * receipt stays the hub's confirmation. Writes an internal tracking event, an audit entry and a
+   * RIDER_HANDOVER scan, and tells the hub live (`rider.handover`). Repeating it for the same hub is a no-op.
+   */
+  async handover(actor: UserActor, trackingId: string, input: { hubId: string; source?: "CAMERA" | "KEYBOARD" | "MANUAL" }, meta: RequestMeta) {
+    const riderId = this.riderId(actor);
+    return this.change(actor, trackingId, async (tx, parcel, after) => {
+      if (parcel.pickupRiderId !== riderId) throw forbidden("This parcel wasn't collected by you");
+      if (parcel.status !== "PICKED_UP") {
+        const where = parcel.status === "AT_HUB" ? "It was already received at a hub." : `It's ${parcel.status.toLowerCase().replace(/_/g, " ")}.`;
+        throw new AppError("NOT_WITH_RIDER", `${parcel.trackingId} isn't a picked-up parcel you're carrying. ${where}`, HttpStatus.CONFLICT);
+      }
+      const hub = await tx.hub.findUnique({ where: { id: input.hubId }, select: { id: true, name: true, active: true } });
+      if (!hub || !hub.active) throw notFound("Hub");
+      const events = await tx.trackingEvent.findMany({ where: { parcelId: parcel.id, visibility: "INTERNAL" }, select: { createdAt: true, metadata: true } });
+      if (currentHandover(events)?.hubId === hub.id) return;
+      await this.writeHandoverEvent(tx, actor, parcel, { kind: HANDOVER, hub, title: `Handed over at ${hub.name}`, description: `The rider handed the parcel over at ${hub.name}. Waiting for the hub to scan it in.` }, after);
+      await this.audit.record(actor, { action: "parcel.rider_handover", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, hubId: hub.id } }, meta, tx);
+      await tx.scanEvent.create({ data: { code: parcel.trackingId, trackingId: parcel.trackingId, parcelId: parcel.id, kind: "RIDER_HANDOVER", hubId: hub.id, riderId, userId: actor.userId, source: input.source ?? "KEYBOARD", ok: true, message: `Handed over at ${hub.name}` } });
+    });
+  }
+
+  /** Takes a parcel off the handover list again (the hub hasn't scanned it in yet). */
+  async withdrawHandover(actor: UserActor, trackingId: string, meta: RequestMeta) {
+    const riderId = this.riderId(actor);
+    return this.change(actor, trackingId, async (tx, parcel, after) => {
+      if (parcel.pickupRiderId !== riderId) throw forbidden("This parcel wasn't collected by you");
+      if (parcel.status !== "PICKED_UP") throw new AppError("HANDOVER_CLOSED", `${parcel.trackingId} was already received by the hub. It can't be taken back.`, HttpStatus.CONFLICT);
+      const events = await tx.trackingEvent.findMany({ where: { parcelId: parcel.id, visibility: "INTERNAL" }, select: { createdAt: true, metadata: true } });
+      const current = currentHandover(events);
+      if (!current) return;
+      const hub = { id: current.hubId, name: current.hubName };
+      await this.writeHandoverEvent(tx, actor, parcel, { kind: HANDOVER_WITHDRAWN, hub, title: "Handover withdrawn", description: `The rider took the parcel back off the handover list for ${hub.name}.` }, after);
+      await this.audit.record(actor, { action: "parcel.rider_handover_withdraw", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, hubId: hub.id } }, meta, tx);
+    });
+  }
+
+  private async writeHandoverEvent(
+    tx: Db,
+    actor: UserActor,
+    parcel: Parcel,
+    e: { kind: string; hub: { id: string; name: string }; title: string; description: string },
+    after: AfterCommit,
+  ) {
+    // Bump the version so a hub scan-in racing with this sees the change (optimistic locking).
+    const { count } = await tx.parcel.updateMany({ where: { id: parcel.id, version: parcel.version, status: "PICKED_UP" }, data: { version: { increment: 1 } } });
+    if (!count) throw conflict("PARCEL_CHANGED", `${parcel.trackingId} was just updated by someone else. Refresh and try again.`);
+    await tx.trackingEvent.create({
+      data: {
+        parcelId: parcel.id,
+        status: "PICKED_UP",
+        title: e.title,
+        description: e.description,
+        location: e.hub.name,
+        visibility: "INTERNAL",
+        actorUserId: actor.userId,
+        actorLabel: actorLabel(actor),
+        metadata: { kind: e.kind, hubId: e.hub.id, hubName: e.hub.name },
+      },
+    });
+    const base = parcelEvent(parcel);
+    after.realtime.push({ ...base, hubIds: [...(base.hubIds ?? []), e.hub.id], staffPermission: "parcel:read:any" });
+    after.realtime.push({ type: "rider.handover", id: parcel.trackingId, hubIds: [e.hub.id], riderIds: [parcel.pickupRiderId], staffPermission: "parcel:read:any", data: { kind: e.kind, hubId: e.hub.id } });
+  }
+
+  /**
+   * Hub side of the handover list: parcels riders handed over at this hub that the hub hasn't scanned
+   * in yet (still PICKED_UP), grouped by rider. The receive desk (POST /ops/hub-receive) scans them in.
+   */
+  async hubHandovers(actor: Actor, hubId: string) {
+    const scope = opsHubScope(actor);
+    if (scope && !scope.includes(hubId)) throw forbidden("You can only see your own hub's handovers");
+    const hub = await this.prisma.hub.findUnique({ where: { id: hubId }, select: { id: true, name: true } });
+    if (!hub) throw notFound("Hub");
+    const parcels = await this.prisma.parcel.findMany({
+      where: { status: "PICKED_UP", events: { some: { visibility: "INTERNAL", metadata: { path: ["hubId"], equals: hubId } } } },
+      select: {
+        trackingId: true,
+        recipientName: true,
+        senderName: true,
+        merchant: { select: { name: true } },
+        pickupRider: { select: { id: true, code: true, user: { select: { name: true } } } },
+        events: { where: { visibility: "INTERNAL" }, select: { createdAt: true, metadata: true } },
+      },
+    });
+    const riders = new Map<string, { rider: { id: string; code: string; name: string }; parcels: { trackingId: string; merchant: string; recipient: string; handedOverAt: Date }[] }>();
+    for (const p of parcels) {
+      const current = currentHandover(p.events);
+      if (current?.hubId !== hubId || !p.pickupRider) continue;
+      const entry = riders.get(p.pickupRider.id) ?? { rider: { id: p.pickupRider.id, code: p.pickupRider.code, name: p.pickupRider.user.name }, parcels: [] };
+      entry.parcels.push({ trackingId: p.trackingId, merchant: p.merchant?.name ?? p.senderName, recipient: p.recipientName ?? "", handedOverAt: current.at });
+      riders.set(p.pickupRider.id, entry);
+    }
+    const items = [...riders.values()].map(r => ({ ...r, parcels: r.parcels.sort((a, b) => a.handedOverAt.getTime() - b.handedOverAt.getTime()) }));
+    return { hub, total: items.reduce((n, r) => n + r.parcels.length, 0), items };
+  }
+
+  /**
+   * Return runs the rider is taking back to merchants (dispatched to them, OUT_FOR_RETURN), with their
+   * parcels: the rider app's "Return to merchant" checklist. Read-only: only operations mark a parcel
+   * Returned (completing the run), as the lifecycle requires.
+   */
+  async returnRuns(actor: UserActor) {
+    const riderId = this.riderId(actor);
+    const runs = await this.prisma.returnRun.findMany({
+      where: { riderId, status: "OUT_FOR_RETURN" },
+      orderBy: { dispatchedAt: "asc" },
+      include: {
+        merchant: { select: { id: true, name: true, pickupAddress: true, pickupArea: true, contactPhone: true } },
+        parcels: { where: { status: "RETURN_SCHEDULED" }, select: { trackingId: true, recipientName: true, returnReason: true, merchantOrderRef: true }, orderBy: { trackingId: "asc" } },
+      },
+    });
+    return {
+      items: runs.map(r => ({
+        id: r.id,
+        number: r.number,
+        dispatchedAt: r.dispatchedAt,
+        merchant: { id: r.merchant.id, name: r.merchant.name, address: [r.merchant.pickupAddress, r.merchant.pickupArea].filter(Boolean).join(", "), phone: r.merchant.contactPhone },
+        parcels: r.parcels,
+      })),
+    };
   }
 
   /** The rider's view of their COD cash. */

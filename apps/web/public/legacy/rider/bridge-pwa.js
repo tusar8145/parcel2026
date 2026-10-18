@@ -8,8 +8,10 @@
  *   replayed when the connection comes back, when the app is reopened and every minute while
  *   anything is pending. A refusal (e.g. 409 PARCEL_CHANGED: operations changed the parcel) is
  *   shown to the rider with the server's message.
- * - Live GPS while on shift: POST /rider/location when the rider has moved ~50 m or every
- *   2 minutes; fixes taken offline are kept on the phone and sent with POST /rider/location/batch.
+ * - Live GPS while on shift: POST /rider/location after a move of the configured distance (default
+ *   50 m) or every 2 / 5 / 10 minutes (super admin "Rider location interval", default 5; read from
+ *   GET /rider/location → settings); fixes taken offline are kept on the phone and sent with
+ *   POST /rider/location/batch.
  *   Browsers only share location while the app is open: Settings explains this and offers
  *   "Keep screen on" (Screen Wake Lock) and a battery saver (network location, fewer fixes).
  * - Settings → "Location & offline" panel; manifest shortcuts open a page with ?page=…
@@ -193,11 +195,12 @@
   }
 
   /** The queued actions, in the action dialog (Retry / Discard; "Sync now"). */
-  const OP = { pickup: "Pickup", "start-delivery": "Out for delivery", delivery: "Delivery outcome" };
+  const OP = { pickup: "Pickup", "start-delivery": "Out for delivery", delivery: "Delivery outcome", handover: "Handed over at hub", "handover-withdraw": "Handover undone" };
   const describeItem = i => {
     const b = i.body || {};
     if (i.op === "delivery") return b.outcome === "DELIVERED" ? `Delivered · ${b.proof?.method === "OTP" ? "code" : (b.proof?.method || "").toLowerCase()} proof` : `Failed attempt · ${b.reason}`;
-    if (i.op === "pickup") return b.outcome === "COLLECTED_DELIVER_DIRECT" ? "Picked up · delivering directly" : b.outcome === "COLLECTED_TO_HUB" ? "Picked up · to hub" : "Pickup exception";
+    if (i.op === "pickup")
+      return b.outcome === "COLLECTED" ? "Picked up" : b.outcome === "COLLECTED_DELIVER_DIRECT" ? "Picked up · delivering directly" : b.outcome === "COLLECTED_TO_HUB" ? "Picked up · to hub" : "Pickup exception";
     return OP[i.op] || i.op;
   };
   function fillSyncModal() {
@@ -307,6 +310,7 @@
     try {
       renderOfflineStrip();
       if (name === "Settings") renderSettingsPanel(true);
+      renderLocationLine();
     } catch (error) {
       console.error("Delivery Fast: offline extras failed", error);
     }
@@ -336,9 +340,10 @@
 
   // ───────────── live GPS while on shift ─────────────
 
-  const MIN_DISTANCE_M = 50;
+  // Super admin "Rider location interval" (GET /rider/location → settings; default every 5 minutes, 50 m).
+  let MIN_DISTANCE_M = 50;
   const MIN_INTERVAL_MS = 15_000;
-  const HEARTBEAT_MS = 120_000;
+  let HEARTBEAT_MS = 5 * 60_000;
   const MAX_ACCURACY_M = 500;
 
   const distance = (a, b) => {
@@ -361,7 +366,7 @@
     error: null,
     onShift: () => DF.riderState?.status === "ONLINE",
     start() {
-      if (!navigator.geolocation || gps.watchId !== null) return;
+      if (!navigator.geolocation || gps.watchId !== null || gps.permission === "denied") return;
       gps.state = "waiting";
       const saver = pref.get("gps-saver", false);
       gps.watchId = navigator.geolocation.watchPosition(gps.onFix, gps.onError, { enableHighAccuracy: !saver, maximumAge: saver ? 60_000 : 15_000, timeout: 60_000 });
@@ -392,21 +397,22 @@
         gps.wakeLock.addEventListener("release", () => (gps.wakeLock = null));
       } catch {}
     },
-    onFix(position) {
+    onFix(position, { force = false } = {}) {
       const c = position.coords;
       const fix = { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy, heading: Number.isFinite(c.heading) ? c.heading : null, speed: Number.isFinite(c.speed) ? c.speed : null, at: position.timestamp || Date.now() };
       gps.last = fix;
-      gps.state = "on";
+      if (gps.watchId !== null || force) gps.state = "on";
       gps.error = null;
       const now = Date.now();
       const since = gps.lastSentAt ? now - gps.lastSentAt : Infinity;
       const moved = gps.lastSent ? distance(gps.lastSent, fix) : Infinity;
       const heartbeat = since >= HEARTBEAT_MS;
-      if (!heartbeat && (since < MIN_INTERVAL_MS || moved < MIN_DISTANCE_M || fix.accuracy > MAX_ACCURACY_M)) return;
+      if (!force && !heartbeat && (since < MIN_INTERVAL_MS || moved < MIN_DISTANCE_M || fix.accuracy > MAX_ACCURACY_M)) return;
       gps.lastSent = fix;
       gps.lastSentAt = now;
-      void gps.send(fix);
+      gps.lastSend = gps.send(fix);
       if (page() === "Settings") renderSettingsPanel();
+      renderLocationLine();
     },
     onError(error) {
       gps.error = error.code === 1 ? "denied" : error.code === 3 ? "timeout" : "unavailable";
@@ -418,16 +424,58 @@
       }
       renderSettingsPanel();
     },
+    /** Resolves "sent" | "saved" (offline, sent later) | "refused". */
     async send(fix) {
       const body = { lat: fix.lat, lng: fix.lng, accuracy: Math.min(10_000, fix.accuracy), heading: fix.heading, speed: fix.speed != null ? Math.min(100, fix.speed) : null, at: new Date(fix.at).toISOString() };
-      if (navigator.onLine === false) return gps.keep(body);
+      if (navigator.onLine === false) return gps.keep(body).then(() => "saved");
       try {
         await DF.api("/rider/location", { method: "POST", body });
+        gps.lastOkAt = Date.now();
+        renderLocationLine();
+        return "sent";
       } catch (error) {
-        if (Off?.isNetworkError(error)) return gps.keep(body);
-        if (error.code === "RIDER_OFF_SHIFT") return gps.stop();
-        if (error.status === 401) return gps.keep(body);
+        if (Off?.isNetworkError(error)) return gps.keep(body).then(() => "saved");
+        if (error.code === "RIDER_OFF_SHIFT") return gps.stop(), "refused";
+        if (error.status === 401) return gps.keep(body).then(() => "saved");
         console.warn("Delivery Fast: location not accepted", error);
+        return "refused";
+      }
+    },
+    /** One fix now (also used as the 2-minute heartbeat when the phone hasn't moved). */
+    current({ maximumAge = 0, timeout = 20_000 } = {}) {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) return reject(Object.assign(new Error("unsupported"), { code: 0 }));
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: !pref.get("gps-saver", false), maximumAge, timeout });
+      });
+    },
+    /** "Update my location now": a fresh fix sent at once, with guidance when it can't be. */
+    async sendNow() {
+      if (gps.state === "unsupported") return DF.toast("This phone or browser can't share a location.");
+      if (!gps.onShift()) return DF.toast("Start your shift to share your location.");
+      if (gps.state === "denied") return showLocationHelp();
+      gps.manual = true;
+      renderLocationLine();
+      try {
+        // A fix at most 10 s old counts as "now"; if the GPS is slow, the watch's last fix (≤ 1 min) is sent instead.
+        const position = await gps.current({ maximumAge: 10_000, timeout: 12_000 }).catch(error => {
+          const last = gps.last;
+          if (error?.code !== 1 && last && Date.now() - last.at < 60_000)
+            return { coords: { latitude: last.lat, longitude: last.lng, accuracy: last.accuracy, heading: last.heading, speed: last.speed }, timestamp: last.at };
+          throw error;
+        });
+        gps.onFix(position, { force: true });
+        const result = await gps.lastSend;
+        DF.toast(result === "sent" ? "Location sent. Dispatch and your recipients see where you are." : result === "saved" ? "You're offline: your location is saved on this phone and sent when you're back online." : "Your location couldn't be sent. Check that your shift is started.");
+      } catch (error) {
+        if (error?.code === 1) {
+          gps.state = "denied";
+          gps.stop();
+          gps.state = "denied";
+          showLocationHelp();
+        } else DF.toast(error?.code === 3 ? "No GPS fix yet. Step outside or near a window and try again." : "Your location isn't available right now. Try again in a moment.");
+      } finally {
+        gps.manual = false;
+        renderLocationLine();
       }
     },
     async keep(body) {
@@ -461,7 +509,115 @@
   document.addEventListener("df:rider-status", event => {
     if (event.detail.status === "ONLINE") gps.start();
     else gps.stop();
+    renderLocationLine();
   });
+
+  // Heartbeat: watchPosition only reports when the phone moves, so a rider standing still (at a
+  // merchant, at the hub) would drop off the maps. Every 30 s: if nothing was sent for the interval
+  // (2 / 5 / 10 minutes), take one fix and send it.
+  setInterval(() => {
+    if (!gps.onShift() || gps.watchId === null || gps.state === "denied" || document.visibilityState !== "visible") return;
+    if (gps.lastSentAt && Date.now() - gps.lastSentAt < HEARTBEAT_MS) return renderLocationLine();
+    gps
+      .current({ maximumAge: 30_000, timeout: 25_000 })
+      .then(position => gps.onFix(position))
+      .catch(() => undefined);
+  }, 30_000);
+
+  // The browser's permission for this site: "Blocked" shows how to allow it again.
+  navigator.permissions
+    ?.query({ name: "geolocation" })
+    .then(status => {
+      const apply = () => {
+        gps.permission = status.state;
+        if (status.state === "denied") {
+          gps.stop();
+          gps.state = "denied";
+        } else if (gps.state === "denied") {
+          gps.state = "off";
+          if (gps.onShift()) gps.start();
+        }
+        renderLocationLine();
+        renderSettingsPanel();
+      };
+      apply();
+      status.onchange = apply;
+    })
+    .catch(() => undefined);
+
+  // ───────────── location status line + "Update my location now" ─────────────
+
+  const ago = ms => {
+    const minutes = Math.floor((Date.now() - ms) / 60_000);
+    return minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago` : `at ${clock(ms)}`;
+  };
+  /** { tone, text } for "Location sharing: …". */
+  function locationStatus() {
+    if (gps.state === "unsupported") return { tone: "red", state: "unsupported", text: "Location sharing: Not available on this phone" };
+    if (gps.state === "denied") return { tone: "red", state: "blocked", text: "Location sharing: Blocked · allow location for this site in your browser" };
+    if (!gps.onShift()) return { tone: "amber", state: "off", text: DF.riderState?.status === "ON_BREAK" ? "Location sharing: Paused · you're on a break" : "Location sharing: Off · start your shift to share your location" };
+    const last = gps.lastOkAt || gps.serverAt;
+    if (gps.manual) return { tone: "blue", state: "on", text: "Location sharing: On · getting your position…" };
+    if (gps.queued && navigator.onLine === false) return { tone: "amber", state: "on", text: `Location sharing: On · offline, ${gps.queued} position${gps.queued === 1 ? "" : "s"} saved to send later` };
+    if (!last) return { tone: "blue", state: "on", text: "Location sharing: On · waiting for a GPS fix…" };
+    return { tone: "green", state: "on", text: `Location sharing: On · last sent ${ago(last)}` };
+  }
+  function renderLocationLine() {
+    const name = page();
+    if (!["Overview", "Scan parcel", "Settings", "My route"].includes(name)) return;
+    const main = $("mainContent");
+    if (!main) return;
+    const s = locationStatus();
+    const colors = { red: ["var(--red-soft)", "var(--red)"], amber: ["var(--amber-soft)", "var(--amber)"], blue: ["var(--blue-soft)", "var(--blue)"], green: ["var(--green-soft)", "var(--green)"] }[s.tone];
+    const button = s.state === "on" ? `<button type="button" class="button button-sm" data-df-locate ${gps.manual ? "disabled" : ""}>${icon("pin")} Update my location now</button>` : s.state === "blocked" ? `<button type="button" class="button button-sm" data-df-locate-help>How to allow location</button>` : s.state === "off" && DF.riderState?.status !== "ON_BREAK" ? `<button type="button" class="button button-sm" data-df-locate>${icon("pin")} Update my location now</button>` : "";
+    const html = `<div id="dfLocationLine" data-location-state="${s.state}" role="status" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:14px;padding:9px 12px;border-radius:9px;background:${colors[0]};color:${colors[1]};font-size:13px;font-weight:600"><span id="dfLocationText">${esc(s.text)}</span>${button}</div>`;
+    const existing = $("dfLocationLine");
+    if (existing) existing.outerHTML = html;
+    else {
+      const heading = main.querySelector(":scope > .page-heading");
+      if (heading) heading.insertAdjacentHTML("afterend", html);
+      else main.insertAdjacentHTML("afterbegin", html);
+    }
+  }
+  setInterval(renderLocationLine, 30_000);
+
+  function showLocationHelp() {
+    void DF.alert?.({
+      title: "Allow location for Delivery Fast",
+      message:
+        "Your browser is blocking location for this app, so dispatch and your recipients can't see where you are. " +
+        "Chrome on Android: tap the lock icon next to the address (or ⋮ → Settings → Site settings → Location), choose Allow for this site, then reload the app. " +
+        "Installed app: Android Settings → Apps → Chrome (or Delivery Fast) → Permissions → Location → Allow while using the app. " +
+        "Also check that the phone's Location is switched on.",
+    }) ?? DF.toast("Location is blocked. Allow location for this site in your browser settings, then reload the app.");
+  }
+
+  window.addEventListener(
+    "click",
+    event => {
+      if (event.target.closest("[data-df-locate]")) {
+        event.stopImmediatePropagation();
+        void gps.sendNow();
+      }
+      if (event.target.closest("[data-df-locate-help]")) {
+        event.stopImmediatePropagation();
+        showLocationHelp();
+      }
+    },
+    true,
+  );
+
+  /** The last position the server has (so "last sent" survives reopening the app). */
+  async function loadServerLocation() {
+    try {
+      const mine = await DF.api("/rider/location");
+      gps.serverAt = mine.latest?.receivedAt ? new Date(mine.latest.receivedAt).getTime() : null;
+      if (mine.settings?.intervalMinutes) HEARTBEAT_MS = mine.settings.intervalMinutes * 60_000;
+      if (mine.settings?.movementMeters) MIN_DISTANCE_M = mine.settings.movementMeters;
+      gps.settings = mine.settings || gps.settings;
+      renderLocationLine();
+    } catch {}
+  }
 
   // ───────────── Settings: location & offline ─────────────
 
@@ -487,6 +643,7 @@
       <div class="earnings-row"><span>Last position sent</span><strong>${gps.lastSentAt ? `${esc(clock(gps.lastSentAt))}${gps.last ? ` · ±${Math.round(gps.last.accuracy)} m` : ""}` : "—"}${gps.queued ? ` · ${gps.queued} saved offline` : ""}</strong></div>
       <div class="earnings-row"><span>Battery saver <small style="display:block;color:#8a94a3">Network location and fewer fixes; less precise</small></span>${toggle("gps-saver", pref.get("gps-saver", false))}</div>
       <div class="earnings-row"><span>Keep screen on during shift <small style="display:block;color:#8a94a3">${navigator.wakeLock ? "Stops the phone sleeping while the app is open" : "Not supported by this browser"}</small></span>${toggle("keep-awake", pref.get("keep-awake", false))}</div>
+      <div class="earnings-row"><span>Update interval <small style="display:block;color:#8a94a3">Set by operations</small></span><strong>Every ${esc(Math.round(HEARTBEAT_MS / 60_000))} min · or after ${esc(MIN_DISTANCE_M)} m</strong></div>
       <p class="panel-subtitle" style="margin:10px 0 4px">Browsers share location only while the rider app is open. If you switch to another app or the screen turns off, Android may pause it until you come back; your position then updates again automatically. Keep the app open on your phone mount during deliveries.</p>
       <div class="earnings-row"><span>Updates waiting to sync</span><strong>${pending}${failed ? ` · ${failed} need attention` : ""}</strong></div>
       <div class="earnings-row"><span>Saved task list</span><strong>${saved ? `from ${esc(clock(saved))} (offline copy)` : navigator.onLine === false ? "offline copy" : "up to date"}</strong></div>
@@ -533,6 +690,7 @@
   void reloadQueue();
   Promise.resolve(DF.bridgeReady).finally(() => {
     if (gps.onShift()) gps.start();
+    void loadServerLocation();
     if (navigator.onLine !== false) void flush({ quiet: false });
     // Home-screen shortcuts: /rider?page=Scan%20parcel
     const wanted = new URLSearchParams(location.search).get("page");

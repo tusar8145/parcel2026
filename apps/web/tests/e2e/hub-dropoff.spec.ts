@@ -48,7 +48,6 @@ test("drop-off import → labels with barcodes → hub receive by typed ID → A
   await page.click("#courierImport");
   await expect(page.locator("#dfImportTitle")).toHaveText("Import orders from Excel");
   // The merchant is chosen in the dialog (searchable); its package brings the first-mile choices.
-  await page.fill("#dfiMerchantSearch", MERCHANT.code);
   await page.selectOption("#dfiMerchant", MERCHANT.id);
   await page.selectOption("#dfiIntake", "DROP_OFF");
   await expect(page.locator("#dfiHub")).toBeEnabled();

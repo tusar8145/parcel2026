@@ -148,6 +148,12 @@ export const updateStatusSchema = z.object({
 
 // ── rider ──
 export const pickupOutcomeSchema = z.discriminatedUnion("outcome", [
+  /**
+   * Collected from the sender, still with the rider (PICKED_UP): the rider app's "Pickup from merchant"
+   * scan. `expectedStop` (the pickup stop the rider chose, `pickupStop.key` in GET /rider/tasks) makes the
+   * API refuse a parcel from another merchant / sender. The hub receives it later by scanning.
+   */
+  z.object({ outcome: z.literal("COLLECTED"), expectedStop: z.string().trim().max(200).optional(), note: optionalText(500) }),
   z.object({ outcome: z.literal("COLLECTED_DELIVER_DIRECT"), note: optionalText(500) }),
   z.object({ outcome: z.literal("COLLECTED_TO_HUB"), hubId: z.uuid(), note: optionalText(500) }),
   z.object({ outcome: z.literal("EXCEPTION"), note: text(500) }),

@@ -26,13 +26,19 @@ export class RiderAppController {
     private readonly prisma: PrismaService,
   ) {}
 
-  /** Live position while on shift (the app sends one when the rider has moved ~50 m or every 2 minutes). */
+  /** Live position while on shift (the app sends one after a move of the configured distance, else every 2 / 5 / 10 minutes: GET /settings/location). */
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @Post("location")
   @HttpCode(202)
   @ApiZodBody(locationPointSchema)
   location(@CurrentUser() actor: UserActor, @ZBody(locationPointSchema) body: z.infer<typeof locationPointSchema>) {
     return this.locations.record(actor, body);
+  }
+
+  /** The rider's last position on record (status line: "Location sharing: On · last sent 1 min ago"). */
+  @Get("location")
+  myLocation(@CurrentUser() actor: UserActor) {
+    return this.locations.mine(actor);
   }
 
   /** Positions recorded while offline, replayed together. Duplicates are ignored. */

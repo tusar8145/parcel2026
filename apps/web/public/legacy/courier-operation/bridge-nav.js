@@ -174,18 +174,24 @@
 
   /** Old tab names (links, bookmarks) → today's tab. */
   const TAB_ALIAS = { "drop-off receive": "Receive", "hub register": "At my hub" };
+  // Names and their URL slugs (DF.nav: "Hub desk" ↔ hub-desk, "SLA late-risk" ↔ sla-late-risk) match alike.
+  const same = (a, b) => {
+    const x = String(a ?? "").trim().toLowerCase();
+    const y = String(b ?? "").trim().toLowerCase();
+    return x === y || (!!DF.nav && DF.nav.slug(x) === DF.nav.slug(y) && DF.nav.slug(x) !== "");
+  };
   const findTab = (view, tab) => {
     const tabs = VIEWS[view].tabs;
-    const wanted = TAB_ALIAS[String(tab ?? "").toLowerCase()] || tab;
-    const i = typeof tab === "number" ? tab : tabs.findIndex(t => t.id.toLowerCase() === String(wanted ?? "").toLowerCase());
+    const alias = Object.keys(TAB_ALIAS).find(a => same(a, tab));
+    const wanted = alias ? TAB_ALIAS[alias] : tab;
+    const i = typeof tab === "number" ? tab : tabs.findIndex(t => same(t.id, wanted));
     return i >= 0 && i < tabs.length ? i : 0;
   };
-  /** A view or old page name (any case) → { view, tab } or null. */
+  /** A view or old page name (any case, or its slug) → { view, tab } or null. */
   function lookup(name, tab) {
-    const key = String(name || "").trim().toLowerCase();
-    const view = Object.keys(VIEWS).find(v => v.toLowerCase() === key);
+    const view = Object.keys(VIEWS).find(v => same(v, name));
     if (view) return { view, tab: findTab(view, tab) };
-    const old = Object.keys(OLD).find(o => o.toLowerCase() === key);
+    const old = Object.keys(OLD).find(o => same(o, name));
     if (old) return { view: OLD[old][0], tab: findTab(OLD[old][0], tab ?? OLD[old][1]) };
     return null;
   }
@@ -213,10 +219,11 @@
     const target = forced || resolve(page);
     forced = null;
     if (!target) {
-      // Pages outside the menu (Support): drawn as before.
+      // Pages outside the menu (Support, Notifications): drawn as before.
       state.view = null;
       innerRender(page);
       decorate();
+      DF.nav?.entered(page, null);
       return;
     }
     const moved = state.view !== target.view || state.tab !== target.tab;
@@ -230,6 +237,8 @@
     if (moved) Ops.navEpoch = (Ops.navEpoch || 0) + 1;
     innerRender(tab.page);
     decorate();
+    // The address and title follow (DF.nav: ?page=<view>&tab=<tab>, a history entry per move).
+    DF.nav?.entered(state.view, VIEWS[state.view].tabs.length > 1 ? tab.id : null);
     if (moved) {
       // Another view: only the parcels it shows (and the open drawer's) stay in the browser.
       Ops.lists.forgetHidden();
@@ -612,14 +621,65 @@
     true,
   );
 
-  // ───────────── start: deep links (?page=, old or new names) and the role's menu ─────────────
+  // ───────────── start: the address (DF.nav), deep links (?page=, old or new names; ?parcel=; ?ticket=) ─────────────
+
+  /** Opens a parcel's drawer, loading it from the API when it isn't on screen (deep links, notifications). */
+  async function openParcel(id) {
+    if (!Ops.apiParcel(id)) {
+      try {
+        Ops.upsertParcels([await DF.api(`/parcels/${encodeURIComponent(id)}`)]);
+      } catch (error) {
+        showToast(error?.status === 404 ? `Parcel ${id} was not found.` : DF.describe(error));
+        DF.nav?.setParam("parcel", null);
+        return;
+      }
+    }
+    Ops.drawer.open(id, []);
+  }
+  Ops.openParcel = openParcel;
+  // The open drawer is part of the address (?parcel=), so it can be shared and survives a reload.
+  if (Ops.drawer && DF.nav) {
+    const { open, close } = Ops.drawer;
+    Ops.drawer.open = function (id, ...rest) {
+      open.call(this, id, ...rest);
+      if (this.id) DF.nav.setParam("parcel", this.id);
+    };
+    Ops.drawer.close = function (...rest) {
+      const had = this.id;
+      close.apply(this, rest);
+      if (had) DF.nav.setParam("parcel", null);
+    };
+  }
+
+  const ALIAS_OF = view => Object.keys(OLD).filter(o => OLD[o][0] === view);
+  DF.nav?.start({
+    panel: "Courier Operations",
+    home: "Today",
+    pages: () => [
+      ...Object.keys(VIEWS).map(view => ({
+        name: view,
+        aliases: ALIAS_OF(view),
+        tabs: VIEWS[view].tabs.length > 1 ? VIEWS[view].tabs.map(t => ({ name: t.id, aliases: Object.keys(TAB_ALIAS).filter(a => TAB_ALIAS[a] === t.id) })) : undefined,
+      })),
+      { name: "Support", label: "Support tickets", slug: "support" },
+      { name: "Notifications", slug: "notifications" },
+    ],
+    open: (page, tab) => (VIEWS[page] ? navigate(page, tab ?? 0) : render(page)),
+    openParcel,
+    openTicket: number => window.DFSupport?.open(number),
+  });
 
   const params = new URLSearchParams(location.search);
   if (params.has("report")) userNavigated = true; // the scheduled-report link opens Reports itself
+  // Old names keep their tab (e.g. ?page=Scheduled pickups → Pickup › Scheduled pickups); the address is rewritten to the slugs.
   const linked = params.get("page") && lookup(params.get("page"), params.get("tab") ?? undefined);
+  const other = !linked && (params.get("page") || params.get("ticket")) && DF.nav?.requested();
   if (linked) {
     userNavigated = true;
     navigate(linked.view, linked.tab);
+  } else if (other) {
+    userNavigated = true;
+    render(other.page);
   } else render(Ops.page());
 
   (DF.bridgeReady || Promise.resolve()).then(() => {
@@ -627,7 +687,9 @@
     const allowed = allowedViews();
     if (!userNavigated && state.view && !allowed.has(state.view)) {
       const first = qa("#navigation [data-nav]").find(b => !b.hidden);
-      if (first) navigate(first.dataset.nav);
+      // The role's landing page replaces the first address (Back doesn't return to a page they don't use).
+      if (first) DF.nav ? DF.nav.quietly(() => navigate(first.dataset.nav)) : navigate(first.dataset.nav);
     } else updateCounts();
+    DF.nav?.extras(); // ?parcel= opens the drawer, ?ticket= the support ticket
   });
 })();

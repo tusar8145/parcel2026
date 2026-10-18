@@ -37,7 +37,7 @@ interface Item {
   feedback?: { rating: number; comment?: string | null } | null;
   canGiveFeedback?: boolean;
   /** Service packages: the rider's live position / phone while out for delivery. */
-  live?: { rider: { name: string; phone: string | null }; location: { lat: number; lng: number; at: string } | null } | null;
+  live?: Live | null;
   /** Hub Pickup: where the receiver collects it, and by when. */
   collect?: { hub: { name: string; address: string } | null; dueAt?: string | null } | null;
 }
@@ -77,6 +77,15 @@ function toItem(p: any, full: boolean): Item {
   };
 }
 
+/** liveDelivery from the API (ParcelsService.liveDelivery): the delivery rider while out for delivery. */
+interface Live {
+  rider: { name: string; phone: string | null };
+  location: { lat: number; lng: number; at: string; ageSeconds?: number } | null;
+  /** LIVE · STALE · WAITING · OFF_SHIFT · LINK_REQUIRED (open the SMS link / enter the phone digits) · null (not in the package). */
+  locationStatus?: "LIVE" | "STALE" | "WAITING" | "OFF_SHIFT" | "LINK_REQUIRED" | null;
+  staleAfterMinutes?: number;
+}
+
 interface Proof {
   method: string;
   receivedBy?: string | null;
@@ -95,6 +104,8 @@ export default function TrackingView({ param }: { param?: string }) {
   const [error, setError] = useState("");
   const [proof, setProof] = useState<Proof | null>(null);
   const [owner, setOwner] = useState<"user" | "token" | null>(null);
+  // The link token from the SMS (?t=) or from "enter the last 4 digits"; unlocks the rider's live position.
+  const [liveToken, setLiveToken] = useState<string | undefined>(token);
 
   const load = useCallback(async () => {
     if (!code) return;
@@ -118,7 +129,7 @@ export default function TrackingView({ param }: { param?: string }) {
           if (!(isApiError(err) && (err.status === 404 || err.status === 403))) throw err;
         }
       }
-      result ??= toItem(await api(`/track/${encodeURIComponent(code)}`), false);
+      result ??= toItem(await api(`/track/${encodeURIComponent(code)}${liveToken ? `?t=${encodeURIComponent(liveToken)}` : ""}`), false);
       if (who === "user" && result.status === "DELIVERED") {
         const feedback = await api(`/parcels/${encodeURIComponent(code)}/feedback`).catch(() => null);
         if (feedback) result = { ...result, feedback: feedback.feedback, canGiveFeedback: feedback.canGiveFeedback };
@@ -137,7 +148,7 @@ export default function TrackingView({ param }: { param?: string }) {
         setState("error");
       }
     }
-  }, [code, token]);
+  }, [code, token, liveToken]);
 
   useEffect(() => {
     setItem(null);
@@ -150,7 +161,7 @@ export default function TrackingView({ param }: { param?: string }) {
   useEffect(() => {
     if (!code || !df().auth.user || !df().events) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const off = ["parcel.updated", "reconnect"].map(type =>
+    const off = ["parcel.updated", "parcel.rider_location", "reconnect"].map(type =>
       df().events!.on(type, () => {
         clearTimeout(timer);
         timer = setTimeout(() => void load(), 400);
@@ -161,6 +172,15 @@ export default function TrackingView({ param }: { param?: string }) {
       off.forEach(fn => fn());
     };
   }, [code, load]);
+
+  // While the rider is on the way with live location, refresh the position every minute (everyone,
+  // signed in or not; signed-in owners also get parcel.rider_location events above).
+  const following = item?.status === "OUT_FOR_DELIVERY" && !!item.live?.locationStatus && item.live.locationStatus !== "LINK_REQUIRED";
+  useEffect(() => {
+    if (!following) return;
+    const timer = setInterval(() => document.visibilityState === "visible" && void load(), 60_000);
+    return () => clearInterval(timer);
+  }, [following, load]);
 
   return (
     <div className="tracking-card">
@@ -199,7 +219,7 @@ export default function TrackingView({ param }: { param?: string }) {
             </button>
           </div>
         ) : item ? (
-          <Result item={item} proof={proof} owner={owner} token={token} onChange={load} />
+          <Result item={item} proof={proof} owner={owner} token={token} onChange={load} onLiveToken={setLiveToken} />
         ) : null}
       </div>
     </div>
@@ -261,7 +281,21 @@ function RecentParcels() {
   );
 }
 
-function Result({ item, proof, owner, token, onChange }: { item: Item; proof: Proof | null; owner: "user" | "token" | null; token?: string; onChange: () => Promise<void> }) {
+function Result({
+  item,
+  proof,
+  owner,
+  token,
+  onChange,
+  onLiveToken,
+}: {
+  item: Item;
+  proof: Proof | null;
+  owner: "user" | "token" | null;
+  token?: string;
+  onChange: () => Promise<void>;
+  onLiveToken: (token: string) => void;
+}) {
   const delivered = item.status === "DELIVERED";
   const stage = Math.max(0, Math.min(Number(item.stage) || 0, STAGES.length - 1));
   const badgeClass = delivered ? "" : /transit|delivery/i.test(item.statusLabel) ? "in-transit" : /failed|exception|return/i.test(item.statusLabel) ? "warning" : "";
@@ -302,25 +336,7 @@ function Result({ item, proof, owner, token, onChange }: { item: Item; proof: Pr
               {item.collect.dueAt ? ` · collect by ${new Date(item.collect.dueAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
             </span>
           ) : null}
-          {item.live ? (
-            <span data-live-rider="1">
-              {`Rider ${item.live.rider.name} `}
-              {item.live.rider.phone ? (
-                <a href={`tel:${item.live.rider.phone}`} style={{ fontWeight: 700 }}>
-                  {item.live.rider.phone}
-                </a>
-              ) : null}
-              {item.live.location ? (
-                <>
-                  {" · "}
-                  <a href={`https://www.openstreetmap.org/?mlat=${item.live.location.lat}&mlon=${item.live.location.lng}#map=16/${item.live.location.lat}/${item.live.location.lng}`} target="_blank" rel="noreferrer">
-                    {"Live location"}
-                  </a>
-                  {` (${when(item.live.location.at)})`}
-                </>
-              ) : null}
-            </span>
-          ) : null}
+          {item.live ? <LiveRider key={`${item.live.location?.at ?? ""}|${item.live.location?.ageSeconds ?? ""}|${item.live.locationStatus ?? ""}`} live={item.live} trackingId={item.trackingId} onToken={onLiveToken} /> : null}
         </div>
       </section>
       <div className="track-progress" role="list" aria-label="Delivery progress">
@@ -443,6 +459,91 @@ function Result({ item, proof, owner, token, onChange }: { item: Item; proof: Pr
       </div>
       {item.canCancel && owner ? <CancelButton item={item} owner={owner} token={token} onDone={onChange} /> : null}
     </>
+  );
+}
+
+/** "3 min ago" from the API's age plus the time since the page loaded it. */
+function useAgo(ageSeconds: number | undefined) {
+  const [loadedAt] = useState(() => Date.now());
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick(n => n + 1), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  if (ageSeconds == null) return "";
+  const minutes = Math.floor((ageSeconds + (Date.now() - loadedAt) / 1000) / 60);
+  return minutes < 1 ? "just now" : `${minutes} min ago`;
+}
+
+/**
+ * The delivery rider while out for delivery (packages with "Live rider location" / "Share rider phone
+ * number"): name, phone, and the latest position with how old it is. Hidden when stale (15+ min).
+ * Without the SMS link the recipient unlocks the position with the last 4 digits of their phone.
+ */
+function LiveRider({ live, trackingId, onToken }: { live: Live; trackingId: string; onToken: (token: string) => void }) {
+  const ago = useAgo(live.location?.ageSeconds);
+  const status = live.locationStatus;
+  const stale = live.staleAfterMinutes ?? 15;
+  return (
+    <span data-live-rider="1" data-live-status={status ?? "none"}>
+      {`Rider ${live.rider.name} `}
+      {live.rider.phone ? (
+        <a href={`tel:${live.rider.phone}`} style={{ fontWeight: 700 }}>
+          {live.rider.phone}
+        </a>
+      ) : null}
+      {live.location ? (
+        <>
+          {" · "}
+          <a
+            data-live-location="1"
+            href={`https://www.openstreetmap.org/?mlat=${live.location.lat}&mlon=${live.location.lng}#map=16/${live.location.lat}/${live.location.lng}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {"Live location"}
+          </a>
+          <span data-live-updated="1">{` · updated ${ago}`}</span>
+        </>
+      ) : status === "STALE" ? (
+        <span data-live-note="1">{` · The rider's location hasn't updated for over ${stale} minutes.`}</span>
+      ) : status === "WAITING" ? (
+        <span data-live-note="1">{" · Waiting for the rider's location."}</span>
+      ) : status === "OFF_SHIFT" ? (
+        <span data-live-note="1">{" · The rider isn't sharing a location right now."}</span>
+      ) : null}
+      {status === "LINK_REQUIRED" ? <LiveUnlock trackingId={trackingId} onToken={onToken} /> : null}
+    </span>
+  );
+}
+
+/** Recipient without the SMS link: the last 4 digits of their phone unlock the rider's live position. */
+function LiveUnlock({ trackingId, onToken }: { trackingId: string; onToken: (token: string) => void }) {
+  const form = useForm({ livePhoneLast4: "" }, { livePhoneLast4: v => (/^\d{4}$/.test(v.trim()) ? "" : "Enter the last 4 digits of your phone number") });
+  const { busy, run } = useBusy();
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.validate()) return;
+    void run(async () => {
+      try {
+        const { token } = await df().api<{ token: string }>(`/track/${encodeURIComponent(trackingId)}/live-access`, { method: "POST", body: { phoneLast4: form.values.livePhoneLast4.trim() } });
+        onToken(token);
+      } catch (err) {
+        form.setServerErrors({ livePhoneLast4: describe(err) });
+      }
+    });
+  };
+  return (
+    <form ref={form.formRef} data-live-unlock="1" data-react="1" noValidate onSubmit={submit} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 6 }}>
+      <label htmlFor="livePhoneLast4" style={{ fontWeight: 600 }}>
+        {"See the rider live: last 4 digits of your phone"}
+      </label>
+      <input {...form.bind("livePhoneLast4")} inputMode="numeric" maxLength={4} autoComplete="off" placeholder="1234" style={{ width: 72, padding: "4px 8px", border: "1px solid #cfd8d3", borderRadius: 6 }} />
+      <button className="button" type="submit" disabled={busy} style={{ padding: "4px 12px" }}>
+        {busy ? "Checking…" : "Show"}
+      </button>
+      <FieldError id="livePhoneLast4" message={form.error("livePhoneLast4")} />
+    </form>
   );
 }
 

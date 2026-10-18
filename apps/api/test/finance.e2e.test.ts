@@ -360,7 +360,8 @@ describe("finance: COD custody, settlements and invoices", () => {
     const draft = await ctx.api("POST", "/settlements", { token: s.fin1.token, body: { merchantId: s.m.id } });
     let summary = await ctx.api("GET", "/finance/summary", { token: s.fin2.token });
     expect(summary.status).toBe(200);
-    expect(summary.body).toEqual({
+    const { period, ...position } = summary.body;
+    expect(position).toEqual({
       codWithRiders: 333.33,
       codAtHubs: 1200.3,
       settledThisMonth: 0,
@@ -369,6 +370,8 @@ describe("finance: COD custody, settlements and invoices", () => {
       invoicesOutstanding: 0,
       merchantReceivablesOpen: 0,
     });
+    // What moved this month (the dashboard period's default): all of today's COD.
+    expect(period).toMatchObject({ codCollected: Number((1000.1 + 200.2 + 333.33).toFixed(2)), codCollections: 3, settledPaid: 0 });
 
     await ctx.api("POST", `/settlements/${draft.body.id}/approve`, { token: s.fin2.token });
     await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin1.token, body: { reference: "REF-123" } });
@@ -378,6 +381,7 @@ describe("finance: COD custody, settlements and invoices", () => {
 
     summary = await ctx.api("GET", "/finance/summary", { token: s.fin1.token });
     expect(summary.body).toMatchObject({ codAtHubs: 0, settledThisMonth: Number((1200.3 - charges).toFixed(2)), payablePendingApproval: 0, invoicesOutstanding: plain.charge });
+    expect(summary.body.period).toMatchObject({ settledPaid: Number((1200.3 - charges).toFixed(2)), settlementsPaid: 1, invoicesIssued: 1 });
 
     expect((await ctx.api("GET", "/finance/summary", { token: s.owner.token })).status).toBe(403);
     expect((await ctx.api("GET", "/finance/summary", { token: s.hubOp.token })).status).toBe(403);

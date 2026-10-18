@@ -28,6 +28,7 @@ export const BULK_ACTION_IDS = [
   "schedule_return",
   "complete_details",
   "add_note",
+  "transfer",
 ] as const;
 export type BulkActionId = (typeof BULK_ACTION_IDS)[number];
 export const isActionId = (v: string): v is BulkActionId => (BULK_ACTION_IDS as readonly string[]).includes(v);
@@ -75,6 +76,8 @@ export interface ActionTemplate {
   info: BulkColumnKey[];
   /** The parcels that can take this action now (lifecycle / intake rules); null = any parcel. */
   where: () => Prisma.ParcelWhereInput | null;
+  /** The eligible parcels also depend on the caller's hubs and live data (transfer: TransferService.eligibleWhere). */
+  scoped?: "transfer";
 }
 
 const NOT_COLLECT: Prisma.ParcelWhereInput = { OR: [{ lastMile: null }, { lastMile: { not: "HUB_COLLECT" } }] };
@@ -189,7 +192,7 @@ export const ACTIONS: Record<BulkActionId, ActionTemplate> = {
     skipBlank: false,
     summary: "Give parcels at a hub (or already assigned) a delivery rider; complete missing details in the same row.",
     howTo: "fill Rider for each row with another rider; leave Rider empty to use the suggested rider; fill the Set … columns of a \"Needs info\" order; delete rows you don't want to change.",
-    does: "Assigns (or re-assigns) the delivery rider. The recipient gets the delivery code by SMS. The recipient name, phone, address, district and zone must be known first.",
+    does: "Assigns (or re-assigns) the delivery rider. No delivery code is sent yet: the recipient gets it by SMS when the rider starts the delivery. The recipient name, phone, address, district and zone must be known first.",
     parcels: "parcels that can get a delivery rider now (at a hub for doorstep delivery, assigned, or a failed delivery to send out again)",
     lead: ["suggested_rider"],
     inputs: [{ key: "rider", description: "Rider code · name · hub. Empty = the Suggested rider. Choose a Hub first to narrow the list." }, riderHub, PRIORITY, note(), ...DETAILS],
@@ -325,6 +328,22 @@ export const ACTIONS: Record<BulkActionId, ActionTemplate> = {
     inputs: [{ key: "note", header: "Note", required: true, description: "The note, added to the parcel's history for staff." }],
     info: ["current_hub", "pickup_rider", "delivery_rider", "merchant", "recipient_name", "district", "zone", "cod", "sla_state"],
     where: () => null,
+  },
+  transfer: {
+    id: "transfer",
+    label: "Add to transfer bag",
+    sheet: "Transfer to hub",
+    action: "ADD_TO_BAG",
+    skipBlank: false,
+    summary: "Bag parcels at your hub that go to another hub (one bag per destination, or your own bag labels); optionally seal and load them on a trip.",
+    howTo: "check the Destination hub of each row (prefilled with the hub serving the recipient's zone); optionally write a Bag: an open bag from the list or your own label to group parcels; delete rows you don't want to send now.",
+    does: "Puts the parcel in a transfer bag from its hub to the destination hub (the open bag you name, or a new one per destination / label). After applying you can seal the bags and load them on a trip. The parcel stays \"At hub\" until the truck departs; then it is \"In transit\".",
+    parcels: "parcels at your hub whose destination is another hub (the recipient zone's serving hub, or the collection hub) and that aren't in a bag yet",
+    lead: ["dest_suggested"],
+    inputs: [{ key: "dest_hub", description: "The hub this parcel travels to. Prefilled with the suggestion; choose another from the list if needed." }, { key: "bag" }, note()],
+    info: ["current_hub", "recipient_name", "district", "zone", "weight", "cod", "merchant", "service"],
+    where: () => ({ status: "AT_HUB" }),
+    scoped: "transfer",
   },
 };
 

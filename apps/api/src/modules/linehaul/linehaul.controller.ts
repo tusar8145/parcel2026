@@ -8,11 +8,13 @@ import {
   bagItemSchema,
   createBagSchema,
   createTripSchema,
+  inboundQuerySchema,
   listBagsQuerySchema,
   listDiscrepanciesQuerySchema,
   listTripsQuerySchema,
   listVehiclesQuerySchema,
   receiveBagSchema,
+  receiveScanSchema,
   resolveDiscrepancySchema,
   sealBagSchema,
   tripBagSchema,
@@ -115,6 +117,23 @@ export class LinehaulController {
   @ApiZodBody(receiveBagSchema)
   receive(@CurrentActor() actor: Actor, @Param("bag") bag: string, @ZBody(receiveBagSchema) body: z.infer<typeof receiveBagSchema>, @ReqMeta() meta: RequestMeta) {
     return this.linehaul.receive(actor, bag, body, meta);
+  }
+
+  /** Receive desk scan at a destination hub: a bag label receives the whole bag, a parcel is received out of its inbound bag, a manifest selects the trip. */
+  @RequirePermissions("parcel:dispatch")
+  @Post("receive-scan")
+  @HttpCode(200)
+  @ApiZodBody(receiveScanSchema)
+  receiveScan(@CurrentActor() actor: Actor, @ZBody(receiveScanSchema) body: z.infer<typeof receiveScanSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.linehaul.receiveScan(actor, body, meta);
+  }
+
+  /** Trips and bags coming to my hubs with expected / received / missing counts. */
+  @RequirePermissions("hub:read")
+  @Get("inbound")
+  @ApiZodQuery(inboundQuerySchema)
+  inbound(@CurrentActor() actor: Actor, @ZQuery(inboundQuerySchema) query: z.infer<typeof inboundQuerySchema>) {
+    return this.linehaul.inbound(actor, query);
   }
 
   // ── trips & manifests ──

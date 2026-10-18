@@ -9,7 +9,7 @@ import { BULK_ACTIONS, type BulkAction } from "./bulk-columns";
  * the page's parcels that can take it. All parcels offers every action.
  */
 
-export const BULK_KINDS = ["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "all"] as const;
+export const BULK_KINDS = ["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "transfers", "all"] as const;
 export type BulkKind = (typeof BULK_KINDS)[number];
 
 export interface BulkKindDef {
@@ -85,6 +85,15 @@ export const KINDS: Record<BulkKind, BulkKindDef> = {
     statuses: ["AT_HUB", "READY_FOR_COLLECTION", "RETRY_SCHEDULED", "EXCEPTION", "RETURN_SCHEDULED"],
     presets: [],
   },
+  transfers: {
+    kind: "transfers",
+    page: "Transfers",
+    title: "Transfers bulk update",
+    scope: "parcels at your hub that travel to another hub and aren't in a bag yet",
+    actions: ["transfer"],
+    statuses: ["AT_HUB"],
+    presets: [],
+  },
   all: {
     kind: "all",
     page: "All parcels",
@@ -121,6 +130,8 @@ export function kindWhere(kind: BulkKind): Prisma.ParcelWhereInput | null {
       };
     case "returns":
       return { OR: [{ status: { in: ["RETRY_SCHEDULED", "EXCEPTION", "RETURN_SCHEDULED"] } }, { status: { in: ["AT_HUB", "READY_FOR_COLLECTION"] }, attemptCount: { gt: 0 } }] };
+    case "transfers":
+      return { status: "AT_HUB" };
     case "all":
       return null;
   }

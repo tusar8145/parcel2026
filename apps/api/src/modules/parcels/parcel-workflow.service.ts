@@ -13,8 +13,9 @@ import type { Parcel, Prisma, ScanSource } from "../../generated/prisma/client";
 import { slaTargets } from "../sla/sla-policy";
 import { RealtimeService, type RealtimeEvent } from "../../common/realtime.service";
 import { NotifyService, type NotifyInput } from "../notifications/notify.service";
+import { InboxService } from "../notifications/inbox.service";
 import type { NotificationEvent } from "../notifications/events";
-import { signParcelAccess, trackingUrl } from "./parcel-access";
+import { signLiveLocationAccess, signParcelAccess, trackingUrl } from "./parcel-access";
 import { assertDetailsFor, pricedDestination } from "./incomplete";
 import { PackagesService } from "../packages/packages.service";
 
@@ -107,6 +108,7 @@ export class ParcelWorkflowService {
 
   /** Return-to-merchant notices (property injection keeps the constructor stable for parallel edits). */
   @Inject(NotifyService) private readonly returnNotices!: NotifyService;
+  @Inject(InboxService) private readonly inbox!: InboxService;
   /** Collect-from-hub hold period (service packages settings; global module). */
   @Inject(PackagesService) private readonly packageSettings!: PackagesService;
 
@@ -302,7 +304,12 @@ export class ParcelWorkflowService {
 
   private async notify(db: Db, parcel: Parcel, from: ParcelStatus, after: AfterCommit) {
     const to = parcel.status as ParcelStatus;
-    const track = trackingUrl(parcel.trackingId);
+    // "Live rider location" (package): the recipient's out-for-delivery link carries a token that shows
+    // the rider's position (a lookup by tracking ID alone doesn't).
+    const track =
+      to === "OUT_FOR_DELIVERY" && parcel.services.includes("tracking.live_location")
+        ? trackingUrl(parcel.trackingId, signLiveLocationAccess(parcel.trackingId))
+        : trackingUrl(parcel.trackingId);
     // Status notices through NotifyService (templates, admin toggles, preferences, rate limits).
     const sender = { phone: parcel.senderPhone, userId: parcel.customerId, name: parcel.senderName };
     const STATUS_EVENTS: Partial<Record<ParcelStatus, { event: NotificationEvent; to: NotifyInput["to"] }>> = {
@@ -351,6 +358,18 @@ export class ParcelWorkflowService {
           parcel,
         })),
       );
+    }
+    // The merchant's team: final outcomes in the merchant panel's bell (docs "In-app notifications").
+    const MERCHANT_INBOX: Partial<Record<ParcelStatus, NotificationEvent>> = {
+      DELIVERED: "parcel.delivered",
+      PICKUP_CANCELLED: "parcel.cancelled",
+      RETURN_SCHEDULED: "parcel.return_scheduled",
+      RETURNED: "parcel.returned",
+    };
+    const inboxEvent = parcel.merchantId && from !== to ? MERCHANT_INBOX[to] : undefined;
+    if (inboxEvent) {
+      const copy = this.inbox.merchantCopy(inboxEvent, { trackingId: parcel.trackingId, reason: parcel.returnReason, returnCharge: parcel.returnCharge == null ? null : Number(parcel.returnCharge) });
+      if (copy) await this.inbox.toMerchant(db, parcel.merchantId!, copy);
     }
   }
 

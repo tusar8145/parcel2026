@@ -195,10 +195,10 @@ export class MerchantReviewService {
         ...(await this.notify.notify(tx, {
           event: "account.invite",
           to: { phone: input.phone, email: input.email, name: input.name },
-          vars: { inviter: "Delivery Fast", role: `a merchant${input.businessName ? ` (${input.businessName})` : ""}`, link },
+          vars: { inviter: "Delivery Fast", role: `${input.type === "BANKING_FINANCIAL" ? "a Banking & Financial" : "an E-commerce"} merchant${input.businessName ? ` (${input.businessName})` : ""}`, link },
         })),
       );
-      await this.audit.record(actor, { action: "merchant.invite", entityType: "merchant_invite", entityId: created.id, data: { name: input.name, phone: input.phone ?? null, email: input.email ?? null } }, meta, tx);
+      await this.audit.record(actor, { action: "merchant.invite", entityType: "merchant_invite", entityId: created.id, data: { name: input.name, type: input.type, phone: input.phone ?? null, email: input.email ?? null } }, meta, tx);
       return created;
     });
     await this.outbox.flush(outbox);

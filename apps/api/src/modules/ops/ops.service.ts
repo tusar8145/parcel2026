@@ -15,6 +15,8 @@ import { zoneForArea } from "../parcels/places";
 import { cashHubScope, isFinanceStaff } from "../finance/finance.scope";
 import type { opsBookingSchema, riderReportQuerySchema, transfersQuerySchema } from "./ops.schemas";
 import { NEEDS_PICKUP_RIDER } from "./ops-common";
+import { periodView, resolvePeriod, type PeriodQuery } from "../../common/period";
+import { periodMetricsWithPrevious } from "./period-metrics";
 
 const ACTIVE_STATUSES = PARCEL_STATUSES.filter(s => !TERMINAL_STATUSES.includes(s));
 const PICKUP_OPEN: ParcelStatus[] = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"];
@@ -52,9 +54,10 @@ export class OpsService {
   // ───────────── live overview ─────────────
 
   /** Counters behind the command center, nav badges and alerts, computed in the database. */
-  async overview(actor: Actor) {
+  async overview(actor: Actor, query: PeriodQuery = {}) {
     const db = this.prisma;
     const now = new Date();
+    const period = resolvePeriod(query, "today", now);
     const today = dhakaDayStart(now);
     const yesterday = addDays(today, -1);
     const month = dhakaMonthStart(now);
@@ -91,6 +94,7 @@ export class OpsService {
       exceptions,
       risky,
       cash,
+      metrics,
     ] = await Promise.all([
       db.parcel.groupBy({ by: ["status"], _count: { _all: true } }),
       db.parcel.count({ where: { createdAt: { gte: today } } }),
@@ -151,6 +155,7 @@ export class OpsService {
             _min: { collectedAt: true },
           })
         : null,
+      periodMetricsWithPrevious(db, period),
     ]);
 
     const status = Object.fromEntries(PARCEL_STATUSES.map(s => [s, 0])) as Record<ParcelStatus, number>;
@@ -258,6 +263,9 @@ export class OpsService {
       hubs: hubRows,
       cash: cash ? { withRiders: Number(cash._sum.amount ?? 0), collections: cash._count._all, oldestCollectedAt: cash._min.collectedAt } : null,
       alerts: alerts.slice(0, 4),
+      /** What happened in the period (from / to; default today), network wide. The fields above are live "now" counts. */
+      period: periodView(period),
+      metrics,
     };
   }
 
@@ -276,6 +284,9 @@ export class OpsService {
         financeStaff: can("finance:read") && isFinanceStaff(actor),
         manageFinance: can("finance:manage"),
         manageConfig: can("config:manage"),
+        /** "Log in as" a merchant member or rider (Merchants / Riders lists); full access only with user:impersonate. */
+        loginAs: actor.kind === "user" && !actor.impersonation && (can("user:impersonate") || can("user:login-as")),
+        loginAsFull: actor.kind === "user" && !actor.impersonation && can("user:impersonate"),
       },
     };
   }
@@ -355,9 +366,15 @@ export class OpsService {
   // ───────────── analytics ─────────────
 
   /** Service-level metrics for today, this month and last month. */
-  async analytics() {
+  async analytics(query: PeriodQuery = {}) {
     const now = new Date();
-    const periods = { today: [dhakaDayStart(now), now], month: [dhakaMonthStart(now), now], previousMonth: [dhakaMonthStart(now, -1), dhakaMonthStart(now)] } as const;
+    const chosen = resolvePeriod(query, "today", now);
+    const periods = {
+      today: [dhakaDayStart(now), now],
+      month: [dhakaMonthStart(now), now],
+      previousMonth: [dhakaMonthStart(now, -1), dhakaMonthStart(now)],
+      period: [chosen.start, chosen.end < now ? chosen.end : now],
+    } as const;
     const entries = await Promise.all(Object.entries(periods).map(async ([key, [from, to]]) => [key, await this.slaMetrics(from, to)] as const));
     const by = Object.fromEntries(entries) as Record<keyof typeof periods, Awaited<ReturnType<OpsService["slaMetrics"]>>>;
     const row = (key: keyof (typeof by)["today"], label: string, target: number, unit: "%" | "hrs", better: "higher" | "lower") => ({
@@ -369,6 +386,8 @@ export class OpsService {
       today: by.today[key],
       month: by.month[key],
       previousMonth: by.previousMonth[key],
+      /** The chosen period (from / to; default today). */
+      period: by.period[key],
     });
     return {
       generatedAt: now,
@@ -379,7 +398,8 @@ export class OpsService {
         row("pickupHours", "Average first-mile pickup", 4, "hrs", "lower"),
         row("exceptionHours", "Exception resolution", 24, "hrs", "lower"),
       ],
-      samples: { today: by.today.samples, month: by.month.samples, previousMonth: by.previousMonth.samples },
+      samples: { today: by.today.samples, month: by.month.samples, previousMonth: by.previousMonth.samples, period: by.period.samples },
+      period: periodView(chosen),
     };
   }
 

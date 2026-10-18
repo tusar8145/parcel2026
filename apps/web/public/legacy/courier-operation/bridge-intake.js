@@ -4,7 +4,9 @@
  *   Import Excel                     shared/importer.js (intake choice, preview, result, labels) via bridge-imports.js
  *   Print labels (shipment tables)   GET/POST /documents/labels → PDF in a new tab: A4 sheet (4 per page)
  *                                    or 100×150 mm thermal labels (Code 128 tracking barcode, QR, COD)
- *   Hub desk → Receive               the one place to receive parcels: POST /ops/hub-receive per scan
+ *   Hub desk → Receive               the one place to receive parcels: POST /ops/hub-receive per scan (a bag
+ *                                    label receives the whole linehaul bag; a parcel in an inbound bag is
+ *                                    received out of it, see Transfers → Receive transfers)
  *                                    (any arrival: drop-offs, picked-up parcels, transfers; USB scanner
  *                                    in keyboard mode, camera via DF.scanner, or a typed tracking ID /
  *                                    CN), batch expected vs received from GET /ops/booking-batches(/:id),
@@ -152,6 +154,11 @@
   };
   const OUTCOME = {
     RECEIVED: { label: "Received", tone: "good" },
+    // Linehaul transfers (the hub-receive answer of a bag label or a parcel in an inbound bag).
+    BAG_RECEIVED: { label: "Bag received", tone: "good" },
+    TRIP: { label: "Manifest", tone: "blue" },
+    EXTRA: { label: "Extra parcel", tone: "bad" },
+    NOT_IN_TRANSIT: { label: "Not departed", tone: "warn" },
     ALREADY_RECEIVED: { label: "Already received", tone: "blue" },
     WRONG_HUB: { label: "Wrong hub", tone: "bad" },
     NOT_FOUND: { label: "Not found", tone: "bad" },
@@ -160,7 +167,7 @@
     ERROR: { label: "Not sent", tone: "bad" },
     PENDING: { label: "Checking…", tone: "blue" },
   };
-  const pill = outcome => `<span class="status status-${OUTCOME[outcome].tone}">${esc(OUTCOME[outcome].label)}</span>`;
+  const pill = outcome => `<span class="status status-${(OUTCOME[outcome] || OUTCOME.REFUSED).tone}">${esc((OUTCOME[outcome] || { label: outcome }).label)}</span>`;
   const deskHubs = () => Ops.myHubs() || DF.state.hubs;
 
   /** The shared scan result (shared/scanner.js): beep, vibration, the scan box flashing green / red. */
@@ -271,7 +278,7 @@
           if (listed) Object.assign(listed, r.batch);
           if (desk.missing && r.parcel) desk.missing = desk.missing.filter(p => p.trackingId !== r.parcel.trackingId || r.outcome !== "RECEIVED");
         }
-        desk.feedback = { tone: OUTCOME[r.outcome].tone, text: r.message };
+        desk.feedback = { tone: (OUTCOME[r.outcome] || OUTCOME.REFUSED).tone, text: r.message };
         beep(r.ok);
       } catch (error) {
         Object.assign(entry, { outcome: "ERROR", message: DF.describe(error) });
@@ -314,7 +321,8 @@
         },
       });
     }
-    if (desk.epoch !== Ops.navEpoch || desk.loadedFor !== desk.hubId) {
+    // Not before the person's hubs are known (Ops.ready): a deep link / reload can draw the desk first.
+    if (Ops.ready && (desk.epoch !== Ops.navEpoch || desk.loadedFor !== desk.hubId)) {
       desk.epoch = Ops.navEpoch;
       desk.loadedFor = desk.hubId;
       void loadBatches();

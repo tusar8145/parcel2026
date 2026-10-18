@@ -1,0 +1,57 @@
+// ───────────────────── Vehicle location ("I'm travelling in this vehicle", modules/tracking) ─────────────────────
+// A rider or hub staff member travelling with a linehaul trip shares their phone's position as the
+// trip's vehicle position until the trip arrives / closes or they stop. Parcels on the trip show it
+// (ParcelPositionService). Interval and movement threshold: Setting "location-settings".
+
+/// One "sharing the vehicle's location" session of a user for a trip.
+model VehicleShare {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  tripId    String       @db.Uuid
+  userId    String       @db.Uuid
+  startedAt DateTime     @default(now())
+  endedAt   DateTime?
+  /// STOPPED · TRIP_ARRIVED · TRIP_CLOSED · TRIP_CANCELLED · REPLACED (the user started another trip) · TAKEN_OVER (someone else started sharing this trip)
+  endReason String?
+  /// Last accepted fix of this session (the trip's position is TripLocation).
+  lastAt    DateTime?
+  points    Int          @default(0)
+  trip      LinehaulTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, endedAt])
+  @@index([userId, endedAt])
+  @@map("vehicle_shares")
+}
+
+/// Latest vehicle position per trip (one row, replaced on every accepted fix).
+model TripLocation {
+  tripId     String       @id @db.Uuid
+  shareId    String       @db.Uuid
+  lat        Float
+  lng        Float
+  accuracy   Float // metres
+  heading    Float?
+  speed      Float? // m/s
+  at         DateTime // when the device took the fix
+  receivedAt DateTime     @default(now())
+  trip       LinehaulTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("trip_locations")
+}
+
+/// Light history for operations: at most 500 points per trip, purged with the rider location retention.
+model TripLocationPoint {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  tripId    String       @db.Uuid
+  lat       Float
+  lng       Float
+  accuracy  Float
+  heading   Float?
+  speed     Float?
+  at        DateTime
+  createdAt DateTime     @default(now())
+  trip      LinehaulTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, at])
+  @@index([at])
+  @@map("trip_location_points")
+}

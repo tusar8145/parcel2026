@@ -3,7 +3,8 @@
  *
  * The illustrated maps on the overview and dispatch pages become Leaflet maps
  * (/vendor/leaflet, OpenStreetMap tiles): hubs, open parcels with pins (GET /routing/map) and
- * live rider positions (GET /ops/rider-locations + "rider.location" events). The map element
+ * live rider positions (GET /ops/rider-locations + "rider.location" events) and linehaul vehicles
+ * whose location is shared (GET /vehicle-locations + "vehicle.location" events). The map element
  * survives page re-renders, so tiles don't reload on every data refresh.
  *
  * Dispatch page: Route planner (POST /routing/optimize, OSRM with a nearest-neighbour fallback)
@@ -43,7 +44,8 @@
 
   // ───────────── data ─────────────
 
-  const data = { map: null, riders: null, loadedAt: 0, ridersAt: 0, loading: null };
+  const data = { map: null, riders: null, vehicles: null, loadedAt: 0, ridersAt: 0, vehiclesAt: 0, loading: null };
+  const canSeeVehicles = () => Ops.can("dispatch") || Ops.can("manageHubs");
 
   async function loadData(force = false) {
     if (data.loading) return data.loading;
@@ -60,6 +62,13 @@
         DF.api("/ops/rider-locations")
           .then(r => ((data.riders = new Map(r.items.map(x => [x.riderId, x]))), (data.ridersAt = Date.now())))
           .catch(() => (data.riders ??= new Map())),
+      );
+    // Linehaul vehicles whose location someone on board shares ("I'm travelling in this vehicle").
+    if (canSeeVehicles() && (force || now - data.vehiclesAt > 60_000))
+      jobs.push(
+        DF.api("/vehicle-locations")
+          .then(r => ((data.vehicles = new Map(r.items.map(x => [x.tripId, x]))), (data.vehiclesAt = Date.now())))
+          .catch(() => (data.vehicles ??= new Map())),
       );
     data.loading = Promise.all(jobs).finally(() => (data.loading = null));
     return data.loading;
@@ -79,7 +88,7 @@
     });
   const PARCEL_COLOR = { BREACHED: "#c34d4d", AT_RISK: "#b87913", ON_TRACK: "#3766e8" };
 
-  function ensureMap(page, container) {
+  function ensureMap(page, container, only) {
     const L = window.L;
     let entry = maps[page];
     if (!entry) {
@@ -100,7 +109,10 @@
         parcels: L.layerGroup().addTo(map),
         riders: L.layerGroup().addTo(map),
         route: L.layerGroup().addTo(map),
+        vehicles: L.layerGroup().addTo(map),
         riderMarkers: new Map(),
+        vehicleMarkers: new Map(),
+        only,
         fitted: false,
       };
     }
@@ -119,7 +131,7 @@
       L.marker([h.lat, h.lng], { icon: pinIcon(L, "H", "#182230", 24), zIndexOffset: 500 }).bindTooltip(esc(h.name)).addTo(entry.hubs);
       if (!mine || mine.includes(h.id)) bounds.push([h.lat, h.lng]);
     }
-    for (const p of data.map?.parcels || []) {
+    for (const p of entry.only === "vehicles" ? [] : data.map?.parcels || []) {
       const color = p.status === "EXCEPTION" ? "#c34d4d" : PARCEL_COLOR[p.sla] || "#3766e8";
       L.circleMarker([p.lat, p.lng], { radius: p.kind === "pickup" ? 5 : 6, color: p.kind === "pickup" ? "#b87913" : color, weight: 2, fillColor: color, fillOpacity: p.approximate ? 0.25 : 0.7 })
         .bindTooltip(`${esc(p.trackingId)} · ${esc(p.statusLabel)} · ${esc(p.zone)}${p.approximate ? " (zone centre)" : ""}`)
@@ -127,8 +139,10 @@
         .addTo(entry.parcels);
       bounds.push([p.lat, p.lng]);
     }
-    drawRiders(entry);
+    if (entry.only !== "vehicles") drawRiders(entry);
+    drawVehicles(entry);
     for (const r of entry.riderMarkers.values()) bounds.push(r.getLatLng());
+    for (const v of entry.vehicleMarkers.values()) bounds.push(v.getLatLng());
     if (!entry.fitted && bounds.length) {
       entry.map.fitBounds(bounds, { padding: [24, 24], maxZoom: 14 });
       entry.fitted = true;
@@ -151,17 +165,32 @@
     for (const [id, marker] of entry.riderMarkers) if (!seen.has(id)) (entry.riders.removeLayer(marker), entry.riderMarkers.delete(id));
   }
 
+  const vehicleIcon = v => pinIcon(window.L, "V", v.stale ? "#98a2ae" : "#3766e8", 24);
+  const vehicleTip = v => `${esc(v.vehicleRegNo)} · ${esc(v.route)} · ${esc(v.number)} · ${v.stale ? `last seen ${esc(Ops.ago(v.at))}${v.sharing ? "" : " (sharing stopped)"}` : `live · ${esc(Ops.ago(v.at))}`}`;
+  function drawVehicles(entry) {
+    const L = window.L;
+    const seen = new Set();
+    for (const v of data.vehicles?.values() || []) {
+      seen.add(v.tripId);
+      const marker = entry.vehicleMarkers.get(v.tripId);
+      if (marker) marker.setLatLng([v.lat, v.lng]).setIcon(vehicleIcon(v)).setTooltipContent(vehicleTip(v));
+      else entry.vehicleMarkers.set(v.tripId, L.marker([v.lat, v.lng], { icon: vehicleIcon(v), zIndexOffset: 1100 }).bindTooltip(vehicleTip(v)).addTo(entry.vehicles));
+    }
+    for (const [id, marker] of entry.vehicleMarkers) if (!seen.has(id)) (entry.vehicles.removeLayer(marker), entry.vehicleMarkers.delete(id));
+  }
+
   function caption() {
     const tag = q("#mainContent .map-tag.tag-zone");
     const parcels = data.map?.parcels.length ?? 0;
     const riders = [...(data.riders?.values() || [])].filter(r => !r.stale).length;
-    const text = `${Ops.num(riders)} riders live · ${Ops.num(parcels)} parcels on the map${data.map?.unlocated ? ` · ${Ops.num(data.map.unlocated)} without a pin` : ""}`;
+    const vehicles = [...(data.vehicles?.values() || [])].filter(v => !v.stale).length;
+    const text = `${Ops.num(riders)} riders live${vehicles ? ` · ${Ops.num(vehicles)} vehicle${vehicles === 1 ? "" : "s"} on the road` : ""} · ${Ops.num(parcels)} parcels on the map${data.map?.unlocated ? ` · ${Ops.num(data.map.unlocated)} without a pin` : ""}`;
     const span = q("#mainContent .map-caption > span:first-child");
     if (span) span.textContent = text;
     if (tag) tag.textContent = text;
   }
 
-  async function mountMap(page) {
+  async function mountMap(page, only) {
     const container = q("#mainContent .map");
     if (!container || container === maps[page]?.host) return;
     try {
@@ -171,13 +200,14 @@
     }
     const current = q("#mainContent .map");
     if (!current || Ops.page() !== page) return;
-    const entry = ensureMap(page, current);
+    const entry = ensureMap(page, current, only);
     drawLayers(entry);
-    caption();
+    if (!only) caption();
     await loadData();
     if (Ops.page() !== page) return;
     drawLayers(entry);
-    caption();
+    if (!only) caption();
+    Ops.maps.onDraw?.(page);
   }
 
   for (const page of ["Overview", "Dispatch"]) {
@@ -203,6 +233,34 @@
       caption();
     }
   });
+  DF.events.on("vehicle.location", d => {
+    if (!d?.tripId || !data.vehicles) return;
+    const known = data.vehicles.get(d.tripId);
+    data.vehicles.set(d.tripId, { ...(known || { tripId: d.tripId, number: d.number, vehicleRegNo: d.vehicleRegNo, route: d.route }), lat: d.lat, lng: d.lng, at: d.at, sharing: true, stale: false });
+    const entry = maps[Ops.page()];
+    if (entry && document.body.contains(entry.host)) {
+      drawVehicles(entry);
+      if (!entry.only) caption();
+    }
+    Ops.maps.onDraw?.(Ops.page());
+  });
+  // Sharing started / stopped, or a trip arrived: reload the vehicles.
+  let vehicleTimer = null;
+  const reloadVehicles = () => {
+    clearTimeout(vehicleTimer);
+    vehicleTimer = setTimeout(async () => {
+      data.vehiclesAt = 0;
+      const entry = maps[Ops.page()];
+      if (!entry || !document.body.contains(entry.host)) return;
+      await loadData();
+      drawLayers(entry);
+      if (!entry.only) caption();
+      Ops.maps.onDraw?.(Ops.page());
+    }, 1500);
+  };
+  DF.events.on("vehicle.share", reloadVehicles);
+  DF.events.on("linehaul.updated", reloadVehicles);
+
   let pinTimer = null;
   const reloadPins = () => {
     clearTimeout(pinTimer);
@@ -304,5 +362,13 @@
     true,
   );
 
-  Ops.maps = { loadLeaflet, pinIcon };
+  Ops.maps = {
+    loadLeaflet,
+    pinIcon,
+    /** Mounts the kept Leaflet map into the page's `.map` element; only "vehicles" = hubs and vehicles (Transfers). */
+    mount: (page, only) => mountMap(page, only),
+    vehicles: () => [...(data.vehicles?.values() || [])],
+    reloadVehicles,
+    onDraw: null,
+  };
 })();

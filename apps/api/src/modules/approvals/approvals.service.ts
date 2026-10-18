@@ -1,4 +1,5 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { InboxService } from "../notifications/inbox.service";
 import { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -67,6 +68,8 @@ export class ApprovalsService {
     private readonly realtime: RealtimeService,
   ) {}
 
+  @Inject(InboxService) private readonly inbox!: InboxService;
+
   register<P>(handler: ChangeHandler<P>) {
     this.handlers.set(handler.kind, handler);
   }
@@ -112,6 +115,8 @@ export class ApprovalsService {
         },
       });
       await this.audit.record(actor, { action: "change.request", entityType: "change", entityId: created.id, data: { kind, summary } }, meta, tx);
+      // The other super admins' bell: a change waiting for a second approver (Approval center).
+      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"], except: actor.userId }, { type: "staff.change_approval", title: "Change waiting for your approval", body: `${actor.name}: ${summary}`, target: { page: "approval-center" }, panel: "/super-admin" });
       return created;
     });
     this.realtime.publish({ type: "change.updated", id: request.id, staffPermission: "change:approve" });

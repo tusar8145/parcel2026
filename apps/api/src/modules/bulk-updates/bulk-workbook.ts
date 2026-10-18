@@ -13,6 +13,10 @@ export interface BulkLists {
   districts: string[];
   zonesByDistrict: Record<string, string[]>;
   areasByZone: Record<string, string[]>;
+  /** Transfer: every active hub of the network (Destination hub). */
+  destHubs?: string[];
+  /** Transfer: open bags at the caller's hubs ("BG-… → hub · label"). */
+  bags?: string[];
 }
 
 export interface BulkWorkbookOptions {
@@ -40,6 +44,8 @@ const LIST_NAME: Record<BulkListKey, string> = {
   zones: "L_zones",
   areas: "L_areas",
   services: "L_services",
+  dest_hubs: "L_dest_hubs",
+  bags: "L_bags",
 };
 
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
@@ -67,6 +73,8 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
     ...(has("new_status") ? [{ title: "New status", values: statusLabels(t.statuses ?? []), name: LIST_NAME.statuses }] : []),
     ...(has("hub") ? [{ title: "Hubs", values: lists.hubs.map(h => h.label), name: LIST_NAME.hubs }] : []),
     ...(has("priority") ? [{ title: "Priority", values: [...PRIORITIES], name: LIST_NAME.priorities }] : []),
+    ...(has("dest_hub") ? [{ title: "Destination hubs", values: lists.destHubs ?? [], name: LIST_NAME.dest_hubs }] : []),
+    ...(has("bag") ? [{ title: "Open bags", values: lists.bags?.length ? lists.bags : ["(no open bag: type a label)"], name: LIST_NAME.bags }] : []),
     ...(withDetails
       ? [
           { title: "Services", values: [...SERVICES], name: LIST_NAME.services },
@@ -176,6 +184,12 @@ function rules(id: BulkActionId, has: (key: BulkColumnKey) => boolean): string[]
   if (has("suggested_rider")) out.push("Leave Rider empty to use the Suggested rider.");
   if (has("priority")) out.push("Rows with Priority High are applied first (they get riders before the others).");
   if (t.action === "ASSIGN_DELIVERY") out.push('A delivery rider can only be assigned when the recipient name, phone, address, district and zone are known: fill the Set … columns of a "Needs info" order in the same row.');
+  if (t.action === "ADD_TO_BAG")
+    out.push(
+      "Only parcels at your hub that aren't in a bag yet. The Destination hub must be another hub; a bag from the list must be open and go from the parcel's hub to that destination.",
+      "Rows with the same destination and the same Bag label go into one bag (an open bag with that label is reused); an empty Bag gives one bag per destination for this upload.",
+      "Parcels stay \"At hub\" in their bags; they become \"In transit\" only when the trip departs.",
+    );
   if (t.action === "SET_STATUS") out.push("Status changes follow the parcel lifecycle; Delivered is never set here (only the rider, with proof and COD).");
   if (has("set_district")) out.push("Set zone follows Set district and Set area follows Set zone. The order is re-priced with the tariff frozen at booking; the preview shows the new price.");
   out.push("Hub operators work only on their own hubs' parcels.");

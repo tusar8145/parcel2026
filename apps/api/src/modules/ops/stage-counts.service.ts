@@ -3,6 +3,8 @@ import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import type { Prisma } from "../../generated/prisma/client";
 import { BACK_AFTER_FAILURE, forHubsWhere, RETURN_REQUESTED, stageWhere, type ParcelStage, type stageCountsQuerySchema } from "../parcels/parcel-stages";
+import { periodView, resolvePeriod } from "../../common/period";
+import { periodMetricsWithPrevious } from "./period-metrics";
 
 /**
  * Parcels per journey stage for Courier Operations' menu badges, Today cards and stage metrics,
@@ -13,7 +15,7 @@ import { BACK_AFTER_FAILURE, forHubsWhere, RETURN_REQUESTED, stageWhere, type Pa
 export class StageCountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async counts(query: z.infer<typeof stageCountsQuerySchema>) {
+  async counts(query: z.infer<typeof stageCountsQuerySchema> & { from?: string; to?: string }) {
     const now = new Date();
     const hubIds = query.forHubIds?.length ? query.forHubIds : null;
     const scope: Prisma.ParcelWhereInput = hubIds ? await forHubsWhere(this.prisma, hubIds) : {};
@@ -36,6 +38,9 @@ export class StageCountsService {
       count(RETURN_REQUESTED),
       count(BACK_AFTER_FAILURE),
     ]);
+    // The period's figures (Today's metrics row) for the same scope, only when asked for.
+    const period = query.from && query.to ? resolvePeriod(query, "today", now) : null;
+    const metrics = period ? await periodMetricsWithPrevious(this.prisma, period, scope) : undefined;
     return {
       generatedAt: now,
       hubIds,
@@ -51,6 +56,7 @@ export class StageCountsService {
       },
       /** The parts the stage pages show (failed = retry scheduled + backAfterFailure: at a hub after a failed attempt). */
       detail: { newOrders, pickupWaiting, pickingUp, hub, transfers, deliveryWaiting, delivery, exceptions, failed, backAfterFailure, needsInfo, slaRisk, problems, returnRequests, returnsScheduled },
+      ...(period ? { period: periodView(period), metrics } : {}),
     };
   }
 }

@@ -45,6 +45,8 @@
   let composerOpen = role === "customer";
   let prefilled = {};
   let handledHash = "";
+  /** A ticket asked for by a link (?ticket=, a notification) until the tickets have loaded. */
+  let wantedTicket = "";
 
   // ───────────── data ─────────────
 
@@ -282,7 +284,7 @@
         <label>Priority<select name="priority"><option>Normal</option><option ${prefilled.priority === "High" ? "selected" : ""}>High</option><option>Low</option></select></label>
         <label class="st-span">Tracking or reference number <span class="st-optional">(optional)</span><input name="relatedRef" maxlength="40" value="${escapeHtml(prefilled.relatedRef || "")}" placeholder="e.g. PP-28491"></label>
         <label class="st-span">Message<textarea name="message" required maxlength="3000" rows="4" placeholder="Tell us what happened and how we can help"></textarea></label>
-        <label class="st-span">Attachments <span class="st-optional">(up to 3 files, 350 KB each; images or PDF)</span><input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple></label>
+        <label class="st-span">Attachments <span class="st-optional">(optional)</span><input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple data-file-drop data-file-hint="Images (PNG, JPEG, WebP) or PDF · up to 3 files, 350 KB each"></label>
       </div>
       <div class="st-actions"><span class="st-note">Courier operations replies in this conversation.</span><button class="button button-primary" type="submit">Create support ticket</button></div>
     </form>`;
@@ -325,7 +327,8 @@
       ${csatMarkup(ticket)}
       ${locked ? `<div class="st-locked">This ticket is closed. Operations can reopen it by changing the status.</div>` : `<form class="st-reply" data-support-reply="${escapeHtml(ticket.id)}">
         <label class="st-sr-only" for="supportReply">Write a reply</label><textarea id="supportReply" name="message" required maxlength="3000" rows="3" placeholder="Write a reply to this conversation"></textarea>
-        <div class="st-reply-bottom">${cannedPicker()}<label class="st-file-label">Attach files<input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple></label>${internalToggle}<span class="st-note">Up to 3 files · 350 KB each</span><button class="button button-primary" type="submit">Send reply</button></div>
+        <div class="st-reply-file"><input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple aria-label="Attach files" data-file-button="Attach files" data-file-hint="Images or PDF · up to 3 files, 350 KB each"></div>
+        <div class="st-reply-bottom">${cannedPicker()}${internalToggle}<button class="button button-primary" type="submit">Send reply</button></div>
       </form>`}`;
   }
 
@@ -347,7 +350,11 @@
     }
     const loading = !store.loaded;
     const tickets = [...visibleTickets()].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
-    if (!tickets.some(ticket => ticket.id === selectedTicketId)) selectedTicketId = tickets[0]?.id || "";
+    if (wantedTicket) {
+      selectedTicketId = wantedTicket;
+      if (!loading) wantedTicket = "";
+    }
+    if (!loading && !tickets.some(ticket => ticket.id === selectedTicketId)) selectedTicketId = tickets[0]?.id || "";
     const selected = tickets.find(ticket => ticket.id === selectedTicketId);
     const openCount = tickets.filter(ticket => !["Resolved", "Closed"].includes(ticket.status)).length;
     const list = loading
@@ -905,7 +912,7 @@
     .st-internal-toggle{display:flex;align-items:center;gap:5px;color:#a76a0d;font-size:12px;font-weight:600;cursor:pointer}
     .st-composer{margin-bottom:14px;padding:16px;background:#fff;border:1px solid var(--line);border-radius:9px}
     .st-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.st-form-grid label{display:grid;gap:5px;color:#637083;font-size:12px;font-weight:600}.st-form-grid .st-span{grid-column:1/-1}
-    .st-composer textarea{resize:vertical}.st-composer input[type=file]{font-size:12px}
+    .st-composer textarea{resize:vertical}.st-composer input[type=file]{font-size:12px}.st-reply-file{margin-top:8px}
     .st-empty{padding:34px 18px;text-align:center;color:var(--muted,#7b8796)}.st-empty strong{color:var(--ink,#182230)}.st-empty p{font-size:13px;line-height:1.5}
     .st-demo-note{margin:11px 0}.st-error{color:#b5473c}.st-locked{padding:12px;color:#7b8796;font-size:13px;background:#f8fafc;border-radius:7px}
     .st-page-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 16px}.st-page-heading .subtitle{margin:7px 0 0}
@@ -913,6 +920,22 @@
     @media(max-width:760px){.st-layout{grid-template-columns:1fr}.st-thread-head{flex-direction:column}.st-controls,.st-status-control{width:100%}.st-summary{gap:7px}.st-summary>div{padding:11px}.st-form-grid{grid-template-columns:1fr}.st-form-grid .st-span{grid-column:auto}.st-reply-bottom,.st-actions{align-items:flex-start;flex-wrap:wrap}.st-actions .st-note{width:100%}}
   `;
   document.head.append(style);
+
+  /** Opens a ticket by number (deep links ?ticket=…, notifications): the Support page with that conversation. */
+  window.DFSupport = {
+    open(number) {
+      const ticket = String(number || "").trim().toUpperCase();
+      if (!ticket) return;
+      if (role === "customer") return void DF.route.go(`support/${encodeURIComponent(ticket)}`);
+      if (!canUseSupport()) return;
+      wantedTicket = ticket;
+      selectedTicketId = ticket;
+      window[role === "merchant" ? "renderPage" : "render"]?.("Support");
+      if (store.loaded) ensureDetail(ticket);
+    },
+    /** The new-ticket form, prefilled ({ subject, category, relatedRef }): e.g. the merchant parcel drawer's "Open a ticket about this parcel". */
+    compose: prefill => showComposer(prefill),
+  };
 
   initializeNavigation();
   if (role === "rider") setupRiderRequests();

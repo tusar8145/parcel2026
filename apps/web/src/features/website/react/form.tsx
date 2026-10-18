@@ -200,9 +200,9 @@ export function PhoneInput({ bound, error, placeholder = "17XXXXXXXX", disabled 
   );
 }
 
-export function Select({ bound, error, options, placeholder }: { bound: Bound; error?: string; options: (string | [string, string])[]; placeholder?: string }) {
+export function Select({ bound, error, options, placeholder, disabled }: { bound: Bound; error?: string; options: (string | [string, string])[]; placeholder?: string; disabled?: boolean }) {
   return (
-    <select {...bound} style={invalidBorder(error)}>
+    <select {...bound} style={invalidBorder(error)} disabled={disabled}>
       {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
       {options.map(o => {
         const [value, label] = Array.isArray(o) ? o : [o, o];

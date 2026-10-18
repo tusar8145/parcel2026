@@ -15,6 +15,10 @@ import {
 import { OpsService } from "./ops.service";
 import { StageCountsService } from "./stage-counts.service";
 import { stageCountsQuerySchema } from "../parcels/parcel-stages";
+import { periodQueryShape, periodChecks, periodQuerySchema, type PeriodQuery } from "../../common/period";
+
+/** Stage counts, plus the period's metrics when from / to are sent. */
+const opsStageCountsQuerySchema = stageCountsQuerySchema.extend(periodQueryShape).superRefine(periodChecks);
 
 /** Courier Operations console: network counters, dispatch, analytics, reports and bookings by staff. */
 @ApiTags("operations")
@@ -25,18 +29,25 @@ export class OpsController {
     private readonly stages: StageCountsService,
   ) {}
 
-  /** Live counters for the command center, nav badges and priority alerts, plus what the caller may do. */
+  /**
+   * Live counters for the command center, nav badges and priority alerts, plus what the caller may do;
+   * `metrics` = what happened in the period (from / to, Dhaka days; default today).
+   */
   @RequirePermissions("parcel:read:any")
   @Get("overview")
-  overview(@CurrentActor() actor: Actor) {
-    return this.ops.overview(actor);
+  @ApiZodQuery(periodQuerySchema)
+  overview(@CurrentActor() actor: Actor, @Query(new ZodPipe(periodQuerySchema)) query: PeriodQuery) {
+    return this.ops.overview(actor, query);
   }
 
-  /** Parcels per journey stage (menu badges, Today cards, stage metrics); `forHubIds` counts "my hub" only. */
+  /**
+   * Parcels per journey stage (menu badges, Today cards, stage metrics); `forHubIds` counts "my hub" only.
+   * With from / to (Dhaka days) also `metrics`: booked, picked up, delivered, COD collected… in that period.
+   */
   @RequirePermissions("parcel:read:any")
   @Get("stage-counts")
-  @ApiZodQuery(stageCountsQuerySchema)
-  stageCounts(@Query(new ZodPipe(stageCountsQuerySchema)) query: z.infer<typeof stageCountsQuerySchema>) {
+  @ApiZodQuery(opsStageCountsQuerySchema)
+  stageCounts(@Query(new ZodPipe(opsStageCountsQuerySchema)) query: z.infer<typeof opsStageCountsQuerySchema>) {
     return this.stages.counts(query);
   }
 
@@ -47,11 +58,12 @@ export class OpsController {
     return this.ops.dispatch(actor);
   }
 
-  /** On-time, first-attempt, return, pickup and exception-resolution metrics: today, this month, last month. */
+  /** On-time, first-attempt, return, pickup and exception-resolution metrics: today, this month, last month and the period (from / to; default today). */
   @RequirePermissions("parcel:read:any")
   @Get("analytics")
-  analytics() {
-    return this.ops.analytics();
+  @ApiZodQuery(periodQuerySchema)
+  analytics(@Query(new ZodPipe(periodQuerySchema)) query: PeriodQuery) {
+    return this.ops.analytics(query);
   }
 
   /** Parcels per rider in a date range (Dhaka days), with the records for run sheets. */

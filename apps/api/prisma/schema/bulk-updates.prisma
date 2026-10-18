@@ -65,6 +65,8 @@ model BulkUpdateJob {
   startedAt        DateTime?
   completedAt      DateTime?
   rowsPurgedAt     DateTime?
+  /// Apply options of action templates that have them (transfer: { seal, tripId, newTrip }) and their outcome ({ result }).
+  options          Json?
   rows             BulkUpdateRow[]
 
   @@index([createdById, createdAt])

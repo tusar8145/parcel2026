@@ -8,6 +8,7 @@ import { forbidden } from "../../common/errors";
 import { createSettlementSchema, listSettlementsQuerySchema, paySettlementSchema } from "./finance.schemas";
 import { isFinanceStaff } from "./finance.scope";
 import { SettlementsService } from "./settlements.service";
+import { periodQuerySchema, type PeriodQuery } from "../../common/period";
 
 @ApiTags("finance")
 @Controller()
@@ -61,11 +62,12 @@ export class SettlementsController {
     await this.settlements.remove(actor, id, meta);
   }
 
-  /** Company-wide money position; finance staff only. */
+  /** Company-wide money position now, plus `period` figures (from / to, Dhaka days; default this month); finance staff only. */
   @RequirePermissions("finance:read")
   @Get("finance/summary")
-  summary(@CurrentActor() actor: Actor) {
+  @ApiZodQuery(periodQuerySchema)
+  summary(@CurrentActor() actor: Actor, @ZQuery(periodQuerySchema) query: PeriodQuery) {
     if (!isFinanceStaff(actor)) throw forbidden("Only finance staff can see the company summary");
-    return this.settlements.summary();
+    return this.settlements.summary(query);
   }
 }

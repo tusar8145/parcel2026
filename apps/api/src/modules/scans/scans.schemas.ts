@@ -15,6 +15,8 @@ export const SCAN_KINDS = [
   "RIDER_PICKUP",
   "RIDER_OUT_FOR_DELIVERY",
   "RIDER_DELIVERY",
+  /** Rider app "Hand over at hub": the parcel is on the rider's handover list for that hub. */
+  "RIDER_HANDOVER",
 ] as const;
 export type ScanKind = (typeof SCAN_KINDS)[number];
 

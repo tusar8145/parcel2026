@@ -6,6 +6,9 @@
  * - Overview, My route, Earnings, Performance and Settings from GET /rider/summary (today's,
  *   this week's and this month's work), GET /rider/cash (COD in hand), GET /rider/earnings
  *   (the real earnings ledger, plan and payouts) and GET /rider/handover-requests.
+ * - Start delivery (Deliveries list button, scan page "Mark out for delivery", scan section "Start
+ *   deliveries"): POST /rider/parcels/:id/start-delivery sends the recipient a fresh delivery code by
+ *   SMS. Assignment sends none, so the OTP proof only appears once the delivery has started.
  * - Scan page: pickup, "Mark out for delivery" (POST /rider/parcels/:id/start-delivery),
  *   delivery, exception and return-to-hub; recent scans are the rider's own tracking events.
  * - Task actions go through DFOffline.send (offline.js): run at once when online, otherwise
@@ -432,7 +435,44 @@
     setText(q("#mainContent .table-panel .panel-subtitle"), `${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · ${rows} stop${rows === 1 ? "" : "s"}`);
     const foot = q("#mainContent .table-panel > div:last-child");
     if (foot) foot.textContent = rows ? `Showing all ${rows} ${name === "Deliveries" ? "deliveries" : "pickups"} assigned to you` : `No ${name === "Deliveries" ? "deliveries" : "pickups"} assigned to you right now`;
+    // Not started yet: a "Start delivery" button, and the recipient's code is still to come.
+    if (name !== "Deliveries") return;
+    for (const button of qa("#tableBody [data-delivery]")) {
+      const task = deliveryTask(button.dataset.delivery);
+      if (!task || task._queued || !["ASSIGNED", "RETRY_SCHEDULED"].includes(task.status)) continue;
+      button.insertAdjacentHTML("beforebegin", `<button class="button button-sm button-primary" style="margin-right:6px" data-df-start="${esc(task.trackingId)}">Start delivery</button>`);
+      const usesCode = !Array.isArray(task.proofMethods) || task.proofMethods.includes("OTP");
+      const hint = task.status === "ASSIGNED" ? "Code will be sent when you start the delivery" : "A new code is sent when you start the delivery again";
+      if (usesCode) button.closest("tr")?.querySelector("td.tracking")?.insertAdjacentHTML("beforeend", `<span class="subcell" data-df-code-hint>${esc(hint)}</span>`);
+    }
   }
+
+  // "Start delivery": out for delivery, and the recipient gets a fresh delivery code by SMS.
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target.closest("[data-df-start]");
+      if (!button) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const id = button.dataset.dfStart;
+      const fromDialog = !!button.closest("#actionModal");
+      button.disabled = true;
+      post(id, "start-delivery")
+        .then(async outcome => {
+          if (modalOpen()) closeModal();
+          await refresh().catch(() => undefined);
+          showToast(outcome?.queued ? `${queuedText(id)} The delivery code is sent when it syncs.` : `${id} is out for delivery. Delivery code sent to the recipient.`);
+          // Started from the delivery screen: reopen it, now with the code field.
+          if (fromDialog && !outcome?.queued) openModal("delivery", id);
+        })
+        .catch(error => {
+          button.disabled = false;
+          showToast(DF.describe(error));
+        });
+    },
+    true,
+  );
 
   const baseRender = render;
   render = function (name) {
@@ -467,6 +507,19 @@
       method.dispatchEvent(new Event("change"));
       const flags = [parcel.openBox ? "Open box allowed: the recipient may open and check before paying." : "", parcel.onDemand ? "On-demand: top priority." : ""].filter(Boolean);
       if (flags.length) $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags style="color:#0f7a4f;font-weight:600">${esc(flags.join(" "))}</p>`);
+    }
+    // The delivery code reaches the recipient only when the delivery starts: no OTP proof before that.
+    const task = deliveryTask(id);
+    if (type === "delivery" && task && method && !task.deliveryCodeSent) {
+      const otpOption = [...method.options].find(o => (o.value || o.textContent) === "OTP");
+      if (otpOption) {
+        otpOption.remove();
+        method.dispatchEvent(new Event("change"));
+        const queued = !!task._queued && task.status === "OUT_FOR_DELIVERY";
+        const text = queued ? "The delivery code is sent to the recipient when your start syncs." : "Start the delivery first; the code is sent to the recipient then.";
+        const start = queued ? "" : ` <button type="button" class="button button-sm button-primary" data-df-start="${esc(id)}">Start delivery</button>`;
+        $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags data-df-start-hint style="color:#b87913;font-weight:600">${esc(text)}${start}</p>`);
+      }
     }
     const otp = $("deliveryOtp");
     if (otp && apiParcel(id)) {
@@ -595,6 +648,7 @@
       if (outcome === "Delivered successfully") {
         const method = $("proofMethod").value;
         return void submit(async () => {
+          if (!method) throw new Error("Start the delivery first; the code is sent to the recipient then.");
           let proof;
           // When and where the proof was taken (device clock + GPS), also stamped onto the image.
           const capture = DF.proof ? await DF.proof.capture() : { capturedAt: new Date().toISOString() };
@@ -722,7 +776,7 @@
       if (!delivery) return void showToast(`Collect ${id} first: choose “Confirm parcel pickup”.`);
       if (action === "Mark out for delivery") {
         if (delivery.status === "OUT_FOR_DELIVERY") return void showToast(`${id} is already out for delivery.`);
-        return void post(id, "start-delivery").then(done(`${id} is out for delivery. The recipient has their delivery code.`)).catch(fail);
+        return void post(id, "start-delivery").then(done(`${id} is out for delivery. Delivery code sent to the recipient.`)).catch(fail);
       }
       if (action === "Confirm delivery") return void openModal("delivery", id);
       if (action === "Report delivery exception") {

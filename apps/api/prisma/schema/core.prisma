@@ -57,6 +57,7 @@ model User {
   mfaRecoveryCodes        MfaRecoveryCode[]
   emailVerifications      EmailVerification[]
   notificationPreferences NotificationPreference[]
+  inAppNotifications      UserNotification[]
 
   @@map("users")
 }
@@ -612,6 +613,11 @@ model Parcel {
   @@index([collectHubId, status])
   @@index([packageVersionId])
   @@index([productId])
+  /// Period figures on the dashboards (Dhaka day ranges): bookings, pickups, deliveries.
+  @@index([createdAt])
+  @@index([deliveredAt])
+  @@index([pickedUpAt])
+  @@index([merchantId, deliveredAt])
   @@map("parcels")
 }
 
@@ -715,6 +721,7 @@ model CodCollection {
   @@index([riderId, state])
   @@index([state])
   @@index([hubId, state])
+  @@index([collectedAt])
   @@map("cod_collections")
 }
 
@@ -766,6 +773,7 @@ model MerchantSettlement {
   statementLines   BankStatementLine[]
 
   @@index([merchantId, createdAt])
+  @@index([status, paidAt])
   @@map("merchant_settlements")
 }
 

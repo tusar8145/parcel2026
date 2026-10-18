@@ -3,6 +3,7 @@ import { emailSchema, isBdMobile, normalizeBdPhone, phoneSchema } from "@deliver
 import { pageQuerySchema } from "../../common/pagination";
 import { WEBHOOK_EVENTS } from "../notifications/webhooks.service";
 import { apiKeyScopesSchema } from "./api-key-scopes";
+import { periodChecks, periodQueryShape } from "../../common/period";
 
 const text = (min: number, max: number) => z.string().trim().min(min, `Use at least ${min} characters`).max(max, `Use at most ${max} characters`);
 
@@ -166,9 +167,13 @@ export const listPlansQuerySchema = z.object({
 });
 
 /** Dashboard window: the last 7 or 30 days (by day) or this calendar year (by month), Dhaka time. */
-export const merchantStatsQuerySchema = merchantSelectorSchema.extend({
-  period: z.enum(["7d", "30d", "year"], "Choose 7d, 30d or year").default("7d"),
-});
+/** `period`: the older chart (7d / 30d / year). from / to (Dhaka days, default this month): the dashboard's `range` figures and chart. */
+export const merchantStatsQuerySchema = merchantSelectorSchema
+  .extend({
+    period: z.enum(["7d", "30d", "year"], "Choose 7d, 30d or year").default("7d"),
+    ...periodQueryShape,
+  })
+  .superRefine(periodChecks);
 
 // ───────────── administration: review, notes, invitations ─────────────
 
@@ -183,7 +188,8 @@ export const inviteMerchantSchema = z
     businessName: text(2, 120).optional(),
     phone: phoneSchema.optional(),
     email: emailSchema.optional(),
-    type: merchantTypeSchema.optional(),
+    /** The panel the merchant is invited to; website customers are never invited. */
+    type: z.enum(["ECOMMERCE", "BANKING_FINANCIAL"], "Choose the merchant type: ECOMMERCE (E-commerce) or BANKING_FINANCIAL (Banking & Financial)"),
     message: text(2, 500).optional(),
     /** How long the link works, 1–30 days (default 14). */
     expiresInDays: z.number().int().min(1).max(30).default(14),

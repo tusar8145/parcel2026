@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -8,6 +8,7 @@ import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { Prisma } from "../../generated/prisma/client";
 import { cashHubScope } from "../finance/finance.scope";
+import { InboxService } from "../notifications/inbox.service";
 import type { completeHandoverRequestSchema, handoverRequestSchema, handoverRequestsQuerySchema } from "./rider.schemas";
 
 const include = {
@@ -45,6 +46,8 @@ export class HandoverRequestsService {
     private readonly realtime: RealtimeService,
   ) {}
 
+  @Inject(InboxService) private readonly inbox!: InboxService;
+
   /** Requests all of the rider's cash (GET /rider/cash) that isn't already in a pending request. */
   async create(actor: UserActor, input: z.infer<typeof handoverRequestSchema>, meta: RequestMeta) {
     if (!actor.riderId) throw forbidden("Only riders can request a cash handover");
@@ -61,6 +64,12 @@ export class HandoverRequestsService {
       const amount = collections.reduce((a, c) => a.plus(c.amount), new Prisma.Decimal(0));
       const row = await tx.cashHandoverRequest.create({ data: { riderId, hubId: hub.id, amount, collectionIds: collections.map(c => c.id), note: input.note }, include });
       await this.audit.record(actor, { action: "cod.handover_request.create", entityType: "cash_handover_request", entityId: row.id, data: { hubId: hub.id, amount: amount.toFixed(2), collections: collections.length } }, meta, tx);
+      // The hub's operators: cash to receive (Courier Operations › COD & settlement).
+      await this.inbox.toStaff(
+        tx,
+        { roles: ["HUB_OPERATOR"], hubIds: [hub.id] },
+        { type: "staff.cash_handover", title: `Cash handover: ${row.rider.user.name}`, body: `Tk ${amount.toFixed(2)} · ${collections.length} COD collection${collections.length === 1 ? "" : "s"} · ${hub.name}`, target: { page: "cod-and-settlement" }, panel: "/courier-operation" },
+      );
       return row;
     });
     this.publish(request);

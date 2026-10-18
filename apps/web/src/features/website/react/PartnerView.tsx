@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { df, describe, site, toast } from "./df";
 import { FieldError, PhoneInput, Select, TextInput, e164, rules, useBusy, useForm, local10 } from "./form";
 
@@ -69,6 +69,8 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
   });
   const { busy, run } = useBusy();
   const user = df().auth.user;
+  /** The merchant type fixed by an invitation link (the panel the merchant was invited to). */
+  const [invitedType, setInvitedType] = useState<"ECOMMERCE" | "BANKING_FINANCIAL" | null>(null);
 
   // Prefill from the account, or restore what was typed before signing in.
   useEffect(() => {
@@ -89,16 +91,18 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
     if (token)
       df()
         .api<{ name?: string; businessName?: string; type?: string; phone?: string; email?: string | null }>("/merchants/invites/lookup", { method: "POST", body: { token } })
-        .then(invite =>
+        .then(invite => {
+          const invited = invite.type === "BANKING_FINANCIAL" || invite.type === "ECOMMERCE" ? invite.type : null;
+          setInvitedType(invited);
           form.setValues(v => ({
             ...v,
-            merchantAccountType: invite.type === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : v.merchantAccountType,
+            merchantAccountType: invited === "BANKING_FINANCIAL" ? "Banking & Financial merchant" : invited === "ECOMMERCE" ? "E-commerce merchant" : v.merchantAccountType,
             partnerName: v.partnerName || invite.businessName || "",
             partnerContact: v.partnerContact || invite.name || "",
             partnerPhone: v.partnerPhone || (invite.phone ? local10(invite.phone) : ""),
             partnerEmail: v.partnerEmail || invite.email || "",
-          })),
-        )
+          }));
+        })
         .catch(err => {
           toast(`${describe(err)} You can still apply without the invitation.`);
           try {
@@ -184,11 +188,11 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
       <FieldError id={name} message={form.error(name)} />
     </div>
   );
-  const select = (name: keyof Values, label: string, options: (string | [string, string])[], placeholder?: string, hidden?: boolean) => (
+  const select = (name: keyof Values, label: string, options: (string | [string, string])[], placeholder?: string, hidden?: boolean, disabled?: boolean) => (
     // #merchantSectorField: the page script (01.js) toggles it when the account type changes.
     <div className="field" hidden={hidden} id={name === "merchantSector" ? "merchantSectorField" : undefined}>
       <label htmlFor={name}>{`${label} *`}</label>
-      <Select bound={form.bind(name)} error={form.error(name)} options={options} placeholder={placeholder} />
+      <Select bound={form.bind(name)} error={form.error(name)} options={options} placeholder={placeholder} disabled={disabled} />
       <FieldError id={name} message={form.error(name)} />
     </div>
   );
@@ -207,7 +211,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
           {select("merchantAccountType", "Merchant account type", [
             ["E-commerce merchant", "E-commerce merchant — online shop and product parcels"],
             ["Banking & Financial merchant", "Banking & Financial merchant — bank, fintech, or institution"],
-          ])}
+          ], undefined, false, invitedType !== null)}
           {select("merchantSector", "Institution type", ["Bank", "Fintech / payments", "Insurance / financial services", "Other institution"], "Select institution type", !isDoc(form.values))}
           {text("partnerName", "Business / institution name", "Registered business or institution name", { autoComplete: "organization" })}
           {text("partnerContact", "Contact person", "Your full name", { autoComplete: "name" })}

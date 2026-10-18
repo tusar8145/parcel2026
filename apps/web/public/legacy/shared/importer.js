@@ -26,7 +26,10 @@
  *        parcels and actions from GET /bulk-updates/kinds; default all), bulkAction?: "accept_pickup"|… (skip the
  *        "Choose an action" step), filters?: { preset, status,
  *        merchantId, hubId, intake, sla, from, to, incomplete }, line?: "ecommerce"|"document"|"customer",
- *        merchants?: [{id, code, name}], hubs?: [{id, name}], tones?, onDone?(job) }
+ *        merchants?: [{id, code, name}], hubs?: [{id, name}], tones?, onDone?(job),
+ *        applyExtra?(job) → HTML shown under the preview (apply options, e.g. Transfers: seal / trip),
+ *        applyMount?(job) after it is drawn, applyBody?(job) → the apply request body (false = don't apply yet),
+ *        resultExtra?(job) → HTML shown on the result step (e.g. the bags and trips a transfer made) }
  */
 (() => {
   const DF = window.DF;
@@ -117,12 +120,6 @@
       backdrop = document.getElementById("dfImportBackdrop");
       backdrop.addEventListener("click", onClick);
       backdrop.addEventListener("change", onChange);
-      backdrop.addEventListener("input", event => {
-        if (event.target.id !== "dfiMerchantSearch" || !ui) return;
-        ui.merchantSearch = event.target.value;
-        const select = document.getElementById("dfiMerchant");
-        if (select) select.innerHTML = merchantOptions(merchantsOf(ui.cfg));
-      });
       backdrop.addEventListener("keydown", event => {
         if (event.key === "Enter" && event.target.id === "dfiJump") {
           event.preventDefault();
@@ -259,7 +256,8 @@
       if (needsMerchant(cfg)) {
         const all = merchantsOf(cfg);
         options.push(
-          `<label style="${optionLabel}">Merchant<input type="search" class="table-search" id="dfiMerchantSearch" placeholder="Search by code or name" autocomplete="off" value="${esc(ui.merchantSearch || "")}" style="width:100%"><select class="select-small" id="dfiMerchant" aria-label="Merchant">${merchantOptions(all)}</select></label>`,
+          // Searchable (shared/select-search.js): type a code or name in the list.
+          `<label style="${optionLabel}">Merchant<select class="select-small" id="dfiMerchant" aria-label="Merchant" data-search>${merchantOptions(all)}</select></label>`,
         );
       }
     }
@@ -290,33 +288,20 @@
 
   /** Active merchants of the dialog's category. */
   const merchantsOf = cfg => (cfg.merchants || []).filter(m => !m.type || m.type === MERCHANT_TYPE[cfg.kind]);
-  /** The merchant select's options, filtered by the search box (the chosen one always stays). */
+  /** The merchant select's options (searchable: shared/select-search.js). */
   function merchantOptions(all) {
-    const term = (ui.merchantSearch || "").trim().toLowerCase();
-    const shown = all.filter(m => !term || `${m.code} ${m.name}`.toLowerCase().includes(term) || m.id === ui.merchantId);
-    const placeholder = shown.length ? `Choose the merchant (${shown.length}${shown.length === all.length ? "" : ` of ${all.length}`})` : "No merchant matches";
-    return `<option value="">${esc(placeholder)}</option>${shown.map(m => `<option value="${esc(m.id)}" ${m.id === ui.merchantId ? "selected" : ""}>${esc(`${m.code} · ${m.name}`)}</option>`).join("")}`;
+    const placeholder = all.length ? `Choose the merchant (${all.length})` : "No active merchant in this category";
+    return `<option value="">${esc(placeholder)}</option>${all.map(m => `<option value="${esc(m.id)}" ${m.id === ui.merchantId ? "selected" : ""}>${esc(`${m.code} · ${m.name}`)}</option>`).join("")}`;
   }
 
-  const fileDrop = () => `<label for="dfiFile" id="dfiDrop" style="display:block;border:2px dashed #c7d2e0;border-radius:12px;padding:26px 16px;text-align:center;cursor:pointer;background:#fff">
-        <strong style="display:block;font-size:15px">${ui.file ? esc(ui.file.name) : "Choose the filled-in file"}</strong>
-        <span class="panel-subtitle" id="dfiFileInfo">${ui.file ? `${esc(fmt(Math.ceil(ui.file.size / 1024)))} KB · ready to check` : "or drop it here · .xlsx or .csv"}</span>
-        <input type="file" id="dfiFile" accept="${ACCEPT}" style="display:none">
-      </label>`;
+  // The shared "Choose file" drop zone (shared/file-input.js): click or drop, name and size, clear (×).
+  const fileDrop = () => `<div id="dfiDrop"><input type="file" id="dfiFile" accept="${ACCEPT}" aria-label="The filled-in file" data-file-drop data-max-mb="${esc(ui.limits.maxFileMb)}"></div>`;
 
-  /** Drag and drop onto the file box. */
+  /** Makes the file box a drop zone and shows the file already picked (the step re-renders after a pick). */
   function dropZone() {
-    const drop = document.getElementById("dfiDrop");
-    drop.addEventListener("dragover", event => {
-      event.preventDefault();
-      drop.style.borderColor = "#3766e8";
-    });
-    drop.addEventListener("dragleave", () => (drop.style.borderColor = ""));
-    drop.addEventListener("drop", event => {
-      event.preventDefault();
-      drop.style.borderColor = "";
-      if (event.dataTransfer?.files?.[0]) pick(event.dataTransfer.files[0]);
-    });
+    const input = document.getElementById("dfiFile");
+    if (!input) return;
+    if (DF.fileInput) DF.fileInput(input, { drop: true, maxMb: ui.limits.maxFileMb, file: ui.file || undefined });
   }
 
   function pick(file) {
@@ -512,7 +497,13 @@
   async function commit(target) {
     target.disabled = true;
     try {
-      const job = await DF.api(isBulk() ? q(`/bulk-updates/${ui.job.id}/apply`, { kind: bulkKind(), action: ui.job.action || undefined }) : `/imports/${ui.job.id}/commit`, { method: "POST" });
+      // Apply options of the page (Transfers: seal the bags, load them on a trip); false = not ready.
+      const body = isBulk() && ui.cfg.applyBody ? await ui.cfg.applyBody(ui.job) : undefined;
+      if (body === false) {
+        target.disabled = false;
+        return;
+      }
+      const job = await DF.api(isBulk() ? q(`/bulk-updates/${ui.job.id}/apply`, { kind: bulkKind(), action: ui.job.action || undefined }) : `/imports/${ui.job.id}/commit`, { method: "POST", ...(body ? { body } : {}) });
       if (!ui) return;
       ui.job = job;
       if (["COMPLETED", "FAILED"].includes(job.status)) return finish();
@@ -725,15 +716,20 @@
 
   function onChange(event) {
     if (!ui) return;
-    if (event.target.id === "dfiFile" && event.target.files?.[0]) {
+    if (event.target.id === "dfiFile") {
       readOptions();
-      return pick(event.target.files[0]);
+      if (event.target.files?.[0]) return pick(event.target.files[0]);
+      // Cleared with ×: back to "choose a file".
+      if (ui.file) {
+        ui.file = null;
+        return chooseStep();
+      }
+      return;
     }
     if (event.target.id === "dfiKind") {
       readOptions();
       ui.cfg.kind = event.target.value;
       ui.merchantId = "";
-      ui.merchantSearch = "";
       return void loadPackage().then(() => ui && chooseStep());
     }
     if (event.target.id === "dfiIntake") {
@@ -1068,13 +1064,15 @@
           ["warning", "Warnings", c.warnings],
           ["error", "Errors", c.errors],
           ...(c.alreadyDone ? [["already_done", "Already done", c.alreadyDone]] : []),
-        ]),
+        ]) +
+        (c.toApply && ui.cfg.applyExtra ? ui.cfg.applyExtra(job) || "" : ""),
       `<div style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">${button("back", "Back · choose another file")}${c.errors ? button("failed", "Download rows with errors (.xlsx)") : ""}</div>${button(
         "commit",
         c.toApply ? `Apply ${fmt(c.toApply)} row${c.toApply === 1 ? "" : "s"}` : "Nothing to apply",
         { primary: true, disabled: !c.toApply },
       )}`,
     );
+    if (c.toApply) ui.cfg.applyMount?.(job);
   }
 
   function bulkResult() {
@@ -1090,6 +1088,7 @@
       failed ? `Bulk update ${job.number} stopped` : `Bulk update ${job.number} finished`,
       esc([job.title || job.kindTitle, job.fileName].filter(Boolean).join(" · ")),
       lead +
+        (ui.cfg.resultExtra ? ui.cfg.resultExtra(job) || "" : "") +
         summary([
           [`${fmt(r.applied)} applied`, "good", "applied"],
           [`${fmt(r.alreadyDone)} already done`, "info", "alreadyDone"],

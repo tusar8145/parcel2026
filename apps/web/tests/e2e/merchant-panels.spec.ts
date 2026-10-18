@@ -164,7 +164,12 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   const total = Number(await page.locator(".metrics .metric").first().locator(".metric-value").textContent());
   expect(total).toBeGreaterThanOrEqual(1);
   await expect(page.locator(".activity-list")).not.toContainText("Payout completed — ৳ 24,680");
-  await page.selectOption("#chartPeriod", "This year");
+  // The chart follows the dashboard period (shared/period.js): a custom range from 1 January → by month.
+  const todayDhaka = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+  await page.selectOption(".df-period [data-period-select]", "custom");
+  await page.fill(".df-period [data-period-from]", `${todayDhaka.slice(0, 4)}-01-01`);
+  await page.fill(".df-period [data-period-to]", todayDhaka);
+  await page.click(".df-period [data-period-apply]");
   await expect(page.locator("svg.chart .chart-labels")).toContainText("Jan");
 
   // ── Cancel before operations confirm ──
@@ -176,10 +181,10 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await expect(row).toContainText("Pickup cancelled");
   await expect(row.locator("[data-df-cancel]")).toHaveCount(0);
 
-  // ── Global search opens an order by tracking ID ──
+  // ── Global search opens the order's drawer by tracking ID (shared/merchant-parcel.js) ──
   await page.fill("#globalSearch", trackingId);
   await page.press("#globalSearch", "Enter");
-  await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Pickup cancelled");
+  await expect(page.locator("#merchantParcelDrawer")).toContainText("Pickup cancelled");
   await page.keyboard.press("Escape");
 
   expect(errors).toEqual([]);

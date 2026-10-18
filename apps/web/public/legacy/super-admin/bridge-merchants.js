@@ -87,6 +87,11 @@
 
   // ───────────── invitations ─────────────
 
+  const INVITE_TYPES = [
+    ["ECOMMERCE", "E-commerce"],
+    ["BANKING_FINANCIAL", "Banking & Financial"],
+  ];
+
   function enhanceInviteModal() {
     const fields = $("modalFields");
     if (!fields || $("dfmInvitePhone")) return;
@@ -98,6 +103,16 @@
     email?.closest(".field")?.insertAdjacentHTML("afterend", `<div class="field"><label for="dfmInvitePhone">Mobile number</label><input id="dfmInvitePhone"></div><div class="field full"><label for="dfmInviteMessage">Personal message (optional)</label><textarea id="dfmInviteMessage" maxlength="500" placeholder="Shown on the invitation"></textarea></div>`);
     // Service plans are retired: the merchant books with its category's default package until one is assigned.
     $("invitePlan")?.closest(".field")?.remove();
+    // Exactly the two merchant panels; website customers are never invited.
+    const type = $("inviteType");
+    if (type) {
+      type.innerHTML = INVITE_TYPES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+      type.required = true;
+      const label = type.closest(".field")?.querySelector("label");
+      if (label) label.textContent = "Merchant type";
+      // Opened from the Banking & Financial directory: preselect that type.
+      if (/banking/i.test(document.querySelector("#mainContent .page-heading h1")?.textContent || "")) type.value = "BANKING_FINANCIAL";
+    }
     const phone = $("dfmInvitePhone");
     DF.phoneInput(phone);
     phone.required = false;
@@ -113,7 +128,8 @@
     if (!name || name.length < 2) return toast("Enter the primary contact's name.");
     if (!phone && !email) return toast("Enter a mobile number or an email address.");
     if (phone && DF.phoneProblem(phone)) return toast(DF.phoneProblem(phone));
-    const type = /banking|document/i.test($("inviteType")?.value || "") ? "BANKING_FINANCIAL" : "ECOMMERCE";
+    const type = $("inviteType")?.value;
+    if (!INVITE_TYPES.some(([value]) => value === type)) return toast("Choose the merchant type: E-commerce or Banking & Financial.");
     try {
       const invite = await DF.api("/merchants/invites", {
         method: "POST",
@@ -135,7 +151,7 @@
       const page = await DF.api("/merchants/invites?limit=100");
       const cls = { PENDING: "status-warn", ACCEPTED: "status-good", EXPIRED: "status-blue", REVOKED: "status-bad" };
       const rows = page.items
-        .map(i => `<tr><td><strong>${esc(i.name)}</strong><div style="color:#64748b;font-size:12px">${esc(i.businessName || "")}</div></td><td>${esc([i.phone, i.email].filter(Boolean).join(" · "))}</td><td>${esc(i.invitedBy)}<div style="color:#64748b;font-size:12px">${esc(when(i.createdAt))}</div></td><td>${esc(when(i.expiresAt))}</td><td>${pill(i.status, cls[i.status])}</td><td>${i.status === "PENDING" && canManage() ? `<button type="button" class="button button-sm" data-dfm-revoke-invite="${esc(i.id)}">Revoke</button>` : ""}</td></tr>`)
+        .map(i => `<tr><td><strong>${esc(i.name)}</strong><div style="color:#64748b;font-size:12px">${esc([i.businessName, (INVITE_TYPES.find(([v]) => v === i.type) || [])[1]].filter(Boolean).join(" · "))}</div></td><td>${esc([i.phone, i.email].filter(Boolean).join(" · "))}</td><td>${esc(i.invitedBy)}<div style="color:#64748b;font-size:12px">${esc(when(i.createdAt))}</div></td><td>${esc(when(i.expiresAt))}</td><td>${pill(i.status, cls[i.status])}</td><td>${i.status === "PENDING" && canManage() ? `<button type="button" class="button button-sm" data-dfm-revoke-invite="${esc(i.id)}">Revoke</button>` : ""}</td></tr>`)
         .join("");
       dialog(
         "Merchant invitations",

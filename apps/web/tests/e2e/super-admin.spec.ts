@@ -194,7 +194,8 @@ test.describe("super admin", () => {
     await expect(admin.locator("#mainContent .callout")).toContainText("Two-step verification is required for super admins");
     await nav(admin, "Platform activity");
     await expect(admin.locator("#mainContent .page-heading .eyebrow")).toHaveText("Platform insights · First-party analytics");
-    await expect(admin.locator("#mainContent .traffic-bar")).toHaveCount(24);
+    // Default period: the last 7 days, one bar a day (dashboard-periods.spec.ts covers the other periods).
+    await expect(admin.locator("#mainContent .traffic-bar")).toHaveCount(7);
     await nav(admin, "Audit log");
     await expect(admin.locator("#mainContent .metrics .metric").nth(1)).toContainText("super admins");
     await admin.context().close();

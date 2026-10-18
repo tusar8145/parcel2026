@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
+import { periodChecks, periodQueryShape, periodView, resolvePeriod } from "../../common/period";
 
 const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 86_400_000;
@@ -12,7 +13,10 @@ export const pageviewSchema = z.object({
   path: z.string("Send the page path").trim().min(1).max(500),
   referrer: z.string().trim().max(1000).optional().nullable(),
 });
-export const trafficQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+/** `days`: the last N days (default 30). from / to (Dhaka days) instead: that period, with the previous one for comparison. */
+export const trafficQuerySchema = z
+  .object({ days: z.coerce.number().int().min(1).max(90).default(30), ...periodQueryShape })
+  .superRefine(periodChecks);
 
 /** Crawlers, link previews, monitors and automation: not counted. */
 const BOT_UA =
@@ -127,6 +131,62 @@ export class AnalyticsService {
   }
 
   /** Traffic for the super admin: last 24 hours by hour, last `days` days by day, top pages and sources. */
+  /**
+   * Traffic for a chosen period: daily rows from..to, totals for it and the previous period of the same
+   * length, top pages and sources in it; the hourly chart is that day's 24 hours for a one-day period,
+   * otherwise the last 24 hours.
+   */
+  async trafficForPeriod(query: { from: string; to: string }) {
+    const p = resolvePeriod(query, "last_7_days");
+    const date = (day: string) => new Date(`${day}T00:00:00Z`);
+    const oneDay = p.days === 1;
+    const since = oneDay ? p.start : hourStart(new Date(Date.now() - 23 * HOUR_MS));
+    const [daily, hourly, dimensions] = await Promise.all([
+      this.prisma.analyticsDaily.findMany({ where: { day: { gte: date(p.previous.from), lte: date(p.to) }, dimension: "" } }),
+      this.prisma.analyticsHourly.findMany({ where: { hour: { gte: since, lt: new Date(since.getTime() + 24 * HOUR_MS) } } }),
+      this.prisma.analyticsDaily.groupBy({ by: ["metric", "dimension"], where: { day: { gte: date(p.from), lte: date(p.to) }, dimension: { not: "" } }, _sum: { count: true } }),
+    ]);
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+    const byDay = new Map<string, number>();
+    for (const r of daily) byDay.set(`${dayKey(r.day)}|${r.metric}`, r.count);
+    const rowsFor = (from: string, days: number) =>
+      Array.from({ length: days }, (_, i) => {
+        const day = dayKey(new Date(date(from).getTime() + i * DAY_MS));
+        const get = (metric: string) => byDay.get(`${day}|${metric}`) ?? 0;
+        return { day, pageviews: get(METRICS.pageview), visits: get(METRICS.visit), trackingLookups: get(METRICS.trackingLookup) };
+      });
+    const series = rowsFor(p.from, p.days);
+    const previous = rowsFor(p.previous.from, p.days);
+    const totals = (rows: typeof series) => ({
+      pageviews: rows.reduce((a, r) => a + r.pageviews, 0),
+      visits: rows.reduce((a, r) => a + r.visits, 0),
+      trackingLookups: rows.reduce((a, r) => a + r.trackingLookups, 0),
+    });
+    const hours = Array.from({ length: 24 }, (_, i) => {
+      const hour = new Date(since.getTime() + i * HOUR_MS);
+      const get = (metric: string) => hourly.find(r => r.hour.getTime() === hour.getTime() && r.metric === metric)?.count ?? 0;
+      return { hour: hour.toISOString(), pageviews: get(METRICS.pageview), visits: get(METRICS.visit), trackingLookups: get(METRICS.trackingLookup) };
+    });
+    const top = (prefix: string, metric: string, limit: number) =>
+      dimensions
+        .filter(d => d.metric === metric && d.dimension.startsWith(prefix))
+        .map(d => ({ key: d.dimension.slice(prefix.length), count: d._sum.count ?? 0 }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+    return {
+      generatedAt: new Date(),
+      range: periodView(p),
+      days: p.days,
+      period: totals(series),
+      previousPeriod: totals(previous),
+      daily: series,
+      hourly: hours,
+      hourlyScope: oneDay ? ("day" as const) : ("last24h" as const),
+      topPages: top("path:", METRICS.pageview, 10),
+      sources: top("source:", METRICS.visit, 10),
+    };
+  }
+
   async traffic(days: number) {
     const today = dhakaDay();
     const from = new Date(today.getTime() - (days - 1) * DAY_MS);

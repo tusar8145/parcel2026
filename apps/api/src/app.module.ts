@@ -50,6 +50,7 @@ import { BulkUpdatesModule } from "./modules/bulk-updates/bulk-updates.module";
 import { PackagesModule } from "./modules/packages/packages.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { HubReconciliationModule } from "./modules/hub-reconciliation/hub-reconciliation.module";
+import { TrackingModule } from "./modules/tracking/tracking.module";
 
 @Module({
   imports: [
@@ -110,6 +111,7 @@ import { HubReconciliationModule } from "./modules/hub-reconciliation/hub-reconc
     AnalyticsModule,
     DocumentsModule,
     HubReconciliationModule,
+    TrackingModule,
   ],
   controllers: [HealthController, EventsController],
   providers: [

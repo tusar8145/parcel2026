@@ -187,6 +187,8 @@ test("live GPS while on shift, throttled, with the browser limits explained", as
   const { context, page } = await signedInRider(browser, { serviceWorkers: "block", permissions: ["geolocation"], geolocation: DHAKA }, async page => {
     await page.route("**/api/v1/rider/me/status", route => json(route, { status: JSON.parse(route.request().postData() || "{}").status }));
     await page.route("**/api/v1/rider/location", route => {
+      // GET /rider/location is the status line's "last sent" (passed through); POSTs are the fixes.
+      if (route.request().method() !== "POST") return route.fallback();
       fixes.push(route.request().postDataJSON());
       return json(route, { accepted: 1, ignored: 0, live: true }, 202);
     });

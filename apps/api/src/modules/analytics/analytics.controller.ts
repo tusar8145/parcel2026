@@ -36,11 +36,11 @@ export class AnalyticsController {
     return this.analytics.pageview(body, { userAgent: header("user-agent"), hosts: [originHost, header("x-forwarded-host"), header("host")] });
   }
 
-  /** Website traffic and tracking lookups (last 24 hours by hour, last `days` days by day). */
+  /** Website traffic and tracking lookups (last 24 hours by hour, last `days` days by day; or the period from / to, Dhaka days). */
   @RequirePermissions("analytics:read")
   @Get("traffic")
   @ApiZodQuery(trafficQuerySchema)
   traffic(@ZQuery(trafficQuerySchema) query: z.infer<typeof trafficQuerySchema>) {
-    return this.analytics.traffic(query.days);
+    return query.from && query.to ? this.analytics.trafficForPeriod({ from: query.from, to: query.to }) : this.analytics.traffic(query.days);
   }
 }

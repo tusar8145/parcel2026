@@ -8,6 +8,8 @@ import { GatewaysService } from "./gateways.service";
 import { SmsRateLimiter } from "./rate-limiter";
 import { PreferencesService } from "./preferences.service";
 import { NotificationPreferencesController, NotificationsAdminController } from "./notifications.controller";
+import { InboxService } from "./inbox.service";
+import { InboxController } from "./inbox.controller";
 
 /**
  * Notifications: templates and toggles (super admin), user preferences, the transactional
@@ -15,8 +17,8 @@ import { NotificationPreferencesController, NotificationsAdminController } from 
  */
 @Global()
 @Module({
-  controllers: [NotificationsAdminController, NotificationPreferencesController],
-  providers: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, GatewaysService, SmsRateLimiter, PreferencesService],
-  exports: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService],
+  controllers: [NotificationsAdminController, NotificationPreferencesController, InboxController],
+  providers: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, GatewaysService, SmsRateLimiter, PreferencesService, InboxService],
+  exports: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, InboxService],
 })
 export class NotificationsModule {}

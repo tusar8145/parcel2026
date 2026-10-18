@@ -85,7 +85,50 @@ No panel uses `window.prompt` / `confirm` / `alert`.
 ## Rider location and proof of delivery (modules/rider)
 - `POST /rider/location { lat, lng, accuracy, heading?, speed?, at }` while on shift; publishes
   `rider.location` (staff with rider:read, the rider's hub). Latest positions for operations
-  maps: `GET /ops/rider-locations`.
+  maps: `GET /ops/rider-locations`. `GET /rider/location` → `{ status, sharing, latest }` (the app's
+  status line). Each live fix also publishes `parcel.rider_location` (id = tracking ID, merchantId,
+  customerId; no coordinates) for the parcels the rider has OUT_FOR_DELIVERY with "Live rider location".
+- Rider app (bridge-pwa.js): sends automatically while ONLINE with the app open and permission granted
+  (moved the movement threshold, default 50 m, else a heartbeat every 2 / 5 / 10 minutes — the super admin's
+  "Rider location interval", default 5 minutes, `GET /rider/location` → `settings`, see "Parcel position and
+  vehicle location" — that takes a fresh fix even when standing still); offline
+  fixes go to `/rider/location/batch`. Status line `#dfLocationLine` on Overview / My route / Scan /
+  Settings ("Location sharing: On · last sent 1 min ago" / "Off · start your shift…" / "Blocked · allow
+  location…" with "How to allow location"), button "Update my location now" (`[data-df-locate]`).
+- Recipient / merchant view (`liveDelivery` on `GET /parcels/:id`, `GET /track/:id[?t=]`,
+  `GET /track/:id/full`): only the parcel's own delivery rider, only while OUT_FOR_DELIVERY, only when
+  the parcel's services include `tracking.live_location`, only the latest fix (never history); hidden
+  when older than 15 min (`STALE`) or the rider is off shift (`OFF_SHIFT`). `locationStatus`: LIVE ·
+  STALE · WAITING · OFF_SHIFT · LINK_REQUIRED · null; `location.ageSeconds`. A lookup by tracking ID alone
+  gets `LINK_REQUIRED`: the position needs a link token — the recipient's out-for-delivery SMS link
+  (`?t=l.…`, `signLiveLocationAccess`, 3 days; separate key, never opens `/full`) or
+  `POST /track/:id/live-access { phoneLast4 }` (last 4 digits of the recipient's phone → `{ token }`,
+  8 tries per parcel an hour + IP throttle), or an owner / feedback link, or a signed-in viewer of the
+  parcel (merchant, customer, staff). Note: the out-for-delivery SMS is off by default in notification
+  settings. Web: TrackingView (`[data-live-rider]`, `[data-live-status]`, `[data-live-updated]`, unlock
+  form `[data-live-unlock]`, 1-minute refresh), merchant parcel details (`[data-df-live]`, refreshed on
+  `parcel.rider_location` and every minute).
+- Delivery code (OTP proof; owner change 2026-10-18): the recipient's code is issued and sent by SMS
+  (`parcel.delivery_code`, `ParcelWorkflowService.issueDeliveryCode`) only when the parcel goes OUT_FOR_DELIVERY,
+  never at assignment:
+  - Assigning / re-assigning the delivery rider (`POST /parcels/:id/assign-delivery`, bulk "Assign delivery
+    rider", the Excel bulk, dispatch suggestions) sends no code and clears any earlier one
+    (`deliveryOtpEncrypted = null`). Moving the parcel back to a hub (AT_HUB by ops) clears it too.
+  - "Start delivery" (`POST /rider/parcels/:id/start-delivery`: the Deliveries list button, the scan page,
+    the scan section "Start deliveries", the offline replay) ALWAYS issues a fresh code, including a new
+    start from RETRY_SCHEDULED / EXCEPTION: the recipient's latest SMS is always the valid one and any older
+    code stops working. Picked up and delivered directly (`COLLECTED_DELIVER_DIRECT`) and operations setting
+    OUT_FOR_DELIVERY (status change, bulk Resolve) issue a fresh code the same way. An Idempotency-Key replay
+    of the same start returns the stored answer and sends nothing again.
+  - Delivering with OTP proof while the parcel has no code (e.g. still ASSIGNED) → 409 `DELIVERY_NOT_STARTED`
+    "Start the delivery first; the code is sent to the recipient then". Signature / photo proof needs no code.
+  - `POST /rider/parcels/:id/resend-code`: OUT_FOR_DELIVERY, or RETRY_SCHEDULED while a code exists; a new
+    code replaces the old one. ASSIGNED → 409 `DELIVERY_NOT_STARTED`.
+  - A changed recipient phone re-sends a fresh code only when a code exists (i.e. after start).
+  - The assigned rider's task / detail carries `deliveryCodeSent` (a valid code exists). Rider app: ASSIGNED /
+    RETRY_SCHEDULED tasks show "Start delivery" and "Code will be sent when you start the delivery"; the
+    delivery screen hides the OTP proof until the code is sent (offers "Start delivery" instead); start
+    confirms "Delivery code sent to the recipient".
 - Proof of delivery records `capturedAt`, `lat`, `lng`, `accuracy`;
   `GET /parcels/:trackingId/proof` (same visibility as the parcel) returns it with the image
   (`/api/v1/files/:id`).
@@ -97,6 +140,86 @@ No panel uses `window.prompt` / `confirm` / `alert`.
   `POST /rider/handover-requests` accept `Idempotency-Key`; `POST /rider/location/batch
   { points: [...] }` takes fixes recorded offline (duplicates ignored). History is kept
   `RIDER_LOCATION_RETENTION_DAYS` (default 30) days.
+
+## Parcel position and vehicle location (modules/tracking; web: shared/parcel-map.js, shared/vehicle-share.js)
+Owner request (2026-10-18): riders' positions on a 2 / 5 / 10-minute interval, "where is my parcel" on a map, and
+"I'm travelling in this vehicle" for linehaul trips. Migration `vehicle_location` (tables `vehicle_shares`,
+`trip_locations`, `trip_location_points`; additive).
+- Interval: Setting `location-settings` `{ intervalMinutes: 2 | 5 | 10, movementMeters: 25–1000 }`, default
+  **5 minutes / 50 m** (the owner asked for "every 5 / 10 minutes"; it was a fixed 2 minutes before).
+  `GET /settings/location` (any signed-in user; also `staleAfterMinutes` = max(15, 3 × interval) and `defaults`),
+  `PUT /settings/location` (config:manage, audited `location_settings.update`). Super admin › Rider plans ›
+  "Rider location" (`super-admin/bridge-location.js`). The rider app reads it from `GET /rider/location`
+  (`settings`) and sends on that interval while on shift, and at once after moving the threshold. A repeat of a
+  fix already stored (same time) is accepted quietly (202, `accepted: 0`) instead of 422.
+- Browser limit: web pages only get the location while the app is open and in the foreground; a locked phone, a
+  closed app or another app in front pauses sending until it is opened again (positions then show as "last
+  known"). True background tracking needs a native (Android) app; "Keep screen on" helps on a phone mount.
+  Vehicle positions taken without a connection are not queued (rider positions are, as before).
+- Vehicle sharing ("Travelling with a vehicle"): who — riders whose hub is the trip's origin or destination (a
+  linehaul driver gets a rider account at their hub and uses the rider app; no new role), and staff with
+  `parcel:dispatch` in hub scope of either end (hub operators of those hubs, operations managers). Trips:
+  PLANNED (around today) or DEPARTED. `GET /vehicle-shares/trips` (what I may share), `GET /vehicle-shares/mine`
+  (my open share + settings; ends it if the trip has arrived), `POST /vehicle-shares { trip: id | MF-… }` (start;
+  audited `vehicle_share.start`; my other open share ends as REPLACED, someone else's on the same trip as
+  TAKEN_OVER, audited `vehicle_share.stop`), `POST /vehicle-shares/:id/location { lat, lng, accuracy, heading?,
+  speed?, at }` (202 `{ live, stopped, accepted }`; only the sharer; time within 12 h back / 2 min ahead; moves
+  `trip_locations` forward in time only; history `trip_location_points` capped at 500 per trip and purged after
+  RIDER_LOCATION_RETENTION_DAYS; publishes `vehicle.location` to both hubs and hub:manage; when the trip has
+  arrived / closed / been cancelled → `{ stopped: true, reason }` and the share ends),
+  `POST /vehicle-shares/:id/stop` (the sharer, or dispatch staff of the trip's hubs; audited). Automatic stop:
+  arrive / close / cancel and the last bag received end every open share inside that transaction
+  (`endTripShares`, audited `vehicle_share.auto_stop`, reason TRIP_ARRIVED / TRIP_CLOSED / TRIP_CANCELLED).
+  Operations: `GET /vehicle-locations[?hubId]` (hub:read; hub scope; planned / departed trips with a position:
+  vehicle, route, manifest, `at`, `sharing`, `sharedBy`, `stale` = not shared any more or older than
+  staleAfterMinutes), `GET /vehicle-locations/:trip/history` (hub:read, oldest first, ≤ 500).
+- Parcel position: `GET /parcels/:trackingId/position` (same scope as `GET /parcels/:id`; 404 outside it; not
+  public) → `{ trackingId, status, kind: rider | hub | vehicle | last | none, lat, lng, label, detail, updatedAt,
+  ageSeconds, stale, approximate, hub, trip, rider }` (lat / lng null = nothing to map). Pickup assigned → "Pickup
+  rider R-… · on the way to pick up"; picked up / out for delivery → "With rider R-…" (the rider's latest fix,
+  `stale` when older than staleAfterMinutes or off shift); at a hub, assigned, ready for collection, retry /
+  return scheduled, exception → "At <hub>" (hub coordinates; "Loaded on MF-… · waiting to depart" when in a bag on
+  a planned trip); IN_TRANSIT in a bag on a departed trip → the trip's vehicle position "In vehicle <reg> (A → B)"
+  when shared (stale after sharing stops), else "On the way from A to B" at the origin hub; delivered → the proof
+  of delivery's point ("Delivered here"), else the address pin; returned → the sender's pin or hub; pending /
+  cancelled → none. One parcel per call (a few indexed lookups; never used for lists).
+- Privacy: merchants and customers see the rider only while OUT_FOR_DELIVERY with `tracking.live_location`, a fix
+  ≤ 15 min old and the rider on shift (the "Live rider location" rules), labelled "With the delivery rider"
+  without rider code, name or detail; otherwise the hub ("Out for delivery from <hub>", city level). The vehicle's
+  position is shown for their own parcels (a truck between hubs, no personal data). The recipient's public
+  tracking (`/track/:id`) is unchanged and never gets a vehicle position.
+- Web: `DFParcelMap` (`shared/parcel-map.js`): "Where is it now" in the Courier Operations drawer
+  (`#drawerPosition`, follows `rider.location` / `vehicle.location` for its rider / trip) and the merchant drawer
+  (`#merchantParcelPosition`, re-read with the parcel and every 2 minutes while in transit): label with the age,
+  detail, "last known" tag, a small Leaflet map (loaded on first use, kept across repaints; `[data-df-position-kind]`,
+  `[data-df-position-label]`). Rider app: "Travelling with a vehicle" panel on Overview and Settings
+  (`#dfVehiclePanel`: today's trips or the manifest's MF-… barcode → "Start sharing vehicle location"; "Send
+  location now", "Stop sharing"). Courier Operations › Transfers: "Vehicles on the road" (`#vhPanel`: map with hubs
+  and vehicles, list, and the same start / stop for staff on board); the Today map shows vehicles too ("V" pins).
+  API test: `test/vehicle-location.e2e.test.ts`; browser: `tests/e2e/parcel-map.spec.ts`.
+
+## Rider scan workflows (web: rider/bridge-scan.js; API: parcels/rider-tasks.service.ts)
+Scan parcel page → "Scan actions": set the context once, then scan (camera `DF.scanner.attach`, keyboard
+scanner, typing; `DF.scanner.feedback` per scan; scans are processed in order). Actions go through
+`DFOffline.send` (Idempotency-Key, offline queue). Deep link `/rider?page=Scan%20parcel&scan=<key>`.
+- `GET /rider/tasks` → also `pickups[].pickupStop { key, name, address }` (key `M:<merchantId>` or
+  `S:<senderPhone>`) and `carrying[]` (PICKED_UP by this rider, with `handover { hubId, hubName, at } | null`).
+- Pickup from merchant: `POST /rider/parcels/:id/pickup { outcome: "COLLECTED", expectedStop? }` →
+  PICKED_UP (pickup earning once; repeat = no-op; another stop's parcel 409 `OTHER_PICKUP_STOP`; not
+  waiting for pickup 409 `NOT_AWAITING_PICKUP`). Expected vs scanned, missing list, "Mark all remaining"
+  (confirm; allowed because riders may confirm pickups without scanning). No undo (lifecycle).
+- Hand over at hub: `POST /rider/parcels/:id/handover { hubId, source? }` puts a PICKED_UP parcel on the
+  hub's handover list — internal tracking event (metadata kind `RIDER_HANDOVER`), audit
+  `parcel.rider_handover`, scan `RIDER_HANDOVER`, realtime `rider.handover` to the hub. **No status
+  change**: the hub confirms by scanning it in (`POST /ops/hub-receive` → AT_HUB). Undo until then:
+  `POST /rider/parcels/:id/handover/withdraw` (`HANDOVER_CLOSED` after the hub scan). Hub side:
+  `GET /ops/rider-handovers?hubId=` (parcel:read:any, hub scope) → `{ hub, total, items: [{ rider, parcels }] }`.
+- Start deliveries: `POST /rider/parcels/:id/start-delivery` (a fresh delivery code by SMS; see "Delivery code"). Deliver: opens the
+  normal delivery dialog (`#actionModal.df-scan-quick`: big buttons, OTP focused); proof and COD rules
+  unchanged. Failed delivery / return to hub: `POST /rider/parcels/:id/delivery { outcome: FAILED }` with the
+  section's reason / next action / hub.
+- Return to merchant: `GET /rider/return-runs` (runs OUT_FOR_RETURN dispatched to the rider, with parcels):
+  a read-only check; RETURN_SCHEDULED → RETURNED stays an operations action (run completion).
 
 ## Rider onboarding / KYC (modules/rider → `RiderKycService`, exported by `RiderModule`)
 - For the applications module, when an approved application becomes a rider (inside your
@@ -309,10 +432,10 @@ the import engine (xlsx writer/reader, parse slots, `ImportConfigService` limits
 `IntakeChangeService`, `CompleteDetailsService` and `RoutingService` do the work. All endpoints need
 `parcel:dispatch` + `parcel:read:any` (no API keys); every row is then checked by the service the single
 action uses.
-- Pages (`bulk-kinds.ts`, `kind` = `new_orders | pickup | hub_desk | delivery | problems | returns | all`) and
+- Pages (`bulk-kinds.ts`, `kind` = `new_orders | pickup | hub_desk | delivery | problems | returns | transfers | all`) and
   action templates (`bulk-actions.ts`, `action` = `accept_pickup | reassign_pickup | mark_picked_up |
   receive_at_hub | mark_exception | assign_delivery | resolve_status | change_status | cancel | to_drop_off |
-  to_pickup | schedule_return | complete_details | add_note`). Every template runs an existing single action
+  to_pickup | schedule_return | complete_details | add_note | transfer`). Every template runs an existing single action
   (`bulk-columns.ts BULK_ACTIONS`), some with a fixed or narrowed status ("Mark picked up" = Change status →
   Picked up). A template defines: label, sheet tab name, the parcels that can take it (`where()`: the
   lifecycle via `reachable(targets, only?)` = `canTransition` per intake and last mile; intake changes:
@@ -328,6 +451,7 @@ action uses.
   | Delivery | At hub without delivery rider (doorstep), assigned | Assign delivery rider, Complete details, Add note |
   | Problems | Exception, retry scheduled, needs info, SLA at risk / breached | Resolve: change status, Assign delivery rider, Schedule return, Complete details, Add note |
   | Returns | Retry scheduled, exception, return scheduled, at hub after a delivery attempt | Schedule return, Add note |
+  | Transfers | At my hub for another hub, not bagged | Add to transfer bag |
   | All parcels | any filter | every action (also the general Change status) |
 
   | Action | Parcels in the file | Columns to fill in (besides read-only info) | Blank rows |
@@ -346,6 +470,7 @@ action uses.
   | Schedule return | can go to Return scheduled | Reason * | skipped |
   | Complete details | "Needs info", still changeable | Set recipient name / phone / address / district / zone / area / weight / service, Note | skipped |
   | Add note | any | Note * | skipped |
+  | Add to transfer bag | at my hub for another hub, not bagged | Destination hub (prefilled), Bag, Note | applied |
 
   "Applied": every row in the file is applied (delete the rows not to change); "skipped": a row whose input
   columns (Priority excluded) are all empty is skipped and counted as `ignored`. Completely empty rows are
@@ -420,8 +545,35 @@ action uses.
 - Schema: `BulkUpdateJob.kind` (migration `bulk_update_kind`) and `BulkUpdateJob.action` (nullable, index
   `(action, createdAt)`, migration `bulk_update_action`, 2026-10-18; null = a file from before action
   templates, shown as "Several actions").
-- Transfers has no bulk file: moving parcels between hubs goes through linehaul bags and manifests, which have
-  no bulk action; adding to a return run has none either.
+- Transfers (2026-10-18): page `transfers`, action `transfer` ("Add to transfer bag", BulkAction `ADD_TO_BAG`,
+  also on All parcels). **Decision:** a bulk action template, not a linehaul-specific import, so it gets the
+  engine for free (version check, dedupe / idempotency, preview, failed-rows file, history, background apply);
+  the linehaul work is done by `TransferService` (modules/linehaul/transfer.service.ts). Parcels in the file
+  (`ActionTemplate.scoped = "transfer"` → `TransferService.eligibleWhere`): AT_HUB at the caller's hubs
+  (network for managers), not in an active bag (LOADED in an OPEN / SEALED / IN_TRANSIT bag), whose destination
+  isn't the hub holding them. Destination = the collection hub (hub collect) else the recipient zone's serving
+  hub (`DeliveryZone.hubId`); parcels in unserved zones are listed too. Columns: Suggested destination
+  (read-only), Destination hub (prefilled with the suggestion; dropdown of every active hub, `L_dest_hubs`),
+  Bag (optional: an open bag `BG-…` from the dropdown `L_bags` of open bags at my hubs, or a label of my own
+  to group parcels; empty = one bag per destination for the upload, labelled with the upload's number), Note;
+  info: current hub, recipient, district, zone, weight, COD, merchant, service. Checks (bulk-planner.ts
+  `planTransfer`): at a hub of mine, destination another operating hub (warning when it differs from the
+  suggestion), named bag open / from the parcel's hub / to that destination, label `[A-Za-z0-9 _-/.#]{1,40}`;
+  a parcel already bagged to that destination is ALREADY_DONE (another destination: ERROR). Apply: each row →
+  `TransferService.addToBag` (the open bag with that number, or the open bag with origin + destination +
+  label, created on first use under an advisory lock; `LinehaulService.putInBag`: same rules as scanning;
+  audit `linehaul.bag_create` / `linehaul.bag_add` with `data.bulkUpdate`). Apply options (body of
+  `POST /bulk-updates/:id/apply`, `{ transfer: { seal?, tripId? | newTrip?: { vehicleId | vehicleRegNo,
+  driverName, driverPhone, plannedDepartureAt? } } }`, stored in `BulkUpdateJob.options`; a chosen trip is
+  checked before anything changes): after the rows, the upload's open bags are sealed (seal number = the bag
+  number on its tag) when asked or when they go on a trip, then loaded on the planned trip (bags on its route;
+  others reported) or on new trips, one per route. The outcome is `job.transfer = { options, result: { bags,
+  trips, problems } }`. Parcels stay AT_HUB; they become IN_TRANSIT only on trip departure. Schema:
+  `LinehaulBag.label` + index `(originHubId, destHubId, label)`, `BulkUpdateJob.options` (migration
+  `linehaul_bag_label_bulk_options`). Web: Transfers → "Bulk transfer by Excel" / "Transfer history"
+  (bridge-linehaul.js) → `DFImport.bulk({ bulkKind: "transfers", bulkAction: "transfer", applyExtra, applyMount,
+  applyBody, resultExtra })` (importer.js hooks: options under the preview, the request body, the bags /
+  trips with "Print tag" / manifest on the result). Adding to a return run has no bulk action.
 - Web: All parcels (Shipments and the E-commerce / Banking & Financial / Customer tabs) has "Bulk update All
   parcels by Excel" and "Bulk update history" (courier-operation/bridge-bulk.js); the journey pages have
   "Bulk update <page> by Excel" (`#stageBulkUpdate`, bridge-nav.js with `DFOps.bulkKindOf(view)`,
@@ -618,7 +770,7 @@ panels and Courier Operations booking (`shared/order-services.js`), the website 
 - The live price uses the same body as the booking, **product included** (`product` in `POST /packages/quote`,
   `POST /merchants/me/quote`, `POST /pricing/quote`), so the form price is the booked price.
 - Places come from `GET /catalog` (active only) with "Choose district / zone / area" placeholders and nothing
-  preselected; long lists get a search box (`DFOrderServices.fill` / `searchable`). Products come from the
+  preselected; long lists are searchable (`DFOrderServices.fill` / `searchable` → `DF.searchSelect`, shared/select-search.js). Products come from the
   package view (active, the category's list, shown "Name · Type", Regular → Document → Books).
 - Weight is a number (0.01–50 kg, 0.5 default) for Customer / E-commerce; Banking & Financial has no weight
   (0.5 kg is sent, it doesn't price) and no COD. E-commerce: "COD amount" (shown when COD is ticked) is separate
@@ -806,13 +958,38 @@ Read-only views on the existing lifecycle (2026-10-18). A rider's failed attempt
   "Added to return run RR-…"). `GET /returns?stage=requested` includes those parcels, so they wait on the
   Returns page until a run is planned.
 
+## Linehaul receiving by scan (modules/linehaul, web: courier-operation/bridge-linehaul.js, bridge-intake.js)
+- `POST /linehaul/receive-scan { hubId, code, source, tripId?, bagId?, sealNo? }` (parcel:dispatch, the
+  receiving hub in scope; never throws for what was scanned) → `{ outcome, ok, message, code, hub, parcel,
+  bag (bag view with items and totals), trip (inbound view) }`. Outcomes: a bag label `BG-…` → `BAG_RECEIVED`
+  (the whole bag, `receive()` without trackingIds: parcels not yet scanned out of it become AT_HUB here;
+  seal mismatch recorded), `ALREADY_RECEIVED`, `WRONG_HUB`, `NOT_IN_TRANSIT`; a manifest `MF-…` → `TRIP` (the
+  trip to check); a tracking ID LOADED in an IN_TRANSIT bag to this hub → `RECEIVED` (item RECEIVED, parcel
+  IN_TRANSIT → AT_HUB through `transition`, BAG_RECEIVE scan, audit `linehaul.item_receive`; the bag becomes
+  RECEIVED with its last parcel, the trip ARRIVED with its last bag); in a bag for another hub → `WRONG_HUB`;
+  on no inbound manifest → `EXTRA` (one open EXTRA discrepancy per parcel / hub / trip / bag being checked,
+  audit `linehaul.extra_scan`; the parcel is not moved); unknown → `NOT_FOUND`. Finishing a bag (the rest
+  missing): `POST /linehaul/bags/:bag/receive { hubId, trackingIds: [] }`.
+- `GET /linehaul/inbound?hubId=&status=` (hub:read; hub operators their hubs) → trips to my hubs (planned,
+  departed, arrived; closed in the last two days) with bags and `expected / received / missing / pending`
+  per bag and trip, plus totals.
+- Hub desk → Receive (`POST /ops/hub-receive`) hands bag / manifest codes and parcels LOADED in an inbound bag to
+  `receiveScan` (outcomes above; `transfer: { bag, trip }` in the answer), so a bagged parcel received at the
+  desk is also checked off its bag.
+- Web: Transfers → "Receive transfers" (scan box `#lhRecvScan` with the shared scan feedback, receiving hub,
+  arrival seal, the trip / bag being checked with expected vs received, "Finish … → missing", last scans) and
+  "Inbound transfers" (`#lhInbound`, "Check" selects the trip). Bag tags and manifests carry Code 128 of the
+  bag / manifest number (the manifest also every bag's barcode), which this scan accepts.
+
 ## Printed documents / PDFs (modules/documents, web: public/legacy/shared/print.js)
 Every print button opens a PDF generated by the API in a new tab; there is no `window.print` HTML printing left.
 - Writer: pdfkit (fontkit shaping) with bundled Noto Sans + Noto Sans Bengali (`apps/api/assets/fonts`, OFL; the
   Dockerfile copies them; `DOCUMENT_FONTS_DIR` overrides). Text is split into Bangla / other runs per font, so Bangla
   names and addresses render with conjuncts. Code 128 (`pdf/code128.ts`) for tracking IDs, CNs, bags and manifests;
   QR codes link to `APP_URL/track/:id`. Header: brand (`notification-settings.brand`: appName, support), finance
-  seller (name, address, BIN), website; date in Asia/Dhaka; "Page x of y".
+  seller (name, address, BIN), website; date in Asia/Dhaka; "Page x of y". Exception (2026-10-18): the "4 invoices
+  · A4" / "8 invoices · A4" layouts (`a4-4`, `a4-8`) have no page header or footer (the sheets are cut after
+  printing): an even grid of invoice cells with the same margin all round, each cell with the company name.
 - Endpoints (all `application/pdf` inline with a filename; audited `document.generate`):
   `GET|POST /documents/labels {ids|batchId, format: a4|thermal}` (max 2,000; streamed),
   `GET|POST /documents/invoices {ids|batchId, layout: a4|a4-4|a4-8|pos, line: all|ecommerce|document|customer}` (max 1,000),
@@ -832,3 +1009,109 @@ Every print button opens a PDF generated by the API in a new tab; there is no `w
   Download link keeping the file name; errors show in the tab and as a toast. Courier Operations prints the ticked rows,
   else the rows the table shows (`DFOps.printIds()`).
 - Browser tests: `openPdf(page, action)` in `tests/e2e/support.ts`; API tests read PDFs with `test/pdf-text.ts`.
+
+## Dashboard periods (common/period.ts; web: public/legacy/shared/period.js)
+One period filter on every overview (2026-10-18): Today · Yesterday · This week · Last 7 days · This month ·
+Last month · Custom range. Asia/Dhaka calendar days (UTC+6); weeks start on Saturday.
+- API: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (inclusive Dhaka days; both or neither; from ≤ to; at most 366 days;
+  422 otherwise) on `GET /ops/overview` (`period`, `metrics`; default today), `GET /ops/stage-counts`
+  (`metrics` only when sent, same `forHubIds` scope as the counts), `GET /ops/analytics` (`period` value per
+  row, `samples.period`; default today), `GET /merchants/me/stats` (`range`: booked, delivered, returned,
+  cancelled, picked up, COD value, charges, success rate, `money` for owners = COD collected / payable / paid
+  out, and `series` by hour (1 day) / day (≤ 92 days) / month; default this month), `GET /finance/summary`
+  (`period`: COD collected, cash received at hubs, settled, invoiced, delivery charges; default this month),
+  `GET /analytics/traffic` (from / to instead of `days`: daily rows, `period` / `previousPeriod` totals,
+  hourly = that day's hours for one day, else the last 24 h) and `GET /admin/overview` (`period`: bookings,
+  COD, charges, GMV, delivered, new / approved / active merchants, audit events, per-merchant and per-rider
+  counts, bookings `series`; default this month). Every period block carries `previous` (the same number of
+  days just before). Helpers: `periodQuerySchema` / `periodQueryShape` + `periodChecks`, `resolvePeriod(query,
+  defaultPreset)`, `periodBuckets` + `fillSeries`; ops figures in `modules/ops/period-metrics.ts`. Range
+  queries use the indexes from migration `dashboard_period_indexes` (parcels createdAt / deliveredAt /
+  pickedUpAt / merchantId+deliveredAt, cod_collections collectedAt, merchant_settlements status+paidAt).
+- Web: `DF.period.control(page, { defaultKey, onChange })` → `activate()` (URL when this page owns it, else
+  localStorage `deliveryfast-period:<page>`, else the default), `mount(container)` (a `select-small` plus
+  date pickers and Apply for a custom range, `.df-period`), `query()`, `get()` ({ key, from, to, text:
+  "This week · 17–18 Oct", words, versus }). URL: `?period=<key>` or `?period=custom&from=…&to=…`; the
+  page that last showed its period owns the URL's period (moving between pages never carries it across).
+- Pages: Courier Operations Today (metrics row; stage cards and the "Live now" line stay live), COD &
+  settlement, Reports › Analytics & SLA (`courier-operation/bridge-period.js`); both merchant overviews
+  (`shared/merchant-bridge.js`, the chart follows the period, "In transit" and the delivery overview are
+  "now"); super admin Overview and Platform activity (`super-admin/bridge-period.js`). Browser tests:
+  `tests/e2e/dashboard-periods.spec.ts`; API: `test/dashboard-periods.e2e.test.ts`.
+
+## Merchant top search and parcel drawer (web: public/legacy/shared/merchant-parcel.js; API: parcels/parcel.views.ts)
+Both merchant panels (2026-10-18), on the merchant view of `GET /parcels/:id` / `GET /parcels?q=` (merchant-scoped).
+- Top search `#globalSearch` (Enter; "/" focuses it): tracking ID / CN, merchant order ref, recipient phone (any +880
+  form → the last 10 digits) or name. One exact match opens the drawer, several show a pick list
+  (`#merchantParcelMatches`, at most 20); nothing found → the original page-name shortcut or "No parcel found". Server:
+  `q` matches phones only for phone-like text (digits, spaces, + - ( ), at least 4 digits), so "ORD-7" no longer matches
+  every phone with a 7. Another merchant's parcel is never found (scope; a member of several workspaces sees the chosen one).
+- Drawer `#merchantParcelDrawer` (`DFMerchantParcel.open(id)`, `.close()`, `.search(text)`, `.id`; window event
+  `dfm:parcel { trackingId | null }`, which `shared/panel-nav.js` keeps as `?parcel=`). Opened from the search, the
+  Orders / Shipments rows ("Details" `[data-dfm-open]` or a click on the row) and `?parcel=`. Sections: actions, Needs
+  info, failed-delivery note (`[data-dfm-failure]`, no rider names / attempt list), live rider location
+  (`[data-dfm-live]`, the existing `liveDelivery` rules; rider phone only via "Share rider phone" on the delivery day),
+  recipient, shipment (product, weight, service, first / last mile, COD, product value), price lines, Hub Pickup,
+  return, proof of delivery (no rider name or note), messages set to send (`service.messages`, names only), support
+  ("Open a ticket about this parcel" → `DFSupport.compose`), status timeline (public events, no actor). Esc closes;
+  it follows `parcel.updated` / `parcel.rider_location` and the panel's action toasts.
+- Actions are the panel's existing ones: cancel while pending, request return, confirm return received, complete details,
+  print label (PDF), download the shipment invoice (PDF, `DFPrint.invoices`).
+- Merchant view (every non-staff `parcelView`): `service.messages` (stored per-parcel messages by name);
+  `returnInfo.requestedBy` and `returnInfo.runId` are staff only (merchants get `returnInfo.onReturnRun`). Already staff
+  only: internal events and event actors, `attempts`, `lastFailedAttempt.riderName`, `deliveryRider.phone`, `bookingBatch`.
+  API test: `test/merchant-parcel-view.e2e.test.ts`; browser: `tests/e2e/merchant-drawer.spec.ts`.
+
+## Page addresses (web: `DF.nav` in public/legacy/shared/api.js; courier-operation/bridge-nav.js, shared/panel-nav.js)
+Every page and tab of every panel has its own URL (2026-10-18). One scheme: `/<panel>?page=<slug>[&tab=<slug>]`,
+kebab-case slugs of the menu names (`&` → `and`). Opening the link opens that page / tab; navigating pushes a
+history entry (Back / Forward work), redraws replace it; the title is "Page › Tab · Delivery Fast · Panel".
+- Courier Operations: the views and tabs of "Courier Operations navigation", e.g. `?page=today`,
+  `?page=hub-desk&tab=receive`, `?page=problems&tab=sla-late-risk`, `?page=all-parcels&tab=banking-and-financial`,
+  `?page=cod-and-settlement`, `?page=support`, `?page=notifications`. Old names (`?page=Hubs`, `?page=Scheduled pickups`,
+  `?page=Exceptions`…) still open their place and the address is rewritten to the slugs.
+- Super admin: the menu's pages (`?page=registrations`, `?page=approval-center` (Approvals), `?page=global-notifications`
+  (Platform settings), `?page=catalogs-and-locations` (Pricing & catalogs), `?page=e-commerce-merchants`…); tabs:
+  `?page=import-settings&tab=customer|e-commerce|banking-and-financial`, `?page=service-plans&tab=customer|e-commerce|banking-and-financial`.
+- Merchant panels: `?page=overview|orders|shipments|pickup-requests|customers|products|payments|billing|reports|api-and-webhooks|settings|support|notifications`.
+- Rider app: `?page=overview|my-route|deliveries|pickup-queue|scan-parcel|earnings|performance|help-and-safety|settings|support|notifications`;
+  Scan parcel's sections are tabs: `?page=scan-parcel&tab=pickup|handover|start|deliver|failed|return` (its `?scan=` link still works).
+- Deep links: `?parcel=<tracking ID>` opens the parcel drawer (Courier Operations; merchant panels through
+  `DFMerchantParcel`), kept in the address while the drawer is open; `?ticket=<number>` opens the support ticket
+  (`DFSupport.open`, shared/support.js; website customers `/support/<number>`). Other parameters (`period`, `from`,
+  `to`, filters) are kept. Signed-out visitors go to sign-in and come back to the same URL (path, query and hash).
+- A panel connects with `DF.nav.start({ panel, home, pages, open, openParcel?, openTicket? })` and calls
+  `DF.nav.entered(page, tab)` after drawing; `DF.nav.go(link)` opens a link of this panel in place (others load).
+  Browser tests: `tests/e2e/panel-urls.spec.ts`.
+
+## In-app notifications (modules/notifications: InboxService, in-app.ts; web: public/legacy/shared/notifications.js)
+Per-user notifications behind the bell of every panel (2026-10-18; migration `user_notifications`, table
+`user_notifications`: userId, type, title, body, link, readAt, createdAt; indexes (userId, id desc) and (userId, readAt)).
+- API (signed-in user, own rows only): `GET /me/notifications?cursor=&limit=&unread=true` → `{ items, nextCursor, unread }`
+  (newest first), `GET /me/notifications/count` → `{ unread }`, `POST /me/notifications/:id/read` (others' → 404),
+  `POST /me/notifications/read-all`; both reads are audited. Live: `notification.created` / `notification.read` on
+  `GET /events`, sent to the recipients only (`userIds`, with a staff permission nobody holds), once the rows are
+  committed (InboxService checks for them shortly after the write, so a rolled-back change never rings).
+- Writers: `InboxService.add(db, userIds, { type, title, body?, link? | target + panel? })`, `toStaff(db, { roles,
+  hubIds?, except? }, item)`, `toMerchant(db, merchantId, item)`; links are built with `panelUrl(panel, { page, tab,
+  parcel, ticket })` (the "Page addresses" scheme), per recipient's panel unless given.
+- What writes them (the rule for the toggles):
+  - NotifyService: an event sent with an explicit `to.userId` gets an in-app copy for that user when the event has an
+    entry in `in-app.ts` and is switched on for at least one channel in super admin → Global notifications (the same
+    per-event switch; package message choices apply too). A person's SMS / email opt-outs don't remove it. Events with
+    codes (sign-in / sign-up / reset codes, delivery code, guest and email verification) never get one; copies never
+    contain codes. Customers: their parcel updates, tickets, account security; riders: KYC, payouts, tickets;
+    merchants: approval, KYC, payout account, settlements, invoices, claims, imports, tickets; staff: SLA breaches
+    (operations managers and the hub's operators), support SLA escalations.
+  - Merchant teams (owners and staff): their parcels' final outcomes — delivered, cancelled, return scheduled, returned
+    (ParcelWorkflowService, the events' switches apply), linking to the merchant panel's parcel drawer.
+  - Staff alerts (no SMS, always on): a new ticket or a requester's reply → the assignee, else support agents and
+    operations managers; merchant registration, merchant KYC submitted and changes waiting for a second approver →
+    super admins (not the maker); rider documents submitted → operations managers; a settlement drafted → finance
+    (not the maker); a rider's cash handover request → that hub's operators.
+- Web: the panel's own bell (`#notifications` / `#notificationButton`) shows the unread count in its
+  `.notification-dot` (99+), a dropdown with the latest 8, "Mark all read" and "See all notifications"; clicking an item
+  marks it read and opens its link through `DF.nav.go`. Notifications page `?page=notifications` (All / Unread, Mark all
+  as read, Load more). Courier Operations adds its live "Operations alerts" (breached SLA, problem counts) as a section
+  of the dropdown (`DFNotify.addSection`, courier-operation/bridge-desk.js). The website has no bell (customers' copies
+  are stored for a future account inbox). API tests: `test/user-notifications.e2e.test.ts`.

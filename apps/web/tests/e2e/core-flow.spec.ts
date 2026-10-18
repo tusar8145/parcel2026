@@ -119,6 +119,12 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await rider.reload();
   await rider.waitForSelector("html.legacy-ready", { state: "attached" });
   await rider.click('#navigation [data-page="Deliveries"]');
+  // Assigned, not started: no code yet. "Start delivery" sends it to the recipient.
+  const taskRow = rider.locator("#tableBody tr", { has: rider.locator(`[data-delivery="${trackingId}"]`) });
+  await expect(taskRow).toContainText("Code will be sent when you start the delivery");
+  await taskRow.locator(`[data-df-start="${trackingId}"]`).click();
+  await expect(toast(rider)).toContainText(`${trackingId} is out for delivery. Delivery code sent to the recipient.`);
+  await expect(taskRow.locator(`[data-df-start="${trackingId}"]`)).toHaveCount(0);
   await rider.click(`[data-delivery="${trackingId}"]`);
   await rider.selectOption("#proofMethod", "OTP");
   const otpHint = rider.locator("#otpProof small");

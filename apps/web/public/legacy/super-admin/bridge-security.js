@@ -214,11 +214,11 @@
     const rows = SEC.supportSessions.length
       ? SEC.supportSessions
           .map(
-            s => `<tr><td class="primary-cell">${esc(s.target.name)}<span class="subcell">${esc(s.reason)}</span></td><td>${esc(s.admin.name)}</td><td>${s.readOnly ? "Read-only" : "Full access"}</td><td>${when(s.createdAt)}<span class="subcell">${s.active ? `until ${when(s.expiresAt)}` : s.endedAt ? `ended ${when(s.endedAt)}` : "expired"}</span></td><td>${s.active ? `<button class="mini-button" data-sec-end-support="${esc(s.id)}">End</button>` : ""}</td></tr>`,
+            s => `<tr><td class="primary-cell">${esc(s.target.name)}<span class="subcell">${esc(s.reason)}</span></td><td>${esc(s.admin.name)}${s.admin.role ? `<span class="subcell">${esc(s.admin.role)}</span>` : ""}</td><td>${s.readOnly ? "Read-only" : "Full access"}</td><td>${when(s.createdAt)}<span class="subcell">${s.active ? `until ${when(s.expiresAt)}` : s.endedAt ? `ended ${when(s.endedAt)}` : "expired"}</span></td><td>${s.active ? `<button class="mini-button" data-sec-end-support="${esc(s.id)}">End</button>` : ""}</td></tr>`,
           )
           .join("")
       : `<tr><td colspan="5" class="empty-state">No support access sessions yet.</td></tr>`;
-    return `<section class="panel table-panel" style="margin-top:16px"><div class="panel-heading"><div><h2 class="panel-title">Support access</h2><p class="panel-subtitle">View the platform as a merchant, rider, customer or staff member to help them. Read-only unless you choose full access; passwords and two-step verification can never be changed; every request is recorded; super admin accounts can't be opened.</p></div></div>
+    return `<section class="panel table-panel" style="margin-top:16px"><div class="panel-heading"><div><h2 class="panel-title">Support access</h2><p class="panel-subtitle">View the platform as a merchant, rider or customer to help them. Read-only unless you choose full access; passwords and two-step verification can never be changed; every request is recorded; super admin and staff accounts can't be opened. Sessions started with "Log in as" from Courier Operations (including by operations managers, read-only) are listed here too.</p></div></div>
       <form id="dfSupportForm" class="form-grid" style="padding:16px" novalidate><div class="field"><label for="dfSupportQuery">User</label><input id="dfSupportQuery" placeholder="Name, phone or email" autocomplete="off"><select id="dfSupportUser" style="margin-top:6px"><option value="">Search, then choose a user</option></select></div><div class="field"><label for="dfSupportMinutes">For</label><select id="dfSupportMinutes"><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option></select></div><div class="field full"><label for="dfSupportReason">Reason (recorded and shown in the audit log)</label><input id="dfSupportReason" maxlength="300" placeholder="e.g. Ticket TK-1042: merchant can't see yesterday's pickups"></div><div class="field"><label for="dfSupportMode">Access</label><select id="dfSupportMode"><option value="ro">Read-only</option><option value="full">Full access (changes allowed)</option></select></div><div class="field"><label><input type="checkbox" id="dfSupportNotify" checked> Tell the user by SMS/email</label></div><div class="field full"><button class="button button-primary" type="submit">Open their view in a new tab</button></div></form>
       <div class="table-scroll"><table><thead><tr><th>USER / REASON</th><th>BY</th><th>ACCESS</th><th>STARTED</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
@@ -291,13 +291,7 @@
   }
 
   // ───────────── actions ─────────────
-  let supportHandoff = null;
-  /** The support-access tab collects its token from here once (shared/api.js). */
-  DF.takeSupportAccess = () => {
-    const handed = supportHandoff;
-    supportHandoff = null;
-    return handed;
-  };
+  // The support-access tab collects its token from DF.takeSupportAccess once (shared/api.js DF.startSupportAccess).
 
   const pendingNote = result =>
     result?.status === "PENDING" ? "Sent for approval: another super admin has to approve it before it takes effect." : "Saved: no other super admin can approve, so it took effect at once.";
@@ -413,10 +407,11 @@
       const select = document.getElementById("dfSupportUser");
       if (!select || q.length < 2) return;
       try {
-        const users = (await DF.api(`/users?q=${encodeURIComponent(q)}&status=ACTIVE&limit=20`)).items.filter(u => !u.roles.some(r => r.role === "SUPER_ADMIN"));
+        const STAFF = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
+        const users = (await DF.api(`/users?q=${encodeURIComponent(q)}&status=ACTIVE&limit=20`)).items.filter(u => !u.roles.some(r => STAFF.includes(r.role)));
         select.innerHTML = users.length
           ? users.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(DF.localPhone(u.phone))} · ${esc([...new Set(u.roles.map(r => ROLE_NAME[r.role] || r.role))].join(", "))}</option>`).join("")
-          : `<option value="">No matching users (super admins can't be opened)</option>`;
+          : `<option value="">No matching users (super admin and staff accounts can't be opened)</option>`;
       } catch (error) {
         fail(error);
       }
@@ -454,24 +449,13 @@
         const start = () => {
         const tab = window.open("about:blank", "_blank");
         return void act(form.querySelector('[type="submit"]'), async () => {
-          try {
-            const result = await DF.api("/admin/impersonations", {
-              method: "POST",
-              body: { userId, reason, minutes: Number(form.querySelector("#dfSupportMinutes").value), readOnly, notifyUser: form.querySelector("#dfSupportNotify").checked },
-            });
-            supportHandoff = { id: result.impersonation.id, accessToken: result.accessToken, expiresAt: Date.now() + result.expiresIn * 1000 - 5000 };
-            setTimeout(() => (supportHandoff = null), 60_000);
-            const panel = result.user.panel || "/";
-            const [path, hash = ""] = panel.split("#");
-            const url = `${path}${path.includes("?") ? "&" : "?"}support-access=1${hash ? `#${hash}` : ""}`;
-            if (tab) tab.location.href = url;
-            else showToast("Allow pop-ups for this site to open the support view.");
-            showToast(`Support access to ${result.user.name} started (${readOnly ? "read-only" : "full access"}).`);
-            await refreshAdmins("support");
-          } catch (error) {
-            tab?.close();
-            throw error;
-          }
+          const result = await DF.startSupportAccess(
+            { userId, reason, minutes: Number(form.querySelector("#dfSupportMinutes").value), readOnly, notifyUser: form.querySelector("#dfSupportNotify").checked },
+            { tab },
+          );
+          if (!result.opened) showToast("Allow pop-ups for this site to open the support view.");
+          showToast(`Support access to ${result.user.name} started (${readOnly ? "read-only" : "full access"}).`);
+          await refreshAdmins("support");
         });
         };
         if (readOnly) return void start();

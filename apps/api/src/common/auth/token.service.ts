@@ -112,5 +112,10 @@ export class TokenService {
     await multi.exec();
   }
 
+  /** Whether this session was revoked (signed out, or support access ended). */
+  async isRevoked(sessionId: string) {
+    return !!(await this.redis.get(this.revokedKey(sessionId)).catch(() => null));
+  }
+
   private revokedKey = (sid: string) => `auth:revoked-session:${sid}`;
 }

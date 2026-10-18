@@ -273,9 +273,12 @@ test.describe.serial("spreadsheet imports", () => {
     // No per-row merchant: nothing can be checked until the merchant is chosen.
     await expect(page.locator("#dfiChooseMerchant")).toBeVisible();
     await expect(page.locator('#dfiMerchant option[value=""]')).not.toHaveText(/per row/i);
-    await page.fill("#dfiMerchantSearch", merchant.code);
-    await expect(page.locator("#dfiMerchant option")).toHaveCount(2);
-    await page.selectOption("#dfiMerchant", merchant.id);
+    // The merchant list is searchable (shared/select-search.js): type the code, Enter picks it.
+    await page.click("#dfiMerchant");
+    await page.locator(".df-ss-pop [role=combobox]").fill(merchant.code);
+    await expect(page.locator(".df-ss-pop [role=option]")).toHaveCount(1);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#dfiMerchant")).toHaveValue(merchant.id);
     await expect(page.locator("#dfImportSubtitle")).toContainText(merchant.name);
     await expect(page.locator("#dfiIntake")).toBeVisible();
   }
@@ -369,9 +372,8 @@ test.describe.serial("spreadsheet imports", () => {
     await opsNav(page, "banking");
     await opsDialog(page, bank);
     // Only Banking & Financial merchants are offered for this category.
-    await page.fill("#dfiMerchantSearch", MERCHANT.code);
-    await expect(page.locator("#dfiMerchant option")).toHaveCount(2); // the placeholder and the chosen bank
-    await page.fill("#dfiMerchantSearch", "");
+    await expect(page.locator(`#dfiMerchant option[value="${MERCHANT.id}"]`)).toHaveCount(0);
+    await expect(page.locator(`#dfiMerchant option[value="${bank.id}"]`)).toHaveCount(1);
     const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
     expect(template.name).toBe("delivery-fast-banking-financial-template.xlsx");
     const parts = unzip(template.buffer);

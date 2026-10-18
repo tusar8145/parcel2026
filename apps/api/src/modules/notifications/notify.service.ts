@@ -7,6 +7,7 @@ import type { NotificationEvent } from "./events";
 import { CHANNEL_OF, EVENT_CATALOG, OUTBOX_CHANNEL, channelsOf, type Channel } from "./catalog";
 import { NotificationSettingsService, type Snapshot } from "./notification-settings.service";
 import { emailLayout, escapeHtml, render, type Vars } from "./render";
+import { InboxService } from "./inbox.service";
 
 export interface NotifyInput {
   event: NotificationEvent;
@@ -46,6 +47,7 @@ export class NotifyService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly settings: NotificationSettingsService,
+    private readonly inbox: InboxService,
   ) {}
 
   async notify(db: Db, input: NotifyInput): Promise<string[]> {
@@ -60,6 +62,8 @@ export class NotifyService {
     const service = NOTIFICATION_SERVICE_OF_EVENT[input.event];
     if (service && input.parcel?.packageVersionId && !input.parcel.notifications.includes(service)) return [];
     if (service && input.pkg && !input.pkg.services.includes(service)) return [];
+    // In-app copy (the bell) for a known recipient: docs "In-app notifications" (in-app.ts has the rule).
+    if (input.to.userId) await this.inbox.copyOf(db, input.event, input.to.userId, input.vars ?? {});
     const snapshot = await this.settings.snapshot();
     const wanted = channelsOf(def).filter(c => (!input.channels || input.channels.includes(c)) && this.settings.resolve(snapshot, input.event, c)?.enabled);
     if (!wanted.length) return [];

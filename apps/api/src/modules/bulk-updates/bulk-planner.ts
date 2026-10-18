@@ -19,6 +19,7 @@ import { resolvePlace } from "../parcels/places";
 import { describeMissing, missingFor, type MissingField } from "../parcels/incomplete";
 import { ACTION_LABEL, DETAIL_KEYS, headerOf, parseSettableStatus, riderCodeOf, type BulkAction, type BulkColumnKey } from "./bulk-columns";
 import type { ActionTemplate } from "./bulk-actions";
+import { BAG_LABEL, bagNumberOf } from "../linehaul/transfer-rules";
 
 /** The action a row runs (fixed by the file's action template). */
 export type BulkChoice = Pick<ActionTemplate, "label" | "action" | "status" | "statuses" | "noteRequired">;
@@ -47,6 +48,9 @@ export interface BulkPlan {
   hubName?: string;
   note?: string;
   details?: DetailsBody;
+  /** Add to transfer bag: the open bag named in the row (BG-…), or the label grouping parcels into a new bag (null = one bag per destination for the upload). */
+  bag?: string | null;
+  bagLabel?: string | null;
   /** Rows that re-price the parcel (completion, intake change): its charge now → after applying (the preview; set by the service). */
   price?: { before: number; after: number; difference: number };
 }
@@ -118,6 +122,12 @@ export class BulkPlanner {
       catalog: Catalog;
       /** Hub operators' hubs; null = the whole network. */
       scope: string[] | null;
+      /** Add to transfer bag: each parcel's destination hub (zone's serving hub / collection hub). */
+      destinations?: Map<string, string | null>;
+      /** Add to transfer bag: bags named in the file, by number. */
+      bags?: Map<string, { id: string; number: string; status: string; originHubId: string; destHubId: string }>;
+      /** Add to transfer bag: the active bag each parcel is already in. */
+      bagOf?: Map<string, { id: string; number: string; status: string; destHubId: string }>;
     },
   ) {
     for (const r of ctx.riders) this.ridersByCode.set(r.code.toUpperCase(), r);
@@ -339,7 +349,66 @@ export class BulkPlanner {
       }
       case "ADD_NOTE":
         return null;
+      case "ADD_TO_BAG":
+        return this.planTransfer(p, cells, plan, err, warn);
     }
+  }
+
+  /**
+   * Add to transfer bag: the parcel must be at a hub of the caller and not in another active bag;
+   * the destination (the row's, else the suggestion) another operating hub; a named bag open and on
+   * that route, or a label for a new bag.
+   */
+  private planTransfer(p: PlannerParcel, cells: BulkRowCells, plan: BulkPlan, err: (c: string, m: string) => void, warn: (c: string, m: string) => void): string | null {
+    const scope = this.ctx.scope;
+    const label = statusLabelOf(p);
+    const suggested = this.ctx.destinations?.get(p.id) ?? null;
+    const typed = cells.dest_hub?.trim();
+    let destId: string | null = null;
+    if (typed) {
+      const hub = this.findHub(typed);
+      if (!hub) err("dest_hub", `Unknown hub "${typed}" (choose one from the list)`);
+      else if (!hub.active) err("dest_hub", `${hub.name} isn't operating`);
+      else destId = hub.id;
+    } else if (suggested) destId = suggested;
+    else err("dest_hub", `No hub serves ${[p.deliveryZone, p.deliveryDistrict].filter(Boolean).join(", ") || "the recipient's zone"}: choose the Destination hub`);
+    if (destId) {
+      plan.hubId = destId;
+      plan.hubName = this.hubName(destId);
+      if (suggested && destId !== suggested) warn("dest_hub", `${this.hubName(suggested)} serves the recipient's zone; this parcel goes to ${plan.hubName}`);
+    }
+    const bagText = cells.bag?.trim();
+    const number = bagNumberOf(bagText);
+    plan.bag = number;
+    plan.bagLabel = null;
+    const current = this.ctx.bagOf?.get(p.id);
+    if (current) {
+      // Uploading the same file again: the parcel already travels in a bag to that destination.
+      if ((number && current.number === number) || (!number && destId && current.destHubId === destId)) return `already in bag ${current.number}`;
+      err("tracking_id", `${p.trackingId} is already in bag ${current.number} (${current.status.toLowerCase().replace("_", " ")}) to ${this.hubName(current.destHubId)}. Take it out of that bag first`);
+      return null;
+    }
+    if (p.status !== "AT_HUB" || !p.currentHubId) {
+      err("status", `A parcel that is "${label}" can't be put in a transfer bag: only parcels received at your hub`);
+      return null;
+    }
+    if (scope && !scope.includes(p.currentHubId)) {
+      err("tracking_id", `${p.trackingId} is at ${this.hubName(p.currentHubId)}, not at your hub. Only that hub or an operations manager can send it`);
+      return null;
+    }
+    if (destId && destId === p.currentHubId) err("dest_hub", `${p.trackingId} is already at ${plan.hubName}: choose another destination (parcels for this hub's own zones are delivered from here)`);
+    if (number) {
+      const bag = this.ctx.bags?.get(number);
+      if (!bag) err("bag", `No bag ${number}: choose an open bag from the list, or type a label for a new bag`);
+      else if (bag.status !== "OPEN") err("bag", `${number} is ${bag.status.toLowerCase().replace("_", " ")}: choose an open bag, or type a label for a new bag`);
+      else if (bag.originHubId !== p.currentHubId) err("bag", `${number} is made up at ${this.hubName(bag.originHubId)}, not at ${this.hubName(p.currentHubId)}`);
+      else if (destId && bag.destHubId !== destId) err("bag", `${number} goes to ${this.hubName(bag.destHubId)}, not ${plan.hubName}`);
+    } else if (bagText) {
+      if (/^BG-/i.test(bagText)) err("bag", `"${bagText}" isn't a bag number (BG-YYMMDD-NNNN); type a label without "BG-" for a new bag`);
+      else if (!BAG_LABEL.test(bagText)) err("bag", "A bag label has at most 40 letters, digits, spaces or - _ / . #");
+      else plan.bagLabel = bagText.toUpperCase();
+    }
+    return null;
   }
 
   /** The lifecycle, hub and detail rules of a status change by operations (like ParcelsService.setStatus). */
@@ -506,6 +575,7 @@ export class BulkPlanner {
         return same ? "the details are already saved" : null;
       }
       case "ADD_NOTE":
+      case "ADD_TO_BAG":
         return null;
     }
   }

@@ -81,3 +81,114 @@ sequenceDiagram
 ## Demo-র সীমাবদ্ধতা
 
 এটি browser-based presentation demo, production courier backend নয়। Customer parcel ও event history browser-এর `localStorage`-এ এবং কিছু tracking sample `sessionStorage`-এ রাখা হয়; আলাদা browser বা device-এ এগুলো স্বয়ংক্রিয়ভাবে synchronize হওয়ার নিশ্চয়তা নেই। তাই status, charge, COD settlement ও delivery proof-কে বাস্তব লেনদেনের রেকর্ড হিসেবে ব্যবহার করা যাবে না।
+
+
+
+
+Panel	URL
+Public website	http://localhost:3000/
+Courier operations	http://localhost:3000/courier-operation
+Rider	http://localhost:3000/rider
+E-commerce merchant	http://localhost:3000/ecommerce-merchant
+Banking & Financial merchant	http://localhost:3000/banking-merchant
+Super admin	http://localhost:3000/super-admin
+
+
+Your super admin account
+
+Sign-in page: http://localhost:3000/#/login
+Email: superadmin@deliveryfast.example (or phone 01700000099)
+Password: Admin9fc9308a4eba9
+
+
+1. Super admin (প্রথম login-এ authenticator app লাগবে)
+superadmin@deliveryfast.example
+Gzo9a%37+7m7MRHMx7
+
+2. Operations manager
+ops.manager@deliveryfast.example
+aoTT+AwiZWqEKA%c2r
+
+3. Hub operator (Dhaka Central Sorting)
+hubop.dhaka.central@deliveryfast.example
+i6HxcvPHP%gCy%4pzN
+
+4. Hub operator (Gulshan)
+hubop.gulshan@deliveryfast.example
+i6HxcvPHP%gCy%4pzN
+
+5. Hub operator (Chattogram)
+hubop.chattogram@deliveryfast.example
+i6HxcvPHP%gCy%4pzN
+
+6. Finance (maker)
+finance.maker@deliveryfast.example
+aCco+6j9Q%?2khoS2Z
+
+7. Finance (checker)
+finance.checker@deliveryfast.example
+aCco+6j9Q%?2khoS2Z
+
+8. Support agent
+support.agent@deliveryfast.example
++t6jktBBg+GATB6wAu
+
+9. E-commerce merchant owner (Shopnil Fashion House)
+merchant.ecom.owner@deliveryfast.example
+CP3Gk+UfvShbv=%TEY
+
+10. E-commerce merchant staff (Shopnil Fashion House)
+merchant.ecom.staff@deliveryfast.example
+CP3Gk+UfvShbv=%TEY
+
+11. Banking & Financial merchant owner (Shapla Corporate Services)
+merchant.doc.owner@deliveryfast.example
+CP3Gk+UfvShbv=%TEY
+
+12. Customer (Ayesha Siddiqua)
+customer.ayesha@deliveryfast.example
+EeongQnuknW!gY9g3#
+
+13. Customer (Rafiq Uddin)
+customer.rafiq@deliveryfast.example
+EeongQnuknW!gY9g3#
+
+14. Rider (R-2101, Abdul Karim, Gulshan)
+01811000201
+%67u#=pfBSa@auHT+V
+
+15. Rider (R-2102, Jahid Hasan, Gulshan)
+01811000202
+%67u#=pfBSa@auHT+V
+
+16. Rider (R-2103, Sohel Rana, Mirpur)
+01811000203
+%67u#=pfBSa@auHT+V
+
+17. Rider (R-2104, Rasel Mia, Mirpur)
+01811000204
+%67u#=pfBSa@auHT+V
+
+18. Rider (R-2105, Imran Hossain, Uttara)
+01811000205
+%67u#=pfBSa@auHT+V
+
+19. Rider (R-2106, Arif Billah, Uttara)
+01811000206
+%67u#=pfBSa@auHT+V
+
+20. Rider (R-2107, Mizanur Rahman, Dhanmondi)
+01811000207
+%67u#=pfBSa@auHT+V
+
+21. Rider (R-2108, Shakil Ahmed, Dhanmondi)
+01811000208
+%67u#=pfBSa@auHT+V
+
+22. Rider (R-2109, Nurul Alam, Chattogram)
+01811000209
+%67u#=pfBSa@auHT+V
+
+23. Rider (R-2110, Fahim Chowdhury, Sylhet)
+01811000210
+%67u#=pfBSa@auHT+V

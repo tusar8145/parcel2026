@@ -31,8 +31,9 @@
   let accessExpiresAt = 0;
   let refreshing = null;
 
-  // Support access ("view as", started from super admin): this tab runs on a short-lived,
-  // non-refreshable token kept for this tab only. It never touches the admin's own session.
+  // Support access ("view as" from super admin, "Log in as" from Courier Operations): this tab runs
+  // on a short-lived, non-refreshable token kept for this tab only. It never touches the admin's
+  // own session, and the rider app keeps nothing of it on the device (offline.js).
   const SUPPORT_KEY = "df-support-access";
   let supportAccess = null;
   try {
@@ -91,7 +92,11 @@
       accessExpiresAt = supportAccess.expiresAt;
       refreshing ??= rawFetch("/auth/me")
         .then(user => (state.user = user))
-        .catch(() => endSupportAccess("ended"))
+        .catch(() => {
+          endSupportAccess("ended");
+          supportEnded?.("ended");
+          return null;
+        })
         .finally(() => (refreshing = null));
       return refreshing;
     }
@@ -173,6 +178,9 @@
     try {
       sessionStorage.removeItem(SUPPORT_KEY);
     } catch {}
+    // Rider app: nothing of the opened account stays on this device (session, cached tasks, queue).
+    const opened = supportAccess && (supportAccess.userId || state.user?.id);
+    if (opened) void window.DFOffline?.forget?.(opened);
     supportAccess = null;
     accessToken = null;
     state.user = null;
@@ -544,39 +552,104 @@
 
   function goToLogin() {
     try {
-      sessionStorage.setItem(RETURN_KEY, location.pathname + location.hash);
+      sessionStorage.setItem(RETURN_KEY, location.pathname + location.search + location.hash); // deep links come back after sign-in
     } catch {}
     location.replace("/login");
   }
 
-  /** A bar across the page while support access is on: who, how, until when, and a way out. */
+  /** Set while the banner is up: closes the view when support access ends some other way (revoked, expired). */
+  let supportEnded = null;
+
+  /**
+   * A bar across the page while support access is on: "Viewing as <name> (read-only) · ends in
+   * 12 min · End", who opened it, and a live countdown. When it ends (End, expiry, or ended by an
+   * administrator elsewhere) the page is covered and the tab closes.
+   */
   function supportBanner(user) {
     const imp = user.impersonation || {};
+    const mode = imp.readOnly === false ? "full access" : "read-only";
     const bar = document.createElement("div");
+    bar.id = "dfSupportBanner";
     bar.setAttribute("role", "status");
+    bar.dataset.mode = imp.readOnly === false ? "full" : "read-only";
     bar.style.cssText =
       "position:fixed;left:0;right:0;bottom:0;z-index:2147483000;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#7c2d12;color:#fff;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 -2px 12px rgba(0,0,0,.25)";
-    const until = new Date(supportAccess.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     const text = document.createElement("span");
-    text.textContent = `Support access: viewing as ${user.name} (${imp.readOnly === false ? "full access" : "read-only"}) by ${imp.adminName || "an administrator"} · ends ${until} · every action is recorded`;
+    text.id = "dfSupportBannerText";
+    const by = document.createElement("small");
+    by.style.cssText = "font-weight:400;opacity:.85";
+    by.textContent = `Opened by ${imp.adminName || "an administrator"} · every action is recorded${imp.readOnly === false ? "" : " · changes are blocked"}`;
     const end = document.createElement("button");
     end.type = "button";
-    end.textContent = "End support access";
-    end.style.cssText = "border:1px solid #fff;background:transparent;color:#fff;border-radius:6px;padding:4px 10px;font:inherit;cursor:pointer";
-    end.addEventListener("click", async () => {
-      await auth.logout();
-      bar.firstChild.textContent = "Support access ended. You can close this tab.";
+    end.id = "dfSupportEnd";
+    end.textContent = "End";
+    end.title = "End this session and close the tab";
+    end.style.cssText = "border:1px solid #fff;background:transparent;color:#fff;border-radius:6px;padding:4px 12px;font:inherit;cursor:pointer";
+    const tick = () => {
+      const left = supportAccess ? Math.max(0, supportAccess.expiresAt - Date.now()) : 0;
+      const minutes = Math.max(1, Math.ceil(left / 60000));
+      text.textContent = `Viewing as ${user.name} (${mode}) · ends in ${minutes} min`;
+    };
+    tick();
+    const timer = setInterval(tick, 15000);
+    let done = false;
+    /** Covers the page (nothing of the account stays on screen) and closes the tab. */
+    const finish = message => {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      clearTimeout(expiry);
+      supportEnded = null;
+      memory.clear();
+      bar.style.top = "0";
+      bar.style.flexDirection = "column";
+      bar.style.fontSize = "16px";
+      text.textContent = message;
+      by.textContent = "You can close this tab.";
       end.remove();
-      setTimeout(() => window.close(), 600);
+      setTimeout(() => window.close(), 800);
+    };
+    supportEnded = reason => finish(reason === "expired" ? `Viewing as ${user.name} ended: the time ran out.` : `Viewing as ${user.name} has ended.`);
+    end.addEventListener("click", async () => {
+      end.disabled = true;
+      await auth.logout();
+      finish(`Viewing as ${user.name} has ended.`);
     });
-    bar.append(text, end);
+    bar.append(text, by, end);
     const add = () => document.body.append(bar);
     document.body ? add() : document.addEventListener("DOMContentLoaded", add);
-    setTimeout(() => {
+    const expiry = setTimeout(() => {
       endSupportAccess("expired");
-      text.textContent = "Support access expired. You can close this tab.";
-      end.remove();
+      finish(`Viewing as ${user.name} ended: the time ran out.`);
     }, Math.max(0, supportAccess.expiresAt - Date.now()));
+  }
+
+  // The administrator's side: starts support access and opens it in a new tab, which collects its
+  // token once through DF.takeSupportAccess (window.opener) — never through storage or the URL.
+  let supportHandoff = null;
+  /**
+   * Starts support access ("view as" / "Log in as") and points `tab` (opened by the caller during
+   * the click, e.g. window.open("about:blank")) at the user's panel. `panel` overrides the
+   * account's default panel. Resolves the API result; closes the tab on failure.
+   */
+  async function startSupportAccess(body, { tab, panel } = {}) {
+    try {
+      const result = await api("/admin/impersonations", { method: "POST", body });
+      supportHandoff = { id: result.impersonation.id, userId: result.user.id, accessToken: result.accessToken, expiresAt: Date.now() + result.expiresIn * 1000 - 5000 };
+      setTimeout(() => (supportHandoff = null), 60_000);
+      const [path, hash = ""] = (panel || result.user.panel || "/").split("#");
+      const url = `${path}${path.includes("?") ? "&" : "?"}support-access=1${hash ? `#${hash}` : ""}`;
+      if (tab && !tab.closed) tab.location.href = url;
+      return { ...result, opened: !!(tab && !tab.closed) };
+    } catch (error) {
+      tab?.close();
+      throw error;
+    }
+  }
+  function takeSupportAccess() {
+    const handed = supportHandoff;
+    supportHandoff = null;
+    return handed;
   }
 
   /** Runs before the page scripts. Resolves once the page may start. */
@@ -591,7 +664,7 @@
         state.user = user;
         state.offlineSession = true;
       }
-    } else if (user && app === "rider") void window.DFOffline?.saveSession(user);
+    } else if (user && app === "rider" && !supportAccess) void window.DFOffline?.saveSession(user);
     const required = PANEL_ROLES[app];
     if (required && !auth.hasRole(...required)) {
       goToLogin();
@@ -633,6 +706,8 @@
     get supportAccess() {
       return supportAccess ? { ...supportAccess, accessToken: undefined } : null;
     },
+    startSupportAccess,
+    takeSupportAccess,
     route,
     state,
     parcels,
@@ -685,6 +760,213 @@
       }, ms);
     },
   };
+
+  // ───────────── panel URLs (DF.nav): every page and tab has its own address ─────────────
+  //
+  // One scheme for every panel: /<panel>?page=<page-slug>[&tab=<tab-slug>], kebab-case slugs of the
+  // menu names (e.g. /courier-operation?page=hub-desk&tab=receive, /super-admin?page=approval-center,
+  // /ecommerce-merchant?page=payments). Old page names and old slugs still open the page and the
+  // address is rewritten to the new slug. Deep links: ?parcel=<tracking ID> opens the parcel,
+  // ?ticket=<number> the support ticket. Other parameters (period, from, to, filters) are kept.
+  // Navigating pushes a history entry (Back / Forward work); redraws replace it. The title follows:
+  // "Page › Tab · Delivery Fast · Panel". Each panel connects with DF.nav.start(adapter):
+  //   { panel: "Courier Operations", home: "Overview", pages: () => [{ name, label?, slug?, aliases?, tabs?: [{ name, label?, slug?, aliases? }] }],
+  //     open(pageName, tabName), openParcel?(id), openTicket?(number) }
+  // and calls DF.nav.entered(pageName, tabName[, { replace: true }]) whenever a page or tab is on screen.
+  const nav = (() => {
+    const slug = value =>
+      String(value ?? "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/['’]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    const ONE_SHOT = ["parcel", "ticket"];
+    let adapter = null;
+    let restoring = false;
+    let current = null; // { page, tab, key } on screen
+    let pending = null;
+    const handled = { parcel: null, ticket: null };
+    const ready = () => document.documentElement.classList.contains("legacy-ready");
+    const pageSlug = p => p.slug || slug(p.label || p.name);
+    const tabSlug = t => t.slug || slug(t.label || t.name);
+    const keyOf = found => `${pageSlug(found.page)}|${found.tab ? tabSlug(found.tab) : ""}`;
+
+    /** A page / tab from a URL value, a name or an old name (any case) → the entries, or null. */
+    function find(page, tab) {
+      if (!page || !adapter) return null;
+      const want = slug(page);
+      const entry = adapter.pages().find(p => pageSlug(p) === want || slug(p.name) === want || (p.label && slug(p.label) === want) || (p.aliases || []).some(a => slug(a) === want));
+      if (!entry) return null;
+      let tabEntry = null;
+      if (tab && entry.tabs?.length) {
+        const t = slug(tab);
+        tabEntry = entry.tabs.find(x => tabSlug(x) === t || slug(x.name) === t || (x.aliases || []).some(a => slug(a) === t)) || null;
+      }
+      return { page: entry, tab: tabEntry };
+    }
+
+    function flush() {
+      const next = pending;
+      pending = null;
+      if (!next) return;
+      if (next.url !== location.pathname + location.search + location.hash) history[next.push ? "pushState" : "replaceState"](history.state, "", next.url);
+    }
+    /** Writes the address. Next.js's router must be up first: until html.legacy-ready only the latest URL waits (as a replace). */
+    function write(url, push) {
+      if (ready()) {
+        pending = { url, push };
+        return flush();
+      }
+      pending = { url, push: false };
+      if (write.observer) return;
+      write.observer = new MutationObserver(() => {
+        if (!ready()) return;
+        write.observer.disconnect();
+        setTimeout(flush, 0);
+      });
+      write.observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    }
+
+    /** The address of a page / tab, keeping the other parameters (not the one-shot parcel / ticket). */
+    function url(page, tab, extra = {}) {
+      const found = find(page, tab);
+      const params = new URLSearchParams(pending ? new URL(pending.url, location.href).search : location.search);
+      for (const k of ["page", "tab", ...ONE_SHOT]) params.delete(k);
+      const fresh = new URLSearchParams();
+      if (found) {
+        fresh.set("page", pageSlug(found.page));
+        if (found.tab) fresh.set("tab", tabSlug(found.tab));
+      }
+      for (const [k, v] of params) fresh.append(k, v);
+      for (const [k, v] of Object.entries(extra)) if (v !== null && v !== undefined && v !== "") fresh.set(k, v);
+      const query = fresh.toString();
+      return location.pathname + (query ? `?${query}` : "");
+    }
+
+    function setTitle(found) {
+      const name = found.page.label || found.page.name;
+      const tab = found.tab && found.page.tabs?.length > 1 ? ` › ${found.tab.label || found.tab.name}` : "";
+      const title = `${name}${tab} · Delivery Fast · ${adapter.panel}`;
+      document.title = title;
+      // React may redraw the server's <title> after a history change.
+      setTimeout(() => document.title !== title && (document.title = title), 0);
+    }
+
+    /** The page / tab now on screen: updates the address (a new entry when it moved, else in place) and the title. */
+    function entered(page, tab, { replace = false } = {}) {
+      const found = find(page, tab);
+      if (!found) return;
+      const key = keyOf(found);
+      const before = current?.key ?? null;
+      current = { page: found.page.name, tab: found.tab?.name ?? null, key };
+      setTitle(found);
+      const params = new URLSearchParams(location.search);
+      const canonical = params.get("page") === pageSlug(found.page) && (params.get("tab") || "") === (found.tab ? tabSlug(found.tab) : "");
+      if (canonical && !pending) return;
+      const inUrl = find(params.get("page"), params.get("tab"));
+      // Another page than the address: a new history entry. The same one (an old name, a missing slug): rewritten in place.
+      const moved = !restoring && !replace && before !== null && before !== key && (!inUrl || keyOf(inUrl) !== key);
+      write(url(found.page.name, found.tab?.name), moved);
+    }
+
+    /** Sets or clears one parameter in place (e.g. ?parcel= while the drawer is open). */
+    function setParam(name, value) {
+      const params = new URLSearchParams(pending ? new URL(pending.url, location.href).search : location.search);
+      if (value === null || value === undefined || value === "") params.delete(name);
+      else params.set(name, value);
+      if (ONE_SHOT.includes(name)) handled[name] = value || null;
+      const query = params.toString();
+      write(location.pathname + (query ? `?${query}` : "") + location.hash, false);
+    }
+
+    function openExtra(name, value) {
+      const fn = name === "parcel" ? adapter?.openParcel : adapter?.openTicket;
+      if (!fn) return;
+      handled[name] = value;
+      Promise.resolve(fn(value.trim().toUpperCase())).catch(() => undefined);
+    }
+    /** ?parcel= / ?ticket= in the address: opens each value once. */
+    function extras() {
+      if (!adapter) return;
+      const params = new URLSearchParams(location.search);
+      for (const name of ONE_SHOT) {
+        const value = params.get(name);
+        if (value && value !== handled[name]) openExtra(name, value);
+        if (!value) handled[name] = null;
+      }
+    }
+
+    /** What the address asks for: { page, tab } names (old names resolved; ?ticket= alone → Support) or null. */
+    function requested(search = location.search) {
+      const params = new URLSearchParams(search);
+      const found = find(params.get("page") || (params.get("ticket") ? "support" : ""), params.get("tab"));
+      return found ? { page: found.page.name, tab: found.tab?.name ?? null } : null;
+    }
+
+    function openRestoring(page, tab) {
+      restoring = true;
+      try {
+        adapter.open(page, tab);
+      } finally {
+        restoring = false;
+      }
+    }
+
+    window.addEventListener("popstate", () => {
+      if (!adapter) return;
+      const want = requested() || (adapter.home ? { page: adapter.home, tab: null } : null);
+      const found = want && find(want.page, want.tab);
+      if (found && (!current || current.key !== keyOf(found))) openRestoring(want.page, want.tab);
+      else if (found) setTitle(found);
+      extras();
+    });
+
+    return {
+      slug,
+      /** Connects a panel; returns what the address asks for ({ page, tab } or null). */
+      start(a) {
+        adapter = a;
+        return requested();
+      },
+      entered,
+      /** Runs fn (e.g. a role's landing page) without adding a history entry. */
+      quietly(fn) {
+        const was = restoring;
+        restoring = true;
+        try {
+          return fn();
+        } finally {
+          restoring = was;
+        }
+      },
+      url,
+      find,
+      requested,
+      setParam,
+      extras,
+      /** Opens a panel link ("/courier-operation?page=…&tab=…", "…?parcel=…"): in place when it is this panel, else loads it. */
+      go(link) {
+        const target = new URL(link, location.href);
+        if (target.origin !== location.origin || target.pathname !== location.pathname || !adapter) return void location.assign(target.href);
+        const want = requested(target.search);
+        if (want) adapter.open(want.page, want.tab);
+        for (const name of ONE_SHOT) {
+          const value = target.searchParams.get(name);
+          if (!value) continue;
+          setParam(name, value);
+          openExtra(name, value);
+        }
+      },
+      get current() {
+        return current;
+      },
+      get panel() {
+        return adapter?.panel || null;
+      },
+    };
+  })();
+  DF.nav = nav;
 
   // ───────────── live updates (GET /events, Server-Sent Events) ─────────────
 

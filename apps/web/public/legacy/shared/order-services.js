@@ -24,7 +24,7 @@
  *   DFOrderServices.fill(select, values, placeholder, keep)
  *                                              → refills a place select ("Choose district" first, nothing preselected)
  *   DFOrderServices.searchable(select, { label, threshold })
- *                                              → a search box above a long select (areas, zones) that filters it
+ *                                              → a long select (areas, zones) becomes searchable (DF.searchSelect)
  *   DFOrderServices.breakdown(quote)           → HTML list of the price lines and the total
  *
  * Messages: every message in the package is pre-ticked; the user unticks what shouldn't go and the
@@ -186,43 +186,16 @@
   }
 
   /**
-   * A search box above a long select (more than `threshold` options): typing hides the options that
-   * don't match and picks the first match. Call again after refilling the select.
+   * A long select (more than `threshold` options) becomes searchable: typing in its list filters it
+   * (shared/select-search.js, DF.searchSelect). Call again after refilling the select.
    */
   function searchable(select, { label, threshold = 15 } = {}) {
     if (!select) return;
-    const many = select.options.length > threshold + 1;
-    let box = select.previousElementSibling?.dataset?.dfSearch === select.id ? select.previousElementSibling : null;
-    if (!box && !many) return;
-    if (!box) {
-      box = document.createElement("input");
-      box.type = "search";
-      box.dataset.dfSearch = select.id;
-      box.autocomplete = "off";
-      const name = label || (select.labels?.[0]?.textContent || "options").replace(/\s*\(optional\)\s*/i, "").toLowerCase();
-      box.placeholder = `Search ${name}…`;
-      box.setAttribute("aria-label", `Search ${name}`);
-      box.style.marginBottom = "4px";
-      select.before(box);
-      box.addEventListener("input", () => apply(true));
-    }
-    function apply(pick) {
-      const term = box.value.trim().toLowerCase();
-      let first = null;
-      for (const option of select.options) {
-        if (!option.value) continue;
-        const hit = !term || option.textContent.toLowerCase().includes(term);
-        option.hidden = !hit;
-        if (hit && !first) first = option;
-      }
-      if (pick && term && first && (!select.value || select.selectedOptions[0]?.hidden)) {
-        select.value = first.value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    }
-    box.hidden = !many;
-    if (!many) box.value = "";
-    apply(false);
+    // The older search box above the select (from before the shared component) is removed.
+    const box = select.previousElementSibling?.dataset?.dfSearch === select.id ? select.previousElementSibling : null;
+    box?.remove();
+    for (const option of select.options) option.hidden = false;
+    if (window.DF?.searchSelect) DF.searchSelect(select, { label, threshold: Math.min(threshold, DF.searchSelect.threshold) });
   }
 
   function breakdown(quote) {

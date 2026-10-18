@@ -4,6 +4,7 @@ import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { OutboxService } from "../notifications/outbox.service";
+import { InboxService } from "../notifications/inbox.service";
 import { NotifyService } from "../notifications/notify.service";
 import { WebhooksService } from "../notifications/webhooks.service";
 import { assertKycAllowed } from "../merchants/merchant-kyc.service";
@@ -18,6 +19,7 @@ import { ZERO, dhakaMonthStart, financeMerchantScope, money, sum } from "./finan
 import { readFinanceConfig, vatSplit } from "./finance-config";
 import { LedgerService, credit, debit, type LedgerVia } from "./ledger.service";
 import { syncReturnCharges } from "./return-charges";
+import { periodView, resolvePeriod, type PeriodQuery } from "../../common/period";
 
 const settlementInclude = {
   merchant: { select: { id: true, code: true, name: true } },
@@ -58,6 +60,7 @@ export class SettlementsService {
   @Inject(WebhooksService) private readonly settlementWebhooks!: WebhooksService;
   @Inject(LedgerService) private readonly ledger!: LedgerService;
   @Inject(NotifyService) private readonly notify!: NotifyService;
+  @Inject(InboxService) private readonly inbox!: InboxService;
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
 
   /** Drafts a payout of every unsettled COD collection at hubs for the merchant. */
@@ -136,6 +139,13 @@ export class SettlementsService {
           },
           meta,
           tx,
+        );
+        // Finance's bell: a draft waiting for a second person's approval (maker-checker).
+        const merchant = await tx.merchant.findUnique({ where: { id: merchantId }, select: { name: true } });
+        await this.inbox.toStaff(
+          tx,
+          { roles: ["FINANCE"], except: actor === "system" ? null : actor.userId },
+          { type: "staff.settlement_approval", title: `Settlement ${settlement.number} to approve`, body: `${merchant?.name ?? "Merchant"} · Tk ${netPayable.toFixed(2)}`, target: { page: "cod-and-settlement" }, panel: "/courier-operation" },
         );
         return settlement.id;
       },
@@ -358,8 +368,39 @@ export class SettlementsService {
     };
   }
 
-  /** Staff-wide money position. */
-  async summary() {
+  /** Staff-wide money position (now) and what moved in the period (default this month). */
+  async summary(query: PeriodQuery = {}) {
+    const p = resolvePeriod(query, "this_month");
+    const range = { gte: p.start, lt: p.end };
+    const [collected, received, paid, invoiced, invoicesPaid, charges] = await Promise.all([
+      this.prisma.codCollection.aggregate({ where: { collectedAt: range }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.cashHandover.aggregate({ where: { createdAt: range }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.merchantSettlement.aggregate({ where: { status: "PAID", paidAt: range }, _sum: { netPayable: true }, _count: { _all: true } }),
+      this.prisma.invoice.aggregate({ where: { status: { in: ["ISSUED", "PAID"] }, issuedAt: range }, _sum: { subtotal: true }, _count: { _all: true } }),
+      this.prisma.invoice.aggregate({ where: { status: "PAID", paidAt: range }, _sum: { subtotal: true }, _count: { _all: true } }),
+      this.prisma.parcel.aggregate({ where: { status: "DELIVERED", deliveredAt: range }, _sum: { totalCharge: true }, _count: { _all: true } }),
+    ]);
+    const now = await this.summaryNow();
+    return {
+      ...now,
+      period: {
+        ...periodView(p),
+        codCollected: money(collected._sum.amount),
+        codCollections: collected._count._all,
+        cashReceivedAtHubs: money(received._sum.amount),
+        handovers: received._count._all,
+        settledPaid: money(paid._sum.netPayable),
+        settlementsPaid: paid._count._all,
+        invoiced: money(invoiced._sum.subtotal),
+        invoicesIssued: invoiced._count._all,
+        invoicesPaid: money(invoicesPaid._sum.subtotal),
+        deliveryCharges: money(charges._sum.totalCharge),
+        delivered: charges._count._all,
+      },
+    };
+  }
+
+  private async summaryNow() {
     const [withRiders, atHubs, settled, pending, approved, outstanding, carried] = await Promise.all([
       this.prisma.codCollection.aggregate({ where: { state: "WITH_RIDER" }, _sum: { amount: true } }),
       this.prisma.codCollection.aggregate({ where: { state: "AT_HUB" }, _sum: { amount: true } }),

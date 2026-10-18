@@ -17,7 +17,7 @@ import { PrismaService } from "../../common/prisma.service";
 import { withIdempotency } from "../../common/idempotency";
 import { ParcelsService } from "./parcels.service";
 import { RiderTasksService } from "./rider-tasks.service";
-import { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
+import { parcelNoteSchema, riderHandoverSchema, riderHandoversQuerySchema, trackQuerySchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import { listParcelsWithStageSchema } from "./parcel-stages";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { AnalyticsService } from "../analytics/analytics.service";
@@ -36,8 +36,10 @@ export class ParcelsController {
   @Public()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get("track/:trackingId")
-  async track(@Param("trackingId") trackingId: string) {
-    const result = await this.parcels.publicTrack(trackingId);
+  @ApiZodQuery(trackQuerySchema)
+  async track(@Param("trackingId") trackingId: string, @ZQuery(trackQuerySchema) query: z.infer<typeof trackQuerySchema>) {
+    // ?t= (the SMS / guest link) unlocks the delivery rider's live position; the ID alone doesn't.
+    const result = await this.parcels.publicTrack(trackingId, query.t);
     this.analytics.countTrackingLookup(); // first-party analytics: a count only, no IDs kept
     return result;
   }
@@ -194,6 +196,46 @@ export class ParcelsController {
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
     return withIdempotency(this.prisma, `rider:${actor.userId}`, idempotencyKey, { op: "delivery", trackingId, body }, () => this.riderTasks.deliver(actor, trackingId, body, meta));
+  }
+
+  /** "Hand over at hub" scan: puts a collected parcel on the rider's handover list for a hub (the hub scans it in). */
+  @RequirePermissions("parcel:rider-update")
+  @Post("rider/parcels/:trackingId/handover")
+  @HttpCode(200)
+  @ApiHeader({ name: "Idempotency-Key", required: false })
+  @ApiZodBody(riderHandoverSchema)
+  handover(
+    @CurrentUser() actor: UserActor,
+    @Param("trackingId") trackingId: string,
+    @ZBody(riderHandoverSchema) body: z.infer<typeof riderHandoverSchema>,
+    @ReqMeta() meta: RequestMeta,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    return withIdempotency(this.prisma, `rider:${actor.userId}`, idempotencyKey, { op: "handover", trackingId, body }, () => this.riderTasks.handover(actor, trackingId, body, meta));
+  }
+
+  /** Undo of a handover scan, until the hub has scanned the parcel in. */
+  @RequirePermissions("parcel:rider-update")
+  @Post("rider/parcels/:trackingId/handover/withdraw")
+  @HttpCode(200)
+  @ApiHeader({ name: "Idempotency-Key", required: false })
+  withdrawHandover(@CurrentUser() actor: UserActor, @Param("trackingId") trackingId: string, @ReqMeta() meta: RequestMeta, @Headers("idempotency-key") idempotencyKey?: string) {
+    return withIdempotency(this.prisma, `rider:${actor.userId}`, idempotencyKey, { op: "handover-withdraw", trackingId }, () => this.riderTasks.withdrawHandover(actor, trackingId, meta));
+  }
+
+  /** Parcels riders handed over at a hub that the hub hasn't scanned in yet (for the receive desk). */
+  @RequirePermissions("parcel:read:any")
+  @Get("ops/rider-handovers")
+  @ApiZodQuery(riderHandoversQuerySchema)
+  hubHandovers(@CurrentActor() actor: Actor, @ZQuery(riderHandoversQuerySchema) query: z.infer<typeof riderHandoversQuerySchema>) {
+    return this.riderTasks.hubHandovers(actor, query.hubId);
+  }
+
+  /** Return runs dispatched to the rider, with their parcels (read-only checklist; operations complete the run). */
+  @RequirePermissions("parcel:rider-update")
+  @Get("rider/return-runs")
+  returnRuns(@CurrentUser() actor: UserActor) {
+    return this.riderTasks.returnRuns(actor);
   }
 
   @RequirePermissions("cod:collect")

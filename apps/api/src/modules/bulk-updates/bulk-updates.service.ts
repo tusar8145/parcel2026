@@ -25,6 +25,9 @@ import { ImportJobsService } from "../imports/import-jobs.service";
 import { ImportConfigService } from "../imports/import-config.service";
 import { writeCsv } from "../imports/csv";
 import { codeVariants } from "../ops/ops-common";
+import { TransferService, type TransferResult } from "../linehaul/transfer.service";
+import { transferOptionsSchema, type TransferOptions } from "../linehaul/linehaul.schemas";
+import { bagNumberOf } from "../linehaul/transfer-rules";
 import { ACTION_LABEL, BULK_COLUMNS, headerOf, matchBulkHeaders, type BulkAction, type BulkColumn, type BulkColumnKey } from "./bulk-columns";
 import { ACTIONS, columnsOf, inputKeys, isActionId, type ActionTemplate, type BulkActionId } from "./bulk-actions";
 import { canUse, isKind, jobTitle, KINDS, kindsFor, kindWhere, statusLabels, type BulkKind } from "./bulk-kinds";
@@ -117,6 +120,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     private readonly details: CompleteDetailsService,
     private readonly pricing: PricingService,
     private readonly routing: RoutingService,
+    private readonly transfers: TransferService,
   ) {}
 
   // ───────────── background worker ─────────────
@@ -232,7 +236,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
   /** The parcels of a page that can take an action, in the caller's scope and the dialog's filters. */
   private async actionWhere(actor: Actor, kind: BulkKind, t: ActionTemplate, query: z.infer<typeof bulkActionsQuerySchema>, scope?: Prisma.ParcelWhereInput): Promise<Prisma.ParcelWhereInput> {
     const page = kindWhere(kind);
-    const eligible = t.where();
+    const eligible = t.scoped === "transfer" ? await this.transfers.eligibleWhere(opsHubScope(actor)) : t.where();
     return { AND: [scope ?? (await this.scopeWhere(actor)), ...(page ? [page] : []), ...(eligible ? [eligible] : []), ...this.filterWhere(query)] };
   }
 
@@ -326,8 +330,9 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
   }
 
   /** Hubs and riders for the dropdowns: the caller's hubs and riders (hub operators), else the network. */
-  private async lists(actor: Actor): Promise<BulkLists> {
+  private async lists(actor: Actor, t?: ActionTemplate): Promise<BulkLists & { hubLabels?: Map<string, string> }> {
     const scope = opsHubScope(actor);
+    const transfer = t?.action === "ADD_TO_BAG";
     const [hubs, riders, catalog] = await Promise.all([
       this.prisma.hub.findMany({ where: { active: true, ...(scope ? { id: { in: scope } } : {}) }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } }),
       this.prisma.rider.findMany({
@@ -337,7 +342,9 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       }),
       this.pricing.catalog(),
     ]);
-    const dupNames = new Set(hubs.filter((h, i) => hubs.findIndex(x => x.name.toLowerCase() === h.name.toLowerCase()) !== i).map(h => h.name.toLowerCase()));
+    // Transfer: the Destination hub list is the whole network (the destination is another hub).
+    const network = transfer ? await this.prisma.hub.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } }) : hubs;
+    const dupNames = new Set(network.filter((h, i) => network.findIndex(x => x.name.toLowerCase() === h.name.toLowerCase()) !== i).map(h => h.name.toLowerCase()));
     const hubLabel = (h: { name: string; code: string }) => (dupNames.has(h.name.toLowerCase()) ? `${h.name} (${h.code})` : h.name);
     const label = (r: (typeof riders)[number]) => `${riderLabel(r)} · ${r.hub?.name ?? "no hub"}`;
     return {
@@ -346,6 +353,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       districts: catalog.districts,
       zonesByDistrict: catalog.zonesByDistrict,
       areasByZone: catalog.areasByZone,
+      ...(transfer ? { destHubs: network.map(hubLabel), bags: await this.transfers.openBags(scope), hubLabels: new Map(network.map(h => [h.id, hubLabel(h)])) } : {}),
     };
   }
 
@@ -373,7 +381,13 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       }),
     ]);
     const suggests = t.lead.includes("suggested_rider");
-    const [lists, suggested, filterText] = await Promise.all([this.lists(actor), suggests ? this.routing.suggestFor(actor, parcels) : { suggestions: [] }, this.filterText(query)]);
+    const [lists, suggested, filterText, destinations] = await Promise.all([
+      this.lists(actor, t),
+      suggests ? this.routing.suggestFor(actor, parcels) : { suggestions: [] },
+      this.filterText(query),
+      t.action === "ADD_TO_BAG" ? this.transfers.destinations(parcels) : null,
+    ]);
+    const destLabel = (id: string | null | undefined) => (id ? (lists.hubLabels?.get(id) ?? "") : "");
     const suggestion = new Map(suggested.suggestions.map(s => [s.trackingId, s]));
     const riderHub = (r: { hub: { name: string } | null } | null) => (r?.hub ? ` · ${r.hub.name}` : "");
     const rows = parcels.map(p => {
@@ -404,6 +418,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         sla_state: TERMINAL.includes(status) ? "—" : awaitingReview ? "Awaiting review" : status === "PENDING_CONFIRMATION" ? "Awaiting drop-off" : SLA_LABEL[p.slaState],
         missing: p.missingFields.map(f => MISSING_LABEL_SHORT[f] ?? f).join(", "),
         suggested_rider: s ? lists.riders.find(r => r.startsWith(`${s.rider.code} ·`)) ?? s.rider.label : "",
+        ...(destinations ? { dest_suggested: destLabel(destinations.get(p.id)), dest_hub: destLabel(destinations.get(p.id)) } : {}),
         version: p.version,
       };
       return { cells };
@@ -532,6 +547,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       this.prisma.hub.findMany({ select: { id: true, name: true, code: true, active: true } }),
       this.pricing.catalog(),
     ]);
+    const transfer = t.action === "ADD_TO_BAG" ? await this.transferContext(rows, found) : {};
     const planner = new BulkPlanner({
       parcels,
       inScope,
@@ -539,10 +555,18 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       hubs,
       catalog,
       scope: opsHubScope(actor),
+      ...transfer,
     });
     const checked = rows.map(r => planner.check(r.rowNumber, r.cells, t));
     await this.previewPrices(checked, new Map(found.map(p => [p.id, p])));
     return checked;
+  }
+
+  /** Add to transfer bag: each parcel's destination, the bags the file names and the bags its parcels are already in. */
+  private async transferContext(rows: { cells: BulkRowCells }[], found: PlannerParcel[]) {
+    const numbers = [...new Set(rows.map(r => bagNumberOf(r.cells.bag)).filter((v): v is string => !!v))];
+    const [destinations, bags, bagOf] = await Promise.all([this.transfers.destinations(found), this.transfers.bagsByNumber(numbers), this.transfers.activeBagOf(found.map(p => p.id))]);
+    return { destinations, bags: new Map(bags.map(b => [b.number, b])), bagOf };
   }
 
   /**
@@ -749,6 +773,8 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       ignoredColumns,
       /** Rows that re-price their parcel: how many, the charges before and after, and the difference (null once the rows are purged). */
       pricing,
+      /** Add to transfer bag: the options chosen at apply (seal, trip) and, once applied, the bags and trips. */
+      transfer: action === "transfer" ? { options: ((job.options ?? {}) as { transfer?: TransferOptions }).transfer ?? null, result: ((job.options ?? {}) as { result?: TransferResult }).result ?? null } : null,
       rowsAvailable: !job.rowsPurgedAt,
       downloads: { failedRows: action && job.errorRows + job.failedCount > 0 && !job.rowsPurgedAt ? `/api/v1/bulk-updates/${job.id}/failed-rows` : null },
     };
@@ -830,7 +856,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     }
     const settings = await this.importConfig.settings();
     const limits = this.imports.limitsFor(settings, true);
-    return { buffer: buildBulkWorkbook({ kind, action, rows: failed, lists: await this.lists(actor), maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, failed: true }), fileName: `${base}.xlsx`, contentType: XLSX };
+    return { buffer: buildBulkWorkbook({ kind, action, rows: failed, lists: await this.lists(actor, ACTIONS[action]), maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, failed: true }), fileName: `${base}.xlsx`, contentType: XLSX };
   }
 
   async discard(actor: Actor, id: string, meta: RequestMeta) {
@@ -846,7 +872,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
   // ───────────── apply ─────────────
 
   /** Applies the rows that passed the check: up to 100 during the request, larger files in the background. */
-  async apply(actor: Actor, id: string, meta: RequestMeta, pageKind: BulkKind = "all", pageAction?: BulkActionId) {
+  async apply(actor: Actor, id: string, meta: RequestMeta, pageKind: BulkKind = "all", pageAction?: BulkActionId, body: { transfer?: unknown } = {}) {
     const job = await this.load(actor, id);
     if (actor.kind === "user" && job.createdById !== actor.userId) throw forbidden("Only the person who uploaded this file can apply it");
     const jobAction = actionOf(job);
@@ -857,12 +883,18 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     if (job.status !== "VALIDATED") throw new AppError("BULK_UPDATE_SUBMITTED", `Bulk update ${job.number} was already applied`, HttpStatus.CONFLICT, { status: job.status });
     const toApply = job.readyRows + job.warningRows;
     if (!toApply) throw new AppError("NOTHING_TO_APPLY", "No row can be applied. Fix the errors and upload the file again.", 422);
+    // Add to transfer bag: what happens to the bags afterwards (seal, trip); a trip is checked now, before anything changes.
+    const options = jobAction === "transfer" ? transferOptionsSchema.parse(body.transfer ?? {}) : null;
+    if (options?.tripId) await this.transfers.checkTrip(actor, options.tripId);
     const running = await this.prisma.bulkUpdateJob.count({ where: { createdById: job.createdById, status: { in: ["QUEUED", "PROCESSING"] } } });
     if (running) throw new AppError("BULK_UPDATE_IN_PROGRESS", "Another bulk update of yours is still running. Wait for it to finish, then apply this file.", HttpStatus.TOO_MANY_REQUESTS, { running, retryAfterSeconds: 30 });
     const queued = await this.prisma.$transaction(async tx => {
-      const { count } = await tx.bulkUpdateJob.updateMany({ where: { id: job.id, status: "VALIDATED" }, data: { status: "QUEUED", queuedAt: new Date() } });
+      const { count } = await tx.bulkUpdateJob.updateMany({
+        where: { id: job.id, status: "VALIDATED" },
+        data: { status: "QUEUED", queuedAt: new Date(), ...(options ? { options: { transfer: options } as unknown as Prisma.InputJsonObject } : {}) },
+      });
       if (!count) throw new AppError("BULK_UPDATE_SUBMITTED", `Bulk update ${job.number} was already applied`, HttpStatus.CONFLICT);
-      await this.audit.record(actor, { action: "bulk_update.apply", entityType: "bulk_update", entityId: job.id, data: { number: job.number, rows: toApply } }, meta, tx);
+      await this.audit.record(actor, { action: "bulk_update.apply", entityType: "bulk_update", entityId: job.id, data: { number: job.number, rows: toApply, ...(options ? { transfer: options } : {}) } }, meta, tx);
       return tx.bulkUpdateJob.findUniqueOrThrow({ where: { id: job.id } });
     });
     if (toApply <= BULK_INLINE_ROWS) {
@@ -922,6 +954,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         job = await this.prisma.bulkUpdateJob.findUniqueOrThrow({ where: { id } });
         this.progressEvent(job, "bulk_update.progress");
       }
+      if (job.action === "transfer") await this.finishTransfer(job, actor, meta);
       job = await this.prisma.$transaction(async tx => {
         const done = await tx.bulkUpdateJob.update({ where: { id }, data: { status: "COMPLETED", completedAt: new Date() } });
         await this.audit.record(
@@ -939,6 +972,16 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       job = await this.prisma.bulkUpdateJob.update({ where: { id }, data: { status: "FAILED", completedAt: new Date(), error: message } });
       this.progressEvent(job, "bulk_update.completed");
     }
+  }
+
+  /** Add to transfer bag, after the rows: seal the upload's bags and load them on a trip as chosen at apply; the outcome is kept on the job. */
+  private async finishTransfer(job: BulkUpdateJob, actor: Actor, meta: RequestMeta) {
+    const stored = (job.options ?? {}) as { transfer?: TransferOptions; result?: TransferResult };
+    if (stored.result) return;
+    const rows = await this.prisma.bulkUpdateRow.findMany({ where: { jobId: job.id, status: { in: ["APPLIED", "ALREADY_DONE"] }, parcelId: { not: null } }, select: { parcelId: true } });
+    const options = transferOptionsSchema.parse(stored.transfer ?? {});
+    const result = await withAuditContext({ bulkUpdate: { id: job.id, number: job.number } }, () => this.transfers.finish(actor, rows.map(r => r.parcelId!), options, meta));
+    await this.prisma.bulkUpdateJob.update({ where: { id: job.id }, data: { options: { ...stored, transfer: options, result } as unknown as Prisma.InputJsonObject } });
   }
 
   /**
@@ -969,13 +1012,21 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       if (!parcel) return void (await finish("FAILED", { errors: [{ column: "tracking_id", message: "This parcel no longer exists" }] }));
       const done = BulkPlanner.doneMessage(action, parcel, plan);
       if (done) return void (await finish("ALREADY_DONE", { result: `Already done: ${done}` }));
+      if (action === "ADD_TO_BAG") {
+        const r = await withAuditContext({ bulkUpdate: { id: job.id, number: job.number, row: row.rowNumber } }, () =>
+          this.transfers.addToBag(actor, { parcelId: parcel.id, destHubId: plan.hubId!, bag: plan.bag ?? plan.bagLabel, defaultLabel: job.number, expectedVersion: row.expectedVersion ?? undefined }, meta),
+        );
+        const where = `${r.bag.number}${r.bag.label ? ` (${r.bag.label})` : ""} → ${r.bag.destHub}`;
+        return void (await finish(r.added ? "APPLIED" : "ALREADY_DONE", { result: r.added ? `In bag ${where}${r.created ? " · new bag" : ""}` : `Already done: already in bag ${where}` }));
+      }
       const result = await withAuditContext({ bulkUpdate: { id: job.id, number: job.number, row: row.rowNumber } }, () => this.run(actor, parcel, action, plan, row.expectedVersion ?? undefined, meta));
       await finish("APPLIED", { result });
     } catch (error) {
       const message = messageOf(error);
       if (!message) this.logger.error({ err: error, bulkUpdate: job.id, row: row.rowNumber }, "Bulk update row failed");
       const code = error instanceof AppError ? (error.getResponse() as { code?: string }).code : undefined;
-      const column = code === "PARCEL_CHANGED" ? "version" : code === "RIDER_UNAVAILABLE" ? "rider" : code === "DROP_OFF_WRONG_HUB" || code === "HUB_INACTIVE" ? "hub" : "status";
+      const transferColumn = action === "ADD_TO_BAG" ? (code?.startsWith("BAG_") ? "bag" : code === "TRANSFER_SAME_HUB" || code === "HUB_INACTIVE" ? "dest_hub" : code === "PARCEL_ALREADY_BAGGED" ? "tracking_id" : null) : null;
+      const column = transferColumn ?? (code === "PARCEL_CHANGED" ? "version" : code === "RIDER_UNAVAILABLE" ? "rider" : code === "DROP_OFF_WRONG_HUB" || code === "HUB_INACTIVE" ? "hub" : "status");
       const text =
         code === "PARCEL_CHANGED" ? `${row.trackingId} changed since you downloaded it (someone else updated it). Download a fresh file for it` : (message ?? "Couldn't be applied; try this row again");
       await finish("FAILED", { errors: [{ column, message: text }] });
@@ -1016,6 +1067,8 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
       case "ADD_NOTE":
         await this.parcels.addNote(actor, id, { note: note! }, meta);
         return "Note added";
+      case "ADD_TO_BAG":
+        throw new Error("Add to transfer bag rows are applied by applyRow");
     }
   }
 }

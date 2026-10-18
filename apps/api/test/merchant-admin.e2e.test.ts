@@ -159,13 +159,20 @@ describe("merchant administration", () => {
       expect(invited.body.status).toBe("PENDING");
       const token = new URL(invited.body.link.replace("#/", "")).searchParams.get("invite")!;
       expect((await outboxEvents()).filter(t => t === "account.invite")).toHaveLength(1);
-      expect((await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Dup", phone: "+8801912345678" } })).body.error.code).toBe("INVITE_PENDING");
+      expect((await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Dup", phone: "+8801912345678", type: "ECOMMERCE" } })).body.error.code).toBe("INVITE_PENDING");
 
       const lookup = await ctx.api("POST", "/merchants/invites/lookup", { body: { token } });
       expect(lookup.body).toMatchObject({ name: "Karim Store", businessName: "Karim Gadgets", type: "ECOMMERCE" });
       expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token: "nope-nope-nope" } })).status).toBe(404);
 
       const applicant = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Karim");
+      // The invitation fixes the merchant type: a Banking & Financial application is refused.
+      const wrongType = await ctx.api("POST", "/merchants/applications", {
+        token: applicant.token,
+        body: { type: "BANKING_FINANCIAL", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", pickupAddress: "House 3, Road 4", pickupArea: "Uttara", pickupDistrict: "Dhaka North", inviteToken: token },
+      });
+      expect(wrongType.status).toBe(422);
+      expect(wrongType.body.error.code).toBe("INVITE_TYPE_MISMATCH");
       const app = await ctx.api("POST", "/merchants/applications", {
         token: applicant.token,
         body: { type: "ECOMMERCE", name: "Karim Gadgets", contactName: "Karim", contactPhone: "01912345678", pickupAddress: "House 3, Road 4", pickupArea: "Uttara", pickupDistrict: "Dhaka North", inviteToken: token },
@@ -174,6 +181,26 @@ describe("merchant administration", () => {
       const list = await ctx.api("GET", "/merchants/invites?status=ACCEPTED", { token: sa.token });
       expect(list.body.items[0]).toMatchObject({ status: "ACCEPTED", merchantId: app.body.merchant.id });
       expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token } })).body.error.code).toBe("INVITE_USED");
+    });
+  });
+
+  describe("merchant invitation types", () => {
+    it("invites only the two merchant panels: E-commerce and Banking & Financial", async () => {
+      const sa = await admin();
+      for (const type of ["CUSTOMER", "PARCEL", "DOMESTIC", "ecommerce", ""]) {
+        const res = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Wrong Type", phone: "01812345670", type } });
+        expect(res.status, type).toBe(422);
+        expect(res.body.error.code).toBe("VALIDATION_FAILED");
+      }
+      const missing = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "No Type", phone: "01812345671" } });
+      expect(missing.status).toBe(422);
+
+      const banking = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Bank Contact", businessName: "Test Bank", email: "bank-invite@example.com", type: "BANKING_FINANCIAL" } });
+      expect(banking.status, JSON.stringify(banking.body)).toBe(201);
+      expect(banking.body.type).toBe("BANKING_FINANCIAL");
+      expect(banking.body.link).toMatch(/\/merchant\?invite=/);
+      const token = new URL(banking.body.link).searchParams.get("invite")!;
+      expect((await ctx.api("POST", "/merchants/invites/lookup", { body: { token } })).body.type).toBe("BANKING_FINANCIAL");
     });
   });
 

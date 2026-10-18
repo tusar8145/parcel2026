@@ -48,3 +48,25 @@ model NotificationGateway {
 
   @@map("notification_gateways")
 }
+
+/// A person's in-app notifications (the bell in every panel, GET /me/notifications). Written by
+/// UserNotificationsService: the in-app copy of the events they get by SMS / email (NotifyService) and
+/// staff alerts (SLA breaches, tickets, approvals, KYC, settlements, cash handovers…). Newest first by id.
+model UserNotification {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @db.Uuid
+  /// Event key: a NotifyService event ("parcel.delivered") or a staff alert ("staff.kyc_review").
+  type      String
+  title     String
+  body      String?
+  /// Where clicking it goes, a panel URL such as "/ecommerce-merchant?parcel=PP-261016-4821".
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, id(sort: Desc)])
+  @@index([userId, readAt])
+  @@map("user_notifications")
+}

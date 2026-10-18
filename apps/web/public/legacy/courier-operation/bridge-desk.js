@@ -1,9 +1,10 @@
 /*
  * Courier Operations: the desk tools around the pages (UI only, existing endpoints).
  *
- *   Top bar          the live chip shows the real event-stream state (DF.events.state); the bell lists
- *                    breached SLA alerts (GET /sla/alerts) and the open problem counts (GET /ops/stage-counts)
- *                    and opens the parcel drawer / Problems; the company block is a read-only brand label
+ *   Top bar          the live chip shows the real event-stream state (DF.events.state); the bell is the shared
+ *                    notifications bell (shared/notifications.js: unread count, latest notifications) with an
+ *                    "Operations alerts" section: breached SLA alerts (GET /sla/alerts) and the open problem counts
+ *                    (GET /ops/stage-counts), opening the parcel drawer / Problems; the company block is a brand label
  *   Zone lookup      typing a zone or area in the top-bar search shows the hub that serves it (catalog
  *                    zones / areas → GET /zones → the zone's hub, else the hub located in that zone)
  *   Shortcuts        "/" focuses the search, F2 the scan box on screen, Esc closes the dialog (then the
@@ -67,41 +68,10 @@
   DF.events?.on?.("connection", e => paintChip(e.state));
   paintChip();
 
-  // ───────────── the bell: real alerts ─────────────
+  // ───────────── the bell: notifications (shared/notifications.js) plus live operations alerts ─────────────
 
-  let alertsPop = null;
-  const closePop = () => {
-    alertsPop?.remove();
-    alertsPop = null;
-    $("notifications")?.setAttribute("aria-expanded", "false");
-  };
-  function placePop(pop, anchor) {
-    const r = anchor.getBoundingClientRect();
-    pop.style.top = `${Math.round(r.bottom + 8)}px`;
-    pop.style.left = `${Math.max(12, Math.min(window.innerWidth - pop.offsetWidth - 12, r.right - pop.offsetWidth))}px`;
-  }
-  /** The red dot: only when something needs attention (breached SLA, exceptions). */
-  function paintDot() {
-    const d = Ops.stageCountsData?.detail;
-    const dot = q("#notifications .notification-dot");
-    if (!dot || !d) return;
-    dot.hidden = !(Number(d.exceptions) + Number(d.slaRisk) > 0);
-  }
-  Ops.onCounts?.push(paintDot);
-  setInterval(paintDot, 15000);
-
-  async function openAlerts(anchor) {
-    closePop();
-    const pop = document.createElement("div");
-    pop.className = "df-pop";
-    pop.id = "alertsPanel";
-    pop.setAttribute("role", "dialog");
-    pop.setAttribute("aria-label", "Operations alerts");
-    pop.innerHTML = `<h3>Operations alerts</h3><p class="df-pop-empty">Loading…</p>`;
-    document.body.append(pop);
-    alertsPop = pop;
-    anchor.setAttribute("aria-expanded", "true");
-    placePop(pop, anchor);
+  /** The dropdown's "Operations alerts" section: breached SLA alerts (GET /sla/alerts) and open problem counts. */
+  async function alertsSection() {
     const d = Ops.stageCountsData?.detail || {};
     let breached = [];
     let error = "";
@@ -110,7 +80,6 @@
     } catch (e) {
       error = e?.status === 403 ? "" : DF.describe(e);
     }
-    if (alertsPop !== pop) return;
     const counts = [
       ["Exceptions to resolve", d.exceptions, "Problems", "Exceptions"],
       ["Late or at risk of being late", d.slaRisk, "Problems", "SLA late-risk"],
@@ -120,31 +89,27 @@
     const rows = [
       ...breached.map(
         a =>
-          `<button type="button" class="df-pop-row" data-drawer="${esc(a.parcel.trackingId)}"><span><strong>${esc(a.parcel.trackingId)}</strong> · ${esc(a.leg === "PICKUP" ? "pickup" : "delivery")} overdue<br><small>${esc([a.parcel.zone, a.parcel.hub?.name, a.parcel.rider].filter(Boolean).join(" · "))}</small></span><small>due ${esc(Ops.ago(a.dueAt))}</small></button>`,
+          `<button type="button" class="dfn-item" style="padding-left:10px" data-drawer="${esc(a.parcel.trackingId)}"><span class="dfn-text"><strong>${esc(a.parcel.trackingId)} · ${esc(a.leg === "PICKUP" ? "pickup" : "delivery")} overdue</strong><small>${esc([a.parcel.zone, a.parcel.hub?.name, a.parcel.rider].filter(Boolean).join(" · "))}</small></span><time>due ${esc(Ops.ago(a.dueAt))}</time></button>`,
       ),
-      ...counts.map(([label, n, view, tab]) => `<button type="button" class="df-pop-row" data-alert-open="${esc(view)}" data-alert-tab="${esc(tab)}"><span>${esc(label)}</span><strong>${Ops.num(n)}</strong></button>`),
+      ...counts.map(([label, n, view, tab]) => `<button type="button" class="dfn-item" style="padding-left:10px" data-alert-open="${esc(view)}" data-alert-tab="${esc(tab)}"><span class="dfn-text"><strong>${esc(label)}</strong></span><time style="font-weight:700;color:#344054">${Ops.num(n)}</time></button>`),
     ];
-    pop.innerHTML = `<h3>Operations alerts</h3>${breached.length ? `<p class="df-pop-empty" style="margin-top:0">SLA breached (oldest first)</p>` : ""}${rows.join("") || `<p class="df-pop-empty">${esc(error || "Nothing needs attention right now.")}</p>`}${error && rows.length ? `<p class="df-pop-empty">${esc(error)}</p>` : ""}`;
-    placePop(pop, anchor);
+    if (!rows.length && !error) return "";
+    return `<div id="alertsPanel" style="padding:2px 4px 4px"><p class="dfn-empty" style="margin:6px 6px 4px;text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase">Operations alerts${breached.length ? " · SLA breached first" : ""}</p>${rows.join("")}${error ? `<p class="dfn-empty">${esc(error)}</p>` : ""}</div>`;
+  }
+  window.DFNotify?.addSection(alertsSection);
+  function placePop(pop, anchor) {
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = `${Math.round(r.bottom + 8)}px`;
+    pop.style.left = `${Math.max(12, Math.min(window.innerWidth - pop.offsetWidth - 12, r.right - pop.offsetWidth))}px`;
   }
   window.addEventListener(
     "click",
     event => {
-      const bell = event.target.closest?.("#notifications");
-      if (bell) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return void (alertsPop ? closePop() : openAlerts(bell));
-      }
-      if (!alertsPop) return;
       const open = event.target.closest?.("[data-alert-open]");
-      if (open) {
-        event.stopImmediatePropagation();
-        closePop();
-        return void Ops.navigate(open.dataset.alertOpen, open.dataset.alertTab || 0);
-      }
-      if (event.target.closest?.("[data-drawer]") && alertsPop.contains(event.target)) return void setTimeout(closePop);
-      if (!alertsPop.contains(event.target)) closePop();
+      if (!open) return;
+      event.stopImmediatePropagation();
+      window.DFNotify?.close();
+      Ops.navigate(open.dataset.alertOpen, open.dataset.alertTab || 0);
     },
     true,
   );
@@ -261,9 +226,8 @@
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === "Escape") {
         if (document.querySelector(".df-dialog")) return; // the small dialog closes itself
-        if (lookupPop || alertsPop) {
+        if (lookupPop) {
           closeLookup();
-          closePop();
           return void event.preventDefault();
         }
         if ($("modalBackdrop")?.classList.contains("open") && typeof closeModal === "function") {

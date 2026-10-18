@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma.service";
 import type { ParcelStatus, Role } from "../../generated/prisma/client";
+import { fillSeries, periodBuckets, periodView, resolvePeriod, type Period, type PeriodQuery } from "../../common/period";
 
 /** Roles that make someone a platform administrator / staff member. */
 export const STAFF_ROLES: Role[] = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
@@ -20,9 +21,10 @@ export class OverviewService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Platform counts for the super admin dashboard and activity pages ("today"/"this month" in Dhaka time). */
-  async overview() {
+  async overview(query: PeriodQuery = {}) {
     const { today, month } = dhakaPeriodStarts();
     const p = this.prisma;
+    const chosen = resolvePeriod(query, "this_month");
     const [
       merchantsByStatus,
       newMerchants,
@@ -85,8 +87,10 @@ export class OverviewService {
       p.impersonationSession.count({ where: { endedAt: null, expiresAt: { gt: new Date() } } }),
     ]);
 
+    const period = await this.periodFigures(chosen);
     return {
       generatedAt: new Date(),
+      period,
       security: {
         superAdmins,
         superAdminsWithMfa,
@@ -116,6 +120,53 @@ export class OverviewService {
       auditEventsThisMonth: auditThisMonth,
       merchantActivity: [...byMerchant.values()],
       riderActivity: [...byRider.values()],
+    };
+  }
+
+  /**
+   * Bookings, revenue (COD + delivery charges), merchants and activity in a period, the previous
+   * period of the same length, and the bookings chart (by hour / day / month). Indexed range queries.
+   */
+  private async periodFigures(period: Period) {
+    const p = this.prisma;
+    const buckets = periodBuckets(period);
+    const figures = async (w: { start: Date; end: Date }) => {
+      const range = { gte: w.start, lt: w.end };
+      const [booked, delivered, newMerchants, approved, activeMerchants, auditEvents] = await Promise.all([
+        p.parcel.aggregate({ where: { createdAt: range, status: { notIn: NOT_BOOKED } }, _count: { _all: true }, _sum: { codAmount: true, totalCharge: true } }),
+        p.parcel.count({ where: { status: "DELIVERED", deliveredAt: range } }),
+        p.merchant.count({ where: { createdAt: range } }),
+        p.auditLog.count({ where: { action: "merchant.approve", createdAt: range } }),
+        p.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, createdAt: range, status: { notIn: NOT_BOOKED } } }),
+        p.auditLog.count({ where: { createdAt: range, actorType: "USER" } }),
+      ]);
+      const cod = Number(booked._sum.codAmount ?? 0);
+      const charges = Number(booked._sum.totalCharge ?? 0);
+      return { bookings: booked._count._all, cod, charges, gmv: cod + charges, delivered, newMerchants, approvedMerchants: approved, activeMerchants: activeMerchants.length, auditEvents };
+    };
+    const [current, previous, rows, byMerchant, delivered, pickedUp] = await Promise.all([
+      figures(period),
+      figures(period.previous),
+      p.$queryRaw<{ key: string; n: number }[]>`
+        SELECT to_char("createdAt" + interval '6 hours', ${buckets.format}) AS key, count(*)::int AS n
+        FROM parcels
+        WHERE "createdAt" >= ${period.previous.start.toISOString()}::timestamp AND "createdAt" < ${period.end.toISOString()}::timestamp AND status <> 'PICKUP_CANCELLED'
+        GROUP BY 1`,
+      p.parcel.groupBy({ by: ["merchantId"], where: { merchantId: { not: null }, createdAt: { gte: period.start, lt: period.end }, status: { notIn: NOT_BOOKED } }, _count: { _all: true } }),
+      p.parcel.groupBy({ by: ["deliveryRiderId"], where: { deliveryRiderId: { not: null }, deliveredAt: { gte: period.start, lt: period.end } }, _count: { _all: true } }),
+      p.parcel.groupBy({ by: ["pickupRiderId"], where: { pickupRiderId: { not: null }, pickedUpAt: { gte: period.start, lt: period.end } }, _count: { _all: true } }),
+    ]);
+    const riders = new Map<string, { riderId: string; delivered: number; pickedUp: number }>();
+    const rider = (id: string) => riders.get(id) ?? riders.set(id, { riderId: id, delivered: 0, pickedUp: 0 }).get(id)!;
+    for (const r of delivered) rider(r.deliveryRiderId!).delivered = r._count._all;
+    for (const r of pickedUp) rider(r.pickupRiderId!).pickedUp = r._count._all;
+    return {
+      ...periodView(period),
+      ...current,
+      previous,
+      series: { bucket: period.bucket, labels: buckets.labels, keys: buckets.keys, ...fillSeries(buckets, new Map(rows.map(r => [r.key, r.n]))) },
+      merchants: byMerchant.map(r => ({ merchantId: r.merchantId!, parcels: r._count._all })),
+      riders: [...riders.values()],
     };
   }
 }

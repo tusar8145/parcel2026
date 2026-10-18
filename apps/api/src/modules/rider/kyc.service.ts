@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -10,6 +10,7 @@ import type { RequestMeta } from "../../common/auth/decorators";
 import type { KycDocumentType, Prisma, RiderKycStatus } from "../../generated/prisma/client";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
+import { InboxService } from "../notifications/inbox.service";
 import { KYC_DOCUMENT_TYPES, REQUIRED_KYC, type kycDecisionSchema, type kycDocumentReviewSchema, type kycUploadSchema } from "./rider.schemas";
 
 export const KYC_LABEL: Record<KycDocumentType, string> = {
@@ -56,6 +57,8 @@ export class RiderKycService {
     private readonly notify: NotifyService,
     private readonly outbox: OutboxService,
   ) {}
+
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   // ───────────── contract for other modules ─────────────
 
@@ -124,6 +127,8 @@ export class RiderKycService {
     await this.prisma.$transaction(async tx => {
       await tx.riderOnboarding.upsert({ where: { riderId }, create: { riderId, status: "UNDER_REVIEW", submittedAt: new Date() }, update: { status: "UNDER_REVIEW", submittedAt: new Date() } });
       await this.audit.record(actor, { action: "rider.kyc.submit", entityType: "rider", entityId: riderId }, meta, tx);
+      // Operations managers' bell: documents to review (Courier Operations › Riders).
+      await this.inbox.toStaff(tx, { roles: ["OPS_MANAGER"] }, { type: "staff.kyc_review", title: `Rider documents to review: ${actor.name}`, body: "Submitted for verification", target: { page: "riders" }, panel: "/courier-operation" });
     });
     this.publish(riderId, "UNDER_REVIEW");
     return this.state(riderId);

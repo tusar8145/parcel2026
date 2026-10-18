@@ -9,10 +9,11 @@ import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { AppError } from "../../common/errors";
 import type { SubmitResult } from "../approvals/approvals.service";
 import { createCustomRoleSchema, rolePermissionsSchema, RolesService, updateCustomRoleSchema } from "./roles.service";
-import { ImpersonationService, listImpersonationsQuerySchema, startImpersonationSchema } from "./impersonation.service";
+import { ImpersonationService, impersonationTargetsQuerySchema, listImpersonationsQuerySchema, startImpersonationSchema } from "./impersonation.service";
 import { platformConfigSchema, PLATFORM_CONFIG_MAX_BYTES, type PlatformConfig } from "./admin.schemas";
 import { DERIVED_KEYS, PlatformConfigService, RETIRED_KEYS } from "./platform-config.service";
 import { OverviewService } from "./overview.service";
+import { periodQuerySchema, type PeriodQuery } from "../../common/period";
 
 const DERIVED_NOTE = `Server-owned settings (${DERIVED_KEYS.join(", ")}) and the route/weight fields of merchantPricing and deliveryRates always reflect PUT /catalog and the rate cards in force. Retired lists (${RETIRED_KEYS.join(", ")}) are never stored or returned: products are the parcel products (/parcel-products).`;
 
@@ -46,11 +47,12 @@ export class SettingsController {
 export class AdminController {
   constructor(private readonly overviewService: OverviewService) {}
 
-  /** Platform counts for the super admin overview and activity pages. */
+  /** Platform counts for the super admin overview and activity pages; `period` = the figures for from / to (Dhaka days; default this month). */
   @RequirePermissions("merchant:read:any", "user:read", "audit:read")
   @Get("overview")
-  overview() {
-    return this.overviewService.overview();
+  @ApiZodQuery(periodQuerySchema)
+  overview(@ZQuery(periodQuerySchema) query: PeriodQuery) {
+    return this.overviewService.overview(query);
   }
 }
 
@@ -129,10 +131,12 @@ export class SecurityController {
   }
 
   /**
-   * Starts support access: a short-lived access token for viewing the platform as this user
-   * (read-only unless readOnly: false). Reason required; audited; super admins can't be opened.
+   * Starts support access / "Log in as": a short-lived access token for viewing the platform as
+   * this user (read-only unless readOnly: false). Target by userId, riderId or merchantId (its
+   * owner). Reason required; audited; super admin and staff accounts can't be opened. Needs
+   * user:impersonate (super admin, read-only or full access) or user:login-as (operations
+   * managers: read-only, merchant members and riders only); checked in the service.
    */
-  @RequirePermissions("user:impersonate")
   @Post("impersonations")
   @ApiZodBody(startImpersonationSchema)
   start(@CurrentUser() actor: UserActor, @ZBody(startImpersonationSchema) body: z.infer<typeof startImpersonationSchema>, @ReqMeta() meta: RequestMeta) {
@@ -146,7 +150,14 @@ export class SecurityController {
     return this.impersonation.list(query);
   }
 
-  /** Ends support access (from the admin's panel, or from the impersonation tab itself). */
+  /** "Log in as" candidates: a merchant's members (owners first) or a rider, and whether each can be opened by you. */
+  @Get("impersonations/targets")
+  @ApiZodQuery(impersonationTargetsQuerySchema)
+  targets(@CurrentUser() actor: UserActor, @ZQuery(impersonationTargetsQuerySchema) query: z.infer<typeof impersonationTargetsQuerySchema>) {
+    return this.impersonation.targets(actor, query);
+  }
+
+  /** Ends support access (from the admin's panel, by the person who started it, or from the impersonation tab itself). */
   @Post("impersonations/:id/end")
   @HttpCode(200)
   end(@CurrentUser() actor: UserActor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {

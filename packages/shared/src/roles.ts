@@ -48,6 +48,7 @@ export const PERMISSIONS = [
   // platform security (super admin)
   "role:manage", // edit role permissions and custom roles
   "user:impersonate", // support access: view the platform as another user
+  "user:login-as", // "Log in as" a merchant member or rider, read-only (operations managers)
   "change:approve", // approve another administrator's sensitive change (maker-checker)
   "analytics:read", // website traffic and tracking-lookup analytics
 ] as const;
@@ -61,7 +62,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   MERCHANT_STAFF: ["parcel:create", "parcel:read:own", "parcel:cancel:own", "support:create"],
   RIDER: ["parcel:rider-update", "cod:collect", "support:create"],
   HUB_OPERATOR: [...OPS_BASE, "cod:receive"],
-  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read"],
+  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read", "user:login-as"],
   FINANCE: ["parcel:read:any", "merchant:read:any", "finance:read", "finance:manage", "cod:receive", "audit:read"],
   SUPPORT_AGENT: ["parcel:read:any", "merchant:read:any", "rider:read", "support:create", "support:manage", "user:read"],
   SUPER_ADMIN: [...PERMISSIONS],
@@ -135,6 +136,7 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string 
   "audit:read": { group: "Administration", label: "Read the audit log" },
   "role:manage": { group: "Security", label: "Edit roles and permissions" },
   "user:impersonate": { group: "Security", label: "Support access (view as another user)" },
+  "user:login-as": { group: "Security", label: "Log in as a merchant or rider (read-only)" },
   "change:approve": { group: "Security", label: "Approve sensitive changes (second approver)" },
   "analytics:read": { group: "Administration", label: "Website and tracking analytics" },
 };

@@ -13,7 +13,7 @@ import { OutboxService } from "../notifications/outbox.service";
 import { ParcelsService } from "./parcels.service";
 import { ParcelWorkflowService } from "./parcel-workflow.service";
 import { parcelView } from "./parcel.views";
-import { signParcelAccess, trackingUrl, verifyParcelAccess, type ParcelAccessScope } from "./parcel-access";
+import { signLiveLocationAccess, signParcelAccess, trackingUrl, verifyParcelAccess, type ParcelAccessScope } from "./parcel-access";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const VERIFIED_TTL_SECONDS = 30 * 60; // time to finish the booking after verifying
@@ -182,6 +182,26 @@ export class GuestBookingService {
     // Same answer as an unknown parcel, so links can't be probed.
     if (!scope) throw notFound("Parcel");
     return scope;
+  }
+
+  /**
+   * "Live rider location" for a recipient without the SMS link: the last 4 digits of the recipient's
+   * phone unlock the rider's position for this parcel (a live-location token, 1 day). Only while out
+   * for delivery and when the package has the feature; at most 8 tries per parcel an hour (plus the
+   * route's IP throttle), so the digits can't be guessed.
+   */
+  async liveAccess(trackingId: string, phoneLast4: string) {
+    const parcel = await this.parcels.findByTrackingId(trackingId);
+    if (parcel.status !== "OUT_FOR_DELIVERY" || !parcel.services.includes("tracking.live_location"))
+      throw new AppError("LIVE_LOCATION_UNAVAILABLE", "Live rider location isn't available for this parcel right now.", HttpStatus.CONFLICT);
+    const key = `live-access:${parcel.trackingId}`;
+    const count = await this.redis.incr(key);
+    if (count === 1) await this.redis.expire(key, 3600);
+    if (count > 8) throw tooMany("Too many tries. Open the link in your SMS, or try again in an hour.", await this.redis.ttl(key));
+    const digits = (parcel.recipientPhone ?? "").replace(/\D/g, "").slice(-4);
+    if (digits.length !== 4 || !safeEqual(digits, phoneLast4))
+      throw new AppError("PHONE_MISMATCH", "Those digits don't match the recipient's phone number.", HttpStatus.UNPROCESSABLE_ENTITY);
+    return { token: signLiveLocationAccess(parcel.trackingId, 1) };
   }
 
   private hash = (id: string, code: string) => sha256(`guest:${id}:${code}`);

@@ -13,6 +13,7 @@ import { env } from "../../config/env";
 import { Prisma, type Role } from "../../generated/prisma/client";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
+import { InboxService } from "../notifications/inbox.service";
 import { SessionService } from "../auth/session.service";
 import { memberInclude, memberView, merchantView } from "./merchant.views";
 import type { MerchantKycService } from "./merchant-kyc.service";
@@ -48,6 +49,8 @@ export class MerchantsService {
     private readonly sessions: SessionService,
     private readonly realtime: RealtimeService,
   ) {}
+
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   /** Set by MerchantKycService (avoids a constructor cycle). */
   kyc?: MerchantKycService;
@@ -102,6 +105,14 @@ export class MerchantsService {
       });
       if (open) throw conflict("APPLICATION_PENDING", `Your application ${open.merchant!.code} is still being reviewed`);
       const invite = inviteToken ? await this.validInvite(tx, inviteToken) : null;
+      // An invitation is for one merchant panel: the application must be for that type.
+      if (invite?.type && invite.type !== input.type)
+        throw new AppError(
+          "INVITE_TYPE_MISMATCH",
+          `This invitation is for ${invite.type === "BANKING_FINANCIAL" ? "a Banking & Financial" : "an E-commerce"} merchant account. Choose that account type.`,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          { field: "type", expected: invite.type },
+        );
       const code = await this.nextMerchantCode(tx);
       const created = await tx.merchant.create({
         data: { ...fields, code, status: "PENDING_REVIEW", members: { create: { userId: actor.userId, role: "MERCHANT_OWNER" } } },
@@ -121,6 +132,8 @@ export class MerchantsService {
         meta,
         tx,
       );
+      // Super admins' bell: a registration to review.
+      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"] }, { type: "staff.merchant_application", title: `New merchant registration: ${created.name}`, body: `${code} · ${created.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`, target: { page: "registrations" }, panel: "/super-admin" });
       return created;
     });
     await this.outbox.flush(outbox);

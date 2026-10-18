@@ -19,7 +19,7 @@ import { failureWhere, forHubsWhere, lineWhere, stageWhere, type stageFilterSche
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
 import { PickupSlotsService } from "./pickup-slots.service";
-import { signParcelAccess, trackingUrl } from "./parcel-access";
+import { canSeeLiveLocation, signParcelAccess, trackingUrl } from "./parcel-access";
 import { returnChargeFor } from "../returns/return-charge";
 import { claimCn, linkCn } from "../cn-stock/cn-consume";
 import { slaDueDates } from "../sla/sla-policy";
@@ -27,6 +27,9 @@ import { missingFieldsOf } from "./incomplete";
 import { assertActivePlaces } from "../geography/geo-catalog";
 import { PackagesService, type PackageQuote } from "../packages/packages.service";
 import { SPEED_LABEL, type ProductType } from "@delivery-fast/shared";
+
+/** The recipient and the merchant stop seeing the rider's position when the last fix is older than this. */
+export const LIVE_LOCATION_STALE_MINUTES = 15;
 
 const isStaff = (actor: Actor) => actor.permissions.has("parcel:read:any");
 
@@ -407,7 +410,9 @@ export class ParcelsService {
                 { merchantOrderRef: { contains: q, mode: "insensitive" } },
                 { recipientName: { contains: q, mode: "insensitive" } },
                 { senderName: { contains: q, mode: "insensitive" } },
-                { recipientPhone: { contains: q.replace(/\D/g, "").slice(-10) || q } },
+                // Phones only for phone-like text (+880 1712-345678, 01712…, 1712…): an order ref such as
+                // "ORD-7" must not match every phone that contains a 7.
+                ...(/^[\d\s+\-().]+$/.test(q) && q.replace(/\D/g, "").length >= 4 ? [{ recipientPhone: { contains: q.replace(/\D/g, "").slice(-10) } }] : []),
               ],
             }
           : {},
@@ -431,19 +436,24 @@ export class ParcelsService {
     if (!parcel) throw notFound("Parcel");
     const view = { ...parcelView(parcel, { internal: isStaff(actor) }), liveDelivery: await this.liveDelivery(parcel) };
     const isAssignedRider = actor.kind === "user" && !!actor.riderId && parcel.deliveryRiderId === actor.riderId;
-    return isAssignedRider ? { ...view, devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;
+    return isAssignedRider ? { ...view, deliveryCodeSent: Boolean(parcel.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;
   }
 
-  async publicTrack(trackingId: string) {
+  /** `token`: the tracking link's ?t= (an owner / feedback link, or the recipient's live-location link from the SMS). */
+  async publicTrack(trackingId: string, token?: string) {
     const parcel = await this.findByTrackingId(trackingId);
-    return { ...publicTrackingView(parcel), liveDelivery: await this.liveDelivery(parcel) };
+    return { ...publicTrackingView(parcel), liveDelivery: await this.liveDelivery(parcel, { showLocation: canSeeLiveLocation(parcel.trackingId, token) }) };
   }
 
   /**
    * Service packages, while the parcel is out for delivery: the rider's live position ("Live rider
    * location") and phone ("Share rider phone number", on the delivery day only; hidden afterwards).
+   * Privacy: only the parcel's own delivery rider, only while OUT_FOR_DELIVERY, only the latest fix
+   * (never the history), hidden when older than LIVE_LOCATION_STALE_MINUTES or the rider is off shift.
+   * `showLocation: false` for anonymous lookups by tracking ID: the position then needs the SMS link
+   * (canSeeLiveLocation) or a signed-in viewer who can see the parcel.
    */
-  async liveDelivery(p: ParcelWithRelations) {
+  async liveDelivery(p: ParcelWithRelations, opts: { showLocation?: boolean } = {}) {
     if (p.status !== "OUT_FOR_DELIVERY" || !p.deliveryRiderId || !p.deliveryRider) return null;
     const live = p.services.includes("tracking.live_location");
     const sharePhone = p.services.includes("tracking.rider_phone");
@@ -451,10 +461,23 @@ export class ParcelsService {
     const day = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
     const out = [...p.events].reverse().find(e => e.status === "OUT_FOR_DELIVERY");
     const deliveryDay = !!out && day(out.createdAt) === day(new Date());
-    const location = live ? await this.prisma.riderLocation.findUnique({ where: { riderId: p.deliveryRiderId }, select: { lat: true, lng: true, accuracy: true, heading: true, at: true } }) : null;
+    const show = live && opts.showLocation !== false;
+    const fix = show
+      ? await this.prisma.riderLocation.findUnique({
+          where: { riderId: p.deliveryRiderId },
+          select: { lat: true, lng: true, accuracy: true, heading: true, at: true, rider: { select: { status: true } } },
+        })
+      : null;
+    const ageSeconds = fix ? Math.max(0, Math.round((Date.now() - fix.at.getTime()) / 1000)) : 0;
+    const offShift = fix?.rider.status === "OFFLINE";
+    const fresh = !!fix && !offShift && ageSeconds <= LIVE_LOCATION_STALE_MINUTES * 60;
+    const locationStatus = !live ? null : !show ? "LINK_REQUIRED" : !fix ? "WAITING" : offShift ? "OFF_SHIFT" : fresh ? "LIVE" : "STALE";
     return {
       rider: { name: p.deliveryRider.user.name.split(/\s+/)[0], phone: sharePhone && deliveryDay ? p.deliveryRider.user.phone : null },
-      location: location ? { lat: location.lat, lng: location.lng, accuracy: location.accuracy, heading: location.heading, at: location.at } : null,
+      location: fresh && fix ? { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy, heading: fix.heading, at: fix.at, ageSeconds } : null,
+      /** LIVE · STALE (no fix for 15+ min) · WAITING (none yet) · OFF_SHIFT · LINK_REQUIRED (open the SMS link) · null (not in the package). */
+      locationStatus,
+      staleAfterMinutes: LIVE_LOCATION_STALE_MINUTES,
     };
   }
 
@@ -543,7 +566,9 @@ export class ParcelsService {
         {
           to: "ASSIGNED",
           actorRole: "ops",
-          data: { deliveryRiderId: rider.id, deliveryOtpEncrypted: await this.workflow.issueDeliveryCode(tx, parcel, after) },
+          // No delivery code yet: the recipient gets it by SMS when the rider starts the delivery
+          // (OUT_FOR_DELIVERY). A reassignment drops any earlier code so none goes stale.
+          data: { deliveryRiderId: rider.id, deliveryOtpEncrypted: null },
           description: `Operations assigned the parcel${hub ? ` from ${hub.name}` : ""} to ${rider.label} for delivery.`,
           internalNote: input.note,
           expectedVersion: opts.expectedVersion,
@@ -598,13 +623,14 @@ export class ParcelsService {
             metadata = { kind: "hub_transfer", hubId: hub.id, fromHubId: parcel.currentHubId, fromHub: from?.name ?? null, toHubId: hub.id, toHub: hub.name };
           }
         }
-        if (to === "AT_HUB") data.deliveryRiderId = null;
+        if (to === "AT_HUB") Object.assign(data, { deliveryRiderId: null, deliveryOtpEncrypted: null });
       }
       if (to === "PICKED_UP") data.pickedUpAt = new Date();
       if (to === "OUT_FOR_DELIVERY") {
         if (!parcel.deliveryRiderId && !parcel.pickupRiderId) throw new AppError("RIDER_REQUIRED", "Assign a delivery rider first", 422);
         data.deliveryRiderId = parcel.deliveryRiderId ?? parcel.pickupRiderId;
-        if (!parcel.deliveryOtpEncrypted) data.deliveryOtpEncrypted = await this.workflow.issueDeliveryCode(tx, parcel, after);
+        // The parcel is going out now: a fresh delivery code by SMS (any earlier code stops working).
+        data.deliveryOtpEncrypted = await this.workflow.issueDeliveryCode(tx, parcel, after);
       }
       if (to === "RETURNED") data.deliveredAt = null;
       // Returns scheduled directly (not via a return run) still carry the reason and RTO charge.

@@ -6,9 +6,9 @@ import type { z } from "zod";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { AppError } from "../../common/errors";
-import { ApiZodQuery, ZQuery } from "../../common/zod";
+import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { BulkUpdatesService } from "./bulk-updates.service";
-import { bulkActionSchema, bulkActionsQuerySchema, bulkExportQuerySchema, bulkFailedRowsQuerySchema, bulkKindQuerySchema, bulkKindSchema, bulkListQuerySchema, bulkRowsQuerySchema } from "./bulk-updates.schemas";
+import { bulkActionSchema, bulkActionsQuerySchema, bulkApplyBodySchema, bulkExportQuerySchema, bulkFailedRowsQuerySchema, bulkKindQuerySchema, bulkKindSchema, bulkListQuerySchema, bulkRowsQuerySchema } from "./bulk-updates.schemas";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const attachment = (name: string) => `attachment; filename="${name.replace(/["\\\r\n]/g, "_")}"`;
@@ -138,8 +138,15 @@ export class BulkUpdatesController {
   @Post(":id/apply")
   @HttpCode(200)
   @ApiZodQuery(bulkKindQuerySchema)
-  apply(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZQuery(bulkKindQuerySchema) query: z.infer<typeof bulkKindQuerySchema>, @ReqMeta() meta: RequestMeta) {
-    return this.bulk.apply(actor, id, meta, query.kind, query.action);
+  @ApiZodBody(bulkApplyBodySchema)
+  apply(
+    @CurrentActor() actor: Actor,
+    @Param("id", ParseUUIDPipe) id: string,
+    @ZQuery(bulkKindQuerySchema) query: z.infer<typeof bulkKindQuerySchema>,
+    @ZBody(bulkApplyBodySchema) body: z.infer<typeof bulkApplyBodySchema>,
+    @ReqMeta() meta: RequestMeta,
+  ) {
+    return this.bulk.apply(actor, id, meta, query.kind, query.action, body);
   }
 
   /** Drops a checked file that won't be applied. */

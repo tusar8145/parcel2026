@@ -18,6 +18,7 @@ export const BULK_ACTIONS = [
   "SCHEDULE_RETURN",
   "COMPLETE_DETAILS",
   "ADD_NOTE",
+  "ADD_TO_BAG",
 ] as const;
 export type BulkAction = (typeof BULK_ACTIONS)[number];
 
@@ -32,6 +33,7 @@ export const ACTION_LABEL: Record<BulkAction, string> = {
   SCHEDULE_RETURN: "Schedule return",
   COMPLETE_DETAILS: "Complete details",
   ADD_NOTE: "Add note",
+  ADD_TO_BAG: "Add to transfer bag",
 };
 
 /** Statuses operations may set with "Change status" (assignments, cancellations and returns have their own actions; never Delivered). */
@@ -77,10 +79,13 @@ export type BulkColumnKey =
   | "set_area"
   | "set_weight"
   | "set_service"
+  | "dest_suggested"
+  | "dest_hub"
+  | "bag"
   | "version"
   | "template";
 
-export type BulkListKey = "riders" | "statuses" | "hubs" | "priorities" | "districts" | "zones" | "areas" | "services";
+export type BulkListKey = "riders" | "statuses" | "hubs" | "priorities" | "districts" | "zones" | "areas" | "services" | "dest_hubs" | "bags";
 
 export interface BulkColumn {
   key: BulkColumnKey;
@@ -142,6 +147,9 @@ export const BULK_COLUMNS: BulkColumn[] = [
   ed("set_area", "Set area", 20, "Complete details: area / landmark (optional).", { list: "areas", strict: false, maxLength: 120 }),
   ed("set_weight", "Set weight (kg)", 13, "Complete details: weight in kg.", { number: { min: 0.01, max: 50 } }),
   ed("set_service", "Set service", 13, "Complete details: service level.", { list: "services", strict: true }),
+  ro("dest_suggested", "Suggested destination", 24, "The hub serving the recipient's zone (or the collection hub). Empty: no hub serves that zone yet; choose the Destination hub."),
+  ed("dest_hub", "Destination hub", 24, "The hub this parcel travels to (prefilled with the suggestion). Every hub of the network.", { list: "dest_hubs", strict: true, aliases: ["destination", "to_hub"] }),
+  ed("bag", "Bag", 30, "Optional: an open bag (BG-…) from the list, or a label of your own to group parcels into a new bag (e.g. NORTH-1). Empty = one bag per destination for this upload.", { list: "bags", strict: false, maxLength: 60, aliases: ["bag_number", "bag_label"] }),
   ro("version", "version", 8, "Optimistic locking: the parcel's version when downloaded. Don't change it.", { hidden: true }),
   ro("template", "template", 26, "The page and action this file was downloaded for (page:action, bulk-actions.ts). Don't change it.", { hidden: true }),
 ];

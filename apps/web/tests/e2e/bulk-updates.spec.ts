@@ -210,8 +210,8 @@ test("All parcels: the preview re-prices Change to drop-off and Complete details
   await opsNav(page, "ecommerce");
   await expect(page.locator("#courierBulkUpdate")).toHaveText("Bulk update All parcels by Excel");
   await page.click("#courierBulkUpdate");
-  // All parcels offers every action.
-  await expect(page.locator('#dfiActions [data-dfi="pick-action"]')).toHaveCount(14);
+  // All parcels offers every action (Add to transfer bag included).
+  await expect(page.locator('#dfiActions [data-dfi="pick-action"]')).toHaveCount(15);
 
   // ── Change to drop-off: a cheaper or dearer first mile, per row and in total ──
   await page.click('[data-dfi="pick-action"][data-action="to_drop_off"]');
@@ -366,9 +366,10 @@ test("each page offers its own actions: Delivery refuses the New orders file and
   await expect(page.locator(`#dfiHistory tr[data-bulk="${number}"]`)).toHaveCount(1);
   await page.click('[data-dfi="close"]');
 
-  // Transfers has no bulk file (transfers go through linehaul bags).
+  // Transfers has its own "Bulk transfer by Excel" (bags; transfers.spec.ts), not the stage button.
   await opsNav(page, "transfers");
   await expect(page.locator("#stageBulkUpdate")).toHaveCount(0);
+  await expect(page.locator("#lhBulkTransfer")).toBeVisible();
   for (const f of files) fs.rmSync(f, { force: true });
   expect(errors).toEqual([]);
 });

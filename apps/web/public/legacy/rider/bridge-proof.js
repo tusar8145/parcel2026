@@ -187,6 +187,16 @@
     true,
   );
 
+  // The signature photo was removed with the file control's ×: hide its preview too.
+  window.addEventListener("change", event => {
+    if (event.target.id !== "deliveryPhoto" || event.target.files?.length) return;
+    const preview = $("photoPreview");
+    if (preview) {
+      preview.hidden = true;
+      preview.removeAttribute("src");
+    }
+  });
+
   // ───────────── scan page: proof links and camera scanning ─────────────
 
   const baseRender = render;

@@ -24,11 +24,22 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
    that run before the original handlers. They perform the action through the API, then refresh
    the data, and the page re-renders through its own `storage` event listener.
 
+Form controls in every panel (loaded right after `shared/api.js`; the rider app's service worker precaches them):
+`shared/select-search.js` (`DF.searchSelect(select, { label, placeholder, threshold })`) makes every single-choice
+select with more than 12 options searchable: the native select stays visible and remains the source of truth (value,
+change events, `disabled`, Playwright `selectOption`); opening it (click, tap, Enter / Space / Alt+↓ / F4 or typing)
+shows a search box over the options (optgroups kept, ↑ / ↓ / Enter / Esc, ARIA combobox + listbox), rebuilt from the
+current options, so selects added or refilled later work too. `data-search` opts a short list in, `data-search="off"`
+opts out. `shared/file-input.js` (`DF.fileInput(input, { drop, hint, maxMb, file, button })`) turns every visible
+`<input type="file">` into a "Choose file" control (name and size, accept hint, clear ×, drag and drop; `data-file-drop`
+for a dashed drop zone, `data-file-hint`, `data-max-mb`, `data-file-button`); the native input stays inside it, so
+upload code is unchanged. File inputs hidden on purpose (opened by their own button, e.g. the rider's KYC uploads) are left alone.
+
 Shared UI modules loaded before the bridges that use them: `shared/print.js` (`window.DFPrint`: every print button opens an API-generated PDF in a new tab, see docs/architecture-contracts.md "Printed documents"), `shared/importer.js` (`window.DFImport`:
 the Excel/CSV import dialog, history and "Needs info" completion form for the merchant panels and
 Courier Operations, drawn with each panel's own modal/table/status classes. Three bulk-create templates:
 Customer parcel (operations only), E-commerce and Banking & Financial (API kind `document`). Operations
-choose the category and then the merchant (searchable select, `#dfiMerchantSearch` / `#dfiMerchant`) or
+choose the category and then the merchant (searchable select `#dfiMerchant`, DF.searchSelect) or
 "Customer parcel"; merchants get their own category. The first / last mile, drop-off hub and message
 choices and the template download follow that merchant's (or the Customer) package; there is no per-row
 merchant. Super admin's required columns / defaults per template: `super-admin/bridge-imports.js`; in bulk mode, `DFImport.bulk`, the same
@@ -39,11 +50,35 @@ Action column), upload → preview → apply; history by page and action; see co
 and docs/architecture-contracts.md "Bulk operations by Excel"),
 `shared/order-services.js` (`window.DFOrderServices`: the single-order forms' package choices — one
 first-mile and one last-mile select, Service, COD tick + amount, open box, messages — the product list
-"Name · Type", place selects with "Choose …" placeholders and a search box for long lists, inline checks
+"Name · Type", place selects with "Choose …" placeholders, searchable when long (DF.searchSelect), inline checks
 and the price breakdown; used by Courier Operations New shipment in `courier-operation/bridge-pages.js`,
 merchant or walk-in sender, and by both merchant order forms in `shared/merchant-bridge.js`; see
 docs/architecture-contracts.md "Single-order forms") and
 `shared/scanner.js` (barcode scanning).
+
+`shared/merchant-parcel.js` (`window.DFMerchantParcel`, both merchant panels, after `shared/merchant-features.js`): the
+top search (tracking ID / CN, order ref, phone, name) and the parcel side drawer on the merchant's own parcels; see
+docs/architecture-contracts.md ("Merchant top search and parcel drawer").
+
+`shared/parcel-map.js` (`window.DFParcelMap`, Courier Operations and both merchant panels, before the drawers): the
+"Where is it now" map in the parcel drawers (GET /parcels/:id/position; Leaflet loads on first use).
+`shared/vehicle-share.js` (`window.DFVehicleShare`, rider app and Courier Operations): "I'm travelling in this
+vehicle", this device sends its position as a linehaul trip's vehicle position; UI in `rider/bridge-vehicle.js`
+and `courier-operation/bridge-vehicles.js` (Transfers > Vehicles on the road). `super-admin/bridge-location.js`:
+Rider plans > "Rider location" interval. See docs/architecture-contracts.md ("Parcel position and vehicle location").
+
+`shared/period.js` (`DF.period`, loaded right after `shared/api.js` in Courier Operations, both merchant panels and
+super admin): the dashboard period filter (Today … Last month, Custom range) with the period in the URL and per-page
+memory. Used by `courier-operation/bridge-period.js` (Today, COD & settlement, Analytics & SLA; loaded last),
+`shared/merchant-bridge.js` (merchant overviews) and `super-admin/bridge-period.js` (Overview, Platform activity);
+see docs/architecture-contracts.md ("Dashboard periods").
+
+`shared/notifications.js` (`window.DFNotify`, loaded right after the page scripts and `shared/support.js`, before the
+bridges, in every panel): the bell's unread count, the notifications dropdown and the Notifications page
+(`GET /me/notifications`). `shared/panel-nav.js` (loaded last in super admin, both merchant panels and the rider app)
+connects the panel's renderer to `DF.nav` (shared/api.js): every page and tab has its own address
+(`?page=<slug>[&tab=<slug>]`), Back / Forward and titles; Courier Operations does the same in `bridge-nav.js`. See
+docs/architecture-contracts.md ("Page addresses", "In-app notifications").
 
 Dialogs: no panel uses `window.confirm` / `prompt` / `alert`. `shared/api.js` has `DF.confirm`, `DF.prompt`,
 `DF.choose` and `DF.alert` (one small in-page dialog for every panel); Courier Operations forms use

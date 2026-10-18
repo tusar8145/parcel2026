@@ -9,6 +9,7 @@ import { PackagesService, quoteResponse } from "../packages/packages.service";
 import { quoteRequestOf } from "../packages/packages.controller";
 import { MerchantsService } from "./merchants.service";
 import type { merchantStatsQuerySchema } from "./merchants.schemas";
+import { fillSeries, periodBuckets, periodView, resolvePeriod, type Period } from "../../common/period";
 
 /** Bangladesh has no daylight saving time: local time is always UTC+6. */
 const DHAKA_OFFSET_MS = 6 * 3600_000;
@@ -66,7 +67,9 @@ export class MerchantStatsService {
     const inMonth = (w: Window) => ({ gte: new Date(w.start), lt: new Date(w.end) });
     const base = { merchantId } satisfies Prisma.ParcelWhereInput;
 
-    const [byStatus, awaitingDropOff, createdToday, deliveredToday, pickedUpToday, monthStats, series, customers] = await Promise.all([
+    const range = resolvePeriod(query, "this_month", new Date(now));
+    const owner = this.isOwner(actor, merchantId);
+    const [byStatus, awaitingDropOff, createdToday, deliveredToday, pickedUpToday, monthStats, series, customers, rangeFigures] = await Promise.all([
       this.prisma.parcel.groupBy({ by: ["status"], where: base, _count: { _all: true } }),
       // Booked for hub drop-off and not yet handed over (no pickup rider will come).
       this.prisma.parcel.count({ where: { ...base, intake: "DROP_OFF", status: { in: AWAITING_PICKUP } } }),
@@ -76,6 +79,7 @@ export class MerchantStatsService {
       Promise.all([thisMonth, lastMonth].map(w => this.monthFigures(merchantId, inMonth(w)))),
       this.series(merchantId, query.period, now),
       this.customers(merchantId, thisMonth.start),
+      this.rangeFigures(merchantId, range, owner),
     ]);
 
     const counts = Object.fromEntries(byStatus.map(g => [g.status, g._count._all])) as Partial<Record<ParcelStatus, number>>;
@@ -112,7 +116,58 @@ export class MerchantStatsService {
       lastMonth: monthStats[1],
       series,
       customers,
-      money: this.isOwner(actor, merchantId) ? await this.money(merchantId, now) : null,
+      /** The dashboard period (from / to; default this month) with the previous period of the same length. */
+      range: rangeFigures,
+      money: owner ? await this.money(merchantId, now) : null,
+    };
+  }
+
+  /** Figures and the orders chart for a period, with the previous period; money for owners only. */
+  private async rangeFigures(merchantId: string, p: Period, owner: boolean) {
+    const win = (w: { start: Date; end: Date }) => ({ gte: w.start, lt: w.end });
+    const buckets = periodBuckets(p);
+    const [current, previous, pickedUp, cancelled, rows, money, previousMoney] = await Promise.all([
+      this.monthFigures(merchantId, win(p)),
+      this.monthFigures(merchantId, win(p.previous)),
+      this.prisma.parcel.count({ where: { merchantId, pickedUpAt: win(p) } }),
+      this.prisma.parcel.count({ where: { merchantId, status: "PICKUP_CANCELLED", createdAt: win(p) } }),
+      this.prisma.$queryRaw<{ key: string; n: number }[]>`
+        SELECT to_char("createdAt" + interval '6 hours', ${buckets.format}) AS key, count(*)::int AS n
+        FROM parcels
+        WHERE "merchantId" = ${merchantId}::uuid AND "createdAt" >= ${ts(p.previous.start.getTime())}::timestamp AND "createdAt" < ${ts(p.end.getTime())}::timestamp
+        GROUP BY 1`,
+      owner ? this.rangeMoney(merchantId, win(p)) : null,
+      owner ? this.rangeMoney(merchantId, win(p.previous)) : null,
+    ]);
+    const series = fillSeries(buckets, new Map(rows.map(r => [r.key, r.n])));
+    return {
+      ...periodView(p),
+      ...current,
+      pickedUp,
+      cancelled,
+      previous: { ...previous, ...(previousMoney ? { money: previousMoney } : {}) },
+      series: { bucket: p.bucket, labels: buckets.labels, keys: buckets.keys, ...series },
+      money,
+    };
+  }
+
+  /** COD collected from recipients in the window, the delivery charges deducted from it, and what was paid out. */
+  private async rangeMoney(merchantId: string, window: { gte: Date; lt: Date }) {
+    const [[cod], paid] = await Promise.all([
+      this.prisma.$queryRaw<{ n: number; cod: number; charges: number }[]>`
+        SELECT count(*)::int AS n, coalesce(sum(c.amount), 0)::float8 AS cod, coalesce(sum(p."totalCharge"), 0)::float8 AS charges
+        FROM cod_collections c JOIN parcels p ON p.id = c."parcelId"
+        WHERE p."merchantId" = ${merchantId}::uuid AND c."collectedAt" >= ${ts(window.gte.getTime())}::timestamp AND c."collectedAt" < ${ts(window.lt.getTime())}::timestamp`,
+      this.prisma.merchantSettlement.aggregate({ where: { merchantId, status: "PAID", paidAt: window }, _sum: { netPayable: true }, _count: { _all: true } }),
+    ]);
+    return {
+      codCollected: money(cod.cod),
+      collections: cod.n,
+      chargesOnCollected: money(cod.charges),
+      /** COD collected less the delivery charges of those parcels: what the merchant is owed for the period. */
+      payable: money(cod.cod - cod.charges),
+      paidOut: money(paid._sum.netPayable),
+      payouts: paid._count._all,
     };
   }
 

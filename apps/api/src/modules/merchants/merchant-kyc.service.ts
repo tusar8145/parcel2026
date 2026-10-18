@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -9,6 +9,7 @@ import { actorLabel, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
+import { InboxService } from "../notifications/inbox.service";
 import type { Merchant, MerchantKycDocument, StoredFile } from "../../generated/prisma/client";
 import { MerchantsService } from "./merchants.service";
 import { KYC_DOCUMENT_TYPES, kycPolicySchema, type KycDocumentType, type KycPolicy, type kycReviewSchema, type uploadKycDocumentSchema } from "./merchants.schemas";
@@ -84,6 +85,8 @@ const docView = (d: DocWithFile) => ({
  */
 @Injectable()
 export class MerchantKycService {
+  @Inject(InboxService) private readonly inbox!: InboxService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -186,6 +189,12 @@ export class MerchantKycService {
       await tx.merchant.update({ where: { id: m.id }, data: { kycStatus: "PENDING", kycSubmittedAt: new Date(), kycRejectionReason: null } });
       outbox.push(...(await this.notifyStatus(tx, current, "PENDING")));
       await this.audit.record(actor, { action: "merchant.kyc_submit", entityType: "merchant", entityId: m.id, data: { documents: docs.map(d => d.type) } }, meta, tx);
+      // Super admins' bell: documents to review (the merchant list of its panel type).
+      await this.inbox.toStaff(
+        tx,
+        { roles: ["SUPER_ADMIN"] },
+        { type: "staff.kyc_review", title: `KYC to review: ${current.name}`, body: `${docs.length} document${docs.length === 1 ? "" : "s"} submitted`, target: { page: current.type === "BANKING_FINANCIAL" ? "banking-and-financial-merchants" : "e-commerce-merchants" }, panel: "/super-admin" },
+      );
     });
     await this.outbox.flush(outbox);
     this.publish(m.id);

@@ -165,9 +165,10 @@ describe("bulk updates", () => {
 
       // The pages and their actions.
       const kinds = await ctx.api("GET", "/bulk-updates/kinds", { token: s.ops.token });
-      expect(kinds.body.map((k: { kind: string }) => k.kind)).toEqual(["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "all"]);
+      expect(kinds.body.map((k: { kind: string }) => k.kind)).toEqual(["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "transfers", "all"]);
       expect(kinds.body[0].actions.map((a: { action: string }) => a.action)).toEqual(["accept_pickup", "cancel", "to_drop_off", "to_pickup", "complete_details", "add_note"]);
-      expect(kinds.body[6].actions).toHaveLength(14);
+      expect(kinds.body[6].actions.map((a: { action: string }) => a.action)).toEqual(["transfer"]);
+      expect(kinds.body[7].actions).toHaveLength(15);
 
       const expected: Record<string, Record<string, string[]>> = {
         new_orders: { accept_pickup: [p1, p2, needs], cancel: [p1, p2, dropOff, needs], to_drop_off: [p1, p2, needs], to_pickup: [dropOff], complete_details: [needs], add_note: [p1, p2, dropOff, needs] },
@@ -176,6 +177,8 @@ describe("bulk updates", () => {
         delivery: { assign_delivery: [hubbed], complete_details: [], add_note: [hubbed] },
         problems: { resolve_status: [stuck], assign_delivery: [stuck], schedule_return: [stuck], complete_details: [needs], add_note: [stuck, needs] },
         returns: { schedule_return: [stuck], add_note: [stuck] },
+        // At a hub, not bagged, and the recipient's zone isn't served by that hub (Dhanmondi has no zone hub here).
+        transfers: { transfer: [hubbed] },
         all: {
           accept_pickup: [p1, p2, needs],
           reassign_pickup: [assigned],
@@ -191,9 +194,10 @@ describe("bulk updates", () => {
           schedule_return: [hubbed, stuck],
           complete_details: [needs],
           add_note: [p1, p2, dropOff, assigned, pickedUp, hubbed, stuck, needs],
+          transfer: [hubbed],
         },
       };
-      const pages: Record<string, string> = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", all: "All parcels" };
+      const pages: Record<string, string> = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", transfers: "Transfers", all: "All parcels" };
       for (const [kind, actions] of Object.entries(expected)) {
         const list = await ctx.api("GET", `/bulk-updates/actions?kind=${kind}`, { token: s.ops.token });
         expect(list.status, JSON.stringify(list.body)).toBe(200);
@@ -399,11 +403,12 @@ describe("bulk updates", () => {
       expect(await parcel(dropOff)).toMatchObject({ status: "AT_HUB", currentHubId: s.gulshan.id });
       expect(await parcel(accept)).toMatchObject({ status: "AT_HUB", currentHubId: s.gulshan.id });
 
-      // ── Delivery › Assign delivery rider: the recipient gets the delivery code ──
+      // ── Delivery › Assign delivery rider: no delivery code yet (it's sent when the rider starts the delivery) ──
       const ad = await run(s.ops.token, "delivery", "assign_delivery", x => (x.set(dropOff, { Rider: "R-4048" }), [dropOff]));
       await apply(s.ops.token, ad.job, "delivery");
       expect(await parcel(dropOff)).toMatchObject({ status: "ASSIGNED", deliveryRiderId: s.rider.rider.id });
-      expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.delivery_code" } })).toBeGreaterThanOrEqual(1);
+      expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.delivery_code", trackingId: dropOff } })).toBe(0);
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: dropOff } })).deliveryOtpEncrypted).toBeNull();
 
       // ── Hub desk › Mark exception (reason) → Problems › Resolve, Schedule return ──
       const ex = await run(s.ops.token, "hub_desk", "mark_exception", x => (x.set(accept, { Reason: "Label torn" }), [accept]));

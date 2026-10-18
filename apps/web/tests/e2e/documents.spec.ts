@@ -89,9 +89,11 @@ test("print options open generated PDFs in a new tab", async ({ page, api }) => 
   // The select is ready again once the PDF is open.
   await expect(page.locator("#courierPrintFormat")).toHaveValue("");
 
-  // "4 invoices · A4": both on one page.
+  // "4 invoices · A4": both on one page, no page header / footer (the sheet is cut after printing).
   const four = await openPdf(page, () => printAs(page, "invoice-4"));
   expect(four.info.pages).toBe(1);
+  expect(four.has("Page 1 of 1")).toBe(false);
+  for (const id of ids) expect(four.has(id)).toBe(true);
   await four.popup.close();
 
   // "Order / shipment list": a table of the filtered parcels with totals.

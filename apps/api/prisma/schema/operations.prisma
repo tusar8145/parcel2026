@@ -122,6 +122,10 @@ model LinehaulTrip {
   vehicle            LinehaulVehicle?      @relation(fields: [vehicleId], references: [id])
   bags               LinehaulBag[]
   discrepancies      LinehaulDiscrepancy[]
+  // vehicle location (tracking.prisma)
+  vehicleShares      VehicleShare[]
+  location           TripLocation?
+  locationPoints     TripLocationPoint[]
 
   @@index([originHubId, status])
   @@index([destHubId, status])
@@ -144,6 +148,8 @@ model LinehaulBag {
   tripId        String?               @db.Uuid
   status        LinehaulBagStatus     @default(OPEN)
   sealNo        String?
+  /// A grouping label typed in a bulk transfer file ("Bag" column) or the upload's number; bags are found again by origin, destination and label while open.
+  label         String?
   sealedAt      DateTime?
   sealedById    String?               @db.Uuid
   receivedAt    DateTime?
@@ -160,6 +166,7 @@ model LinehaulBag {
   @@index([originHubId, status])
   @@index([destHubId, status])
   @@index([tripId])
+  @@index([originHubId, destHubId, label])
   @@map("linehaul_bags")
 }
 

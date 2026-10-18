@@ -65,7 +65,8 @@ describe("Geography admin", () => {
       expect(c.zonesByDistrict.Rangamati).toEqual(["Kaptai"]);
       expect(c.areasByZone.Kaptai).toEqual(["Kaptai Bazar", "Chandraghona", "Banarupa"]);
       expect(events.filter(e => e.type === "catalog.updated")).toHaveLength(3);
-      expect(events[0]).toMatchObject({ type: "catalog.updated", staffPermission: "support:create" });
+      // (Other events, e.g. the admin's in-app "two-step verification on" notification, may arrive in between.)
+      expect(events.find(e => e.type === "catalog.updated")).toMatchObject({ type: "catalog.updated", staffPermission: "support:create" });
       const quote = await ctx.api("POST", "/pricing/quote", { body: { pickupDistrict: "Rangamati", pickupZone: "Kaptai", deliveryDistrict: "Rangamati", deliveryZone: "Kaptai", weightKg: 1, serviceLevel: "Regular", codAmount: 0 } });
       expect(quote.body.sameZone).toBe(true);
     } finally {

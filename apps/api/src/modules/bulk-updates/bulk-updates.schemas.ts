@@ -3,6 +3,7 @@ import { listParcelsQuerySchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { BULK_KINDS } from "./bulk-kinds";
 import { BULK_ACTION_IDS } from "./bulk-actions";
+import { transferOptionsSchema } from "../linehaul/linehaul.schemas";
 
 /** The page: new_orders, pickup, hub_desk, delivery, problems, returns, or all (every action; default). */
 export const bulkKindSchema = z.enum(BULK_KINDS);
@@ -53,3 +54,6 @@ export const bulkListQuerySchema = pageQuerySchema.extend({
 });
 
 export const bulkFailedRowsQuerySchema = z.object({ format: z.enum(["xlsx", "csv"]).default("xlsx") });
+
+/** Apply options (optional body): Add to transfer bag → { transfer: { seal, tripId | newTrip } }. */
+export const bulkApplyBodySchema = z.object({ transfer: transferOptionsSchema.optional() });

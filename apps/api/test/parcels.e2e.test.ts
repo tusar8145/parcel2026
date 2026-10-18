@@ -65,15 +65,15 @@ describe("parcel lifecycle", () => {
     const atHub = await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_TO_HUB", hubId: h.id } });
     expect(atHub.body).toMatchObject({ status: "AT_HUB", currentHub: { id: h.id } });
 
-    // Operations assigns delivery: the recipient gets a code by SMS.
+    // Operations assigns delivery: no code yet. The rider starts the delivery: the recipient gets a code by SMS.
     await ctx.api("POST", `/parcels/${trackingId}/assign-delivery`, { token: ops.token, body: { riderId: rider.rider.id } });
+    expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.delivery_code" } })).toBe(0);
+    await ctx.api("POST", `/rider/parcels/${trackingId}/start-delivery`, { token: rider.token });
     const sms = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "parcel.delivery_code" } });
     expect(sms.to).toBe("+8801812000000");
     const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId } });
     const code = decrypt(parcel.deliveryOtpEncrypted!);
     expect(sms.body).toContain(code);
-
-    await ctx.api("POST", `/rider/parcels/${trackingId}/start-delivery`, { token: rider.token });
 
     // Wrong COD and wrong code are rejected.
     const deliver = (body: object) => ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, { token: rider.token, body });

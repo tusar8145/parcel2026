@@ -515,28 +515,44 @@
     const rows = k.policy.documentTypes
       .map(t => {
         const d = k.documents.find(x => x.type === t.type);
-        return `<tr><td><strong>${esc(t.label)}</strong>${t.required ? "" : " <small>(optional)</small>"}</td><td>${d ? `${esc(d.filename)}<div class="customer-phone">${esc(dateOnly(d.uploadedAt))}</div>` : "—"}</td><td>${d ? pill("Uploaded") : pill(t.required ? "Missing" : "Optional")}</td><td style="white-space:nowrap">${owner && k.canUpload ? `<label class="button button-sm" style="cursor:pointer">${d ? "Replace" : "Upload"}<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" data-dff-kyc-file="${t.type}" hidden></label>` : ""}${d && owner ? ` <button type="button" class="button button-sm" data-dff-kyc-view="${esc(d.id)}">View</button>` : ""}</td></tr>`;
+        return `<tr><td><strong>${esc(t.label)}</strong>${t.required ? "" : " <small>(optional)</small>"}</td><td>${d ? `${esc(d.filename)}<div class="customer-phone">${esc(dateOnly(d.uploadedAt))}</div>` : "—"}</td><td>${d ? pill("Uploaded") : pill(t.required ? "Missing" : "Optional")}</td><td style="white-space:nowrap">${owner && k.canUpload ? `<button type="button" class="button button-sm" data-dff-kyc-pick="${esc(t.type)}">${d ? "Replace" : "Upload"}</button>` : ""}${d && owner ? ` <button type="button" class="button button-sm" data-dff-kyc-view="${esc(d.id)}">View</button>` : ""}</td></tr>`;
       })
       .join("");
+    // One upload form under the table: document type, the shared "Choose file" drop zone, Upload.
+    const uploadForm =
+      owner && k.canUpload
+        ? `<form id="dffKycForm" style="margin-top:12px;padding:12px;border:1px solid #dfe5ee;border-radius:10px;display:grid;gap:10px"><strong style="font-size:13px">Upload a document</strong><div class="form-field"><label for="dffKycType">Document</label><select id="dffKycType">${k.policy.documentTypes.map(t => `<option value="${esc(t.type)}">${esc(t.label)}${k.documents.some(x => x.type === t.type) ? " (replace)" : ""}</option>`).join("")}</select></div><div class="form-field"><label for="dffKycFile">File</label><input type="file" id="dffKycFile" accept="image/png,image/jpeg,image/webp,application/pdf" data-file-drop data-max-mb="3.5" required></div><div style="display:flex;justify-content:flex-end"><button type="submit" class="button button-primary" id="dffKycUpload">Upload</button></div></form>`
+        : "";
     const needs = [k.policy.requireForApiKeys && "API keys", k.policy.requireForCodPayouts && "COD payouts", k.policy.requireForActivation && "account approval"].filter(Boolean);
     dialog(
       "Business verification",
       `${pill(KYC_LABEL[k.status] || k.status)} ${needs.length ? `· Needed for ${esc(needs.join(", "))}` : ""}`,
-      `${k.status === "REJECTED" && k.rejectionReason ? `<p class="panel-subtitle" style="color:#b42318;margin:10px 0">Not approved: ${esc(k.rejectionReason)}. Replace the documents and submit again.</p>` : ""}${k.status === "PENDING" ? `<p class="panel-subtitle" style="margin:10px 0">Your documents are being reviewed. We'll text ${esc(S().merchant.contactPhone)} with the result.</p>` : ""}<div class="table-scroll"><table><thead><tr><th>DOCUMENT</th><th>FILE</th><th>STATUS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p class="panel-subtitle" style="margin:10px 0 0">PNG, JPEG, WebP or PDF, up to 3.5 MB each. Files are stored privately and only Delivery Fast reviewers can see them.</p>${
+      `${k.status === "REJECTED" && k.rejectionReason ? `<p class="panel-subtitle" style="color:#b42318;margin:10px 0">Not approved: ${esc(k.rejectionReason)}. Replace the documents and submit again.</p>` : ""}${k.status === "PENDING" ? `<p class="panel-subtitle" style="margin:10px 0">Your documents are being reviewed. We'll text ${esc(S().merchant.contactPhone)} with the result.</p>` : ""}<div class="table-scroll"><table><thead><tr><th>DOCUMENT</th><th>FILE</th><th>STATUS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${uploadForm}<p class="panel-subtitle" style="margin:10px 0 0">PNG, JPEG, WebP or PDF, up to 3.5 MB each. Files are stored privately and only Delivery Fast reviewers can see them.</p>${
         k.history.length ? `<h3 style="font-size:13px;margin:14px 0 6px">History</h3><ul style="margin:0;padding-left:18px;color:#536174;font-size:12px;line-height:1.7">${k.history.map(h => `<li>${esc(dateTime(h.at))} · ${esc(h.body)}</li>`).join("")}</ul>` : ""
       }<div class="modal-actions"><button type="button" class="button" data-df-close>Close</button>${owner && k.canSubmit ? `<button type="button" class="button button-primary" data-dff-kyc-submit>Submit for review</button>` : ""}</div>${owner ? "" : `<p class="panel-subtitle">Only workspace owners can upload documents.</p>`}`,
       720,
     );
   }
 
-  function uploadKyc(inputEl) {
-    const file = inputEl.files?.[0];
-    if (!file) return;
+  /** "Upload" / "Replace" in a row: choose that document type in the form and open the file picker. */
+  function pickKyc(type) {
+    const select = document.getElementById("dffKycType");
+    const input = document.getElementById("dffKycFile");
+    if (!select || !input) return;
+    select.value = type;
+    input.click();
+  }
+
+  function uploadKyc() {
+    const inputEl = document.getElementById("dffKycFile");
+    const type = document.getElementById("dffKycType")?.value;
+    const file = inputEl?.files?.[0];
+    if (!file) return toast("Choose the file to upload.");
     if (file.size > 3.5 * 1024 * 1024) return toast("That file is larger than 3.5 MB. Use a smaller scan or photo.");
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        await DF.api(`/merchants/me/kyc/documents${q()}`, { method: "POST", body: { type: inputEl.dataset.dffKycFile, filename: file.name.slice(0, 120), file: reader.result } });
+        await DF.api(`/merchants/me/kyc/documents${q()}`, { method: "POST", body: { type, filename: file.name.slice(0, 120), file: reader.result } });
         toast(`${file.name} uploaded.`);
         await openKyc();
       } catch (error) {
@@ -722,13 +738,14 @@
     }
     if (hit("[data-dff-open-kyc], [data-df-open-kyc]")) return stop(event), void openKyc();
     if (hit("[data-dff-kyc-submit]")) return stop(event), void submitKyc();
+    if ((el = hit("[data-dff-kyc-pick]"))) return stop(event), void pickKyc(el.dataset.dffKycPick);
     if ((el = hit("[data-dff-kyc-view]"))) return stop(event), void viewKycDocument(el.dataset.dffKycView);
   }
 
   function onSubmit(event) {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    const handlers = { dffProductForm: saveProduct, dffScheduleForm: saveSchedule, dffPickupForm: savePickupRequest, dffReturnForm: saveReturn, dffReviewForm: sendReviewAnswer, dffPrefsForm: savePrefs };
+    const handlers = { dffKycForm: uploadKyc, dffProductForm: saveProduct, dffScheduleForm: saveSchedule, dffPickupForm: savePickupRequest, dffReturnForm: saveReturn, dffReviewForm: sendReviewAnswer, dffPrefsForm: savePrefs };
     const handler = handlers[form.id];
     if (!handler) return;
     stop(event);
@@ -737,7 +754,6 @@
 
   function onChange(event) {
     const t = event.target;
-    if (t.matches?.("[data-dff-kyc-file]")) return uploadKyc(t);
     if (t.id === "dffCatalogPick") return applyProduct(t.value);
     if (t.id === "dffReportPeriod") {
       reportDays = Number(t.value) || 30;

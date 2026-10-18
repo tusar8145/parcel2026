@@ -14,6 +14,9 @@ const guestParcelSchema = createParcelSchema.extend({
   verificationToken: z.string().trim().min(10, "Verify your phone number first").max(200),
 });
 
+/** POST /track/:id/live-access: the last 4 digits of the recipient's phone. */
+const liveAccessSchema = z.object({ phoneLast4: z.string().trim().regex(/^\d{4}$/, "Enter the last 4 digits of your phone number") });
+
 /** Booking and tracking for senders without an account (website). */
 @ApiTags("guest booking")
 @Controller()
@@ -64,6 +67,20 @@ export class GuestBookingController {
   @ApiQuery({ name: "t", required: true, description: "Access token from the tracking link" })
   full(@Param("trackingId") trackingId: string, @Query("t") token: string) {
     return this.guest.fullView(trackingId, token);
+  }
+
+  /**
+   * Recipient without the SMS link: the last 4 digits of their phone unlock the delivery rider's live
+   * position for this parcel ("Live rider location" packages, while out for delivery). Answers `{ token }`
+   * for GET /track/:id?t=…
+   */
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @Post("track/:trackingId/live-access")
+  @HttpCode(200)
+  @ApiZodBody(liveAccessSchema)
+  liveAccess(@Param("trackingId") trackingId: string, @ZBody(liveAccessSchema) body: z.infer<typeof liveAccessSchema>) {
+    return this.guest.liveAccess(trackingId, body.phoneLast4);
   }
 
   /** Cancels a guest booking while it is still pending confirmation. */

@@ -25,10 +25,10 @@
   const $ = id => document.getElementById(id);
   const LINES = { "E-commerce operations": "ecommerce", "Banking & Financial operations": "document", "Customer parcels": "customer" };
   const PAGES = ["Shipments", ...Object.keys(LINES)];
-  // Journey views with their own bulk template. Transfers has none: moving parcels between hubs goes
-  // through linehaul bags and manifests, which have no bulk action yet.
+  // Journey views with their own bulk template. Transfers has its own button ("Bulk transfer by Excel",
+  // bridge-linehaul.js: the "transfer" action of the "transfers" template, with seal / trip options).
   const STAGE_KINDS = { "New orders": "new_orders", Pickup: "pickup", "Hub desk": "hub_desk", Delivery: "delivery", Problems: "problems", Returns: "returns" };
-  const PAGE_OF = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", all: "All parcels" };
+  const PAGE_OF = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", transfers: "Transfers", all: "All parcels" };
   // The templates this person can use (a page whose actions they can't perform has no button).
   let kinds = null;
   (DF.bridgeReady || Promise.resolve())

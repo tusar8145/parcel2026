@@ -11,11 +11,12 @@ import type { Prisma } from "../../generated/prisma/client";
 import { ParcelsService } from "../parcels/parcels.service";
 import { opsHubScope } from "../parcels/ops-scope";
 import { ScansService } from "../scans/scans.service";
+import { LinehaulService } from "../linehaul/linehaul.service";
 import { assertHubInScope, codeVariants } from "./ops-common";
 import type { hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
 
 /** What happened to one scan at the receive desk. */
-export type ReceiveOutcome = "RECEIVED" | "ALREADY_RECEIVED" | "WRONG_HUB" | "NOT_FOUND" | "NOT_DROP_OFF" | "REFUSED";
+export type ReceiveOutcome = "RECEIVED" | "BAG_RECEIVED" | "ALREADY_RECEIVED" | "WRONG_HUB" | "NOT_FOUND" | "NOT_DROP_OFF" | "REFUSED" | "EXTRA" | "TRIP" | "NOT_IN_TRANSIT";
 
 /** Statuses a parcel can only reach after arriving at a hub (pickup imports count these as received). */
 const ARRIVED: ParcelStatus[] = ["AT_HUB", "ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "RETRY_SCHEDULED", "RETURN_SCHEDULED", "RETURNED"];
@@ -35,6 +36,7 @@ export class HubIntakeService {
     private readonly parcels: ParcelsService,
     private readonly scans: ScansService,
     private readonly audit: AuditService,
+    private readonly linehaul: LinehaulService,
   ) {}
 
   // ───────────── receive desk ─────────────
@@ -61,9 +63,11 @@ export class HubIntakeService {
     const scan = (ok: boolean, message: string) =>
       this.scans.recordQuietly({ code: input.code, kind: "HUB_RECEIVE", hubId: hub.id, userId, source: input.source, ok, message });
 
-    const result = async (outcome: ReceiveOutcome, message: string, parcel?: Awaited<ReturnType<typeof find>>) => ({
+    const result = async (outcome: ReceiveOutcome, message: string, parcel?: Awaited<ReturnType<typeof find>>, transfer?: Awaited<ReturnType<LinehaulService["receiveScan"]>>) => ({
       outcome,
-      ok: outcome === "RECEIVED" || outcome === "ALREADY_RECEIVED",
+      ok: outcome === "RECEIVED" || outcome === "ALREADY_RECEIVED" || outcome === "BAG_RECEIVED" || outcome === "TRIP",
+      /** Linehaul: the bag / trip the scan was received from (expected vs received), when it was a transfer. */
+      transfer: transfer ? { bag: transfer.bag, trip: transfer.trip } : null,
       message,
       code: variants[0],
       hub: { id: hub.id, name: hub.name },
@@ -86,7 +90,15 @@ export class HubIntakeService {
       batch: batch ? await this.batchProgress(batch.id) : null,
     });
 
+    // Linehaul transfers: a bag label (whole bag), a manifest, or a parcel manifested in a bag coming to this hub go through linehaul receiving.
+    const viaLinehaul = async () => {
+      const r = await this.linehaul.receiveScan(actor, { hubId: hub.id, code: input.code, source: input.source }, meta);
+      return result(r.outcome, r.message, r.parcel ? ((await find()) ?? undefined) : undefined, r);
+    };
+    if (/^(BG|MF)-/i.test(variants[0])) return viaLinehaul();
+
     let parcel = await find();
+    if (parcel?.status === "IN_TRANSIT" && (await this.prisma.linehaulBagItem.count({ where: { parcelId: parcel.id, state: "LOADED", bag: { status: "IN_TRANSIT", destHubId: hub.id } } }))) return viaLinehaul();
     if (!parcel) {
       const label = await this.prisma.cnStock.findFirst({ where: { cn: { in: variants } }, select: { cn: true, status: true } });
       const message = label ? `${label.cn} is a pre-printed label that hasn't been booked yet. Book the parcel first.` : `No parcel found for ${variants[0]}.`;

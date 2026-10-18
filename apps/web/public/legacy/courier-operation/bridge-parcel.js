@@ -15,7 +15,8 @@
  *                        Failed delivery        → Re-attempt (Assign rider) + Return to sender (bridge-failed.js)
  *                      Shipment table rows show it first, then "Details" (the drawer), and the
  *                      row's other buttons under "More".
- *   Parcel drawer      Ops.drawer.open(trackingId): summary, actions, price breakdown, proof of
+ *   Parcel drawer      Ops.drawer.open(trackingId): summary, actions, "Where is it now" (map from
+ *                      GET /parcels/:id/position, shared/parcel-map.js), price breakdown, proof of
  *                      delivery (GET /parcels/:id/proof), staff notes and the tracking history,
  *                      beside the page (it stays open while you work).
  *   Global search      the top bar box: tracking ID, CN (pre-printed CNs are the tracking ID) or
@@ -277,7 +278,13 @@
 
   // ───────────── the parcel drawer ─────────────
 
-  const drawer = { id: null, matches: [], proof: new Map(), messages: new Map(), messagesLoading: new Set(), noteDraft: "" };
+  const drawer = { id: null, matches: [], proof: new Map(), messages: new Map(), messagesLoading: new Set(), noteDraft: "", noteStatus: null };
+  /** The note form's status line; kept on the drawer so a live repaint doesn't wipe it. */
+  function noteStatus(id, text, color) {
+    drawer.noteStatus = text ? { id, text, color } : null;
+    const el = $("drawerNoteStatus");
+    if (el) (el.textContent = text || ""), (el.style.color = color || "#647184");
+  }
 
   function ensureDrawer() {
     let el = $("parcelDrawer");
@@ -365,7 +372,7 @@
   function notesMarkup(p) {
     const notes = [...(p.events || [])].filter(e => e.internal).reverse();
     const form = Ops.can("dispatch")
-      ? `<form id="drawerNoteForm" data-tracking="${esc(p.trackingId)}" style="display:grid;gap:6px;margin:0 0 10px"><label for="drawerNote" style="font-size:12px;font-weight:600;color:#647184">Add a staff note</label><textarea id="drawerNote" rows="2" maxlength="1000" aria-required="true" placeholder="e.g. Recipient asked for delivery after 5 pm" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical">${esc(drawer.noteDraft || "")}</textarea><div style="display:flex;gap:8px;align-items:center"><button type="submit" class="button button-sm button-primary" id="drawerNoteSave">Add note</button><small id="drawerNoteStatus" role="status" aria-live="polite" style="color:#647184"></small></div><p style="margin:0;color:#98a2ae;font-size:12px">Staff only · recorded on the parcel's timeline with your name.</p></form>`
+      ? `<form id="drawerNoteForm" data-tracking="${esc(p.trackingId)}" style="display:grid;gap:6px;margin:0 0 10px"><label for="drawerNote" style="font-size:12px;font-weight:600;color:#647184">Add a staff note</label><textarea id="drawerNote" rows="2" maxlength="1000" aria-required="true" placeholder="e.g. Recipient asked for delivery after 5 pm" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical">${esc(drawer.noteDraft || "")}</textarea><div style="display:flex;gap:8px;align-items:center"><button type="submit" class="button button-sm button-primary" id="drawerNoteSave">Add note</button><small id="drawerNoteStatus" role="status" aria-live="polite" style="color:${drawer.noteStatus?.id === p.trackingId ? drawer.noteStatus.color : "#647184"}">${drawer.noteStatus?.id === p.trackingId ? esc(drawer.noteStatus.text) : ""}</small></div><p style="margin:0;color:#98a2ae;font-size:12px">Staff only · recorded on the parcel's timeline with your name.</p></form>`
       : "";
     if (!notes.length) return `${form}<p class="panel-subtitle" style="margin:0" data-drawer-notes-empty>No staff notes yet.</p>`;
     return `${form}<div style="display:grid;gap:8px" data-drawer-notes>${notes
@@ -444,6 +451,7 @@
     const scroll = body.scrollTop;
     const typing = document.activeElement?.id === "drawerNote" ? document.activeElement.selectionStart : null;
     body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>${Ops.failureSection?.(p) || ""}
+      ${window.DFParcelMap ? `<section id="drawerPosition"><h3>Where is it now</h3>${window.DFParcelMap.slot("ops")}</section>` : ""}
       <section><h3>Parcel</h3>${kv([
         ["Merchant / sender", esc(p.merchant?.name || p.sender?.name || "—")],
         ["Recipient", esc([p.recipient?.name, DF.localPhone(p.recipient?.phone)].filter(Boolean).join(" · ") || "—")],
@@ -463,6 +471,9 @@
       <section id="drawerNotes"><h3>Staff notes</h3>${notesMarkup(p)}</section>
       <section id="drawerMessages"><h3 style="display:flex;justify-content:space-between;align-items:center">Messages sent <button type="button" class="button button-sm" data-drawer-messages-refresh="${esc(p.trackingId)}" style="text-transform:none;letter-spacing:0">Refresh</button></h3>${messagesMarkup(p)}</section>
       <section><h3>Tracking history</h3>${historyMarkup(p)}</section>`;
+    // The position map (shared/parcel-map.js) is kept across repaints and reloads when the parcel changes.
+    window.DFParcelMap?.attach("ops", p.trackingId, { status: `${p.status}:${p.updatedAt || ""}`, force: drawer.freshPosition });
+    drawer.freshPosition = false;
     body.scrollTop = scroll;
     if (typing != null) {
       const note = $("drawerNote");
@@ -477,6 +488,7 @@
   Ops.drawer = {
     open(trackingId, matches) {
       drawer.id = trackingId;
+      drawer.freshPosition = true;
       if (matches) drawer.matches = matches;
       else if (!drawer.matches.some(m => m.trackingId === trackingId)) drawer.matches = [];
       paintDrawer();
@@ -539,24 +551,22 @@
       const status = $("drawerNoteStatus");
       if (note.length < 2) {
         input.setAttribute("aria-invalid", "true");
-        if (status) (status.textContent = "Write the note first (at least 2 characters)."), (status.style.color = "var(--red)");
+        if (status) noteStatus(id, "Write the note first (at least 2 characters).", "var(--red)");
         return void input.focus();
       }
       const button = $("drawerNoteSave");
       button.disabled = true;
-      if (status) (status.textContent = "Saving…"), (status.style.color = "#647184");
+      if (status) noteStatus(id, "Saving…");
       DF.api(`/parcels/${encodeURIComponent(id)}/notes`, { method: "POST", body: { note } })
         .then(parcel => {
           drawer.noteDraft = "";
           Ops.upsertParcels?.([parcel]);
+          noteStatus(id, "Note added.", "var(--green)");
           if (drawer.id === id) paintDrawer();
-          const after = $("drawerNoteStatus");
-          if (after) (after.textContent = "Note added."), (after.style.color = "var(--green)");
           showToast(`${id}: note added.`);
         })
         .catch(error => {
-          const after = $("drawerNoteStatus");
-          if (after) (after.textContent = DF.describe(error)), (after.style.color = "var(--red)");
+          noteStatus(id, DF.describe(error), "var(--red)");
         })
         .finally(() => {
           const again = $("drawerNoteSave");
@@ -577,6 +587,21 @@
   Ops.onParcels?.push(items => {
     if (drawer.id && items.some(p => p.trackingId === drawer.id)) queueMicrotask(() => drawer.id && paintDrawer());
   });
+
+  // The drawer's position follows the rider / vehicle it shows (throttled).
+  let positionAt = 0;
+  const followPosition = match => data => {
+    const shown = window.DFParcelMap?.shown("ops");
+    if (!drawer.id || shown?.trackingId !== drawer.id || !match(shown.position || {}, data || {})) return;
+    if (Date.now() - positionAt < 15_000) return;
+    positionAt = Date.now();
+    window.DFParcelMap.refresh("ops");
+  };
+  DF.events?.on("rider.location", followPosition((pos, d) => pos.kind === "rider" && !!pos.rider && pos.rider.code === d.code));
+  // A parcel in transit: its trip's vehicle (or any vehicle while the trip isn't known yet).
+  const onTrip = (pos, d) => (pos.trip ? pos.trip.id === d.tripId : Ops.apiParcel(drawer.id)?.status === "IN_TRANSIT");
+  DF.events?.on("vehicle.location", followPosition(onTrip));
+  DF.events?.on("vehicle.share", followPosition(onTrip));
 
   // ───────────── global search ─────────────
 

@@ -388,10 +388,15 @@ describe("service packages", () => {
       await ctx.prisma.parcel.update({ where: { trackingId: id }, data: { status: "AT_HUB", currentHubId: gulshan.id } });
       await ctx.api("POST", `/parcels/${id}/assign-delivery`, { token: ops.token, body: { riderId: rider.rider.id } });
       expect((await ctx.api("GET", `/track/${id}`)).body.liveDelivery).toBeNull();
+      await ctx.api("PATCH", "/rider/me/status", { token: rider.token, body: { status: "ONLINE" } }); // positions of riders off shift are hidden
       await ctx.api("POST", `/rider/parcels/${id}/start-delivery`, { token: rider.token });
       await ctx.prisma.riderLocation.create({ data: { riderId: rider.rider.id, lat: 23.79, lng: 90.41, accuracy: 10, at: new Date() } });
-      const track = (await ctx.api("GET", `/track/${id}`)).body;
+      // The tracking ID alone shows the phone but not the position (that needs the SMS link / phone digits).
+      expect((await ctx.api("GET", `/track/${id}`)).body.liveDelivery).toMatchObject({ rider: { phone: rider.phone }, location: null, locationStatus: "LINK_REQUIRED" });
+      const access = await ctx.api("POST", `/track/${id}/live-access`, { body: { phoneLast4: "0000" } });
+      const track = (await ctx.api("GET", `/track/${id}?t=${encodeURIComponent(access.body.token)}`)).body;
       expect(track.liveDelivery).toMatchObject({ rider: { phone: rider.phone }, location: { lat: 23.79, lng: 90.41 } });
+      expect((await ctx.api("GET", `/parcels/${id}`, { token: owner.token })).body.liveDelivery).toMatchObject({ location: { lat: 23.79, lng: 90.41 } });
     });
   });
 });

@@ -7,6 +7,7 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { env, runsJobs } from "../../config/env";
 import { opsHubScope } from "../parcels/ops-scope";
+import { readLocationSettings } from "../tracking/location-settings";
 import type { locationHistoryQuerySchema, locationPointSchema, riderLocationsQuerySchema } from "./rider.schemas";
 
 type Point = z.infer<typeof locationPointSchema>;
@@ -50,8 +51,10 @@ export class RiderLocationService implements OnApplicationBootstrap {
     const rider = await this.onShiftRider(actor);
     if (rider.status === "OFFLINE") throw new AppError("RIDER_OFF_SHIFT", "Start your shift to share your location", HttpStatus.CONFLICT);
     const result = await this.store(rider, [point]);
-    if (!result.accepted) throw new AppError("INVALID_LOCATION_TIME", "The location's time isn't plausible. Check the phone's date and time.", 422);
-    return result;
+    // A repeat of a fix already stored (same time, e.g. "Update now" right after an automatic send) is fine.
+    if (!result.valid) throw new AppError("INVALID_LOCATION_TIME", "The location's time isn't plausible. Check the phone's date and time.", 422);
+    const { valid: _valid, ...answer } = result;
+    return answer;
   }
 
   /**
@@ -60,7 +63,19 @@ export class RiderLocationService implements OnApplicationBootstrap {
    */
   async recordBatch(actor: UserActor, points: Point[]) {
     const rider = await this.onShiftRider(actor);
-    return this.store(rider, points);
+    const { valid: _valid, ...answer } = await this.store(rider, points);
+    return answer;
+  }
+
+  /** The rider's own last position on record and whether it's being shared (rider app status line). */
+  async mine(actor: UserActor) {
+    const rider = await this.onShiftRider(actor);
+    const [latest, settings] = await Promise.all([
+      this.prisma.riderLocation.findUnique({ where: { riderId: rider.id }, select: { lat: true, lng: true, accuracy: true, at: true, receivedAt: true } }),
+      readLocationSettings(this.prisma),
+    ]);
+    // `settings`: how often the app sends a position while on shift (super admin "Rider location interval").
+    return { status: rider.status, sharing: rider.status !== "OFFLINE", latest, settings };
   }
 
   private async onShiftRider(actor: UserActor) {
@@ -76,7 +91,7 @@ export class RiderLocationService implements OnApplicationBootstrap {
       .map(p => ({ ...p, atDate: new Date(p.at) }))
       .filter(p => p.atDate.getTime() <= now + MAX_CLOCK_SKEW_MS && p.atDate.getTime() > now - retentionDays() * 86_400_000)
       .sort((a, b) => a.atDate.getTime() - b.atDate.getTime());
-    if (!valid.length) return { accepted: 0, ignored: points.length, live: false };
+    if (!valid.length) return { accepted: 0, ignored: points.length, live: false, valid: 0 };
 
     const { count } = await this.prisma.riderLocationPoint.createMany({
       data: valid.map(p => ({ riderId: rider.id, lat: p.lat, lng: p.lng, accuracy: p.accuracy, heading: p.heading ?? null, speed: p.speed ?? null, at: p.atDate })),
@@ -102,9 +117,25 @@ export class RiderLocationService implements OnApplicationBootstrap {
           staffPermission: "rider:read",
           data: { riderId: rider.id, code: rider.code, lat: latest.lat, lng: latest.lng, accuracy: latest.accuracy, heading: latest.heading ?? null, speed: latest.speed ?? null, at: latest.at, status: rider.status },
         });
+        await this.notifyParcelViewers(rider.id);
       }
     }
-    return { accepted: count, ignored: points.length - count, live };
+    return { accepted: count, ignored: points.length - count, live, valid: valid.length };
+  }
+
+  /**
+   * "Live rider location" (package): the merchant / customer of each parcel this rider is delivering
+   * right now hears `parcel.rider_location` (no coordinates in the event: their page reloads the
+   * parcel, which applies the visibility rules in ParcelsService.liveDelivery).
+   */
+  private async notifyParcelViewers(riderId: string) {
+    const parcels = await this.prisma.parcel.findMany({
+      where: { deliveryRiderId: riderId, status: "OUT_FOR_DELIVERY", services: { has: "tracking.live_location" } },
+      select: { trackingId: true, merchantId: true, customerId: true },
+      take: 200,
+    });
+    for (const p of parcels)
+      this.realtime.publish({ type: "parcel.rider_location", id: p.trackingId, merchantId: p.merchantId, customerId: p.customerId, staffPermission: "parcel:read:any" });
   }
 
   /** Latest positions for operations maps (hub operators see their own hubs' riders). */

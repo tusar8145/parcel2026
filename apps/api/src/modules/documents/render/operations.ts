@@ -75,6 +75,21 @@ export function drawManifest(pdf: PdfWriter, brand: Brand, t: ManifestDoc, meta:
     rows: t.bags.map(b => [b.number, b.sealNo ?? "Not sealed", b.status, String(b.parcels), String(b.weightKg), fmtAmount(b.codAmount), String(b.received), String(b.missing)]),
     empty: "No bags loaded on this trip.",
   });
+  // Every bag's Code 128, so the receiving hub can scan a bag from the manifest when its tag is damaged.
+  if (t.bags.length) {
+    const cols = 3;
+    const gap = 12;
+    const cw = (pdf.width - MARGIN * 2 - gap * (cols - 1)) / cols;
+    y = ensureSpace(pdf, y + 10, 64, newPage);
+    y = sectionTitle(pdf, "Bag barcodes (scan to receive a whole bag)", y);
+    t.bags.forEach((b, i) => {
+      if (i && i % cols === 0) y = ensureSpace(pdf, y + 46, 46, newPage);
+      const x = MARGIN + (i % cols) * (cw + gap);
+      pdf.barcode(b.number, x, y, cw, 26);
+      pdf.text(`${b.number} · ${b.parcels} parcel(s)`, x, y + 28, { size: 7.5, bold: true, width: cw, align: "center", maxLines: 1 });
+    });
+    y += 46;
+  }
   y = ensureSpace(pdf, y + 12, 60, newPage);
   y = sectionTitle(pdf, `Parcels (${t.totals.parcels})`, y);
   y = table(pdf, {
@@ -120,6 +135,8 @@ export interface BagLabelDoc {
   originHub: { code: string; name: string };
   destHub: { code: string; name: string };
   sealNo: string | null;
+  /** Grouping label from a transfer file (e.g. NORTH-1). */
+  label?: string | null;
   parcels: number;
   weightKg: number;
   codAmount: number;
@@ -144,7 +161,7 @@ export function drawBagLabel(pdf: PdfWriter, brand: Brand, b: BagLabelDoc, print
   pdf.text(`From ${b.originHub.code} · ${b.originHub.name}`, pad, y, { size: 9, width: w, maxLines: 1 });
   y += 18;
   pdf.barcode(b.number, pad, y, w, 56);
-  pdf.text(b.number, pad, y + 58, { size: 13, bold: true, width: w, align: "center" });
+  pdf.text(b.label ? `${b.number} · ${b.label}` : b.number, pad, y + 58, { size: 13, bold: true, width: w, align: "center", maxLines: 1 });
   y += 82;
   y = keyValues(
     pdf,

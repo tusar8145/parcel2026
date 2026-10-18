@@ -144,8 +144,20 @@ describe("documents (PDF)", () => {
       expect(pdfHas(one, "VAT 15% (included)")).toBe(true);
       expect(pdfHas(one, "Page 1 of 5")).toBe(true);
       for (const id of ids) expect(pdfHas(one, id)).toBe(true);
-      expect(ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4-4&line=ecommerce`, s.ops.token)).pages).toBe(2);
-      expect(ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4-8`, s.ops.token)).pages).toBe(1);
+      // 4 / 8 per A4 are cut after printing: no page header or footer, only the invoice cells (each with the company name).
+      const four = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4-4&line=ecommerce`, s.ops.token));
+      const eight = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4-8`, s.ops.token));
+      expect(four.pages).toBe(2);
+      expect(eight.pages).toBe(1);
+      for (const grid of [four, eight]) {
+        expect(pdfHas(grid, "Page 1 of")).toBe(false);
+        expect(/Page \d+ of \d+/.test(grid.all)).toBe(false);
+        expect(pdfHas(grid, "generated")).toBe(false);
+        expect(pdfHas(grid, "Delivery invoices")).toBe(false);
+        expect(pdfHas(grid, "E-commerce invoices")).toBe(false);
+        expect(pdfHas(grid, "Delivery Fast")).toBe(true);
+        for (const id of ids) expect(pdfHas(grid, id)).toBe(true);
+      }
       expect(ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=pos`, s.owner.token)).pages).toBe(5);
       const none = await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&line=document`, s.ops.token);
       expect(none.status).toBe(422);
@@ -182,18 +194,22 @@ describe("documents (PDF)", () => {
       const ids = await book(s, 2);
       const parcels = await ctx.prisma.parcel.findMany({ where: { trackingId: { in: ids } } });
       const trip = await ctx.prisma.linehaulTrip.create({ data: { number: "MF-261017-0001", originHubId: s.gulshan.id, destHubId: s.dhanmondi.id, vehicleRegNo: "DHAKA-METRO-TA-11-2233", driverName: "Karim", driverPhone: "+8801711111111" } });
-      const bag = await ctx.prisma.linehaulBag.create({ data: { number: "BG-261017-0001", originHubId: s.gulshan.id, destHubId: s.dhanmondi.id, tripId: trip.id, status: "SEALED", sealNo: "S-9911", items: { create: parcels.map(p => ({ parcelId: p.id })) } } });
+      const bag = await ctx.prisma.linehaulBag.create({ data: { number: "BG-261017-0001", label: "NORTH-1", originHubId: s.gulshan.id, destHubId: s.dhanmondi.id, tripId: trip.id, status: "SEALED", sealNo: "S-9911", items: { create: parcels.map(p => ({ parcelId: p.id })) } } });
       const info = ok(await pdf("GET", `/documents/manifest/${trip.number}`, s.hubOp.token));
       expect(pdfHas(info, "Linehaul manifest")).toBe(true);
       expect(pdfHas(info, "MF-261017-0001") && pdfHas(info, "BG-261017-0001") && pdfHas(info, "S-9911")).toBe(true);
       for (const id of ids) expect(pdfHas(info, id)).toBe(true);
       expect(pdfHas(info, "Received by (HUB-DHN)")).toBe(true);
+      // Each bag's barcode is on the manifest too (scan to receive a whole bag).
+      expect(pdfHas(info, "Bag barcodes")).toBe(true);
+      expect(pdfHas(info, "BG-261017-0001 · 2 parcel(s)")).toBe(true);
       const other = await hub(ctx, "HUB-MIR");
       const outsider = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: other.id }], "Mirpur Operator");
       expect((await pdf("GET", `/documents/manifest/${trip.id}`, outsider.token)).status).toBe(403);
       const tag = ok(await pdf("GET", `/documents/bag-label/${bag.number}`, s.ops.token));
       expect(tag.pages).toBe(1);
       expect(pdfHas(tag, "HUB-DHN")).toBe(true);
+      expect(pdfHas(tag, "BG-261017-0001 · NORTH-1")).toBe(true);
     });
 
     it("prints CN label sheets (24 per A4) and counts the print", async () => {

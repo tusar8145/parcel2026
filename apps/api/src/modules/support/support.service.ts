@@ -13,6 +13,7 @@ import { ParcelsService } from "../parcels/parcels.service";
 import { PackagesService } from "../packages/packages.service";
 import { NotifyService } from "../notifications/notify.service";
 import { OutboxService } from "../notifications/outbox.service";
+import { InboxService } from "../notifications/inbox.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { env } from "../../config/env";
 import { dueAfterPriorityChange, initialDue, readSlaConfig, slaView } from "./sla";
@@ -121,6 +122,7 @@ export class SupportService {
   @Inject(OutboxService) private readonly outbox!: OutboxService;
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
   @Inject(PackagesService) private readonly packages!: PackagesService;
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   /**
    * The service package that governs a ticket's requester (service packages): the merchant's, or
@@ -193,6 +195,8 @@ export class SupportService {
         meta,
         tx,
       );
+      // Support staff's bell: a new ticket from a customer, merchant or rider.
+      if (!isSupportStaff(actor)) await this.alertStaff(tx, ticket, `New ticket ${ticket.number}`, `${actor.name}: ${ticket.subject}`, actor.userId);
       return ticket.number;
     });
     await this.publish(number);
@@ -231,6 +235,7 @@ export class SupportService {
         meta,
         tx,
       );
+      if (fromRequester && !input.internal) await this.alertStaff(tx, ticket, `New reply on ${ticket.number}`, `${actor.name}: ${ticket.subject}`, actor.userId);
       if (fromRequester || input.internal) return [];
       return this.notify.notify(tx, {
         event: "support.ticket_reply",
@@ -314,6 +319,13 @@ export class SupportService {
   }
 
   /** People a ticket can be assigned to: active support agents, operations managers and super admins. */
+  /** Staff alert in the bell: the ticket's assignee, else the support desk (support agents and operations managers). */
+  private async alertStaff(tx: Db, ticket: Pick<SupportTicket, "number" | "assigneeId">, title: string, body: string, except: string) {
+    const item = { type: "staff.ticket", title, body, target: { ticket: ticket.number }, panel: "/courier-operation" as const };
+    if (ticket.assigneeId && ticket.assigneeId !== except) await this.inbox.add(tx, [ticket.assigneeId], item);
+    else if (!ticket.assigneeId) await this.inbox.toStaff(tx, { roles: ["SUPPORT_AGENT", "OPS_MANAGER"], except }, item);
+  }
+
   async assignees() {
     const users = await this.prisma.user.findMany({
       where: { status: "ACTIVE", roles: { some: { role: { in: ASSIGNABLE_ROLES } } } },

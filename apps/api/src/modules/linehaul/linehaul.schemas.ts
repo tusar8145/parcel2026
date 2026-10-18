@@ -89,3 +89,43 @@ export const listDiscrepanciesQuerySchema = pageQuerySchema.extend({
   open: boolQuery.optional(),
 });
 export const resolveDiscrepancySchema = z.object({ resolution: z.string().trim().min(2).max(500) });
+
+/** One scan at a destination hub's receive desk: a bag label (whole bag), a manifest (the trip to check) or a parcel. */
+export const receiveScanSchema = z.object({
+  hubId: z.uuid(),
+  code: z.string().trim().min(3).max(64),
+  source: scanSourceSchema,
+  /** The inbound trip (id or MF-…) being checked: extra parcels are recorded against it. */
+  tripId: z.string().trim().min(3).max(64).optional(),
+  /** The bag (id or BG-…) being opened: extra parcels are recorded against it. */
+  bagId: z.string().trim().min(3).max(64).optional(),
+  /** Bag scans: the seal number on arrival (a different one is recorded as a seal mismatch). */
+  sealNo: z.string().trim().toUpperCase().min(2).max(40).optional(),
+});
+
+export const inboundQuerySchema = z.object({
+  hubId: z.uuid().optional(),
+  status: z.enum(TRIP_STATUSES).optional(),
+});
+
+/**
+ * What happens after the rows of a bulk transfer file are in their bags (POST /bulk-updates/:id/apply body):
+ * seal the bags, and load them on a planned trip or on new trips (one per destination) with this vehicle and driver.
+ */
+export const transferOptionsSchema = z
+  .object({
+    seal: z.boolean().default(false),
+    tripId: z.uuid().optional(),
+    newTrip: z
+      .object({
+        vehicleId: z.uuid().optional(),
+        vehicleRegNo: regNo.optional(),
+        driverName: z.string().trim().min(2).max(120),
+        driverPhone: phoneSchema,
+        plannedDepartureAt: z.coerce.date().optional(),
+      })
+      .refine(v => v.vehicleId || v.vehicleRegNo, { message: "Choose a vehicle or type its registration number", path: ["vehicleRegNo"] })
+      .optional(),
+  })
+  .refine(v => !(v.tripId && v.newTrip), { message: "Choose a planned trip or a new trip, not both", path: ["tripId"] });
+export type TransferOptions = z.infer<typeof transferOptionsSchema>;

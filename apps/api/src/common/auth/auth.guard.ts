@@ -62,7 +62,8 @@ export class AuthGuard implements CanActivate {
   /**
    * Impersonation tokens never reach sign-in, password, MFA or session endpoints (the admin's
    * own refresh cookie must not be usable from the impersonation tab), can't start another
-   * impersonation, and are read-only unless the admin chose full access. Every request is
+   * impersonation, never send rider GPS fixes (the admin's device location), and are read-only
+   * unless a super admin chose full access. Every request is
    * written to the audit log under the admin's id.
    */
   private enforceImpersonation(request: FastifyRequest, actor: UserActor) {
@@ -75,7 +76,9 @@ export class AuthGuard implements CanActivate {
       (path.startsWith("/api/v1/auth/") && !(method === "GET" && path === "/api/v1/auth/me")) ||
       (path.startsWith("/api/v1/admin/impersonations") && !endOwn) ||
       /\/mfa(\/|$)/.test(path) ||
-      /\/password(\/|$)/.test(path);
+      /\/password(\/|$)/.test(path) ||
+      // The administrator's own device location must never be recorded as the rider's.
+      (!safe && path.startsWith("/api/v1/rider/location"));
     const record = this.audit.record(
       { userId: imp.adminUserId, name: `${imp.adminName} (as ${actor.name})` },
       { action: "impersonation.request", entityType: "user", entityId: actor.userId, data: { impersonationId: imp.id, method, path, blocked: blocked || (!safe && imp.readOnly && !endOwn) } },

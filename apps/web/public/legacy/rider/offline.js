@@ -10,6 +10,10 @@
  *
  * Signing out deletes everything (api.js calls DFOffline.clear()).
  *
+ * Support access ("Log in as" a rider from Courier Operations / super admin): nothing of the
+ * opened account is written here, and when it ends api.js calls DFOffline.forget(userId), which
+ * removes that account's saved session, cached data, queued actions and GPS fixes.
+ *
  * send(action) runs an action now when online, else queues it. While older actions are still
  * queued, new ones queue behind them so they reach the server in the order they happened.
  * flush() replays the queue: a refusal (409 PARCEL_CHANGED, 403, 422…) marks that action as
@@ -99,8 +103,18 @@
 
   // ───────────── session and read cache ─────────────
 
+  /** This tab views a rider's account through support access: keep nothing on the device. */
+  const ephemeral = () => {
+    if (window.DF?.supportAccess) return true;
+    try {
+      return !!sessionStorage.getItem("df-support-access");
+    } catch {
+      return false;
+    }
+  };
+
   async function saveSession(user) {
-    if (!user?.roles?.includes("RIDER")) return;
+    if (!user?.roles?.includes("RIDER") || ephemeral()) return;
     await kv.set("session", { user, savedAt: Date.now() });
   }
   /** The last signed-in rider, when the app opens without a connection. */
@@ -111,7 +125,7 @@
   }
   async function save(name, value) {
     const id = userId();
-    if (id) await kv.set(`cache:${id}:${name}`, { value, savedAt: Date.now() });
+    if (id && !ephemeral()) await kv.set(`cache:${id}:${name}`, { value, savedAt: Date.now() });
   }
   async function load(name) {
     const id = userId();
@@ -222,11 +236,12 @@
     changed();
   }
 
-  const LABEL = { OUT_FOR_DELIVERY: "Out for delivery" };
+  const LABEL = { OUT_FOR_DELIVERY: "Out for delivery", PICKED_UP: "Picked up" };
   /** The task lists as they will be once the queued actions sync (queued items are marked). */
   function withPending(tasks, items) {
     const pickups = [...(tasks?.pickups || [])];
     const deliveries = [...(tasks?.deliveries || [])];
+    const carrying = [...(tasks?.carrying || [])];
     const drop = (list, id) => {
       const i = list.findIndex(p => p.trackingId === id);
       return i >= 0 ? list.splice(i, 1)[0] : null;
@@ -237,6 +252,12 @@
         const parcel = drop(pickups, item.trackingId);
         if (parcel && item.body?.outcome === "COLLECTED_DELIVER_DIRECT" && !deliveries.some(d => d.trackingId === item.trackingId))
           deliveries.push({ ...parcel, status: "OUT_FOR_DELIVERY", statusLabel: LABEL.OUT_FOR_DELIVERY, _queued: true });
+        // "Pickup from merchant" scans: collected, still with the rider.
+        if (parcel && item.body?.outcome === "COLLECTED" && !carrying.some(d => d.trackingId === item.trackingId))
+          carrying.push({ ...parcel, status: "PICKED_UP", statusLabel: LABEL.PICKED_UP, handover: null, _queued: true });
+      } else if (item.op === "handover" || item.op === "handover-withdraw") {
+        const i = carrying.findIndex(p => p.trackingId === item.trackingId);
+        if (i >= 0) carrying[i] = { ...carrying[i], handover: item.op === "handover" ? { hubId: item.body?.hubId, hubName: "", at: item.createdAt } : null, _queued: true };
       } else if (item.op === "start-delivery") {
         const i = deliveries.findIndex(p => p.trackingId === item.trackingId);
         if (i >= 0) deliveries[i] = { ...deliveries[i], status: "OUT_FOR_DELIVERY", statusLabel: LABEL.OUT_FOR_DELIVERY, _queued: true };
@@ -244,7 +265,7 @@
         drop(deliveries, item.trackingId);
       }
     }
-    return { ...tasks, pickups, deliveries };
+    return { ...tasks, pickups, deliveries, carrying };
   }
 
   /** api.js rider.reload: fresh tasks (or the saved copy offline) with queued actions applied. */
@@ -277,6 +298,23 @@
     remove: ids => run("points", "readwrite", s => ids.forEach(id => s.delete(id))),
   };
 
+  /** Deletes what is stored for one account (support access ended): its session, cached data, queue and GPS fixes. */
+  async function forget(id) {
+    if (!id || !supported()) return;
+    try {
+      const saved = await kv.get("session");
+      if (saved?.user?.id === id) await run("kv", "readwrite", s => s.delete("session"));
+      const keys = ((await run("kv", "readonly", s => s.getAllKeys())) || []).filter(k => typeof k === "string" && k.startsWith(`cache:${id}:`));
+      if (keys.length) await run("kv", "readwrite", s => keys.forEach(k => s.delete(k)));
+      const queued = ((await run("queue", "readonly", s => s.index("user").getAllKeys(id))) || []);
+      if (queued.length) await run("queue", "readwrite", s => queued.forEach(k => s.delete(k)));
+      const fixes = ((await run("points", "readonly", s => s.getAll())) || []).filter(p => p.userId === id).map(p => p.id);
+      if (fixes.length) await run("points", "readwrite", s => fixes.forEach(k => s.delete(k)));
+    } catch {}
+    if (lastUserId === id) lastUserId = null;
+    changed();
+  }
+
   /** Deletes everything stored for the rider app on this device. */
   async function clear() {
     if (!supported()) return;
@@ -308,6 +346,7 @@
     queued: () => queue.all().catch(() => []),
     points,
     clear,
+    forget,
     isNetworkError,
     /** fn() runs whenever the queue or the cached data changes; returns an unsubscribe function. */
     onChange(fn) {

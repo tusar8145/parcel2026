@@ -3,7 +3,11 @@
  *
  *   Bags        POST /linehaul/bags, /bags/:bag/items (scan), /seal, /reopen, DELETE items
  *   Trips       POST /linehaul/trips, /trips/:trip/bags (load), /depart, /arrive, /close, /cancel
- *   Receiving   POST /linehaul/bags/:bag/receive (whole bag, or the parcels scanned out of it)
+ *   Receiving   POST /linehaul/receive-scan (bag label = whole bag, parcel = one by one, manifest = the trip to
+ *               check; missing / extra recorded), POST /linehaul/bags/:bag/receive { trackingIds: [] } (finish a bag)
+ *   Inbound     GET /linehaul/inbound (trips and bags coming to my hub, expected / received / missing)
+ *   Excel       "Bulk transfer by Excel": the "transfer" bulk action (DFImport.bulk, kind transfers) with apply
+ *               options (seal the bags, load them on a planned or new trip) and the bags / trips in the result
  *   Manifests   GET /linehaul/trips/:trip; print: GET /documents/manifest/:trip (PDF) and /documents/bag-label/:bag
  *   Issues      GET /linehaul/discrepancies, POST /discrepancies/:id/resolve
  *   Vehicles    GET/POST/PATCH /linehaul/vehicles (hub managers)
@@ -35,7 +39,8 @@
     metrics: null,
     bag: null, // open bag (detail)
     trip: null, // open trip (manifest)
-    receive: null, // { bag, scanned: [], mode: "whole" | "scan" }
+    recv: { hubId: "", trip: null, bag: null, log: [], seal: "", last: null }, // receive desk (scan)
+    inbound: { items: [], totals: null, hubId: "", loaded: false, error: null },
     last: "",
   };
   const hubName = h => h?.name || "—";
@@ -97,6 +102,7 @@
     void loadList("bags");
     void loadList("trips");
     void loadList("issues");
+    void loadInbound();
     if (Ops.can("manageHubs") || Ops.can("dispatch")) void loadVehicles();
     if (state.bag) void openBag(state.bag.id, true);
     if (state.trip) void openTrip(state.trip.id, true);
@@ -107,7 +113,7 @@
   Ops.pages[PAGE] = {
     render: () => {
       const actions = Ops.can("dispatch")
-        ? `<button class="button" data-lh="vehicles-jump">${icon("truck")} Vehicles</button><button class="button" data-lh="new-trip">${icon("route")} Plan trip</button><button class="button button-primary" data-lh="new-bag">${icon("plus")} New bag</button>`
+        ? `<button class="button" id="lhBulkTransfer" data-lh="bulk-transfer" title="Download the parcels at your hub that go to other hubs, choose destination and bag, upload, preview and apply">${icon("box")} Bulk transfer by Excel</button><button class="button" id="lhTransferHistory" data-lh="transfer-history">Transfer history</button><button class="button" data-lh="vehicles-jump">${icon("truck")} Vehicles</button><button class="button" data-lh="new-trip">${icon("route")} Plan trip</button><button class="button button-primary" data-lh="new-bag">${icon("plus")} New bag</button>`
         : "";
       return `<div class="page-heading"><div><p class="eyebrow">Hub operations · between hubs</p><h1>Linehaul</h1><p class="subtitle">Bag parcels, load trucks against a manifest, dispatch them and receive bags at the destination hub.</p></div><div class="heading-actions">${actions}</div></div>
 <div class="metrics" id="lhMetrics"></div>
@@ -115,6 +121,7 @@
   <section class="panel" id="lhBagPanel"></section>
   <section class="panel" id="lhReceivePanel"></section>
 </div>
+<section class="panel table-panel" id="lhInbound"></section>
 <section class="panel table-panel" id="lhTripDetail" hidden></section>
 <section class="panel table-panel" id="lhTrips"></section>
 <section class="panel table-panel" id="lhBags"></section>
@@ -124,13 +131,13 @@
   };
 
   Ops.enhance[PAGE] = () => {
-    for (const part of ["metrics", "bag", "receive", "trip", "trips", "bags", "issues", "vehicles"]) paint(part);
+    for (const part of ["metrics", "bag", "receive", "inbound", "trip", "trips", "bags", "issues", "vehicles"]) paint(part);
     if (!state.bags.loaded) reloadAll();
   };
 
   function paint(part) {
     if (!onPage()) return;
-    const painters = { metrics: paintMetrics, bag: paintBag, receive: paintReceive, trip: paintTrip, trips: paintTrips, bags: paintBags, issues: paintIssues, vehicles: paintVehicles };
+    const painters = { metrics: paintMetrics, bag: paintBag, receive: paintReceive, inbound: paintInbound, trip: paintTrip, trips: paintTrips, bags: paintBags, issues: paintIssues, vehicles: paintVehicles };
     ui.keepFocus(() => painters[part]?.());
   }
 
@@ -254,30 +261,281 @@
     }
   }
 
-  // Receive panel.
+  // Receive panel: scan at the destination hub (POST /linehaul/receive-scan). A bag label receives the
+  // whole bag, a parcel is received out of its inbound bag, a manifest selects the trip to check.
+  const recvHubs = () => Ops.myHubs() || DF.state.hubs || [];
+  const recvHub = () => {
+    const r = state.recv;
+    if (!r.hubId || !recvHubs().some(h => h.id === r.hubId)) r.hubId = recvHubs()[0]?.id || "";
+    return r.hubId;
+  };
+  const OUTCOME = {
+    RECEIVED: "Received",
+    BAG_RECEIVED: "Bag received",
+    ALREADY_RECEIVED: "Already received",
+    TRIP: "Checking trip",
+    EXTRA: "Extra parcel",
+    WRONG_HUB: "Wrong hub",
+    NOT_FOUND: "Not found",
+    NOT_IN_TRANSIT: "Not departed",
+    REFUSED: "Refused",
+  };
+  const outcomePill = o => `<span class="status ${o === "RECEIVED" || o === "BAG_RECEIVED" ? "status-good" : o === "ALREADY_RECEIVED" || o === "TRIP" ? "status-blue" : "status-bad"}">${esc(OUTCOME[o] || o)}</span>`;
+
   function paintReceive() {
     const el = $("lhReceivePanel");
     if (!el) return;
-    const r = state.receive;
-    if (!r) {
-      el.innerHTML = `<div class="panel-heading"><div><h2 class="panel-title">Receive at hub</h2><p class="panel-subtitle">Scan an arriving bag. Receive it whole, or scan the parcels out of it to check them against the manifest.</p></div></div><form class="workflow-form" id="lhReceiveForm"><label>Bag number<input id="lhReceiveBag" autocomplete="off" placeholder="BG-261016-0001" required></label><button class="button button-primary" type="submit">Check bag</button></form>`;
-      DF.scanner?.attach($("lhReceiveBag"), { title: "Scan the arriving bag", onScan: () => $("lhReceiveForm").requestSubmit() });
-      return;
-    }
+    const r = state.recv;
+    const hubs = recvHubs();
+    const hubId = recvHub();
+    const canScan = Ops.can("dispatch") && !!hubId;
+    const t = r.trip;
     const b = r.bag;
-    const expected = new Set(b.items.filter(i => i.state === "LOADED").map(i => i.parcel.trackingId));
-    const scanned = r.scanned.map(code => `<tr><td>${esc(code)}</td><td>${expected.has(code) ? ui.pill("Matched") : pillFor("Extra parcel")}</td><td><button class="button button-sm" data-lh="unscan" data-code="${esc(code)}">Undo</button></td></tr>`).join("");
-    const missing = [...expected].filter(code => !r.scanned.includes(code));
-    const canReceive = b.status === "IN_TRANSIT" && canAct(b.destHub.id);
-    el.innerHTML = `<div class="panel-heading"><div><h2 class="panel-title">Receive ${esc(b.number)}</h2><p class="panel-subtitle">${esc(route(b))} · ${expected.size} parcel(s) on the manifest · sealed ${esc(b.sealNo || "—")}${b.trip ? ` · ${esc(b.trip.number)}` : ""}</p></div>${pillFor(BAG_STATUS[b.status])}</div>${
-      canReceive
-        ? `<form class="workflow-form" id="lhReceiveScanForm"><label>Seal number on arrival (optional)<input id="lhArrivalSeal" autocomplete="off" value="${esc(r.seal || "")}" placeholder="${esc(b.sealNo || "")}"></label><label>Scan parcels out of the bag<input id="lhReceiveParcel" autocomplete="off" placeholder="Scan or type the tracking ID"></label></form><p class="panel-subtitle">${r.scanned.length} scanned · ${missing.length} not scanned yet${missing.length && missing.length <= 6 ? `: ${esc(missing.join(", "))}` : ""}</p><div class="form-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><button class="button button-primary" type="button" data-lh="receive-finish" ${r.scanned.length ? "" : "disabled"}>Finish receiving (${r.scanned.length})</button><button class="button" type="button" data-lh="receive-whole">Receive whole bag</button><button class="button" type="button" data-lh="receive-cancel">Cancel</button></div>${r.scanned.length ? ui.table(["Scanned", "Check", ""], scanned, "") : ""}`
-        : `<p class="panel-subtitle">${b.status === "RECEIVED" ? `Received ${esc(Ops.when(b.receivedAt))}: ${b.totals.received} received, ${b.totals.missing} missing.` : b.status === "IN_TRANSIT" ? "Only the destination hub can receive this bag." : "This bag hasn't departed yet."}</p><div class="form-actions" style="margin:10px 0"><button class="button" type="button" data-lh="receive-cancel">Back</button></div>${b.discrepancies.length ? ui.table(["Issue", "Tracking ID", "Note"], b.discrepancies.map(d => `<tr><td>${pillFor(DISCREPANCY[d.kind])}</td><td>${esc(d.trackingId || "—")}</td><td>${esc(d.note || "")}</td></tr>`).join(""), "") : ""}`
-    }`;
-    const input = $("lhReceiveParcel");
-    if (input) {
-      DF.scanner?.attach(input, { title: `Scan parcels out of ${b.number}`, continuous: true, onScan: code => scanOut(code, "CAMERA") });
-      input.focus();
+    const context = t
+      ? `<div id="lhRecvContext" data-trip="${esc(t.number)}" style="margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><strong>${esc(t.number)}</strong> · ${esc(hubName(t.originHub))} → ${esc(hubName(t.destHub))} · ${pillFor(TRIP_STATUS[t.status])}<span class="subcell" id="lhRecvCounts">Expected ${t.totals.expected} · received ${t.totals.received} · missing ${t.totals.missing} · still expected ${t.totals.pending}</span>${
+          t.bags.length
+            ? `<table style="margin-top:6px"><tbody>${t.bags
+                .map(x => `<tr data-bag="${esc(x.number)}"${b?.number === x.number ? ' style="background:#eef4ff"' : ""}><td><strong>${esc(x.number)}</strong>${x.label ? `<span class="subcell">${esc(x.label)}</span>` : ""}</td><td>${x.received} / ${x.expected} received${x.missing ? ` · ${x.missing} missing` : ""}</td><td>${pillFor(BAG_STATUS[x.status])}</td></tr>`)
+                .join("")}</tbody></table>`
+            : ""
+        }</div>`
+      : b
+        ? `<div id="lhRecvContext" data-bag="${esc(b.number)}" style="margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px"><strong>${esc(b.number)}</strong> · ${esc(route(b))} · ${pillFor(BAG_STATUS[b.status])}<span class="subcell" id="lhRecvCounts">Expected ${b.totals.parcels} · received ${b.totals.received} · missing ${b.totals.missing} · still expected ${b.totals.loaded}</span></div>`
+        : `<p class="panel-subtitle" id="lhRecvContext">Scan a manifest (MF-…) to check a trip, a bag label (BG-…) to receive the whole bag, or parcels one by one. Or press Check on an inbound trip below.</p>`;
+    const missingLeft = b && b.status === "IN_TRANSIT" ? b.items.filter(i => i.state === "LOADED") : [];
+    const log = r.log
+      .slice(0, 12)
+      .map(x => `<tr data-outcome="${esc(x.outcome)}"><td><strong>${esc(x.code)}</strong></td><td>${outcomePill(x.outcome)}</td><td>${esc(x.message)}</td></tr>`)
+      .join("");
+    // The scan form is drawn once per hub (the scanner keeps its feedback and focus); the rest follows each scan.
+    const formKey = `${hubId}|${hubs.length}|${canScan}`;
+    if (el.dataset.form !== formKey || !$("lhRecvBody")) {
+      el.dataset.form = formKey;
+      el.innerHTML = `<div class="panel-heading"><div><h2 class="panel-title">Receive transfers</h2><p class="panel-subtitle">Scan at ${esc(hubs.find(h => h.id === hubId)?.name || "your hub")}: bags whole, or parcels one by one against the manifest. Missing and extra parcels are recorded.</p></div></div>${
+        canScan
+          ? `<form class="workflow-form" id="lhRecvForm">${hubs.length > 1 ? `<label>Receiving hub${ui.select("lhRecvHub", ui.hubOptions(hubs), hubId, 'aria-label="Receiving hub"')}</label>` : ""}<label>Scan bag, manifest or parcel<input id="lhRecvScan" autocomplete="off" placeholder="BG-… · MF-… · tracking ID" aria-label="Scan bag, manifest or parcel"></label><label>Seal number on arrival (bags, optional)<input id="lhRecvSeal" autocomplete="off" value="${esc(r.seal)}" placeholder="As printed on the seal"></label><button class="button button-primary" type="submit">Receive</button></form>`
+          : `<p class="panel-subtitle">Only operations staff of the receiving hub can receive transfers.</p>`
+      }<div id="lhRecvBody"></div>`;
+      const input = $("lhRecvScan");
+      if (input) DF.scanner?.attach(input, { title: "Scan bags or parcels to receive", continuous: true, onScan: code => void recvScan(code, "CAMERA") });
+    }
+    const seal = $("lhRecvSeal");
+    if (seal && document.activeElement !== seal) seal.value = r.seal;
+    $("lhRecvBody").innerHTML = `<p class="panel-subtitle" id="lhRecvFeedback" aria-live="polite"${r.last ? ` data-outcome="${esc(r.last.outcome)}"` : ""}>${esc(r.last?.message || "")}</p>${context}<div class="form-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">${
+      missingLeft.length && b.items.some(i => i.state === "RECEIVED") && canAct(b.destHub.id) ? `<button class="button" type="button" data-lh="recv-finish">Finish ${esc(b.number)}: ${missingLeft.length} not scanned → missing</button>` : ""
+    }${t || b ? `<button class="button" type="button" data-lh="recv-clear">Clear</button>` : ""}</div>${log ? ui.table(["Scanned", "Result", "Message"], log, "") : ""}`;
+  }
+
+  async function recvScan(code, source = "KEYBOARD") {
+    const r = state.recv;
+    const clean = String(code || "").trim();
+    if (!clean) return;
+    r.seal = $("lhRecvSeal")?.value.trim() || "";
+    try {
+      const res = await DF.api("/linehaul/receive-scan", {
+        method: "POST",
+        body: { hubId: recvHub(), code: clean, source, tripId: r.trip?.id, bagId: r.bag?.id, sealNo: /^BG-/i.test(clean) && r.seal ? r.seal : undefined },
+      });
+      if (res.trip) r.trip = res.trip;
+      if (res.bag) r.bag = res.bag;
+      if (/^BG-/i.test(clean) && res.ok) r.seal = "";
+      r.last = res;
+      r.log.unshift({ code: res.code, outcome: res.outcome, message: res.message });
+      paint("receive");
+      DF.scanner?.feedback?.("lhRecvScan", res.ok, res.message);
+      if (["RECEIVED", "BAG_RECEIVED", "EXTRA"].includes(res.outcome)) inboundLater();
+    } catch (error) {
+      r.last = { outcome: "REFUSED", message: DF.describe(error) };
+      r.log.unshift({ code: clean.toUpperCase(), outcome: "REFUSED", message: r.last.message });
+      paint("receive");
+      DF.scanner?.feedback?.("lhRecvScan", false, r.last.message);
+    }
+  }
+
+  /** The bag being opened is done: whatever wasn't scanned out of it is recorded missing. */
+  async function finishBag() {
+    const r = state.recv;
+    const b = r.bag;
+    if (!b) return;
+    const left = b.items.filter(i => i.state === "LOADED").length;
+    if (!(await Ops.confirm({ title: `Finish ${b.number}?`, message: `${left} parcel(s) not scanned out of the bag are recorded as missing (a discrepancy to resolve).`, confirm: "Finish and record missing", danger: true }))) return;
+    try {
+      const res = await DF.api(`/linehaul/bags/${b.id}/receive`, { method: "POST", body: { hubId: b.destHub.id, trackingIds: [], source: "KEYBOARD" } });
+      r.bag = res.bag;
+      if (r.trip) r.trip = (await DF.api(`/linehaul/inbound?hubId=${encodeURIComponent(b.destHub.id)}`).catch(() => null))?.items.find(t => t.id === r.trip.id) || r.trip;
+      r.last = { outcome: "BAG_RECEIVED", message: `${res.bag.number} finished: ${res.missing} missing.` };
+      showToast(r.last.message);
+      reloadAll();
+    } catch (error) {
+      showToast(DF.describe(error));
+    }
+    paint("receive");
+  }
+
+  // Inbound transfers: trips and bags coming to my hub(s) with expected / received counts.
+  async function loadInbound() {
+    const s = state.inbound;
+    const hubs = Ops.myHubs();
+    const params = new URLSearchParams();
+    if (!hubs && s.hubId) params.set("hubId", s.hubId);
+    try {
+      const page = await DF.api(`/linehaul/inbound${params.size ? `?${params}` : ""}`);
+      s.items = page.items;
+      s.totals = page.totals;
+      s.error = null;
+      const r = state.recv;
+      if (r.trip) r.trip = page.items.find(t => t.id === r.trip.id) || r.trip;
+    } catch (error) {
+      s.error = DF.describe(error);
+    }
+    s.loaded = true;
+    paint("inbound");
+    paint("receive");
+  }
+  const inboundLater = ui.debounce(() => void loadInbound(), 400);
+
+  function paintInbound() {
+    const el = $("lhInbound");
+    if (!el) return;
+    const s = state.inbound;
+    const rows = s.items
+      .map(t => {
+        const bags = t.bags.map(b => `<span class="subcell">${esc(b.number)}${b.label ? ` (${esc(b.label)})` : ""}: ${b.received}/${b.expected}${b.missing ? ` · ${b.missing} missing` : ""} · ${esc(BAG_STATUS[b.status])}</span>`).join("");
+        const acts = [`<button class="button button-sm" data-lh="recv-check" data-id="${t.id}">Check</button>`, `<button class="button button-sm" data-lh="open-trip" data-id="${t.id}">Manifest</button>`];
+        return `<tr data-trip="${esc(t.number)}"><td><strong>${esc(t.number)}</strong><span class="subcell">${esc(t.vehicleRegNo)} · ${esc(t.driverName)}</span></td><td>${esc(hubName(t.originHub))} → ${esc(hubName(t.destHub))}</td><td>${esc(t.departedAt ? `Left ${Ops.when(t.departedAt)}` : t.plannedDepartureAt ? `Planned ${Ops.when(t.plannedDepartureAt)}` : "Planned")}${t.arrivedAt ? `<span class="subcell">Arrived ${esc(Ops.when(t.arrivedAt))}</span>` : ""}</td><td>${t.totals.bagsReceived} / ${t.totals.bags}${bags}</td><td data-col="counts">${t.totals.expected} expected · ${t.totals.received} received${t.totals.missing ? ` · ${t.totals.missing} missing` : ""}${t.totals.pending && t.status !== "PLANNED" ? `<span class="subcell">${t.totals.pending} still expected</span>` : ""}</td><td>${pillFor(TRIP_STATUS[t.status])}${t.totals.openDiscrepancies ? `<span class="subcell">${t.totals.openDiscrepancies} open issue(s)</span>` : ""}</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">${acts.join("")}</div></td></tr>`;
+      })
+      .join("");
+    const m = s.totals;
+    const tools = !Ops.myHubs() ? ui.select("lhInboundHub", ui.hubOptions(DF.state.hubs, "All hubs"), s.hubId, 'class="select-small" aria-label="Receiving hub"') : "";
+    el.outerHTML = ui.panel(
+      "Inbound transfers",
+      m ? `${m.trips} trip(s) coming in · ${m.onTheRoad} on the road · ${m.expected} parcels expected, ${m.received} received${m.missing ? `, ${m.missing} missing` : ""}` : "Trips and bags coming to your hub",
+      ui.table(["Manifest", "Route", "Departure", "Bags received", "Parcels", "Status", ""], rows, s.error || (s.loaded ? "No transfers coming in." : "Loading inbound transfers…")),
+      tools,
+      'id="lhInbound"',
+    );
+  }
+
+  async function startReceive(number) {
+    try {
+      const bag = await DF.api(`/linehaul/bags/${encodeURIComponent(number)}`);
+      state.recv.bag = bag;
+      state.recv.hubId = bag.destHub.id;
+      state.recv.trip = bag.trip ? state.inbound.items.find(t => t.id === bag.trip.id) || null : null;
+      state.recv.last = { outcome: "TRIP", message: `Opening ${bag.number}: scan its parcels one by one, or scan the bag label to receive it whole.` };
+    } catch (error) {
+      showToast(DF.describe(error));
+    }
+    paint("receive");
+    $("lhReceivePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // ───────────── bulk transfer by Excel ─────────────
+
+  const topt = { seal: true, trip: "", vehicle: "", regNo: "", driver: "", phone: "", trips: [], vehicles: [] };
+
+  function transferOptionsHtml() {
+    const trips = topt.trips.map(t => ({ value: t.id, label: `${t.number} → ${hubName(t.destHub)} · ${t.vehicleRegNo}` }));
+    const isNew = topt.trip === "new";
+    const vehicles = [...topt.vehicles.map(v => ({ value: v.id, label: `${v.regNo} · ${v.kind}` })), { value: "", label: "Other (type the registration)" }];
+    return `<form id="dfiTransferOptions" onsubmit="return false" style="margin-top:14px;padding:12px 14px;border:1px solid #e3e8ef;border-radius:10px;display:grid;gap:10px">
+      <h3 style="margin:0;font-size:15px">After the parcels are in their bags</h3>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px"><input type="checkbox" id="dfiTSeal" ${topt.seal || topt.trip ? "checked" : ""} ${topt.trip ? "disabled" : ""}> Seal the bags (seal number = the bag number on its printed tag)</label>
+      <label style="display:grid;gap:4px;font-weight:600;font-size:13px">Load on a trip${ui.select("dfiTTrip", [{ value: "", label: "Don't load yet (load later from the manifest)" }, ...trips, { value: "new", label: "New trip per destination…" }], topt.trip, 'aria-label="Load on a trip"')}</label>
+      ${
+        isNew
+          ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <label style="display:grid;gap:4px;font-size:13px">Vehicle${ui.select("dfiTVehicle", vehicles, topt.vehicle, 'aria-label="Vehicle"')}</label>
+        <label style="display:grid;gap:4px;font-size:13px">Registration number<input id="dfiTRegNo" maxlength="40" value="${esc(topt.regNo)}" ${topt.vehicle ? "disabled" : ""} placeholder="DHAKA METRO-TA 11-2345"></label>
+        <label style="display:grid;gap:4px;font-size:13px">Driver name<input id="dfiTDriver" maxlength="120" value="${esc(topt.driver)}"></label>
+        <label style="display:grid;gap:4px;font-size:13px">Driver phone<input id="dfiTPhone" inputmode="tel" value="${esc(topt.phone)}"></label>
+      </div>`
+          : ""
+      }
+      <p class="panel-subtitle" style="margin:0">Parcels stay "At hub" in their bags; they become "In transit" when the trip departs (Transfers → manifest → Depart). Bags on a trip are sealed first.</p>
+      <p role="alert" id="dfiTError" style="margin:0;color:#b42318;font-weight:600"></p>
+    </form>`;
+  }
+  function mountTransferOptions() {
+    const form = $("dfiTransferOptions");
+    if (!form) return;
+    const phone = $("dfiTPhone");
+    if (phone && !phone.dataset.dfPhone) {
+      DF.phoneInput(phone);
+      phone.dataset.dfPhone = "1";
+    }
+    const read = () => {
+      topt.seal = !!$("dfiTSeal")?.checked;
+      topt.trip = $("dfiTTrip")?.value || "";
+      topt.vehicle = $("dfiTVehicle")?.value || "";
+      topt.regNo = $("dfiTRegNo")?.value || "";
+      topt.driver = $("dfiTDriver")?.value || "";
+      topt.phone = $("dfiTPhone")?.value || "";
+    };
+    form.addEventListener("input", read);
+    form.addEventListener("change", event => {
+      read();
+      if (["dfiTTrip", "dfiTVehicle"].includes(event.target.id)) {
+        form.outerHTML = transferOptionsHtml();
+        mountTransferOptions();
+      }
+    });
+  }
+  function transferBody() {
+    const error = $("dfiTError");
+    const fail = message => {
+      if (error) error.textContent = message;
+      return false;
+    };
+    if (topt.trip === "new") {
+      if (!topt.vehicle && topt.regNo.trim().length < 3) return fail("Choose the vehicle or type its registration number.");
+      if (topt.driver.trim().length < 2) return fail("Enter the driver's name.");
+      const problem = DF.phoneProblem(topt.phone);
+      if (problem) return fail(`Driver phone: ${problem}`);
+    }
+    if (error) error.textContent = "";
+    const transfer = { seal: topt.seal || !!topt.trip };
+    if (topt.trip === "new")
+      transfer.newTrip = { vehicleId: topt.vehicle || undefined, vehicleRegNo: topt.vehicle ? undefined : topt.regNo.trim(), driverName: topt.driver.trim(), driverPhone: topt.phone };
+    else if (topt.trip) transfer.tripId = topt.trip;
+    return { transfer };
+  }
+  function transferResultHtml(job) {
+    const r = job.transfer?.result;
+    if (!r) return "";
+    const bags = r.bags
+      .map(b => `<tr data-bag="${esc(b.number)}"><td><strong>${esc(b.number)}</strong>${b.label ? `<span class="subcell">${esc(b.label)}</span>` : ""}</td><td>${esc(b.originHub)} → ${esc(b.destHub)}</td><td>${b.parcels}</td><td>${esc(BAG_STATUS[b.status] || b.status)}</td><td>${esc(b.trip || "—")}</td><td><button class="button button-sm" type="button" data-lh="print-bag-n" data-number="${esc(b.number)}">Print tag</button></td></tr>`)
+      .join("");
+    const trips = r.trips.map(t => `<button class="button button-sm" type="button" data-lh="print-manifest-n" data-number="${esc(t.number)}">Manifest ${esc(t.number)} → ${esc(t.destHub)} (${t.bags} bag${t.bags === 1 ? "" : "s"})</button>`).join("");
+    return `<section id="dfiTransferResult" style="margin:0 0 12px;display:grid;gap:8px"><h3 style="margin:0;font-size:15px">Bags${r.trips.length ? " and trips" : ""}</h3>${ui.table(["Bag", "Route", "Parcels", "Status", "Trip", ""], bags, "No bags.")}${trips ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${trips}</div>` : ""}${r.problems.length ? `<div role="alert" style="color:#946200;font-size:13px">${r.problems.map(p => `<div>${esc(p)}</div>`).join("")}</div>` : ""}</section>`;
+  }
+  async function transferConfig() {
+    const cfg = await Ops.bulkConfig("transfers");
+    const [trips, vehicles] = await Promise.all([
+      DF.api("/linehaul/trips?status=PLANNED&direction=outbound&limit=100").then(p => p.items.filter(t => canAct(t.originHub.id))).catch(() => []),
+      state.vehicles ? Promise.resolve(state.vehicles) : DF.api("/linehaul/vehicles?limit=200").then(p => p.items).catch(() => []),
+    ]);
+    Object.assign(topt, { trips, vehicles: vehicles.filter(v => v.active), trip: topt.trips.some(t => t.id === topt.trip) || topt.trip === "new" ? topt.trip : "" });
+    if (!topt.vehicle && topt.vehicles[0]) topt.vehicle = topt.vehicles[0].id;
+    return {
+      ...cfg,
+      bulkKind: "transfers",
+      bulkAction: "transfer",
+      applyExtra: () => transferOptionsHtml(),
+      applyMount: () => mountTransferOptions(),
+      applyBody: () => transferBody(),
+      resultExtra: job => transferResultHtml(job),
+      onDone: () => reloadAll(),
+    };
+  }
+  async function openTransferBulk(history = false) {
+    if (!Ops.require("dispatch", "transfer parcels in bulk")) return;
+    try {
+      const cfg = await transferConfig();
+      if (history) window.DFImport.bulkHistory(cfg);
+      else window.DFImport.bulk(cfg);
+    } catch (error) {
+      showToast(DF.describe(error));
     }
   }
 
@@ -346,39 +604,6 @@
     }
     paint("bag");
     DF.scanner?.feedback?.("lhScanParcel", false);
-  }
-
-  function scanOut(code, _source) {
-    const r = state.receive;
-    const clean = DF.scanner ? DF.scanner.normalize(code) : String(code).trim().toUpperCase();
-    if (!r || !clean) return;
-    if (r.scanned.includes(clean)) return void DF.scanner?.feedback?.("lhReceiveParcel", false, `${clean} was already scanned`);
-    r.scanned.push(clean);
-    r.seal = $("lhArrivalSeal")?.value.trim() || r.seal;
-    r.source = _source || r.source || "KEYBOARD";
-    paint("receive");
-    const onManifest = r.bag.items.some(i => i.state === "LOADED" && i.parcel.trackingId === clean);
-    DF.scanner?.feedback?.("lhReceiveParcel", onManifest, onManifest ? `${clean} matched the manifest` : `${clean} is not on this bag's manifest`);
-  }
-
-  async function receive(whole) {
-    const r = state.receive;
-    if (!r) return;
-    const hubId = r.bag.destHub.id;
-    const sealNo = ($("lhArrivalSeal")?.value || r.seal || "").trim() || undefined;
-    if (whole && !(await Ops.confirm({ title: `Receive ${r.bag.number} whole?`, message: `All ${r.bag.totals.loaded} manifested parcel(s) are received at ${r.bag.destHub.name} without scanning each one.`, confirm: "Receive whole bag" }))) return;
-    try {
-      const result = await DF.api(`/linehaul/bags/${r.bag.id}/receive`, {
-        method: "POST",
-        body: { hubId, sealNo, source: r.source || "KEYBOARD", ...(whole ? {} : { trackingIds: r.scanned }) },
-      });
-      state.receive = { bag: result.bag, scanned: [] };
-      showToast(`${result.bag.number}: ${result.received} received${result.missing ? `, ${result.missing} missing` : ""}${result.extra ? `, ${result.extra} extra` : ""}${result.sealMismatch ? ", seal mismatch recorded" : ""}.`);
-      reloadAll();
-    } catch (error) {
-      showToast(DF.describe(error));
-    }
-    paint("receive");
   }
 
   async function loadBag(code, source = "KEYBOARD") {
@@ -633,32 +858,30 @@
           return void loadList(el.dataset.kind, true);
         case "receive-start":
           return void startReceive(el.dataset.number);
-        case "receive-cancel":
-          state.receive = null;
+        case "recv-clear":
+          Object.assign(state.recv, { trip: null, bag: null, last: null });
           return paint("receive");
-        case "receive-whole":
-          return void receive(true);
-        case "receive-finish":
-          return void receive(false);
-        case "unscan":
-          state.receive.scanned = state.receive.scanned.filter(c => c !== el.dataset.code);
-          return paint("receive");
+        case "recv-finish":
+          return void finishBag();
+        case "recv-check": {
+          const t = state.inbound.items.find(x => x.id === id);
+          if (!t) return;
+          Object.assign(state.recv, { trip: t, bag: null, hubId: t.destHub.id, last: { outcome: "TRIP", message: `Checking ${t.number}: scan its bags to receive them whole, or the parcels one by one.` } });
+          paint("receive");
+          return $("lhReceivePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+        case "bulk-transfer":
+          return void openTransferBulk(false);
+        case "transfer-history":
+          return void openTransferBulk(true);
+        case "print-bag-n":
+          return void Ops.printPdf(`/documents/bag-label/${encodeURIComponent(el.dataset.number)}`, { title: "Preparing the bag tag…" });
+        case "print-manifest-n":
+          return void Ops.printPdf(`/documents/manifest/${encodeURIComponent(el.dataset.number)}`, { title: "Preparing the manifest…" });
       }
     },
     true,
   );
-
-  async function startReceive(number) {
-    try {
-      const bag = await DF.api(`/linehaul/bags/${encodeURIComponent(number)}`);
-      Ops.recordScan?.(bag.number, "BAG_RECEIVE", bag.destHub.id);
-      state.receive = { bag, scanned: [] };
-    } catch (error) {
-      showToast(DF.describe(error));
-    }
-    paint("receive");
-    $("lhReceivePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
 
   window.addEventListener(
     "submit",
@@ -673,12 +896,11 @@
           input.value = "";
           return scanIntoBag(code, "KEYBOARD");
         },
-        lhReceiveForm: () => startReceive($("lhReceiveBag").value.trim()),
-        lhReceiveScanForm: () => {
-          const input = $("lhReceiveParcel");
+        lhRecvForm: () => {
+          const input = $("lhRecvScan");
           const code = input.value.trim();
           input.value = "";
-          scanOut(code, "KEYBOARD");
+          return recvScan(code, "KEYBOARD");
         },
         lhLoadForm: () => {
           const input = $("lhLoadBag");
@@ -709,6 +931,14 @@
     if (kind) {
       state[kind][event.target.dataset.key] = event.target.value;
       return void loadList(kind);
+    }
+    if (event.target.id === "lhRecvHub") {
+      Object.assign(state.recv, { hubId: event.target.value, trip: null, bag: null, last: null });
+      return paint("receive");
+    }
+    if (event.target.id === "lhInboundHub") {
+      state.inbound.hubId = event.target.value;
+      return void loadInbound();
     }
     if (event.target.dataset && "lhIssues" in event.target.dataset) {
       state.issues.open = event.target.value;

@@ -285,25 +285,24 @@ export function drawShipmentInvoices(pdf: PdfWriter, brand: Brand, items: Shipme
     }
     return;
   }
+  // 4 / 8 per A4: the sheets are cut after printing, so no page header or footer ("Page x of y") —
+  // only the invoice cells, on an even grid with the same margin all round (each cell carries the
+  // company name itself).
   const per = layout === "a4-4" ? 4 : 8;
   const cols = 2;
   const rows = per / cols;
   const gap = 10;
-  const top = 34;
-  const bottom = 30;
-  const cw = (A4[0] - MARGIN * 2 + 12 - gap) / cols;
-  const ch = (A4[1] - top - bottom - gap * (rows - 1)) / rows;
+  const edge = MARGIN - 6;
+  const cw = (A4[0] - edge * 2 - gap) / cols;
+  const ch = (A4[1] - edge * 2 - gap * (rows - 1)) / rows;
   for (let i = 0; i < items.length; i += per) {
     pdf.addPage();
-    pdf.text(`${brand.appName} · ${meta.title}`, MARGIN - 6, 14, { size: 8, bold: true, color: COLOR.muted });
-    pdf.text(fmtDateTime(meta.generatedAt), MARGIN - 6, 14, { size: 7.5, color: COLOR.faint, width: pdf.width - (MARGIN - 6) * 2, align: "right" });
     items.slice(i, i + per).forEach((s, k) => {
-      const cx = MARGIN - 6 + (k % cols) * (cw + gap);
-      const cy = top + Math.floor(k / cols) * (ch + gap);
+      const cx = edge + (k % cols) * (cw + gap);
+      const cy = edge + Math.floor(k / cols) * (ch + gap);
       cellInvoice(pdf, brand, s, cx, cy, cw, ch, per === 8);
     });
   }
-  footers(pdf, brand, meta);
 }
 
 /** The order / shipment list (landscape A4 table with totals). */

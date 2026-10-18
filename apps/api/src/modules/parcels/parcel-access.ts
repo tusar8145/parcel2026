@@ -39,3 +39,26 @@ export function trackingUrl(trackingId: string, token?: string, hash?: string) {
   const base = `${env().APP_URL.replace(/\/$/, "")}/track/${encodeURIComponent(trackingId)}`;
   return `${base}${token ? `?t=${encodeURIComponent(token)}` : ""}${hash ? `#${hash}` : ""}`;
 }
+
+/**
+ * "Live rider location" link for the recipient, sent in the out-for-delivery SMS
+ * (`/track/<ID>?t=l.<exp>.<sig>`). It only unlocks the delivery rider's current position on the
+ * public tracking page while the parcel is out for delivery: a separate key, so it never grants the
+ * full-details access of an owner / feedback link (verifyParcelAccess refuses it).
+ */
+const liveKey = () => createHmac("sha256", env().JWT_ACCESS_SECRET).update("parcel-live-location:v1").digest();
+const liveSign = (trackingId: string, exp: string) => createHmac("sha256", liveKey()).update(`${trackingId.toUpperCase()}|l|${exp}`).digest("base64url").slice(0, 22);
+
+export function signLiveLocationAccess(trackingId: string, ttlDays = 3): string {
+  const exp = Math.floor(Date.now() / 1000 + ttlDays * 86_400).toString(36);
+  return `l.${exp}.${liveSign(trackingId, exp)}`;
+}
+
+/** True when `token` is a valid live-location link for this parcel, or any valid owner / feedback link. */
+export function canSeeLiveLocation(trackingId: string, token: string | undefined | null): boolean {
+  if (!token || token.length > 64) return false;
+  if (verifyParcelAccess(trackingId, token)) return true;
+  const [code, exp, sig] = token.split(".");
+  if (code !== "l" || !exp || !sig || !/^[0-9a-z]{1,10}$/.test(exp) || parseInt(exp, 36) * 1000 < Date.now()) return false;
+  return safeEqual(sig, liveSign(trackingId, exp));
+}

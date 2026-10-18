@@ -373,7 +373,7 @@ export class DocumentsService {
     await this.record(actor, "shipment_invoices", { layout: input.layout, line: input.line, count: items.length, trackingIds: items.map(s => s.trackingId).slice(0, 500), missing: missing.length }, meta);
     const title = `${input.line === "all" ? "Delivery" : lineName[0].toUpperCase() + lineName.slice(1)} invoices`;
     const docMeta = this.meta(actor, title, { subtitle: `${items.length} shipment(s)` });
-    const pdf = new PdfWriter({ size: A4, title: `${brand.appName} ${title.toLowerCase()} (${items.length})`, bufferPages: input.layout !== "pos" });
+    const pdf = new PdfWriter({ size: A4, title: `${brand.appName} ${title.toLowerCase()} (${items.length})`, bufferPages: input.layout === "a4" });
     return {
       fileName: `delivery-fast-invoices-${input.line}-${input.layout}-${stamp()}.pdf`,
       stream: this.finish(pdf, () => drawShipmentInvoices(pdf, brand, items, input.layout, docMeta)),
@@ -425,7 +425,7 @@ export class DocumentsService {
     const brand = await this.brand();
     await this.record(actor, "bag_label", { number: b.number }, meta, b.id, "linehaul_bag");
     const pdf = new PdfWriter({ size: BAG_LABEL_SIZE, title: `Bag ${b.number}` });
-    const doc = { number: b.number, originHub: b.originHub, destHub: b.destHub, sealNo: b.sealNo, parcels: b.totals.parcels, weightKg: b.totals.weightKg, codAmount: b.totals.codAmount, trip: b.trip?.number ?? null, sealedAt: b.sealedAt };
+    const doc = { number: b.number, originHub: b.originHub, destHub: b.destHub, sealNo: b.sealNo, label: b.label, parcels: b.totals.parcels, weightKg: b.totals.weightKg, codAmount: b.totals.codAmount, trip: b.trip?.number ?? null, sealedAt: b.sealedAt };
     return { fileName: `delivery-fast-bag-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBagLabel(pdf, brand, doc, new Date())) };
   }
 

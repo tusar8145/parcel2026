@@ -735,10 +735,11 @@
     const [overview, catalog] = await Promise.allSettled([loadOverview(), DF.api("/catalog")]);
     if (catalog.status === "fulfilled") Ops.catalog = catalog.value;
     if (overview.status === "rejected") showToast(DF.describe(overview.reason));
-    // Stage counts follow the person's scope ("my hub" for hub operators), known from the overview.
-    await Ops.loadStageCounts?.().catch(() => undefined);
     const role = document.querySelector(".user-profile small");
     if (role && Ops.me?.hubs?.length) role.textContent = `${Ops.roleName()} · ${Ops.me.hubs.map(h => h.name).join(", ")}`;
+    // Counts follow the person's scope ("my hub" for hub operators), known from the overview.
+    // Load them alongside the first render; applyCounts/updateCounts patch the UI when they arrive.
+    void Ops.loadStageCounts?.();
     Ops.ready = true; // the lists on screen may load now (they wait for the person's scope)
     render(Ops.page());
   })();

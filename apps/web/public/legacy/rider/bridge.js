@@ -126,6 +126,7 @@
     pending = false;
     render(page());
   }
+  window.addEventListener("df:rider-hubs", () => rerender());
   const baseCloseModal = closeModal;
   closeModal = function () {
     baseCloseModal();
@@ -804,13 +805,13 @@
   // ───────────── start ─────────────
 
   syncDeliveries();
-  DF.bridgeReady = (async () => {
-    try {
-      await loadSummary();
-    } catch (error) {
-      console.error("Delivery Fast: rider summary could not be loaded", error);
-    }
+  render(page());
+  DF.bridgeReady = Promise.resolve();
+  void Promise.all([
+    DF.rider.reload().catch(error => console.error("Delivery Fast: rider tasks could not be loaded", error)),
+    loadSummary().catch(error => console.error("Delivery Fast: rider summary could not be loaded", error)),
+  ]).then(() => {
     syncDeliveries();
     render(page());
-  })();
+  });
 })();

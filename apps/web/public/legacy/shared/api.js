@@ -682,7 +682,8 @@
       return new Promise(() => {}); // navigating away; never start the page
     }
     // Platform settings managed in super admin (GET /settings/platform-config, 404 until saved).
-    const jobs = [rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined)];
+    const jobs = [];
+    if (app !== "franchise") jobs.push(rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined));
     if (app === "website") {
       jobs.push(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
       setCustomerSession(auth.isWebsiteCustomer() ? user : null);
@@ -701,9 +702,11 @@
       jobs.push(api("/hubs").then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
     }
     if (app === "rider") {
-      jobs.push(DF.rider.reload());
       const hubs = () => api("/hubs");
-      jobs.push((window.DFOffline ? window.DFOffline.cached("hubs", hubs) : hubs()).then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
+      void (window.DFOffline ? window.DFOffline.cached("hubs", hubs) : hubs())
+        .then(h => (state.hubs = h))
+        .catch(() => (state.hubs = []))
+        .then(() => window.dispatchEvent(new Event("df:rider-hubs")));
     }
     await Promise.all(jobs);
   }

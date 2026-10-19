@@ -1227,17 +1227,18 @@
     replaceAll(list, []);
   generic["Audit log"].rows = [];
 
-  DF.bridgeReady = (async () => {
+  const linked = new URLSearchParams(location.search).get("page");
+  const known = linked && [...document.querySelectorAll("#navigation [data-page]")].some(b => b.dataset.page === linked);
+  showPage(known ? linked : "Overview");
+  DF.bridgeReady = Promise.resolve();
+  void (async () => {
     try {
       await load(...Object.keys(loaders));
+      showPage(currentPage);
     } catch (error) {
       console.error("Super admin data could not be loaded", error);
       showToast(DF.describe(error));
     }
-    // Links from other panels open a page: /super-admin?page=<menu page name> (e.g. Courier Operations › Settings).
-    const linked = new URLSearchParams(location.search).get("page");
-    const known = linked && [...document.querySelectorAll("#navigation [data-page]")].some(b => b.dataset.page === linked);
-    showPage(known ? linked : "Overview");
   })();
   DF.poll(() => refresh(), 30000);
   // Geography / catalog changes (here or by another admin): the page's district, zone and area lists follow.

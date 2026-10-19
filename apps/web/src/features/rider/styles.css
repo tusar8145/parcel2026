@@ -7,7 +7,7 @@
     }
     *{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--canvas);font-size:14px}
     button,input,select,textarea{font:inherit}button{cursor:pointer}
-    .sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:22px 15px 16px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20}
+    .sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:22px 15px 16px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20;overflow-y:auto;overscroll-behavior-y:contain}
     .brand{display:flex;align-items:center;gap:11px;margin:0 8px 27px}.brand-mark{width:38px;height:38px;border-radius:0;background:transparent;color:#4b4d51;display:grid;place-items:center}
     .brand-mark svg{width:29px;height:29px}.brand-name{color:#4b4d51;font-size:16px;font-weight:750;letter-spacing:-.5px}.brand-name span{color:#fcc118}
     .rider-chip{display:flex;align-items:center;gap:10px;padding:11px;margin-bottom:25px;background:#fafbfd;border:1px solid var(--line);border-radius:10px}

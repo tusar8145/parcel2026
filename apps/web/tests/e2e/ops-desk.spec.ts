@@ -159,11 +159,10 @@ test("parcel drawer: add a staff note, the message log with codes masked, and th
   // A tracking ID is a parcel search, not a place.
   await page.fill("#globalSearch", trackingId);
   await expect(lookup).toHaveCount(0);
-  // Choosing a place opens Hubs & zones filtered to that zone.
+  // Choosing a place closes the list (zones are changed in Super admin > Hubs & zones).
   await page.fill("#globalSearch", "Gulshan");
   await page.locator('#zoneLookup [data-zone-lookup="Gulshan"]').first().click();
-  await expect(page.locator("#breadcrumbLabel")).toHaveText("Hubs & zones");
-  await expect(page.locator("#zoneFilterQ")).toHaveValue("Gulshan");
+  await expect(lookup).toHaveCount(0);
 
   expect(native).toEqual([]);
   expect(errors).toEqual([]);

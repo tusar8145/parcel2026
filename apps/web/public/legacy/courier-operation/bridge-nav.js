@@ -18,7 +18,7 @@
  *   8 COD & settlement  COD & finance
  *   All parcels         Shipments · E-commerce · Banking & Financial · Customer (the service-line pages)
  *   Reports             Reports · Analytics & SLA
- *   Riders · Merchants · Hubs & zones (Hubs: register with capacity, zones, routes) · CN stock · Settings
+ *   Riders · Merchants · CN stock · Settings (hubs, zones and routes are set up in Super admin › Hubs & zones)
  *
  * Parcel tables are server-paged lists (bridge-lists.js, about 100 rows a page): a tab's `list` names
  * its stage / service line; hub operators see "my hub" by default. A tab draws only its own sections.
@@ -177,7 +177,6 @@
       ],
     },
     Merchants: { keepTitle: true, tabs: [{ id: "Merchants", page: "Merchants" }] },
-    "Hubs & zones": { tabs: [{ id: "Hubs & zones", page: "Hubs", part: "manage" }], subtitle: "Hub register (with capacity), delivery zones and routes." },
     "CN stock": { keepTitle: true, tabs: [{ id: "CN stock", page: "CN stock" }] },
     Settings: { keepTitle: true, tabs: [{ id: "Settings", page: "Settings" }] },
   };

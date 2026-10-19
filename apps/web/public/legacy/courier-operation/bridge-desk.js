@@ -187,17 +187,8 @@
       if (row && lookupPop.contains(row)) {
         event.stopImmediatePropagation();
         closeLookup();
-        // Hubs & zones lists the zone with its hub (and lets managers change it).
-        if (Ops.allowedViews?.().has("Hubs & zones")) {
-          Ops.navigate("Hubs & zones");
-          setTimeout(() => {
-            const filter = $("zoneFilterQ");
-            if (filter) {
-              filter.value = row.dataset.zoneLookup;
-              filter.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          }, 50);
-        }
+        // Super admin › Hubs & zones lists the zone with its serving hub (and changes it).
+        if (DF.auth.hasRole?.("SUPER_ADMIN")) location.href = `/super-admin?page=${encodeURIComponent("Hubs & zones")}&zone=${encodeURIComponent(row.dataset.zoneLookup)}`;
         return;
       }
       if (!lookupPop.contains(event.target) && event.target.id !== "globalSearch") closeLookup();

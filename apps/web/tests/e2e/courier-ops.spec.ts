@@ -63,7 +63,8 @@ test("operations pages added for linehaul, CN stock, reports, SLA, shifts and ma
   await opsNav(page, "settings");
   await expect(page.locator('#mainContent [data-action="mfa"]')).toBeVisible();
 
-  await opsNav(page, "hubsZones");
-  await expect(page.locator("#networkConfig")).toContainText("Delivery zones");
+  // Hubs & zones moved to Super admin: Settings links there.
+  await expect(page.locator('#navigation [data-nav="Hubs & zones"]')).toHaveCount(0);
+  await expect(page.locator('#settingsCards [data-settings-card="Hubs & zones"]')).toBeVisible();
   expect(errors).toEqual([]);
 });

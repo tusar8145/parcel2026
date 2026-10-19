@@ -57,7 +57,7 @@ const visibleMenu = (page: Page) => page.locator("#navigation [data-nav]:visible
 test("each role sees its own menu", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const all = ["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Reports", "Riders", "Merchants", "Hubs & zones", "CN stock", "Settings"];
+  const all = ["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Reports", "Riders", "Merchants", "CN stock", "Settings"];
 
   const ops = await signedIn(browser, OPS, errors);
   await expect.poll(() => visibleMenu(ops)).toEqual(all);

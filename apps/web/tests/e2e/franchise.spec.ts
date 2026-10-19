@@ -232,11 +232,9 @@ test("franchise hub end to end through the UI", async ({ browser }) => {
   await expect(f.page.locator("#frBookedPaid")).toHaveText(price);
   fx.adoptParcel((await f.page.locator("#frBookedId").textContent())!.trim());
 
-  // Courier Operations shows the hub with its Franchise tag (the hub register is an operations manager's view).
-  const o = await open(browser);
-  await signIn(o.page, ops, /\/courier-operation/);
-  await opsNav(o.page, "hubsZones");
-  await expect(o.page.locator(`#mainContent tr[data-hub-row="${fr.hubId}"] .df-franchise-tag`)).toHaveText("Franchise");
+  // Super admin > Hubs & zones shows the hub with its Franchise tag.
+  await a.page.click('#navigation [data-page="Hubs & zones"]');
+  await expect(a.page.locator(`#hzHubs tr[data-hub-row="${fr.hubId}"] [data-hub-tag]`)).toHaveText("Franchise", { timeout: 20_000 });
 
   // Super admin suspends it: the panel closes.
   await a.page.reload();
@@ -249,5 +247,5 @@ test("franchise hub end to end through the UI", async ({ browser }) => {
   await f.page.goto("/franchise");
   await expect(f.page.locator("#frBlocked")).toContainText("This franchise is suspended", { timeout: 20_000 });
 
-  for (const p of [a, f, h, o]) expect(p.errors).toEqual([]);
+  for (const p of [a, f, h]) expect(p.errors).toEqual([]);
 });

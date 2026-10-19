@@ -96,7 +96,6 @@ export default function Sidebar() {
           <div className="nav-label">Manage</div>
           <NavItem nav="Riders" icon="users" label="Riders" />
           <NavItem nav="Merchants" icon="users" label="Merchants" />
-          <NavItem nav="Hubs & zones" icon="pin" label="Hubs & zones" />
           <NavItem nav="CN stock" icon="box" label="CN stock" />
           <NavItem nav="Settings" icon="settings" label="Settings" />
         </div>{" "}

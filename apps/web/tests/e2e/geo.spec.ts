@@ -1,6 +1,6 @@
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, opsNav, sql, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, expect, sql, test, type TempUser } from "./support";
 
 // The nationwide geography (npm run db:seed:geo) in the panels: the super admin's geography admin
 // lists the districts and shows one district's zones / one zone's areas (or a search) at a time, and hubs carry the catalog zone drop-offs
@@ -59,40 +59,40 @@ test("super admin browses the country's districts, zones and areas without rende
   expect(await geo.locator("[data-geo-row]").count()).toBeLessThan(400);
 });
 
-test("operations add a hub with its zone from the district's zones and change it later", async ({ browser }) => {
-  const ops = await fx.user(`E2E-Geo-Ops-${stamp} Test`, [{ role: "OPS_MANAGER" }]);
-  const page = await panel(browser, ops, "/courier-operation");
-  await opsNav(page, "hubsZones");
+test("super admin adds a hub with its zone from the district's zones and changes it later", async ({ browser }) => {
+  const admin = await fx.user(`E2E-Geo-Net-${stamp} Test`, [{ role: "SUPER_ADMIN" }]);
+  const page = await panel(browser, admin, "/super-admin", true);
+  await nav(page, "Hubs & zones");
   const name = `E2E Geo Hub ${stamp}`;
-  // Hub register → Add hub (the register is the one place hubs are added).
-  await page.click("#hubRegister [data-hub-add]");
-  await expect(page.locator("#modalTitle")).toHaveText("Add hub");
-  await page.fill("#hubName", name);
-  await page.selectOption("#hubDistrict", "Cox's Bazar");
-  await expect(page.locator("#hubZone option", { hasText: "Teknaf" })).toHaveCount(1);
-  await expect(page.locator("#hubZone option", { hasText: "Gulshan" })).toHaveCount(0);
-  await page.fill("#hubAddress", "Teknaf Sadar Road");
-  await page.fill("#hubCode", `CXB-${stamp}`.slice(0, 20));
-  await page.click("#modalSubmit");
-  await expect(page.locator("#modalBackdrop")).toHaveClass(/open/); // no zone chosen yet
-  await page.selectOption("#hubZone", "Teknaf");
-  await page.click("#modalSubmit");
+  // Hubs & zones → Add hub (the register is the one place hubs are added).
+  await page.click("#hzNewHub");
+  await expect(page.locator("#hzDialogTitle")).toHaveText("Add hub");
+  await page.fill("#hzName", name);
+  await page.selectOption("#hzDistrict", "Cox's Bazar");
+  await expect(page.locator("#hzZone option", { hasText: "Teknaf" })).toHaveCount(1);
+  await expect(page.locator("#hzZone option", { hasText: "Gulshan" })).toHaveCount(0);
+  await page.fill("#hzAddress", "Teknaf Sadar Road");
+  await page.fill("#hzCode", `CXB-${stamp}`.slice(0, 20));
+  await page.click('#hzForm [type="submit"]');
+  await expect(page.locator("#hzDialog")).toBeVisible(); // no zone chosen yet
+  await page.selectOption("#hzZone", "Teknaf");
+  await page.click('#hzForm [type="submit"]');
   await expect(page.locator("#toast")).toContainText(`${name}`);
   const [hub] = await sql<{ id: string; district: string; zone: string }>("SELECT id, district, zone FROM hubs WHERE name = $1", [name]);
   hubId = hub.id;
   expect(hub).toMatchObject({ district: "Cox's Bazar", zone: "Teknaf" });
 
   // Edit: the zone choices are the hub's district's zones.
-  await page.click(`[data-hub-edit="${hub.id}"]`);
-  await expect(page.locator("#hubZone")).toHaveValue("Teknaf");
-  await page.selectOption("#hubZone", "Ukhiya");
-  await page.click("#modalSubmit");
+  await page.click(`[data-hz-edit="${hub.id}"]`);
+  await expect(page.locator("#hzZone")).toHaveValue("Teknaf");
+  await page.selectOption("#hzZone", "Ukhiya");
+  await page.click('#hzForm [type="submit"]');
   await expect(page.locator("#toast")).toContainText("saved");
   expect((await sql<{ zone: string }>("SELECT zone FROM hubs WHERE id = $1", [hub.id]))[0].zone).toBe("Ukhiya");
 
   // The zones table filters by district instead of listing the whole country.
-  await page.selectOption("#zoneFilterDistrict", "Cox's Bazar");
-  const zoneRow = (text: string) => page.locator("#networkConfig tr", { has: page.locator("[data-zone-edit]"), hasText: text });
-  await expect(zoneRow("Teknaf, Cox's Bazar")).toBeVisible();
-  await expect(zoneRow("Gulshan, Dhaka North")).toHaveCount(0);
+  await page.click('[data-hz-tab="zones"]');
+  await page.selectOption("#hzZoneDistrict", "Cox's Bazar");
+  await expect(page.locator("#hzZones .primary-cell", { hasText: "Teknaf" })).toBeVisible();
+  await expect(page.locator("#hzZones .primary-cell", { hasText: "Gulshan" })).toHaveCount(0);
 });

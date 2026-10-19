@@ -4,7 +4,7 @@ import { Fixtures, expect, opsNav, sql, test, type TempMerchant, type TempRider,
 // Courier Operations' server-paged parcel tables and the stage pages built on them
 // (public/legacy/courier-operation/bridge-lists.js, bridge-nav.js): about 100 rows a page with
 // "Load more", server-side filters, the New orders / Pickup split, bulk Accept & assign, the Hub desk's
-// single Receive tab, the hub operator's "my hub" default and the trimmed Today / Hubs & zones pages.
+// single Receive tab, the hub operator's "my hub" default and the trimmed Today page.
 // Every account and parcel is temporary (support.ts Fixtures) and deleted afterwards.
 const fx = new Fixtures();
 let shop: TempMerchant; // picks up in Banani (Gulshan Sorting Hub's zone)
@@ -165,19 +165,14 @@ test("Scan desk: one Receive entry tab (with Find), parcels at my hub with their
   await opsNav(ops, "hubPickupCounter");
   await expect(ops.locator("#collectCounter")).toBeVisible();
   await expect(ops.locator("#collectCounter")).not.toContainText("Loading", { timeout: 20_000 });
-  for (const area of ["hubReceive", "hubAtHub", "hubsZones"] as const) {
+  for (const area of ["hubReceive", "hubAtHub"] as const) {
     await opsNav(ops, area);
     await ops.waitForTimeout(1500); // the counter's data would have arrived by now
     await expect(ops.locator("#collectCounter")).toHaveCount(0);
   }
 
-  // ── Hubs & zones: capacity in the hub register; no separate capacity panel or network setup form ──
-  const register = ops.locator("#hubRegister");
-  await expect(register.locator("th", { hasText: "HELD NOW" })).toHaveCount(1);
-  await expect(register).toContainText("Gulshan Sorting Hub", { timeout: 20_000 });
-  await expect(ops.locator("#mainContent .panel-title", { hasText: "Hub capacity" })).toHaveCount(0);
-  await expect(ops.locator("#hubConfigForm")).toHaveCount(0);
-  await expect(ops.locator("#networkConfig")).toContainText("Delivery zones");
+  // ── Hubs & zones is set up in Super admin, not here ──
+  await expect(ops.locator('#navigation [data-nav="Hubs & zones"]')).toHaveCount(0);
   await ops.context().close();
 
   // ── Hub desk keeps At my hub and End of day; old Hub desk links to the scan tabs open them on Scan desk ──

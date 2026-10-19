@@ -323,7 +323,7 @@
     const admin = (page, label) => (superAdmin ? `<a class="button button-sm" href="/super-admin?page=${encodeURIComponent(page)}">${esc(label)}</a>` : `<span class="subcell">Managed by super admins</span>`);
     const cards = [
       ["Two-step verification", "Protect your own sign-in with an authenticator app code.", DF.mfa?.manage ? `<button class="button button-sm button-primary" type="button" data-action="mfa">Two-step verification</button>` : ""],
-      ["Hubs & zones", `${DF.state.hubs.length} active hubs${zones ? ` · ${zones} catalog zones` : ""}. Hub register, capacity, delivery zones and routes.`, allowed.has("Hubs & zones") ? `<button class="button button-sm" type="button" data-settings-open="Hubs & zones">Open Hubs & zones</button>` : ""],
+      ["Hubs & zones", `${DF.state.hubs.length} active hubs${zones ? ` · ${zones} catalog zones` : ""}. Hub register, which hub serves each delivery zone, and routes.`, admin("Hubs & zones", "Open in super admin")],
       ["SLA policies", "Pickup and delivery due times per service level and route.", allowed.has("Reports") ? `<button class="button button-sm" type="button" data-settings-open="Reports" data-settings-tab="Analytics & SLA">Open SLA policies</button>` : ""],
       ["Service plans & pricing", "Service packages, district prices, COD fee and booking rules.", admin("Service plans", "Open in super admin")],
       ["Notifications", "SMS and email texts, switches and gateways.", admin("Platform settings", "Open in super admin")],

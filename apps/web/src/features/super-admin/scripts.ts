@@ -22,6 +22,8 @@ export const scripts = [
   "/legacy/super-admin/bridge-packages.js",
   // Franchises: partner-run hubs, their commission and the settlement settings (super-admin/bridge-franchise.js).
   "/legacy/super-admin/bridge-franchise.js",
+  // Hubs & zones: hub register, serving hub of each delivery zone, routes (moved from Courier Operations).
+  "/legacy/super-admin/bridge-hubs-admin.js",
   // Rider plans › "Rider location": the location interval (2 / 5 / 10 min) and movement threshold.
   "/legacy/super-admin/bridge-location.js",
   "/legacy/shared/mfa.js",

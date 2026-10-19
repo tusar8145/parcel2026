@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
+import { Fixtures, apiUrl, confirmDialog, expect, sql, test, type TempUser } from "./support";
 
-// Geography admin (super admin → Shared catalogs & locations) and the hub register (Courier
-// Operations → Hubs & zones). Everything is created with unique names by temporary accounts and
+// Geography admin (super admin → Shared catalogs & locations) and the hub register (super
+// admin → Hubs & zones). Everything is created with unique names by temporary accounts and
 // removed again: the district, zone and areas through the UI, the hub through the UI, leftovers in
 // afterAll. The audit log is append-only and kept.
 const fx = new Fixtures();
@@ -15,12 +15,12 @@ const HUB = `E2E Hub ${stamp}`;
 const WEB = { "x-df-client": "web" };
 const EXPECTED = /status of (401|404|409)|Failed to load resource|tile\.openstreetmap/;
 let admin: TempUser;
-let ops: TempUser;
+let netAdmin: TempUser;
 let customer: TempUser;
 
 test.beforeAll(async () => {
   admin = await fx.user(`E2E Geo Admin ${stamp}`, [{ role: "SUPER_ADMIN" }]);
-  ops = await fx.staff("OPS_MANAGER");
+  netAdmin = await fx.user(`E2E Net Admin ${stamp}`, [{ role: "SUPER_ADMIN" }]);
   customer = await fx.user(`E2E Geo Customer ${stamp}`, [{ role: "CUSTOMER" }]);
 });
 
@@ -59,30 +59,14 @@ async function openPanel(browser: Browser) {
 }
 
 /** Signs the temporary super admin in (enrolling two-step verification through the API) and opens the panel. */
-async function signInAdmin(page: Page) {
-  const login = await (await page.request.post(apiUrl("/api/v1/auth/login"), { headers: WEB, data: { identifier: admin.phone, password: admin.password } })).json();
+async function signInAdmin(page: Page, who: TempUser = admin) {
+  const login = await (await page.request.post(apiUrl("/api/v1/auth/login"), { headers: WEB, data: { identifier: who.phone, password: who.password } })).json();
   expect(login.mfaSetupRequired, JSON.stringify(login)).toBe(true);
   const setup = await (await page.request.post(apiUrl("/api/v1/auth/mfa/setup"), { headers: WEB, data: { mfaToken: login.mfaToken } })).json();
   const enabled = await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
   expect(enabled.ok(), await enabled.text()).toBe(true);
   await page.goto("/super-admin");
   await expect(page).toHaveURL(/\/super-admin/);
-  await page.waitForSelector("html.legacy-ready", { state: "attached" });
-}
-
-async function signIn(page: Page, user: TempUser, panel: RegExp) {
-  for (let attempt = 0; ; attempt++) {
-    await page.goto("/login");
-    await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.fill("#loginIdentity", user.login);
-    await page.fill("#loginPassword", user.password);
-    await page.click('form[data-form="login"] button[type="submit"]');
-    const ok = await page.waitForURL(panel, { timeout: 15_000 }).then(() => true, () => false);
-    if (ok) break;
-    // Sign-in is rate limited per IP (shared with other suites on this machine).
-    if (attempt >= 2 || !/too many/i.test(await page.content())) await expect(page).toHaveURL(panel);
-    await page.waitForTimeout(61_000);
-  }
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
 }
 
@@ -179,55 +163,59 @@ test("super admin: districts → zones → areas: add, bulk add, rename, deactiv
   expect(errors).toEqual([]);
 });
 
-test("operations: hub register: add, edit, deactivate, delete only when unused", async ({ browser }) => {
+test("super admin: hub register: add, edit, deactivate, delete only when unused", async ({ browser }) => {
   test.setTimeout(240_000);
   const { page, errors } = await openPanel(browser);
-  page.on("dialog", dialog => dialog.accept());
-  await signIn(page, ops, /\/courier-operation/);
-  await opsNav(page, "hubsZones");
-  const register = page.locator("#hubRegister");
-  await expect(register).toContainText("Hub register");
+  await signInAdmin(page, netAdmin);
+  await page.click('#navigation [data-page="Hubs & zones"]');
+  const register = page.locator("#hzHubs");
   await expect(register).toContainText("Gulshan Sorting Hub", { timeout: 20_000 });
 
-  // Add: the zone must be chosen; the code is suggested from district and name.
-  await register.locator("[data-hub-add]").click();
-  await expect(page.locator("#modalTitle")).toHaveText("Add hub");
-  await page.fill("#hubName", HUB);
-  await page.selectOption("#hubDistrict", "Dhaka North");
-  await page.fill("#hubCode", `E2E-${stamp}`.slice(0, 20));
-  await page.fill("#hubAddress", "Road 11, Banani");
-  await page.click("#modalSubmit");
-  await expect(page.locator("#hubZone")).toHaveAttribute("aria-invalid", "true");
-  await page.selectOption("#hubZone", "Banani");
-  await page.click("#modalSubmit");
-  await expect(page.locator("#toast")).toContainText(`Hub “${HUB}”`);
+  // Add: the zone must be chosen (the district's zones).
+  await page.click("#hzNewHub");
+  await expect(page.locator("#hzDialogTitle")).toHaveText("Add hub");
+  await page.fill("#hzCode", `E2E-${stamp}`.slice(0, 20));
+  await page.fill("#hzName", HUB);
+  await page.selectOption("#hzDistrict", "Dhaka North");
+  await page.fill("#hzAddress", "Road 11, Banani");
+  await page.click('#hzForm [type="submit"]');
+  await expect(page.locator("#hzDialog")).toBeVisible(); // no zone chosen yet
+  await page.selectOption("#hzZone", "Banani");
+  await page.click('#hzForm [type="submit"]');
+  await expect(page.locator("#toast")).toContainText(`${HUB} added.`);
   const hubRow = register.locator("tr", { hasText: HUB });
   await expect(hubRow).toContainText("Banani, Dhaka North");
 
   // Edit: capacity; then deactivate.
-  await hubRow.locator("[data-hub-edit]").click();
-  await page.fill("#hubCapacity", "250");
-  await page.click("#modalSubmit");
+  await hubRow.locator("[data-hz-edit]").click();
+  await expect(page.locator("#hzZone")).toHaveValue("Banani");
+  await page.fill("#hzCapacity", "250");
+  await page.click('#hzForm [type="submit"]');
   await expect(page.locator("#toast")).toContainText(`${HUB} saved.`);
   await expect(hubRow).toContainText("250");
-  await hubRow.locator("[data-hub-toggle]").click();
+  await hubRow.locator("[data-hz-toggle]").click();
   await confirmDialog(page, { title: `Deactivate ${HUB}?` });
-  await expect(page.locator("#toast")).toContainText(`${HUB} deactivated.`);
+  await expect(page.locator("#toast")).toContainText(`${HUB} is deactivated.`);
   await expect(hubRow).toContainText("Inactive");
   const [stored] = await sql<{ id: string; active: boolean; capacity: number }>(`SELECT id, active, capacity FROM hubs WHERE name = $1`, [HUB]);
   expect(stored).toMatchObject({ active: false, capacity: 250 });
 
   // In use (a rider) → the dialog lists it; unused → deleted.
   const rider = await fx.rider(HUB);
-  await hubRow.locator("[data-hub-delete]").click();
-  await expect(page.locator("#modalTitle")).toHaveText(`${HUB} is in use`);
-  await expect(page.locator("#hubUsage")).toContainText("Riders: 1");
-  await page.click("#modalCancel");
+  await hubRow.locator("[data-hz-delete]").click();
+  await expect(page.locator("#dfDialogTitle")).toHaveText(`${HUB} is in use`);
+  await expect(page.locator("#dfDialogTitle").locator("..")).toContainText("Riders: 1");
+  await page.click("[data-df-dialog-cancel]");
   await sql(`UPDATE riders SET "hubId" = NULL WHERE id = $1`, [rider.riderId]);
-  await hubRow.locator("[data-hub-delete]").click();
+  await hubRow.locator("[data-hz-delete]").click();
   await confirmDialog(page, { title: new RegExp(`^Delete ${HUB}`) });
   await expect(page.locator("#toast")).toContainText(`${HUB} deleted.`);
   await expect(register.locator("tr", { hasText: HUB })).toHaveCount(0);
   expect(await sql(`SELECT 1 FROM hubs WHERE id = $1`, [stored.id])).toHaveLength(0);
+
+  // Delivery zones: each zone with its serving hub, filtered by district.
+  await page.click('[data-hz-tab="zones"]');
+  await page.selectOption("#hzZoneDistrict", "Dhaka North");
+  await expect(page.locator("#hzZones")).toContainText("Gulshan", { timeout: 20_000 });
   expect(errors).toEqual([]);
 });

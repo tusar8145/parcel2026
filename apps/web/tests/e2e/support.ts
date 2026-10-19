@@ -118,7 +118,6 @@ export const OPS_NAV = {
   analytics: ["Reports", "Analytics & SLA"],
   riders: ["Riders"],
   merchants: ["Merchants"],
-  hubsZones: ["Hubs & zones"],
   cnStock: ["CN stock"],
   settings: ["Settings"],
 } as const satisfies Record<string, readonly [string] | readonly [string, string]>;

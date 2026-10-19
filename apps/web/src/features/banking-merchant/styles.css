@@ -28,7 +28,7 @@
     .sidebar {
       background: #fff; border-right: 1px solid var(--line); bottom: 0; display: flex;
       flex-direction: column; left: 0; padding: 23px 15px 16px; position: fixed; top: 0;
-      width: var(--sidebar); z-index: 20;
+      width: var(--sidebar); z-index: 20; overflow-y: auto; overscroll-behavior-y: contain;
     }
     .brand { align-items: center; display: flex; gap: 11px; margin: 0 8px 28px; }
     .brand-mark { align-items: center; background: transparent; border-radius: 0; color: #4b4d51; display: flex; height: 38px; justify-content: center; width: 38px; }

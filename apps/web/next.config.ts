@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { NextConfig } from "next";
 
@@ -7,13 +9,37 @@ const pages = ["courier-operation", "rider", "ecommerce-merchant", "banking-merc
 // origin, so the refresh-token cookie is first-party and no CORS is needed.
 const API_ORIGIN = process.env.API_ORIGIN ?? "http://localhost:4000";
 
+function legacyAssetVersions(root: string, directory = root): Record<string, string> {
+  const versions: Record<string, string> = {};
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) Object.assign(versions, legacyAssetVersions(root, file));
+    else {
+      const relative = path.relative(root, file).split(path.sep).join("/");
+      versions[`/legacy/${relative}`] = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 16);
+    }
+  }
+  return versions;
+}
+
+const LEGACY_ASSET_VERSIONS = legacyAssetVersions(path.join(__dirname, "public", "legacy"));
+
 const nextConfig: NextConfig = {
+  env: { LEGACY_ASSET_VERSIONS: JSON.stringify(LEGACY_ASSET_VERSIONS) },
   // Self-contained server for the Docker image (apps/web/Dockerfile). Dependencies are
   // hoisted to the monorepo root, so trace from there.
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
   // Each page's styles.css is read when the page is rendered (LegacyRootLayout).
   outputFileTracingIncludes: { "/**": ["./src/features/*/styles.css"] },
+  async headers() {
+    return [
+      {
+        source: "/legacy/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` }];
   },

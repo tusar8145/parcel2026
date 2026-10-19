@@ -14,6 +14,7 @@ import CtaBand from "./components/CtaBand";
 import SiteFooter from "./components/SiteFooter";
 import Toast from "./components/Toast";
 import WebsiteApp from "./react/WebsiteApp";
+import PanelAssetPrefetch from "./PanelAssetPrefetch";
 import { WEBSITE_ROUTES } from "./routes";
 import { scripts } from "./scripts";
 
@@ -42,6 +43,7 @@ export default function WebsitePage({ staticPage }: { staticPage?: { name: strin
       <SiteFooter /> <Toast />{" "}
       <script id="dfRoutes" type="application/json" dangerouslySetInnerHTML={{ __html: ROUTE_TABLE }} />
       <WebsiteApp />
+      {!staticPage ? <PanelAssetPrefetch /> : null}
       <LegacyScripts scripts={scripts} />
     </>
   );

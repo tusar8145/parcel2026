@@ -10,11 +10,17 @@ declare global {
 }
 
 const CLIENT = "/legacy/shared/api.js";
+const ASSET_VERSIONS: Record<string, string> = JSON.parse(process.env.LEGACY_ASSET_VERSIONS || "{}");
+
+function versioned(src: string) {
+  const version = ASSET_VERSIONS[src];
+  return version ? `${src}?v=${version}` : src;
+}
 
 function load(src: string, ordered: boolean) {
   return new Promise<void>(resolve => {
     const script = document.createElement("script");
-    script.src = src;
+    script.src = versioned(src);
     script.async = !ordered ? true : false; // ordered scripts execute in insertion order
     script.onload = script.onerror = () => resolve();
     document.body.appendChild(script);
@@ -42,7 +48,7 @@ export default function LegacyScripts({ scripts }: { scripts: string[] }) {
       const link = document.createElement("link");
       link.rel = "preload";
       link.as = "script";
-      link.href = src;
+      link.href = versioned(src);
       document.head.appendChild(link);
     }
 

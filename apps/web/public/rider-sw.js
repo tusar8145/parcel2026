@@ -13,7 +13,7 @@
  * Bump VERSION when this file or the precache list changes. Keep PRECACHE in step with
  * src/features/rider/scripts.ts.
  */
-const VERSION = "2026.10.18-4";
+const VERSION = "2026.10.20-1";
 const PREFIX = "df-rider-";
 const SHELL = `${PREFIX}shell-${VERSION}`;
 const RUNTIME = `${PREFIX}runtime-${VERSION}`;
@@ -132,7 +132,8 @@ async function navigation(event) {
 /** Network first with a short timeout; the cached copy when offline or slow. */
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const key = request.url.split("#")[0];
+  const url = new URL(request.url);
+  const key = url.pathname.startsWith("/legacy/") ? `${url.origin}${url.pathname}` : request.url.split("#")[0];
   const network = fetch(request).then(async response => {
     if (response.ok && response.type === "basic") {
       await cache.put(key, response.clone());

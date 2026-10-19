@@ -88,6 +88,10 @@ cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
 cp -r apps/web/public apps/web/.next/standalone/apps/web/
 ```
 
+Legacy panel scripts are content-versioned and cached immutably by the browser. The public
+website quietly prefetches them when the browser is idle (except on data-saver or slow 2G
+connections); after a deploy, only changed scripts need a new download.
+
 ## 5. PM2
 
 `ecosystem.config.js` in the repo root:

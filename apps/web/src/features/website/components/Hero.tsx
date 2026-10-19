@@ -22,12 +22,12 @@ export default function Hero() {
             }
           </p>{" "}
           <div className="hero-actions">
-            <button className="button button-primary" data-open="request">
+            <a className="button button-primary" href="/request" data-open="request">
               {"Request a pickup "}
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M4 10h12m-5-5 5 5-5 5" />
               </svg>
-            </button>
+            </a>
             <a className="button" href="/track" data-route="tracking">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <circle cx="8.5" cy="8.5" r="5.5" />

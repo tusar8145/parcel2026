@@ -59,5 +59,5 @@ export default function LegacyScripts({ scripts }: { scripts: string[] }) {
     })();
   }, [scripts]);
 
-  return null;
+  return <span hidden data-legacy-boot />;
 }

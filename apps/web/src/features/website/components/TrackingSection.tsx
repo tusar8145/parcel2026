@@ -1,4 +1,14 @@
-export default function TrackingSection() {
+"use client";
+
+import { useState } from "react";
+
+export default function TrackingSection({ legacy = false }: { legacy?: boolean }) {
+  const [trackingId, setTrackingId] = useState("");
+  const goToTracking = (value: string) => {
+    const code = value.trim().toUpperCase().replace(/\s+/g, "");
+    if (code) window.location.assign(`/track/${encodeURIComponent(code)}`);
+  };
+
   return (
     <section className="tracking-section" id="tracking">
       {" "}
@@ -10,13 +20,31 @@ export default function TrackingSection() {
             <p>Enter your tracking number for the latest update. No account needed.</p>
           </div>
           <div>
-            <form className="track-form" id="trackingForm">
+            <form
+              className="track-form"
+              id="trackingForm"
+              onSubmit={
+                legacy
+                  ? undefined
+                  : event => {
+                      event.preventDefault();
+                      goToTracking(trackingId);
+                    }
+              }
+            >
               <div className="input-wrap">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                   <circle cx="10.8" cy="10.8" r="7.3" />
                   <path d="m16 16 5 5" />
                 </svg>
-                <input id="trackingInput" aria-label="Tracking number" placeholder="e.g. PP-260914-1042" required />
+                <input
+                  id="trackingInput"
+                  aria-label="Tracking number"
+                  placeholder="e.g. PP-260914-1042"
+                  required
+                  value={legacy ? undefined : trackingId}
+                  onChange={legacy ? undefined : event => setTrackingId(event.target.value)}
+                />
               </div>
               <button className="button button-primary" type="submit">
                 Track parcel
@@ -24,18 +52,26 @@ export default function TrackingSection() {
             </form>
             <div className="track-hint">
               {"Try a sample: "}
-              <button type="button" data-track-sample="PP-260914-1042">
+              <button
+                type="button"
+                data-track-sample="PP-260914-1042"
+                onClick={legacy ? undefined : () => goToTracking("PP-260914-1042")}
+              >
                 PP-260914-1042
               </button>
               {" · "}
-              <button type="button" data-track-sample="PP-260913-0821">
+              <button
+                type="button"
+                data-track-sample="PP-260913-0821"
+                onClick={legacy ? undefined : () => goToTracking("PP-260913-0821")}
+              >
                 PP-260913-0821
               </button>
             </div>
           </div>
-          <div className="tracking-result" id="trackingResult" aria-live="polite" />
+          {!legacy && <div className="tracking-result" id="trackingResult" aria-live="polite" />}
         </div>
-        <section className="account-panel" id="accountPanel" aria-live="polite">
+        {legacy && <section className="account-panel" id="accountPanel" aria-live="polite">
           <div className="account-head">
             <div>
               <p className="eyebrow" style={{ marginBottom: "7px" }}>
@@ -99,7 +135,7 @@ export default function TrackingSection() {
               </tbody>
             </table>
           </div>
-        </section>
+        </section>}
       </div>{" "}
     </section>
   );

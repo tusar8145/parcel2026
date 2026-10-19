@@ -90,7 +90,7 @@ Public website	http://localhost:3000/
 Courier operations	http://localhost:3000/courier-operation
 Rider	http://localhost:3000/rider
 E-commerce merchant	http://localhost:3000/ecommerce-merchant
-Banking & Financial merchant	http://localhost:3000/banking-merchant
+Document merchant	http://localhost:3000/document-merchant
 Super admin	http://localhost:3000/super-admin
 
 
@@ -104,6 +104,7 @@ Password: Admin9fc9308a4eba9
 1. Super admin (প্রথম login-এ authenticator app লাগবে)
 superadmin@deliveryfast.example
 Gzo9a%37+7m7MRHMx7
+5EKNM-AYJVN
 
 2. Operations manager
 ops.manager@deliveryfast.example
@@ -141,7 +142,7 @@ CP3Gk+UfvShbv=%TEY
 merchant.ecom.staff@deliveryfast.example
 CP3Gk+UfvShbv=%TEY
 
-11. Banking & Financial merchant owner (Shapla Corporate Services)
+11. Document merchant owner (Shapla Corporate Services)
 merchant.doc.owner@deliveryfast.example
 CP3Gk+UfvShbv=%TEY
 
@@ -192,3 +193,69 @@ EeongQnuknW!gY9g3#
 23. Rider (R-2110, Fahim Chowdhury, Sylhet)
 01811000210
 %67u#=pfBSa@auHT+V
+
+
+
+
+
+
+The checks confirm the problem is on the server: the df-web process itself returns 404 for the chunk, so Apache is just passing that 404 through. The PM2 synchronization warning is separate and won’t fix the missing asset.
+
+First check whether that exact chunk exists in the build output:
+
+
+If it exists, copy the build’s static assets into the standalone deployment and restart the web process:
+
+
+Then verify:
+
+
+Both should return 200. If the chunk is missing from the build output, rebuild the web app and copy the static files from that same build before restarting. The standalone copy step is also in deployment.md.
+
+Don’t run pm2 save just to address this warning: it only saves the current PM2 process list, which includes unrelated apps.
+
+
+
+I’ll check whether `select-search.js` is present in the web app’s public assets and whether pages expect it to load.
+
+Find files matching `apps/web/public/legacy/shared/**`
+
+Search for `select-search\.js|selectSearch|select-search`
+
+"Fetch Web Content" failed
+Completed with input: {"url":"https://deliveryfast.imagine-design.net/legacy/shared/select-search.js"}
+Tool execution failed: Error: Failed to fetch https://deliveryfast.imagine-design.net/legacy/shared/select-search.js - status code 404
+
+Fetched [https://deliveryfast.imagine-design.net/](https://deliveryfast.imagine-design.net/)
+Completed with input: {
+  "url": "https://deliveryfast.imagine-design.net/",
+  "max_length": 6000,
+  "raw": true
+}
+
+The file exists in the repository at `select-search.js`, and several page bundles load it. The public 404 therefore points to the deployed standalone app having an outdated or incomplete `public` directory.
+
+On the server, from `/home/parcel2026`, copy the current public assets into the standalone app and restart its PM2 process:
+
+```bash
+cd /home/parcel2026
+mkdir -p apps/web/.next/standalone/apps/web/public
+cp -a apps/web/public/. apps/web/.next/standalone/apps/web/public/
+pm2 restart df-web
+```
+
+Then verify both the app and domain serve the file:
+
+```bash
+curl -sS -o /dev/null -w 'local:  %{http_code}\n' \
+  http://127.0.0.1:3001/legacy/shared/select-search.js
+
+curl -sS -o /dev/null -w 'public: %{http_code}\n' \
+  https://deliveryfast.imagine-design.net/legacy/shared/select-search.js
+```
+
+Both should return `200`. This is separate from the earlier `/_next/static` chunk fix: Next.js serves those from `.next/static`, while this script is served from `public`. The deployment guide’s release steps include copying both directories: `deployment.md`.
+
+
+
+

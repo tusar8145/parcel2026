@@ -112,6 +112,8 @@ them between tests. Set `TEST_DATABASE_URL` / `TEST_REDIS_URL` to run suites in 
 - **Audit.** Every change is recorded in `audit_logs` (`GET /api/v1/audit-logs`).
 
 ## Going to production
+Step-by-step server setup with PM2 and Apache: `docs/deployment.md`.
+
 - **Secrets.** Set `NODE_ENV=production`, a strong `JWT_ACCESS_SECRET`, an `ENCRYPTION_KEY`,
   and `EXPOSE_DEV_OTP=false`. The API refuses to start with invalid configuration.
 - **Migrations.** Run `npm run db:deploy -w @delivery-fast/api` on each release. Never run
@@ -128,3 +130,43 @@ them between tests. Set `TEST_DATABASE_URL` / `TEST_REDIS_URL` to run suites in 
 - **File storage.** Files go to local disk (`FILE_STORAGE_DIR`). For several instances, back
   `StorageService` with S3/R2.
 - **Health.** `GET /api/v1/health/live` (liveness) and `/api/v1/health/ready` (database + Redis).
+
+
+
+
+
+sudo -u postgres psql
+
+//windows
+& "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" `
+  -h localhost `
+  -p 5432 `
+  -U deliveryfast `
+  -d deliveryfast `
+  -F c `
+  -f "$HOME\Downloads\deliveryfast.backup"
+
+
+
+//ubuntu te 
+
+
+CREATE USER deliveryfast WITH PASSWORD 'deliveryfast';
+CREATE DATABASE deliveryfast OWNER deliveryfast;
+\q
+
+
+PGPASSWORD='deliveryfast' pg_restore \
+  -h localhost \
+  -p 5432 \
+  -U deliveryfast \
+  -d deliveryfast \
+  --no-owner \
+  --no-acl \
+  --exit-on-error \
+  /root/deliveryfast.backup
+
+email
+
+  418d3cc65e6ddc18f0ee89e4f72c1e52
+5b57ef01ab0857e93b6b2d66f3bf1131

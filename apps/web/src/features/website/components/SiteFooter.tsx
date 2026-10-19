@@ -6,7 +6,7 @@ export default function SiteFooter() {
       <div className="shell">
         <div className="footer-grid">
           <div className="footer-brand">
-            <a className="brand" href="#" aria-label="Delivery Fast home">
+            <a className="brand" href="/" aria-label="Delivery Fast home">
               <span className="brand-mark" style={{ width: 46, height: 46 }}>
                 <BrandMark />
               </span>

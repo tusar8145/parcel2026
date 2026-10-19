@@ -26,9 +26,9 @@ export default function PartnersSection() {
               Choose an e-commerce merchant account for shop parcels, or a Banking & Financial merchant account for secure
               deliveries from banks, fintechs, and other organizations.
             </p>
-            <button className="button" data-open="merchant">
+            <a className="button" href="/merchant" data-open="merchant">
               Start a merchant application
-            </button>
+            </a>
           </article>{" "}
           <article className="partner-card">
             <div className="service-icon">
@@ -39,9 +39,9 @@ export default function PartnersSection() {
             </div>
             <h3>Ride with us</h3>
             <p>Choose shifts that work for you, deliver in your area, and get support on every route.</p>
-            <button className="button" data-open="rider">
+            <a className="button" href="/become-a-rider" data-open="rider">
               Apply to become a rider
-            </button>
+            </a>
           </article>{" "}
           <article className="partner-card highlight">
             <div className="service-icon">
@@ -53,9 +53,9 @@ export default function PartnersSection() {
             <p>
               Operate locally with your team: manage a hub, riders, merchant service, and delivery in your territory.
             </p>
-            <button className="button button-primary" data-open="franchise">
+            <a className="button button-primary" href="/become-a-franchise" data-open="franchise">
               Explore franchise partnership
-            </button>
+            </a>
           </article>{" "}
         </div>
       </div>{" "}

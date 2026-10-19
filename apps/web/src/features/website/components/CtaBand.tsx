@@ -25,12 +25,12 @@ export default function CtaBand() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "9px", flexWrap: "wrap" }}>
-          <button className="button button-primary" data-open="request">
+          <a className="button button-primary" href="/request" data-open="request">
             Request a parcel pickup
-          </button>
-          <button className="button" data-open="signup">
+          </a>
+          <a className="button" href="/signup" data-open="signup">
             Create an account
-          </button>
+          </a>
         </div>
       </div>
     </section>

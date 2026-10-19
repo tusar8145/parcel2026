@@ -1,5 +1,9 @@
 # Legacy page scripts
 
+The public homepage (`/`) is now rendered and interactive with Next.js and React; it does not
+load these scripts. The remaining website routes still use the legacy router and bridge while
+they are migrated incrementally.
+
 `<page>/NN.js` are the original inline `<script>` blocks from `design-reference/*.html`. The
 changes from the originals:
 - Links like `rider.html` now point at routes like `/rider`.

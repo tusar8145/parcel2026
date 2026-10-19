@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import WebsitePage from "@/features/website/WebsitePage";
+import WebsiteHomePage from "@/features/website/WebsiteHomePage";
 import { pageMetadata } from "@/features/website/seo";
 import { routeForSegments } from "@/features/website/routes";
 
@@ -30,5 +31,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function Page({ params }: Props) {
   const { slug = [] } = await params;
   if (!routeForSegments(slug)) notFound();
+  if (slug.length === 0) return <WebsiteHomePage />;
   return <WebsitePage />;
 }

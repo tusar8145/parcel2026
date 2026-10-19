@@ -16,12 +16,27 @@ async function open(browser: Browser, path: string, { consent = true } = {}) {
   const page = await context.newPage();
   page.on("dialog", dialog => dialog.accept());
   await page.goto(path);
-  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await page.waitForFunction(
+    () => document.documentElement.classList.contains("legacy-ready") || document.documentElement.dataset.websiteReady === "true",
+  );
   return page;
 }
 
 const toast = (page: Page) => page.locator("#toast");
 const uniquePhone = () => `018${String(Date.now()).slice(-8)}`;
+
+test("homepage renders and navigates without the legacy page scripts", async ({ browser }) => {
+  const page = await open(browser, "/");
+  await expect(page.locator("h1")).toContainText("on the way");
+  await expect(page.locator("[data-legacy-boot]")).toHaveCount(0);
+  await expect(page.locator('script[src*="/legacy/"]')).toHaveCount(0);
+  await expect(page.locator("#priceTotal")).toContainText("৳");
+
+  await page.locator("#trackingInput").fill("PP-260914-1042");
+  await page.locator("#trackingForm button[type=submit]").click();
+  await expect(page).toHaveURL(/\/track\/PP-260914-1042$/);
+  await expect(page.locator("#trackingResult")).toBeVisible();
+});
 
 test("real URLs: per-route metadata, old hash links redirect, back/forward works", async ({ browser, request }) => {
   const html = await (await request.get("/pricing", { headers: { "user-agent": "Googlebot/2.1" } })).text();

@@ -1,0 +1,179 @@
+# Production deployment (PM2 + Apache)
+
+How to run Delivery Fast on one Linux server (Ubuntu/Debian commands) with PM2 keeping the
+processes alive and Apache in front for the domain and HTTPS. For Docker, see `docker-compose.yml`
+and `docs/development.md`.
+
+```
+browser ──HTTPS──▶ Apache :443 ──▶ df-web (Next.js) :3000 ──/api/*──▶ df-api (NestJS) :4000
+                                                                  df-worker (jobs, SMS, email)
+                                         PostgreSQL :5432 · Redis :6379 (local only)
+```
+
+## 1. Requirements
+
+| Software | Version | Used for |
+|---|---|---|
+| Node.js | 20.19 or newer | API, worker and web |
+| PostgreSQL | 16 (14+ works) | main database; background jobs (pg-boss) also run on it |
+| Redis | 7 (6+ works) | rate limits, OTP throttling, session revocation; the API won't start without it |
+| PM2 | latest | keeps the three processes running |
+| Apache | 2.4 | domain, HTTPS, reverse proxy |
+| TLS certificate | certbot (Let's Encrypt) | **HTTPS is required**: the refresh cookie is `Secure` in production, so sign-in fails over plain HTTP |
+
+```bash
+sudo apt install postgresql redis-server apache2 certbot python3-certbot-apache
+sudo npm i -g pm2
+```
+
+## 2. Database
+
+```bash
+sudo -u postgres psql
+CREATE USER deliveryfast WITH PASSWORD 'strong-password';
+CREATE DATABASE deliveryfast OWNER deliveryfast ENCODING 'UTF8';
+\q
+```
+
+## 3. Code and environment
+
+```bash
+cd /var/www && git clone <repo-url> deliveryfast && cd deliveryfast
+```
+
+Create `apps/api/.env` (the API and the worker read it from their working directory):
+
+```env
+NODE_ENV=production
+PORT=4000
+APP_URL=https://yourdomain.com
+CORS_ORIGINS=https://yourdomain.com
+DATABASE_URL=postgresql://deliveryfast:strong-password@localhost:5432/deliveryfast
+REDIS_URL=redis://localhost:6379
+JWT_ACCESS_SECRET=<output of: openssl rand -base64 48>
+ENCRYPTION_KEY=<output of: openssl rand -base64 32>
+EXPOSE_DEV_OTP=false
+TRUST_PROXY=true
+RUN_WORKERS=false
+FILE_STORAGE_DIR=/var/www/deliveryfast-files
+LOG_LEVEL=info
+```
+
+- The API refuses to start with an invalid configuration and lists every problem
+  (`apps/api/src/config/env.ts`).
+- **Never change `ENCRYPTION_KEY` once set.** The SMS/email gateway keys are stored encrypted
+  with it; a new key means entering them again in Integrations. Back it up somewhere safe.
+- Keep `.env` out of git. Gateway keys (mram, Mailjet) never go in `.env` or code: they are entered
+  in super admin → Integrations.
+
+## 4. Build and migrate
+
+```bash
+npm ci                                            # installs dev dependencies too (needed to build)
+API_ORIGIN=http://127.0.0.1:4000 npm run build    # shared + API + web
+cd apps/api
+npx prisma migrate deploy                         # creates / updates the tables
+npm run db:seed:geo                               # first install only: Bangladesh districts, zones, areas, hubs
+cd ../..
+```
+
+- `API_ORIGIN` must be set **at build time**: Next.js bakes the `/api` proxy target into the build.
+- In production use only `prisma migrate deploy`. Never `migrate dev`, `migrate reset` or `db push`.
+- `npm run db:seed` (demo data) and `db:seed:users` refuse to run in production.
+
+The web build is a standalone server; copy its static files next to it:
+
+```bash
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+```
+
+## 5. PM2
+
+`ecosystem.config.js` in the repo root:
+
+```js
+module.exports = {
+  apps: [
+    // HTTP API (port 4000). Reads apps/api/.env.
+    { name: "df-api", cwd: "./apps/api", script: "dist/main.js", env: { RUN_WORKERS: "false" } },
+    // Background jobs: SMS, email, webhooks, schedules. Without it no SMS is sent.
+    { name: "df-worker", cwd: "./apps/api", script: "dist/worker.js", env: { RUN_WORKERS: "true" } },
+    // Website and every panel (port 3000), proxies /api/* to df-api.
+    { name: "df-web", cwd: "./apps/web/.next/standalone/apps/web", script: "server.js",
+      env: { NODE_ENV: "production", PORT: 3000, HOSTNAME: "127.0.0.1" } },
+  ],
+};
+```
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup                                          # start PM2 again after a reboot (run the command it prints)
+pm2 logs df-api                                      # logs
+curl http://127.0.0.1:4000/api/v1/health/ready       # database + Redis should be ok
+```
+
+## 6. Apache
+
+```bash
+sudo a2enmod proxy proxy_http headers rewrite ssl
+```
+
+`/etc/apache2/sites-available/deliveryfast.conf`:
+
+```apache
+<VirtualHost *:80>
+    ServerName yourdomain.com
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+
+    # Live updates (server-sent events): no buffering, long timeout
+    <Location /api/v1/events>
+        ProxyPass http://127.0.0.1:3000/api/v1/events flushpackets=on timeout=3600
+        ProxyPassReverse http://127.0.0.1:3000/api/v1/events
+        SetEnv no-gzip 1
+    </Location>
+
+    ProxyPass        / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+
+    # Uploads (Excel imports, delivery slip photos): 25 MB
+    LimitRequestBody 26214400
+</VirtualHost>
+```
+
+```bash
+sudo a2ensite deliveryfast && sudo systemctl reload apache2
+sudo certbot --apache -d yourdomain.com              # adds the HTTPS virtual host
+```
+
+Apache sends everything to the web server; the web server proxies `/api/*` to the API, so the
+browser stays on one origin and the API needs no public domain. Open only ports 80, 443 and 22 in
+the firewall; 3000, 4000, 5432 and 6379 stay local.
+
+## 7. Releasing a new version
+
+```bash
+git pull
+npm ci
+API_ORIGIN=http://127.0.0.1:4000 npm run build
+(cd apps/api && npx prisma migrate deploy)
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+pm2 reload all
+```
+
+## 8. After going live
+
+- **First super admin.** The demo seeds refuse to run in production, so the first super admin
+  account has to be created separately (there is no script for it yet). The super admin sets up
+  two-step verification at first sign-in.
+- **SMS and email.** Super admin → Integrations: enter the mram API key and Sender ID and the
+  Mailjet key, secret and sender email; use **Send test**, then tick
+  "Send through … in production". Messages go out only when `NODE_ENV=production`, the gateway is
+  configured and enabled, and `df-worker` is running.
+- **mram IP whitelist.** Add the server's public IP in the mram panel, or sends fail with 1016.
+- **Backups.** A daily `pg_dump` (cron) of the database, plus the files in `FILE_STORAGE_DIR`.
+- **Health.** `GET /api/v1/health/live` (process) and `/api/v1/health/ready` (database + Redis)
+  for uptime monitoring.

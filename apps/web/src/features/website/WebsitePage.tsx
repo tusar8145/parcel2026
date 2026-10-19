@@ -29,13 +29,13 @@ export default function WebsitePage({ staticPage }: { staticPage?: { name: strin
   return (
     <>
       {" "}
-      <TopNote /> <SiteHeader />{" "}
+      <TopNote /> <SiteHeader legacy />{" "}
       {staticPage ? (
         <main data-static-page={staticPage.name}>{staticPage.content}</main>
       ) : (
         <main>
           {" "}
-          <Hero /> <StatStrip /> <TrackingSection /> <ServicesSection /> <PricingSection /> <PartnersSection />{" "}
+          <Hero /> <StatStrip /> <TrackingSection legacy /> <ServicesSection /> <PricingSection legacy /> <PartnersSection />{" "}
           <StepsBand /> <FaqSection /> <CtaBand />{" "}
         </main>
       )}{" "}

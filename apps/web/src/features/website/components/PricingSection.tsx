@@ -1,4 +1,60 @@
-export default function PricingSection() {
+"use client";
+
+import { useEffect, useState } from "react";
+
+interface PricingRates {
+  sameZone?: number;
+  crossZone?: number;
+  extraWeight?: number;
+  sameDayFee?: number;
+  serviceFees?: Record<string, number>;
+}
+
+interface PlatformConfig {
+  customerParcelPricing?: PricingRates;
+  deliveryRates?: PricingRates;
+}
+
+export default function PricingSection({ legacy = false }: { legacy?: boolean }) {
+  const [config, setConfig] = useState<PlatformConfig>({});
+  const [zone, setZone] = useState("city");
+  const [weight, setWeight] = useState(1);
+  const [priority, setPriority] = useState(false);
+  const [ratesReady, setRatesReady] = useState(legacy);
+
+  useEffect(() => {
+    if (legacy) return;
+
+    let active = true;
+    const loadRates = async () => {
+      try {
+        const response = await fetch("/api/v1/settings/platform-config");
+        if (response.status === 404) return;
+        if (!response.ok) throw new Error(`Platform pricing request failed (${response.status})`);
+        const result = (await response.json()) as PlatformConfig;
+        if (active) setConfig(result);
+      } catch (error) {
+        console.error("Website pricing configuration could not be loaded.", error);
+      } finally {
+        if (active) setRatesReady(true);
+      }
+    };
+    void loadRates();
+    return () => {
+      active = false;
+    };
+  }, [legacy]);
+
+  useEffect(() => {
+    if (!legacy && ratesReady) document.documentElement.dataset.websiteReady = "true";
+  }, [legacy, ratesReady]);
+
+  const rates = config.customerParcelPricing ?? config.deliveryRates ?? {};
+  const base = Number((zone === "city" ? rates.sameZone : rates.crossZone) ?? (zone === "city" ? 70 : 120));
+  const extra = Math.max(0, Math.ceil(weight - 1)) * Number(rates.extraWeight ?? 20);
+  const priorityFee = priority ? Number(rates.sameDayFee ?? rates.serviceFees?.["Same day"] ?? 30) : 0;
+  const total = base + extra + priorityFee;
+
   return (
     <section className="split-section" id="pricing">
       {" "}
@@ -50,14 +106,24 @@ export default function PricingSection() {
             </div>
             <div className="field">
               <label htmlFor="priceZone">Delivery area</label>
-              <select id="priceZone">
+              <select
+                id="priceZone"
+                value={legacy ? undefined : zone}
+                defaultValue={legacy ? "city" : undefined}
+                onChange={legacy ? undefined : event => setZone(event.target.value)}
+              >
                 <option value="city">Same city</option>
                 <option value="intercity">Inter-city</option>
               </select>
             </div>
             <div className="field">
               <label htmlFor="priceWeight">Parcel weight</label>
-              <select id="priceWeight" defaultValue={"1"}>
+              <select
+                id="priceWeight"
+                value={legacy ? undefined : weight}
+                defaultValue={legacy ? "1" : undefined}
+                onChange={legacy ? undefined : event => setWeight(Number(event.target.value))}
+              >
                 <option value="0.5">Up to 0.5 kg</option>
                 <option value="1">Up to 1 kg</option>
                 <option value="2">Up to 2 kg</option>
@@ -85,7 +151,13 @@ export default function PricingSection() {
             </div>
             <div className="field full">
               <label className="checkline">
-                <input id="pricePriority" type="checkbox" />
+                <input
+                  id="pricePriority"
+                  type="checkbox"
+                  checked={legacy ? undefined : priority}
+                  defaultChecked={legacy ? false : undefined}
+                  onChange={legacy ? undefined : event => setPriority(event.target.checked)}
+                />
                 {" Add priority handling where available"}
               </label>
             </div>
@@ -93,9 +165,13 @@ export default function PricingSection() {
           <div className="price-result">
             <div>
               <small>Estimated delivery charge</small>
-              <strong id="priceTotal">৳ 70</strong>
+              <strong id="priceTotal">৳ {total}</strong>
             </div>
-            <span id="priceBreakdown">Base ৳70 · Weight ৳0 · COD fee ৳0 · Priority ৳0</span>
+            <span id="priceBreakdown">
+              {legacy
+                ? "Base ৳70 · Weight ৳0 · COD fee ৳0 · Priority ৳0"
+                : `Base ৳${base} · Weight ৳${extra} · COD not available · Priority ৳${priorityFee}`}
+            </span>
           </div>
         </div>{" "}
       </div>{" "}

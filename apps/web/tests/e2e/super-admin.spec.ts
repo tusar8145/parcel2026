@@ -35,7 +35,9 @@ async function open(browser: Browser, path: string, errors: Errors) {
   });
   page.on("pageerror", error => errors.push(`${page.url()}: ${error.message}`));
   await page.goto(path);
-  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await page.waitForFunction(
+    () => document.documentElement.classList.contains("legacy-ready") || document.documentElement.dataset.websiteReady === "true",
+  );
   return page;
 }
 

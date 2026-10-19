@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// The original pages hid themselves until their scripts ran (they ran before first paint).
-const BOOT_CSS = "html:not(.legacy-ready) body{opacity:0}";
+// Hide only pages that still require the legacy scripts to finish booting.
+const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]){opacity:0}";
 
 /**
  * Root layout for a ported page. The page's CSS is inlined verbatim, like the <style>

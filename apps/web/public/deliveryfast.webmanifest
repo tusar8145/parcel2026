@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "Delivery Fast",
+  "short_name": "Delivery Fast",
+  "description": "Delivery Fast website and workspaces.",
+  "start_url": "/login?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1f2937",
+  "lang": "en",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/pwa/rider-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/rider-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/rider-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -92,6 +92,10 @@ Legacy panel scripts are content-versioned and cached immutably by the browser. 
 website quietly prefetches them when the browser is idle (except on data-saver or slow 2G
 connections); after a deploy, only changed scripts need a new download.
 
+The website and panels share the **Delivery Fast** installable app (`/deliveryfast.webmanifest`).
+The root-scoped service worker caches only static assets; the Rider panel keeps its separate
+offline task/action queue service worker.
+
 ## 5. PM2
 
 `ecosystem.config.js` in the repo root:

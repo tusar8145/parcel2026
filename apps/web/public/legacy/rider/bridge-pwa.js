@@ -39,7 +39,7 @@
     },
   };
 
-  const app = { version: null, registration: null, updateReady: false, installPrompt: null, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true };
+  const app = { version: null, registration: null, updateReady: false, installed: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true };
   const sync = { items: [], running: false, lastSyncedAt: null, stoppedBy: null, syncedFlash: 0 };
 
   // ───────────── service worker and updates ─────────────
@@ -101,15 +101,9 @@
     }
   }
 
-  window.addEventListener("beforeinstallprompt", event => {
-    event.preventDefault();
-    app.installPrompt = event;
-    renderSettingsPanel();
-  });
   window.addEventListener("appinstalled", () => {
     app.installed = true;
-    app.installPrompt = null;
-    DF.toast("Delivery Fast Rider is installed. Open it from your home screen.");
+    DF.toast("Delivery Fast is installed. Open it from your home screen.");
     renderSettingsPanel();
   });
 
@@ -649,8 +643,8 @@
       <div class="earnings-row"><span>Saved task list</span><strong>${saved ? `from ${esc(clock(saved))} (offline copy)` : navigator.onLine === false ? "offline copy" : "up to date"}</strong></div>
       <div class="earnings-row"><span>App version</span><strong>${esc(app.version || "—")}${app.installed ? " · installed" : ""}</strong></div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${pending || failed ? `<button type="button" class="button button-sm" data-df-sync-now>Sync now</button>` : ""}${
-        app.installPrompt && !app.installed ? `<button type="button" class="button button-sm button-primary" data-df-install>Install app</button>` : ""
-      }${app.updateReady ? `<button type="button" class="button button-sm button-primary" data-df-update>Update app</button>` : ""}</div></section>`;
+        app.updateReady ? `<button type="button" class="button button-sm button-primary" data-df-update>Update app</button>` : ""
+      }</div></section>`;
     if (existing) existing.outerHTML = html;
     else main.insertAdjacentHTML("beforeend", html);
     for (const row of document.querySelectorAll("#mainContent .earnings-row")) if (row.querySelector("span")?.textContent === "App version" && !row.closest("#dfDevicePanel")) row.querySelector("strong").textContent = app.version || "1.0";
@@ -667,14 +661,6 @@
         if (key === "gps-saver") gps.restart();
         if (key === "keep-awake") pref.get(key, false) ? void gps.wake() : void gps.wakeLock?.release().catch(() => undefined);
         renderSettingsPanel();
-      }
-      if (event.target.closest("[data-df-install]")) {
-        event.stopImmediatePropagation();
-        app.installPrompt?.prompt();
-        void app.installPrompt?.userChoice.finally(() => {
-          app.installPrompt = null;
-          renderSettingsPanel();
-        });
       }
       if (event.target.closest("[data-df-update]")) {
         event.stopImmediatePropagation();

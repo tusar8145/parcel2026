@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import PwaInstall from "./PwaInstall";
 
 // Hide only pages that still require the legacy scripts to finish booting.
 const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]){opacity:0}";
@@ -14,13 +15,17 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
   return (
     <html lang="en">
       <head>
+        <link rel="manifest" href="/deliveryfast.webmanifest" />
         <style dangerouslySetInnerHTML={{ __html: BOOT_CSS }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
         <noscript>
           <style>{"body{opacity:1!important}"}</style>
         </noscript>
       </head>
-      <body data-app={app}>{children}</body>
+      <body data-app={app}>
+        {children}
+        <PwaInstall />
+      </body>
     </html>
   );
 }

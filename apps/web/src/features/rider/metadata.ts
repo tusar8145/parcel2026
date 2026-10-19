@@ -2,9 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: "Delivery Fast — Rider workspace",
-  applicationName: "Delivery Fast Rider",
-  // Installable app (Android "Add to Home screen"); the service worker is public/rider-sw.js.
-  manifest: "/rider.webmanifest",
+  applicationName: "Delivery Fast",
   icons: {
     icon: [
       { url: "/pwa/rider-192.png", sizes: "192x192", type: "image/png" },
@@ -12,7 +10,7 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/pwa/rider-apple-180.png", sizes: "180x180" }],
   },
-  appleWebApp: { capable: true, title: "DF Rider", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Delivery Fast", statusBarStyle: "default" },
   formatDetection: { telephone: false },
 };
 

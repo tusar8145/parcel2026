@@ -202,7 +202,7 @@ test("franchise hub end to end through the UI", async ({ browser }) => {
   // The company hub receives it in Courier Operations → COD & settlement.
   const h = await open(browser);
   await signIn(h.page, hubOp, /\/courier-operation/);
-  await opsNav(h.page, "cod");
+  await opsNav(h.page, "codFranchise");
   const depositRow = h.page.locator("#frDepositsPanel tr", { hasText: NAME });
   await expect(depositRow).toContainText(net.replace("৳", "৳ "));
   await depositRow.locator("[data-fr-receive]").click();

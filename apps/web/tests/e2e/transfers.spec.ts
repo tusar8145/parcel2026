@@ -155,7 +155,7 @@ test("Transfers: bulk transfer by Excel → bags sealed on a new trip → depart
 
   // ── Dhanmondi: Inbound transfers, then receive by scan ──
   const desk = await signIn(browser, dhnOp, errors);
-  await opsNav(desk, "transfers");
+  await opsNav(desk, "transfersReceive");
   const inbound = desk.locator(`#lhInbound tr[data-trip="${trip}"]`);
   await expect(inbound).toContainText("3 expected · 0 received");
   await inbound.locator('[data-lh="recv-check"]').click();

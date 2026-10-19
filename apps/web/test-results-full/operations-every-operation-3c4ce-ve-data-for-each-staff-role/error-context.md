@@ -1,0 +1,213 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: operations.spec.ts >> every operations page renders live data for each staff role
+- Location: tests\e2e\operations.spec.ts:202:5
+
+# Error details
+
+```
+Test timeout of 420000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=f10e1]:
+  - complementary [ref=f10e2]:
+    - generic [ref=f10e3]: delivery fast
+    - generic [ref=f10e20]:
+      - generic [ref=f10e21]: ER
+      - generic [ref=f10e22]:
+        - strong [ref=f10e23]: E2E Rider Applicant mveh03v5ga1n
+        - generic [ref=f10e24]: Rider ID · R-2125
+      - generic "Online" [ref=f10e25]
+    - navigation [ref=f10e26]:
+      - generic [ref=f10e27]:
+        - generic [ref=f10e28]: My work
+        - button "Overview" [ref=f10e29] [cursor=pointer]
+        - button "My route 0" [ref=f10e32] [cursor=pointer]:
+          - text: My route
+          - generic [ref=f10e35]: "0"
+        - button "Deliveries 0" [ref=f10e36] [cursor=pointer]:
+          - text: Deliveries
+          - generic [ref=f10e39]: "0"
+        - button "Pickup queue 0" [ref=f10e40] [cursor=pointer]:
+          - text: Pickup queue
+          - generic [ref=f10e43]: "0"
+        - button "Scan parcel" [ref=f10e44] [cursor=pointer]
+      - generic [ref=f10e47]:
+        - generic [ref=f10e48]: Account
+        - button "Earnings & COD" [ref=f10e49] [cursor=pointer]
+        - button "Performance" [ref=f10e52] [cursor=pointer]
+        - button "Help & safety" [ref=f10e55] [cursor=pointer]
+        - button "Settings" [ref=f10e58] [cursor=pointer]
+      - generic [ref=f10e61]:
+        - generic [ref=f10e62]: Help & safety
+        - button "Support 0" [ref=f10e63] [cursor=pointer]:
+          - text: Support
+          - generic [ref=f10e67]: "0"
+    - generic [ref=f10e68]:
+      - generic [ref=f10e69]:
+        - strong [ref=f10e70]: Rider support
+        - paragraph [ref=f10e71]: Need help on a delivery? Our dispatch team is available during your shift.
+        - button "Contact dispatch ↗" [ref=f10e72] [cursor=pointer]
+      - generic "Sign out" [ref=f10e73] [cursor=pointer]:
+        - generic [ref=f10e74]: ER
+        - generic [ref=f10e75]:
+          - strong [ref=f10e76]: E2E Rider Applicant mveh03v5ga1n
+          - text: Verified rider
+        - generic [ref=f10e77]: ···
+  - main [ref=f10e78]:
+    - generic [ref=f10e79]:
+      - generic [ref=f10e80]:
+        - text: Rider workspace /
+        - strong [ref=f10e81]: Overview
+      - generic [ref=f10e82]:
+        - generic [ref=f10e83]: Off shift
+        - button "Notifications" [ref=f10e85] [cursor=pointer]
+        - generic [ref=f10e88]: ER
+    - generic [ref=f10e89]:
+      - generic [ref=f10e90]:
+        - generic [ref=f10e91]:
+          - paragraph [ref=f10e92]: Monday, October 19, 2026 · Dhaka North
+          - heading "Ready for the road, E2E 👋" [level=1] [ref=f10e93]
+          - paragraph [ref=f10e94]: You’re off shift. Start your shift when you’re ready to ride.
+        - generic [ref=f10e95]:
+          - button "Start shift" [ref=f10e96] [cursor=pointer]
+          - button "Scan parcel" [ref=f10e97] [cursor=pointer]
+      - generic [ref=f10e100]:
+        - generic [ref=f10e101]: FINISH YOUR VERIFICATION
+        - generic [ref=f10e102]: Upload 3 more documents
+        - generic [ref=f10e103]: Operations need your NID, photo and vehicle documents to verify you.
+        - button "Open verification" [ref=f10e105] [cursor=pointer]
+      - status [ref=f10e106]:
+        - generic [ref=f10e107]: "Location sharing: Off · start your shift to share your location"
+        - button "Update my location now" [ref=f10e108] [cursor=pointer]
+      - generic [ref=f10e111]:
+        - generic [ref=f10e113]:
+          - heading "Travelling with a vehicle" [level=2] [ref=f10e114]
+          - paragraph [ref=f10e115]: Riding in a linehaul vehicle? Share its location so operations and merchants see the parcels on board moving.
+        - generic [ref=f10e116]:
+          - generic [ref=f10e117]: Today's trip
+          - paragraph [ref=f10e118]: No planned or departed trips from your hub right now. Scan the manifest instead.
+        - generic [ref=f10e119]:
+          - generic [ref=f10e120]: Or the manifest number (MF-…)
+          - textbox "Or the manifest number (MF-…)" [ref=f10e121]:
+            - /placeholder: Scan or type MF-261018-0001
+          - button "Scan with the camera" [ref=f10e122] [cursor=pointer]: Scan
+        - button "Start sharing vehicle location" [ref=f10e123] [cursor=pointer]
+        - paragraph [ref=f10e124]: Positions are sent every 5 minutes and after a move of 50 m, only while this app is open on the screen. Keep it open on the dashboard mount; a locked phone or another app pauses it until you come back.
+      - generic [ref=f10e125]:
+        - article [ref=f10e126]:
+          - generic [ref=f10e127]: Deliveries today
+          - generic [ref=f10e132]: "0"
+          - generic [ref=f10e133]:
+            - generic [ref=f10e134]: 0 completed
+            - generic [ref=f10e135]: of 0 assigned
+        - article [ref=f10e136]:
+          - generic [ref=f10e137]: Pickup stops
+          - generic [ref=f10e142]: "0"
+          - generic [ref=f10e143]:
+            - generic [ref=f10e144]: 0 collected
+            - generic [ref=f10e145]: pickups today
+        - article [ref=f10e146]:
+          - generic [ref=f10e147]: COD to collect
+          - generic [ref=f10e152]: ৳ 0
+          - generic [ref=f10e153]:
+            - generic [ref=f10e154]: nothing due
+            - generic [ref=f10e155]: cash on delivery
+        - article [ref=f10e156]:
+          - generic [ref=f10e157]: Today's earnings
+          - generic [ref=f10e162]: ৳ 0
+          - generic [ref=f10e163]:
+            - generic [ref=f10e164]: 0 deliveries
+            - generic [ref=f10e165]: earned today
+      - generic [ref=f10e166]:
+        - generic [ref=f10e167]:
+          - generic [ref=f10e168]:
+            - generic [ref=f10e169]:
+              - heading "Route overview" [level=2] [ref=f10e170]
+              - paragraph [ref=f10e171]: 0 stops remaining · Gulshan Sorting Hub
+            - button "Full route ↗" [ref=f10e172] [cursor=pointer]
+          - img "Illustrated rider route with three delivery stops" [ref=f10e173]:
+            - generic [ref=f10e181]: ER
+            - generic [ref=f10e183]: "1"
+            - generic [ref=f10e185]: "2"
+            - generic [ref=f10e187]: "3"
+            - generic [ref=f10e189]: You · Dhaka North
+            - generic [ref=f10e190]: No stops yet
+            - generic [ref=f10e191]:
+              - button "Zoom in" [ref=f10e192] [cursor=pointer]: +
+              - button "Zoom out" [ref=f10e193] [cursor=pointer]: −
+          - generic [ref=f10e194]:
+            - generic [ref=f10e195]: "Last location update: just now"
+            - generic [ref=f10e196]:
+              - generic [ref=f10e197]: You
+              - generic [ref=f10e199]: Completed
+              - generic [ref=f10e201]: Next stop
+        - generic [ref=f10e203]:
+          - generic [ref=f10e204]:
+            - generic [ref=f10e205]:
+              - heading "Up next" [level=2] [ref=f10e206]
+              - paragraph [ref=f10e207]: Your upcoming delivery stops
+            - button "View all" [ref=f10e208] [cursor=pointer]
+          - generic [ref=f10e209]: No deliveries assigned right now.
+      - generic [ref=f10e211]:
+        - generic [ref=f10e212]:
+          - generic [ref=f10e213]:
+            - generic [ref=f10e214]:
+              - heading "Today's deliveries" [level=2] [ref=f10e215]
+              - paragraph [ref=f10e216]: Assigned parcels and recipient details
+            - button "All deliveries" [ref=f10e217] [cursor=pointer]
+          - table [ref=f10e219]:
+            - rowgroup [ref=f10e220]:
+              - row [ref=f10e221]:
+                - columnheader "TRACKING ID" [ref=f10e222]
+                - columnheader "RECIPIENT" [ref=f10e223]
+                - columnheader "DELIVERY WINDOW" [ref=f10e224]
+                - columnheader "COD" [ref=f10e225]
+                - columnheader "STATUS" [ref=f10e226]
+                - columnheader [ref=f10e227]
+            - rowgroup
+        - generic [ref=f10e228]:
+          - generic [ref=f10e229]:
+            - generic [ref=f10e230]:
+              - heading "Earnings snapshot" [level=2] [ref=f10e231]
+              - paragraph [ref=f10e232]: Your plan · Growth · per parcel
+            - button "Details" [ref=f10e233] [cursor=pointer]
+          - generic [ref=f10e234]:
+            - generic [ref=f10e235]:
+              - generic [ref=f10e236]: Delivery earnings · 0 deliveries
+              - strong [ref=f10e237]: ৳ 0
+            - generic [ref=f10e238]:
+              - generic [ref=f10e239]: Pickup fees · 0 stops
+              - strong [ref=f10e240]: ৳ 0
+            - generic [ref=f10e241]:
+              - generic [ref=f10e242]: Incentives & adjustments
+              - strong [ref=f10e243]: ৳ 0
+          - generic [ref=f10e244]:
+            - generic [ref=f10e245]: Estimated today
+            - strong [ref=f10e246]: ৳ 0
+          - generic [ref=f10e247]:
+            - generic [ref=f10e248]: COD collected · handover pending
+            - strong [ref=f10e249]: ৳ 0
+  - status
+  - generic [ref=f10e254] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=f10e255]
+    - generic [ref=f10e259]:
+      - button "Open issues overlay" [ref=f10e260]:
+        - generic [ref=f10e261]:
+          - generic [aria-hidden] [ref=f10e262]: "1"
+          - generic [ref=f10e263]: "2"
+        - generic [ref=f10e264]:
+          - text: Issue
+          - generic [aria-hidden] [ref=f10e265]: s
+      - button "Collapse issues badge" [ref=f10e266]
+  - alert [ref=f10e269]
+```

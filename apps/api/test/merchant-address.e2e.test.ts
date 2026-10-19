@@ -142,33 +142,96 @@ describe("merchant addresses", () => {
     expect((await ctx.api("GET", "/merchants/pickup-hub?district=Dhaka%20North&zone=Nowhere")).status).toBe(422);
   });
 
-  it("re-derives the serving hub when the merchant changes the pickup address in Settings, and audits it", async () => {
+  it("an active merchant's own address change waits for approval; approved, the hub follows (audited)", async () => {
     const owner = await applicant();
     const created = await ctx.api("POST", "/merchants/applications", { token: owner.token, body: application() });
     const id = created.body.merchant.id as string;
     await ctx.prisma.merchant.update({ where: { id }, data: { status: "ACTIVE" } });
     const login = await ctx.api("POST", "/auth/refresh", { body: { refreshToken: owner.refreshToken } });
     const token = login.body.accessToken as string;
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops Manager");
 
+    // The address waits; the other Settings fields apply at once.
     const moved = await ctx.api("PATCH", "/merchants/me", {
       token,
       body: { pickupSameAsBusiness: false, pickup: { district: "Dhaka North", zone: "Banani", area: "Banani Block C", street: "House 2, Road 13" }, pickupTime: "MORNING", handover: "HUB_DROP" },
     });
     expect(moved.status, JSON.stringify(moved.body)).toBe(200);
-    expect(moved.body).toMatchObject({ pickup: { zone: "Banani" }, pickupHub: { id: bananiHub.id }, handover: "HUB_DROP", pickupTime: "MORNING", business: { zone: "Gulshan" } });
-    const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: "merchant.self_update", entityId: id }, orderBy: { createdAt: "desc" } });
-    expect(audit.data).toMatchObject({ pickupHubId: bananiHub.id, previousPickupHubId: gulshanHub.id });
-
-    // Back to the business address: the pickup follows it again (and so does the hub).
-    const back = await ctx.api("PATCH", "/merchants/me", { token, body: { pickupSameAsBusiness: true } });
-    expect(back.body).toMatchObject({ pickupSameAsBusiness: true, pickup: { zone: "Gulshan", street: business.street }, pickupHub: { id: gulshanHub.id } });
-    // Moving the business moves a "same as business" pickup.
-    const biz = await ctx.api("PATCH", "/merchants/me", { token, body: { business: { district: "Dhaka North", zone: "Uttara", street: "House 9, Sector 4" } } });
-    expect(biz.body).toMatchObject({ business: { zone: "Uttara" }, pickup: { zone: "Uttara" }, pickupHub: null });
-    // Invalid places are refused here too.
+    expect(moved.body).toMatchObject({
+      pickup: { zone: "Gulshan" },
+      pickupHub: { id: gulshanHub.id },
+      handover: "HUB_DROP",
+      pickupTime: "MORNING",
+      addressRequest: {
+        status: "PENDING",
+        previous: { pickup: "House 7, Road 4, Flat B2, Road 4 Gulshan, Gulshan, Dhaka North" },
+        proposed: { pickup: "House 2, Road 13, Banani Block C, Banani, Dhaka North", pickupSameAsBusiness: false },
+        previousHub: { name: "Gulshan Hub" },
+        proposedHub: { name: "Banani Hub" },
+        hubChanges: true,
+      },
+    });
+    // Invalid places are refused at once, not queued.
     const bad = await ctx.api("PATCH", "/merchants/me", { token, body: { pickupSameAsBusiness: false, pickup: { district: "Dhaka North", zone: "Mars", street: "House 1, Road 1" } } });
     expect(bad.status).toBe(422);
     expect(bad.body.error.details[0].path).toBe("pickup.zone");
+
+    // Operations see it; a rejection needs a reason.
+    const queue = await ctx.api("GET", "/merchant-address-requests", { token: ops.token });
+    expect(queue.body.items).toEqual([expect.objectContaining({ status: "PENDING", merchant: expect.objectContaining({ id, name: "Address Test Shop" }), proposedHub: expect.objectContaining({ name: "Banani Hub" }) })]);
+    const requestId = queue.body.items[0].id as string;
+    expect((await ctx.api("POST", `/merchant-address-requests/${requestId}/reject`, { token: ops.token, body: {} })).status).toBe(422);
+    expect((await ctx.api("GET", "/merchant-address-requests", { token })).status).toBe(403);
+
+    // Approved: the address is applied and the hub follows it.
+    const approved = await ctx.api("POST", `/merchant-address-requests/${requestId}/approve`, { token: ops.token });
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body).toMatchObject({ status: "APPROVED", decidedBy: "Ops Manager" });
+    const me = await ctx.api("GET", "/merchants/me", { token });
+    expect(me.body).toMatchObject({ pickup: { zone: "Banani" }, pickupHub: { id: bananiHub.id }, business: { zone: "Gulshan" } });
+    const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: "merchant.address_approved", entityId: id } });
+    expect(audit.data).toMatchObject({ pickupHubId: bananiHub.id, previousPickupHubId: gulshanHub.id });
+    expect(await ctx.prisma.outboxMessage.count({ where: { template: "merchant.address_change" } })).toBeGreaterThan(0);
+    expect((await ctx.api("POST", `/merchant-address-requests/${requestId}/approve`, { token: ops.token })).body.error.code).toBe("ADDRESS_REQUEST_DECIDED");
+
+    // A second change, rejected with a reason; another one, withdrawn by the merchant.
+    await ctx.api("PATCH", "/merchants/me", { token, body: { pickupSameAsBusiness: true } });
+    const second = (await ctx.api("GET", "/merchant-address-requests", { token: ops.token })).body.items[0];
+    const rejected = await ctx.api("POST", `/merchant-address-requests/${second.id}/reject`, { token: ops.token, body: { note: "Send a photo of the new shop sign" } });
+    expect(rejected.body).toMatchObject({ status: "REJECTED", note: "Send a photo of the new shop sign" });
+    expect((await ctx.api("GET", "/merchants/me/address-request", { token })).body.request).toMatchObject({ status: "REJECTED", note: "Send a photo of the new shop sign" });
+    expect((await ctx.api("GET", "/merchants/me", { token })).body.pickup).toMatchObject({ zone: "Banani" });
+    await ctx.api("PATCH", "/merchants/me", { token, body: { business: { district: "Dhaka North", zone: "Uttara", street: "House 9, Sector 4" } } });
+    const cancelled = await ctx.api("POST", "/merchants/me/address-request/cancel", { token });
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+    expect((await ctx.api("GET", "/merchant-address-requests", { token: ops.token })).body.items).toEqual([]);
+  });
+
+  it("operations change an address directly; the merchants of a zone follow its serving hub; lists filter by hub", async () => {
+    const owner = await applicant();
+    const id = (await ctx.api("POST", "/merchants/applications", { token: owner.token, body: application() })).body.merchant.id as string;
+    await ctx.prisma.merchant.update({ where: { id }, data: { status: "ACTIVE" } });
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops Manager");
+
+    const direct = await ctx.api("PATCH", `/merchants/${id}/address`, { token: ops.token, body: { pickupSameAsBusiness: false, pickup: { district: "Dhaka North", zone: "Banani", area: "Banani Block C", street: "Warehouse 3, Road 27" } } });
+    expect(direct.status, JSON.stringify(direct.body)).toBe(200);
+    expect(direct.body).toMatchObject({ pickup: { zone: "Banani" }, pickupHub: { id: bananiHub.id } });
+    expect((await ctx.api("PATCH", `/merchants/${id}/address`, { token: owner.token, body: { pickupSameAsBusiness: true } })).status).toBe(403);
+
+    // Banani gets the Gulshan hub as its serving hub: the merchant moves with it.
+    const zone = await ctx.prisma.deliveryZone.findFirstOrThrow({ where: { code: "DHN-BAN" } });
+    expect((await ctx.api("PATCH", `/zones/${zone.id}`, { token: ops.token, body: { hubId: gulshanHub.id } })).status).toBe(200);
+    expect((await ctx.prisma.merchant.findUniqueOrThrow({ where: { id } })).pickupHubId).toBe(gulshanHub.id);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "merchant.hub_rederived", entityId: id } })).toBe(1);
+
+    // The Gulshan hub switched off: no serving hub any more.
+    expect((await ctx.api("PATCH", `/hubs/${gulshanHub.id}`, { token: ops.token, body: { active: false } })).status).toBe(200);
+    expect((await ctx.prisma.merchant.findUniqueOrThrow({ where: { id } })).pickupHubId).toBeNull();
+
+    // Merchant lists by hub ("none": no hub serves the pickup area).
+    const none = await ctx.api("GET", "/merchants?hubId=none", { token: ops.token });
+    expect(none.body.items.map((m: { id: string }) => m.id)).toContain(id);
+    expect((await ctx.api("GET", `/merchants?hubId=${bananiHub.id}`, { token: ops.token })).body.items).toEqual([]);
   });
 
   it("older merchants keep their free text, get a best-effort suggestion and complete the address in Settings", async () => {

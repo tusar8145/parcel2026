@@ -481,4 +481,29 @@ describe("hub drop-off", () => {
       expect(pickups.body.items).toHaveLength(2);
     });
   });
+  it("walk-in drop-off without a sender address starts at the hub; Hub Pickup needs no recipient street", async () => {
+    const s = await setup();
+    await ctx.prisma.hub.update({ where: { id: s.gulshan.id }, data: { zone: "Gulshan", address: "Road 90, Gulshan 2" } });
+    await ctx.prisma.deliveryZone.create({ data: { code: "DC-DHN", name: "Dhanmondi", district: "Dhaka Central", hubId: s.dhanmondi.id } });
+    const body = parcelBody({ serviceLevel: "Regular" });
+    const res = await ctx.api("POST", "/ops/parcels", {
+      token: s.hubOp.token,
+      body: { ...body, pickup: undefined, sender: { name: "Karim Walk-in", phone: "01711222333" }, intake: "DROP_OFF", lastMile: "Hub Pickup", delivery: { ...body.delivery, street: "" } },
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const p = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: res.body.trackingId } });
+    expect(p).toMatchObject({
+      intake: "DROP_OFF",
+      dropOffHubId: s.gulshan.id,
+      pickupStreet: `Drop-off at ${s.gulshan.name}, Road 90, Gulshan 2`,
+      pickupZone: "Gulshan",
+      pickupDistrict: "Dhaka North",
+      lastMile: "HUB_COLLECT",
+      collectHubId: s.dhanmondi.id,
+      deliveryStreet: "Collects at the hub",
+    });
+    // Home delivery still needs the street.
+    const home = await ctx.api("POST", "/ops/parcels", { token: s.hubOp.token, body: { ...body, pickup: undefined, sender: { name: "Karim Walk-in", phone: "01711222333" }, intake: "DROP_OFF", delivery: { ...body.delivery, street: "" } } });
+    expect(home.status).toBe(422);
+  });
 });

@@ -49,11 +49,12 @@ const websiteRoutes: string[] = [];
  * Intended changes to the original website, applied to it before comparing: links use real
  * URLs instead of hash routes ("#/pricing" -> "/pricing", "#/tracking" -> "/track"), and the
  * footer links to the Privacy Policy, Terms of Service and cookie settings, and the document merchant is
- * now the Banking & Financial merchant.
+ * now the Banking & Financial merchant. The logo mark is a pigeon carrying a parcel (copied from the new page).
  */
 const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider", franchise: "/become-a-franchise" };
-async function applyIntendedWebsiteChanges(page: Page) {
-  await page.evaluate(paths => {
+async function applyIntendedWebsiteChanges(page: Page, brandMark: string) {
+  await page.evaluate(([paths, mark]) => {
+    for (const el of document.querySelectorAll(".brand-mark")) el.outerHTML = mark;
     for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href^="#/"]')) {
       const route = a.getAttribute("href")!.slice(2);
       a.setAttribute("href", paths[route] ?? `/${route}`);
@@ -67,7 +68,7 @@ async function applyIntendedWebsiteChanges(page: Page) {
         "beforeend",
         '<a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/privacy#cookies" data-cookie-settings="1">Cookie settings</a>',
       );
-  }, WEBSITE_PATHS);
+  }, [WEBSITE_PATHS, brandMark] as const);
 }
 
 const PAGES: { file: string; route: string; views: (page: Page) => Promise<View[]> }[] = [
@@ -229,8 +230,8 @@ for (const def of PAGES) {
   test(def.file, async ({ browser, viewport, userAgent, deviceScaleFactor, isMobile, hasTouch }, info) => {
     const use = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch };
     const original = await open(browser, ORIGINAL + "/" + def.file, false, use);
-    if (def.file === "website.html") await applyIntendedWebsiteChanges(original.page);
     const next = await open(browser, NEXT + def.route, true, use);
+    if (def.file === "website.html") await applyIntendedWebsiteChanges(original.page, await next.page.locator(".header .brand-mark").evaluate(el => el.outerHTML));
     const problems: string[] = [];
 
     for (const view of await def.views(original.page)) {

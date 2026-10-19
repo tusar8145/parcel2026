@@ -202,7 +202,7 @@
     const batchOptions = [{ value: "", label: "Any parcel (no import)" }, ...desk.batches.map(b => ({ value: b.id, label: `${b.number} · ${b.received}/${b.expected} received${b.fileName ? ` · ${b.fileName}` : ""}` }))];
     const tone = desk.feedback.tone ? ` style="font-weight:600;color:${desk.feedback.tone === "good" ? "var(--green)" : desk.feedback.tone === "bad" ? "var(--red)" : desk.feedback.tone === "warn" ? "var(--amber)" : "#4266ce"}"` : "";
     return `<div class="workflow-grid" id="receiveDesk">
-      <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Receive</h2><p class="panel-subtitle">Every arrival: drop-offs (at the hub they were booked for), picked-up parcels and transfers. "Find" shows a parcel without receiving it.</p></div><div class="table-tools"><span class="status status-good" id="rdCount" style="white-space:nowrap">${esc(`${desk.received} received`)}</span></div></div>
+      <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Receive</h2><p class="panel-subtitle">Every arrival, wherever it comes from: drop-offs (at the hub they were booked for), picked-up parcels, transfers and parcels back from riders (failed deliveries, unfinished returns). "Find" shows a parcel without receiving it.</p></div><div class="table-tools"><span class="status status-good" id="rdCount" style="white-space:nowrap">${esc(`${desk.received} received`)}</span></div></div>
         <form class="workflow-form" id="receiveDeskForm" autocomplete="off">
           <label>Hub${ui.select("rdHub", ui.hubOptions(hubs), desk.hubId)}</label>
           <label>Import batch${ui.select("rdBatch", batchOptions, desk.batchId)}</label>

@@ -308,7 +308,7 @@
       ["Still expected", p.stillExpected, "clock", `${Ops.num(p.expectedParts.inboundBags)} in bags · ${Ops.num(p.expectedParts.dropOffs)} drop-offs`, `${Ops.num(p.expectedParts.pickedUpByRiders)} with pickup riders`, "stillExpected"],
       ["Dispatched out", p.dispatched, "truck", `${Ops.num(p.outForDelivery)} out for delivery`, `${Ops.num(p.transferred)} transferred (${Ops.num(p.transferBags)} bags)`, "dispatched"],
       ["Held at the hub", p.heldNow, "pin", now, `${Ops.num(p.delivered)} delivered today`, "heldNow"],
-      ["Ready for collection", p.readyForCollection, "users", now, "at the Hub Pickup counter", "readyForCollection"],
+      ["Ready for collection", p.readyForCollection, "users", now, "waiting on Collect from hub", "readyForCollection"],
     ]
       .map(([label, value, ico, trend, note, key]) => metric(label, `<span data-eod="${key}">${Ops.num(value)}</span>`, ico, esc(trend), esc(note)))
       .join("");

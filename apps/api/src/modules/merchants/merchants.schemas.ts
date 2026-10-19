@@ -134,7 +134,21 @@ export const listMerchantsQuerySchema = pageQuerySchema.extend({
   status: merchantStatusSchema.optional(),
   type: merchantTypeSchema.optional(),
   kycStatus: z.enum(["NOT_SUBMITTED", "PENDING", "APPROVED", "REJECTED"]).optional(),
+  /** The merchant's hub (from its pickup address), or "none". */
+  hubId: z.union([z.uuid(), z.literal("none")], "hubId must be a hub id or none").optional(),
 });
+
+/** Operations change a merchant's business / pickup address (its hub follows the pickup address). */
+export const merchantAddressSchema = nonEmpty(
+  z.object({
+    business: merchantPlaceSchema.optional(),
+    pickupSameAsBusiness: z.boolean("Send true or false").optional(),
+    pickup: merchantPlaceSchema.optional(),
+  }),
+).superRefine(addressChecks);
+
+export const addressRequestQuerySchema = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional() });
+export const rejectAddressRequestSchema = z.object({ note: z.string().trim().min(3, "Write at least 3 characters").max(500, "Use at most 500 characters") });
 
 /** Members of several merchants pick one with ?merchantId=. */
 export const merchantSelectorSchema = z.object({ merchantId: z.uuid("merchantId must be a valid id").optional() });

@@ -247,3 +247,41 @@ model ReturnRun {
   @@index([status, createdAt])
   @@map("return_runs")
 }
+
+// ── Merchant address changes awaiting approval (modules/merchants/merchant-address-requests.service.ts) ──
+// An active merchant's own change to its business / pickup address waits here until operations
+// approve it (the merchant's hub follows the pickup address). One PENDING request per merchant.
+
+enum MerchantAddressRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model MerchantAddressRequest {
+  id              String                       @id @default(uuid(7)) @db.Uuid
+  merchantId      String                       @db.Uuid
+  status          MerchantAddressRequestStatus @default(PENDING)
+  /// The address part of the merchant's Settings update (business, pickupSameAsBusiness, pickup), as sent.
+  changes         Json
+  /// The pickup address and hub before and after, for the reviewer.
+  previous        Json
+  proposed        Json
+  previousHubId   String?                      @db.Uuid
+  proposedHubId   String?                      @db.Uuid
+  requestedById   String?                      @db.Uuid
+  requestedByName String
+  decidedById     String?                      @db.Uuid
+  decidedByName   String?
+  decidedAt       DateTime?
+  /// The reviewer's reason (required when rejecting).
+  note            String?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+  merchant        Merchant                     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([merchantId, status])
+  @@map("merchant_address_requests")
+}

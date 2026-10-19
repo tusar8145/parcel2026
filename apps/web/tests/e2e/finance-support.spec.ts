@@ -36,9 +36,12 @@ test("finance staff see approvals, invoices, disputes, reconciliation, ledger an
   test.setTimeout(240_000);
   const errors: string[] = [];
   const page = await signedIn(browser, await fx.staff("FINANCE"), errors);
-  await opsNav(page, "cod");
   const main = page.locator("#mainContent");
-  for (const id of ["#finSettlements", "#finInvoices", "#finDisputes", "#finRecon", "#finLedger", "#finSchedules"]) await expect(main.locator(id)).toBeVisible();
+  // A tab per task: settlements and schedules; invoices, disputes, reconciliation and the ledger.
+  await opsNav(page, "codSettlements");
+  for (const id of ["#finSettlements", "#finSchedules"]) await expect(main.locator(id)).toBeVisible();
+  await opsNav(page, "codAccounts");
+  for (const id of ["#finInvoices", "#finDisputes", "#finRecon", "#finLedger"]) await expect(main.locator(id)).toBeVisible();
   await expect(main.locator("#finLedger")).toContainText(/Balanced · debits|No postings this month/);
   await expect(main.locator("#finRecon form#finReconForm")).toBeVisible();
   await expect(main.locator("#finLedger [data-fin-config]")).toBeVisible();
@@ -57,6 +60,8 @@ test("operations without finance rights don't get the finance tools; support age
   await opsNav(ops, "cod");
   await expect(ops.locator("#mainContent")).toBeVisible();
   await expect(ops.locator("#finSettlements")).toHaveCount(0);
+  // Their tabs aren't offered either.
+  await expect(ops.locator('#mainContent [data-nav-tab="Settlements & payouts"]')).toBeHidden();
   await ops.context().close();
 
   const agent = await signedIn(browser, await fx.staff("SUPPORT_AGENT"), errors);

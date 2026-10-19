@@ -355,6 +355,18 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       text: "Hi {{name}},\n\nThe payout account for {{businessName}} was changed to {{account}}.\n\nIf you didn't make this change, contact {{support}} right away.",
     },
   },
+  "merchant.address_change": {
+    label: "Merchant address change decided",
+    group: "Merchant",
+    audience: "Merchant owner",
+    vars: ["businessName", "status", "details"],
+    sample: { businessName: "Northstar Store", status: "approved", details: "Pickups now go through Motijheel Service Center." },
+    sms: "Address change for {{businessName}} {{status}}. {{details}}",
+    email: {
+      subject: "Address change {{status}} for {{businessName}}",
+      text: "Hi {{name}},\n\nThe address change you asked for on {{businessName}} was {{status}}.{{#details}}\n\n{{details}}{{/details}}",
+    },
+  },
   "merchant.kyc_status": {
     label: "Merchant KYC update",
     group: "Merchant",

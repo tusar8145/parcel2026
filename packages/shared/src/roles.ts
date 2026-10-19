@@ -36,6 +36,7 @@ export const PERMISSIONS = [
   "merchant:read:any",
   "merchant:manage",
   "merchant:self", // own merchant: profile, members, API keys, webhooks
+  "merchant:address", // change a merchant's address (its hub follows) and approve merchants' own address changes
   // money
   "cod:collect",
   "cod:receive", // hub receives rider cash
@@ -69,7 +70,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   MERCHANT_STAFF: ["parcel:create", "parcel:read:own", "parcel:cancel:own", "support:create"],
   RIDER: ["parcel:rider-update", "cod:collect", "support:create"],
   HUB_OPERATOR: [...OPS_BASE, "cod:receive"],
-  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read", "user:login-as"],
+  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read", "user:login-as", "merchant:address"],
   FINANCE: ["parcel:read:any", "merchant:read:any", "finance:read", "finance:manage", "cod:receive", "audit:read"],
   SUPPORT_AGENT: ["parcel:read:any", "merchant:read:any", "rider:read", "support:create", "support:manage", "user:read"],
   SUPER_ADMIN: [...PERMISSIONS],
@@ -133,6 +134,7 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string 
   "merchant:read:any": { group: "Merchants", label: "See all merchants" },
   "merchant:manage": { group: "Merchants", label: "Approve and manage merchants" },
   "merchant:self": { group: "Merchants", label: "Own merchant workspace (team, API keys, webhooks)" },
+  "merchant:address": { group: "Merchants", label: "Change merchant addresses and approve address changes" },
   "cod:collect": { group: "Money", label: "Collect COD (rider)" },
   "cod:receive": { group: "Money", label: "Receive rider cash at a hub" },
   "finance:read": { group: "Money", label: "See finance" },

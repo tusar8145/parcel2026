@@ -32,6 +32,7 @@ export const NOTIFICATION_EVENTS = [
   "merchant.member_added",
   "merchant.payout_account_changed",
   "merchant.kyc_status",
+  "merchant.address_change",
   "finance.settlement_paid",
   "finance.invoice_issued",
   // riders

@@ -153,12 +153,18 @@ test("merchant panel: Settings asks to complete an older free-text address, and 
   const [audit] = await sql<{ data: Record<string, unknown> }>(`SELECT data FROM audit_logs WHERE action = 'merchant.self_update' AND "entityId" = $1 ORDER BY "createdAt" DESC LIMIT 1`, [shop.id]);
   expect(audit.data).toMatchObject({ pickupHubId: expect.any(String), previousPickupHubId: null });
 
-  // Back to "pickup from the business address": the pickup follows the business address (Banani → Gulshan Sorting Hub).
+  // Back to "pickup from the business address": now an active merchant's change of an existing address, so it waits
+  // for operations' approval (Banani → Gulshan Sorting Hub once approved).
   await profileRow.locator("button").click();
   await expect(page.locator("#dfmaPrompt")).toHaveCount(0);
   await expect(page.locator("#dfmaPuZone")).toHaveValue("Uttara");
+  await expect(page.locator("#dfAddressRequest")).toContainText("checked by Delivery Fast before they apply");
   await page.check("#dfmaPickupSame");
   await page.click('#dfProfileForm button[type="submit"]');
-  await expect(toast(page)).toContainText("Gulshan Sorting Hub");
+  await expect(toast(page)).toContainText("Your address change was sent to Delivery Fast for approval (pickups would move to Gulshan Sorting Hub)");
+  const [pending] = await sql<{ status: string; hub: string }>(`SELECT r.status, h.name AS hub FROM merchant_address_requests r LEFT JOIN hubs h ON h.id = r."proposedHubId" WHERE r."merchantId" = $1`, [shop.id]);
+  expect(pending).toEqual({ status: "PENDING", hub: "Gulshan Sorting Hub" });
+  const [still] = await sql<{ pickupZone: string }>(`SELECT "pickupZone" FROM merchants WHERE id = $1`, [shop.id]);
+  expect(still.pickupZone).toBe("Uttara");
   expect(errors).toEqual([]);
 });

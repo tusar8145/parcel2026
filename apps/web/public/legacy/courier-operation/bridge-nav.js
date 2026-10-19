@@ -10,7 +10,7 @@
  *   1 New orders        Shipments, only "Pending operations confirmation" (all lines), bulk Accept & assign
  *   2 Pickup            Dispatch: waiting for a pickup rider + being picked up · Scheduled pickups
  *   3 Hub desk          Hubs: Receive (the receive desk: any arrival, drop-offs, "Find") · At my hub
- *                       (parcels at the hub now, with their next action) · Hub Pickup counter · End of day
+ *                       (parcels at the hub now, with their next action) · Collect from hub · End of day
  *   4 Transfers         Linehaul
  *   5 Delivery          Dispatch: waiting for a delivery rider + out with riders, map, route planner
  *   6 Problems          Exceptions page: Exceptions · Failed delivery · Needs info · SLA late-risk
@@ -91,16 +91,24 @@
     "Hub desk": {
       stage: "Hub desk",
       tabs: [
-        { id: "Receive", page: "Hubs", part: "receive" },
         { id: "At my hub", page: "Hubs", part: "athub" },
-        { id: "Hub Pickup counter", page: "Hubs", part: "collect" },
         // End-of-day reconciliation (bridge-desk.js): arrivals, dispatches and cash for a hub and a day.
         { id: "End of day", page: "Hubs", part: "eod" },
       ],
       bulk: {},
-      subtitle: "Receive every arrival (drop-offs, pickups, transfers), work the parcels at your hub and hand parcels to receivers at the counter.",
+      subtitle: "Parcels at your hub with their next step, and the day's reconciliation. Scanning work is on Scan desk.",
     },
-    Transfers: { stage: "Transfers", tabs: [{ id: "Transfers", page: "Linehaul" }] }, // no bulk: transfers go through linehaul bags
+    // No bulk: transfers go through linehaul bags. One page (Linehaul), a tab per task (bridge-transfer-tabs.js).
+    Transfers: {
+      stage: "Transfers",
+      tabs: [
+        { id: "Send", page: "Linehaul", part: "send" },
+        { id: "Receive", page: "Linehaul", part: "receive" },
+        { id: "On the road", page: "Linehaul", part: "road" },
+        { id: "Issues", page: "Linehaul", part: "issues" },
+        { id: "Vehicles", page: "Linehaul", part: "vehicles" },
+      ],
+    },
     Delivery: {
       stage: "Delivery",
       tabs: [{ id: "Assign delivery rider", page: "Dispatch", mode: "delivery" }],
@@ -118,7 +126,15 @@
       subtitle: "Resolve exceptions, failed deliveries, missing details and parcels at risk of running late.",
     },
     Returns: { stage: "Returns", tabs: [{ id: "Returns", page: "Returns" }], bulk: {} },
-    "COD & settlement": { tabs: [{ id: "COD & settlement", page: "COD & finance" }] },
+    // A tab per task (bridge-section-tabs.js); tabs with nothing for this person are hidden.
+    "COD & settlement": {
+      tabs: [
+        { id: "Cash from riders", page: "COD & finance", part: "cash" },
+        { id: "Franchise", page: "COD & finance", part: "franchise" },
+        { id: "Settlements & payouts", page: "COD & finance", part: "settlements" },
+        { id: "Invoices & accounts", page: "COD & finance", part: "accounts" },
+      ],
+    },
     "All parcels": {
       tabs: [
         { id: "All", page: "Shipments", list: {} },
@@ -134,7 +150,32 @@
         { id: "Analytics & SLA", page: "Analytics" },
       ],
     },
-    Riders: { keepTitle: true, tabs: [{ id: "Riders", page: "Riders" }] },
+    // Quick updates by scanning, one tab per job (the Hubs page's parts; bridge-hub-desk.js, bridge-intake.js, bridge-collect.js).
+    "Scan desk": {
+      subtitle: "Quick updates by scanning, one tab per job: receive, pickups, transfers, deliveries, failed deliveries and returns.",
+      tabs: [
+        // Every arrival, wherever it comes from: drop-offs, pickups, transfers, parcels back from riders.
+        { id: "Receive entry", page: "Hubs", part: "receive" },
+        { id: "Pickup entry", page: "Hubs", part: "pickup" },
+        { id: "Transfer out", page: "Hubs", part: "transfer" },
+        { id: "Collect from hub", page: "Hubs", part: "collect" },
+        { id: "Out for delivery entry", page: "Hubs", part: "dispatch" },
+        { id: "Delivery entry", page: "Hubs", part: "delivered" },
+        { id: "Failed delivery entry", page: "Hubs", part: "failed" },
+        { id: "Return rider assign", page: "Hubs", part: "returnassign" },
+        { id: "Return entry", page: "Hubs", part: "returns" },
+      ],
+    },
+    // Each parcel's next step, counted and grouped, done by scanning (bridge-workqueue.js).
+    "Work queue": { keepTitle: true, tabs: [{ id: "Work queue", page: "Work queue" }] },
+    Riders: {
+      keepTitle: true,
+      tabs: [
+        { id: "Riders", page: "Riders", part: "riders" },
+        { id: "Shifts & attendance", page: "Riders", part: "shifts" },
+        { id: "Verification", page: "Riders", part: "kyc" },
+      ],
+    },
     Merchants: { keepTitle: true, tabs: [{ id: "Merchants", page: "Merchants" }] },
     "Hubs & zones": { tabs: [{ id: "Hubs & zones", page: "Hubs", part: "manage" }], subtitle: "Hub register (with capacity), delivery zones and routes." },
     "CN stock": { keepTitle: true, tabs: [{ id: "CN stock", page: "CN stock" }] },
@@ -151,7 +192,7 @@
     "Customer parcels": ["All parcels", "Customer"],
     Dispatch: ["Delivery"],
     "Dispatch & routes": ["Delivery"],
-    Hubs: ["Hub desk", "Receive"],
+    Hubs: ["Scan desk", "Receive entry"],
     Linehaul: ["Transfers"],
     "Returns (RTO)": ["Returns"],
     "Scheduled pickups": ["Pickup", "Scheduled pickups"],
@@ -173,23 +214,31 @@
   Ops.view = () => (state.view ? { view: state.view, tab: tabOf()?.id } : null);
 
   /** Old tab names (links, bookmarks) → today's tab. */
-  const TAB_ALIAS = { "drop-off receive": "Receive", "hub register": "At my hub" };
+  const TAB_ALIAS = { "drop-off receive": "Receive entry", "hub register": "At my hub", "hub pickup counter": "Collect from hub", "receive from rider": "Receive entry", receive: "Receive entry", "out for delivery": "Out for delivery entry", "delivered entry": "Delivery entry", "failed delivery": "Failed delivery entry" };
   // Names and their URL slugs (DF.nav: "Hub desk" ↔ hub-desk, "SLA late-risk" ↔ sla-late-risk) match alike.
   const same = (a, b) => {
     const x = String(a ?? "").trim().toLowerCase();
     const y = String(b ?? "").trim().toLowerCase();
     return x === y || (!!DF.nav && DF.nav.slug(x) === DF.nav.slug(y) && DF.nav.slug(x) !== "");
   };
+  /** A tab's index in a view (its name, slug or an old name), -1 when the view has no such tab. */
+  const tabIndex = (view, tab) => {
+    const tabs = VIEWS[view].tabs;
+    // An old name only when the view has no tab of that name (Problems › "Failed delivery" is its own tab).
+    const direct = typeof tab === "number" ? tab : tabs.findIndex(t => same(t.id, tab));
+    const alias = direct >= 0 ? null : Object.keys(TAB_ALIAS).find(a => same(a, tab));
+    return direct >= 0 ? direct : alias ? tabs.findIndex(t => same(t.id, TAB_ALIAS[alias])) : -1;
+  };
   const findTab = (view, tab) => {
     const tabs = VIEWS[view].tabs;
-    const alias = Object.keys(TAB_ALIAS).find(a => same(a, tab));
-    const wanted = alias ? TAB_ALIAS[alias] : tab;
-    const i = typeof tab === "number" ? tab : tabs.findIndex(t => same(t.id, wanted));
+    const i = tabIndex(view, tab);
     return i >= 0 && i < tabs.length ? i : 0;
   };
   /** A view or old page name (any case, or its slug) → { view, tab } or null. */
   function lookup(name, tab) {
     const view = Object.keys(VIEWS).find(v => same(v, name));
+    // The scan tabs moved from Hub desk to Scan desk: old links follow them.
+    if (view === "Hub desk" && typeof tab === "string" && tabIndex(view, tab) < 0 && tabIndex("Scan desk", tab) >= 0) return { view: "Scan desk", tab: findTab("Scan desk", tab) };
     if (view) return { view, tab: findTab(view, tab) };
     const old = Object.keys(OLD).find(o => same(o, name));
     if (old) return { view: OLD[old][0], tab: findTab(OLD[old][0], tab ?? OLD[old][1]) };
@@ -209,6 +258,8 @@
   /** Opens a view (and tab, by index or name). */
   function navigate(view, tab = 0) {
     if (!VIEWS[view]) return;
+    // The scan tabs moved from Hub desk to Scan desk: old links follow them.
+    if (view === "Hub desk" && typeof tab === "string" && tabIndex("Hub desk", tab) < 0 && tabIndex("Scan desk", tab) >= 0) view = "Scan desk";
     forced = { view, tab: findTab(view, tab) };
     render(VIEWS[view].tabs[forced.tab].page);
   }
@@ -454,7 +505,7 @@
     if (tab.part) hubParts(tab.part);
     if (tab.mode) dispatchMode(tab.mode);
     if (view === "Problems") problemsTab(tab);
-    if (view === "Transfers") stageList("transfers", { params: () => ({ stage: "transfers" }), empty: "No parcels are between hubs right now." }, "Parcels in transit between hubs", "Transferred out of a hub and not yet received at the next one");
+    if (view === "Transfers" && tab.part === "road") stageList("transfers", { params: () => ({ stage: "transfers" }), empty: "No parcels are between hubs right now." }, "Parcels in transit between hubs", "Transferred out of a hub and not yet received at the next one");
     if (view === "Returns") stageList("returns", { params: () => ({ stage: "returns" }), empty: "No parcels are on a return run." }, "Return scheduled", "Parcels going back to their merchants on a return run");
     if (view === "New orders") {
       show(q("#mainContent .stats-mini"), false);
@@ -538,7 +589,7 @@
     if (roles.has("SUPER_ADMIN") || roles.has("OPS_MANAGER")) return all;
     const allow = new Set();
     if (roles.has("HUB_OPERATOR")) {
-      ["Today", ...JOURNEY, "All parcels"].forEach(v => allow.add(v));
+      ["Today", ...JOURNEY, "Work queue", "Scan desk", "All parcels"].forEach(v => allow.add(v));
       if (Ops.can("readRiders")) allow.add("Riders");
       // Hub operators receive riders' cash on the COD page (cash handovers).
       if (Ops.can("receiveCash")) allow.add("COD & settlement");

@@ -117,7 +117,7 @@ test("searchable selects: Courier Operations booking (district → zone), keyboa
   await signIn(page, ops, "/courier-operation");
   await opsNav(page, "ecommerce");
   await page.click('[data-action="newEcommerce"]');
-  await expect(page.locator("#modalTitle")).toHaveText("Create e-commerce shipment");
+  await expect(page.locator("#modalTitle")).toHaveText("Create e-commerce order");
 
   await searchPick(page, "#bkDistrict", "dhaka cen", "Dhaka Central");
   await expect(page.locator("#bkDistrict")).toHaveValue("Dhaka Central");

@@ -37,6 +37,7 @@
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const taka = n => `৳${Number(n || 0).toLocaleString("en-BD")}`;
   const cache = new Map();
+  const AUTO_COLLECT = "The hub serving the delivery zone (choose the zone)";
   const $ = id => document.getElementById(id);
   /** prefix → { view, productSelect }: which select holds the product (`${prefix}Product` or the form's own). */
   const forms = new Map();
@@ -75,7 +76,6 @@
     const field = (id, label, control, hidden = false, full = false) => `<div class="${fieldClass}${full ? " full" : ""}"${hidden ? " hidden" : ""}><label for="${id}">${esc(label)}</label>${control}</div>`;
     const select = (id, options, selected) => `<select id="${id}">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(selected ?? "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
     const dropHubs = hubs || view.dropHubs || [];
-    const collectHubs = view.collectHubs || hubs || [];
     const parts = [];
     if (product && view.products?.length) parts.push(field(`${prefix}Product`, "Product (optional)", `<select id="${prefix}Product">${productOptions(view)}</select>`));
     // First mile: one select (only when the package offers more than one way), the drop-off hub beside it.
@@ -85,8 +85,11 @@
       parts.push(field(`${prefix}DropHub`, "Drop-off hub", select(`${prefix}DropHub`, [["", "Choose the hub"], ...dropHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name])], preferred), o.defaultFirstMile !== "HUB_DROP"));
     }
     if (o.lastMiles.length > 1) parts.push(field(`${prefix}LastMile`, "Last mile", select(`${prefix}LastMile`, o.lastMiles.map(l => [l, L.lastMile[l]]), o.defaultLastMile)));
+    // Hub Pickup: no choice; the recipient collects at the hub serving the delivery zone (named from the price quote).
     if (o.lastMiles.includes("HUB_COLLECT"))
-      parts.push(field(`${prefix}CollectHub`, "Collection hub", select(`${prefix}CollectHub`, [["", "The hub serving the recipient's zone"], ...collectHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name])], ""), o.defaultLastMile !== "HUB_COLLECT"));
+      parts.push(
+        `<div class="${fieldClass}"${o.defaultLastMile !== "HUB_COLLECT" ? " hidden" : ""}><label>Collect from</label><div id="${prefix}CollectHub" data-collect-hub style="padding:8px 0;font-weight:650;line-height:1.4">${esc(AUTO_COLLECT)}</div></div>`,
+      );
     if (o.speeds.length > 1) parts.push(field(`${prefix}Speed`, "Service", select(`${prefix}Speed`, o.speeds.map(s => [s, L.speed[s]]), "REGULAR")));
     const checks = [];
     if (o.cod) checks.push(`<label class="df-check" style="display:flex;gap:7px;align-items:center;font-weight:600"><input type="checkbox" id="${prefix}Cod" ${codChecked ? "checked" : ""} style="width:auto;padding:0"> Collect cash on delivery (COD)</label>`);
@@ -198,7 +201,15 @@
     if (window.DF?.searchSelect) DF.searchSelect(select, { label, threshold: Math.min(threshold, DF.searchSelect.threshold) });
   }
 
+  /** Hub Pickup: names the hub serving the delivery zone, from the price quote (quote.collectHub). */
+  function noteCollectHub(quote) {
+    if (!quote || !("collectHub" in quote)) return;
+    const h = quote.collectHub;
+    for (const el of document.querySelectorAll("[data-collect-hub]")) el.textContent = h ? `${h.name}${h.address ? ` · ${h.address}` : ""}` : AUTO_COLLECT;
+  }
+
   function breakdown(quote) {
+    noteCollectHub(quote);
     if (!quote?.lines) return "";
     const rows = quote.lines.map(l => `<div style="display:flex;justify-content:space-between;gap:12px"><span>${esc(l.label)}</span><span>${l.amount < 0 ? "−" : ""}${taka(Math.abs(l.amount))}</span></div>`).join("");
     return `<div data-price-breakdown style="display:grid;gap:3px">${rows}<div style="display:flex;justify-content:space-between;gap:12px;font-weight:700;border-top:1px solid #e3e8ef;padding-top:4px"><span>Delivery charge${quote.package?.name ? ` · ${esc(quote.package.name)}` : ""}</span><span data-price-total>${taka(quote.totalCharge)}</span></div>${

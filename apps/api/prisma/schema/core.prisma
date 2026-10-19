@@ -230,6 +230,7 @@ model Merchant {
 
   plan               ServicePlan?          @relation(fields: [planId], references: [id])
   pickupHub          Hub?                  @relation("MerchantPickupHub", fields: [pickupHubId], references: [id], onDelete: SetNull)
+  addressRequests    MerchantAddressRequest[]
   members            UserRole[]
   parcels            Parcel[]
   apiKeys            ApiKey[]

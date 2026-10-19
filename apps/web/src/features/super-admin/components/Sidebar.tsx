@@ -1,28 +1,12 @@
+import BrandMark from "@/shared/BrandMark";
+
 export default function Sidebar() {
   return (
     <aside className="sidebar" id="sidebar">
       {" "}
       <div className="brand">
         <div className="brand-mark">
-          <svg
-            viewBox="0 0 32 32"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-          >
-            <path d="m12 3 4-2 4 2v5l-4 2-4-2V3Z" stroke="#fcc118" strokeWidth="1.8" />
-            <path d="m12 3 4 2 4-2m-4 2v5" stroke="#fcc118" strokeWidth="1.4" />
-            <path d="M16 10v2" />
-            <rect x="5" y="12" width="22" height="13" rx="4" />
-            <path d="M9 17h14" stroke="#fcc118" strokeWidth="1.5" />
-            <circle cx="12" cy="20" r="1.2" fill="#fcc118" stroke="none" />
-            <circle cx="20" cy="20" r="1.2" fill="#fcc118" stroke="none" />
-            <path d="M11 25v2m10-2v2" />
-            <circle cx="10" cy="28" r="2" fill="currentColor" stroke="none" />
-            <circle cx="22" cy="28" r="2" fill="currentColor" stroke="none" />
-          </svg>
+          <BrandMark size={40} />
         </div>
         <div className="brand-name">
           {"delivery "}

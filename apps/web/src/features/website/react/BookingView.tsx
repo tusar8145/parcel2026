@@ -40,6 +40,8 @@ interface SlotDay {
 }
 interface Quote {
   lines?: { code: string; label: string; amount: number }[];
+  /** Hub Pickup: the hub the receiver collects from (chosen, or the one serving their zone). */
+  collectHub?: { id: string; name: string; address?: string | null } | null;
   baseCharge: number;
   weightCharge: number;
   serviceCharge: number;
@@ -515,10 +517,12 @@ export default function BookingView() {
         ) : null}
         {pkg && v.requestLastMile === "HUB_COLLECT" ? (
           <div className="field">
-            <label htmlFor="requestCollectHub">Collection hub</label>
-            <Select bound={form.bind("requestCollectHub")} error={form.error("requestCollectHub")} options={[["", "The hub serving the receiver's zone"] as [string, string], ...pkg.collectHubs.map(h => [h.id, h.type === "FRANCHISE" ? `${h.name} · Franchise` : h.name] as [string, string])]} />
+            <label>{"Collect from"}</label>
+            {/* No choice: the receiver collects at the hub serving their zone (named by the price quote). */}
+            <div id="requestCollectHub" style={{ padding: "8px 0", fontWeight: 650, lineHeight: 1.4 }}>
+              {quote?.collectHub ? `${quote.collectHub.name}${quote.collectHub.address ? ` · ${quote.collectHub.address}` : ""}` : "The hub serving the receiver's zone (choose the zone)"}
+            </div>
             <small className="field-hint">{"The receiver gets an SMS with the hub address and a collection code."}</small>
-            <FieldError id="requestCollectHub" message={form.error("requestCollectHub")} />
           </div>
         ) : null}
         <div className="field full">

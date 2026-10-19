@@ -1444,16 +1444,37 @@
 
   const field = (id, label, value, attrs = "") => `<div class="form-field"><label for="${id}">${esc(label)}</label><input id="${id}" value="${esc(value ?? "")}" ${attrs}></div>`;
 
+  /** The address change waiting for approval (or the last decision), at the top of the profile dialog. */
+  async function showAddressRequest() {
+    const box = $("dfAddressRequest");
+    if (!box) return;
+    const r = (await DF.api(`/merchants/me/address-request${q()}`).catch(() => null))?.request || null;
+    S.addressRequest = r;
+    const tone = { PENDING: ["#fff8e6", "#f5d48a"], APPROVED: ["#effaf5", "#bfe3d5"], REJECTED: ["#fff3ee", "#f3b8a0"] };
+    const active = S.merchant.status === "ACTIVE";
+    if (!r || (r.status !== "PENDING" && r.decidedAt && Date.now() - new Date(r.decidedAt).getTime() > 14 * 864e5)) {
+      box.innerHTML = active ? `<p style="margin:10px 0 0;color:#64748b;font-size:12.5px">Changes to your business or pickup address are checked by Delivery Fast before they apply.</p>` : "";
+      return;
+    }
+    const [bg, border] = tone[r.status] || tone.PENDING;
+    const title = r.status === "PENDING" ? "Address change waiting for approval" : r.status === "APPROVED" ? "Address change approved" : "Address change not approved";
+    const hub = r.hubChanges ? ` · pickups move from ${esc(r.previousHub?.name || "no hub")} to ${esc(r.proposedHub?.name || "no hub yet")}` : "";
+    box.innerHTML = `<div id="dfAddressRequestBox" data-status="${esc(r.status)}" role="status" style="margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid ${border};background:${bg};font-size:13px;line-height:1.5"><strong>${esc(title)}</strong><div>New pickup address: ${esc(r.proposed?.pickup || "—")}${hub}</div>${
+      r.status === "REJECTED" && r.note ? `<div>Reason: ${esc(r.note)}</div>` : ""
+    }${r.status === "PENDING" ? `<div style="color:#64748b">Sent ${esc(new Date(r.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }))}. Your current address stays until it's approved.</div><button type="button" class="button button-sm" data-df-cancel-address style="margin-top:6px">Cancel this change</button>` : ""}</div>`;
+  }
+
   function openProfile() {
     const m = S.merchant;
     const A = window.DFMerchantAddress;
     const backdrop = dialog(
       S.cfg.document ? "Corporate account" : "Store profile",
       `${esc(m.name)} · ${esc(m.code)}`,
-      `<form id="dfProfileForm" novalidate><div class="form-grid" style="margin-top:12px">${field("dfContactName", "Contact name", m.contactName, "required minlength=2")}${field("dfContactPhone", "Contact phone", String(m.contactPhone || "").replace(/^\+880/, ""), "required")}${field("dfContactEmail", "Contact email", m.contactEmail, 'type="email"')}${A ? A.formHtml(m) : ""}</div><div class="modal-actions"><button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save changes</button></div></form>`,
+      `<form id="dfProfileForm" novalidate><div id="dfAddressRequest"></div><div class="form-grid" style="margin-top:12px">${field("dfContactName", "Contact name", m.contactName, "required minlength=2")}${field("dfContactPhone", "Contact phone", String(m.contactPhone || "").replace(/^\+880/, ""), "required")}${field("dfContactEmail", "Contact email", m.contactEmail, 'type="email"')}${A ? A.formHtml(m) : ""}</div><div class="modal-actions"><button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save changes</button></div></form>`,
       720,
     );
     const form = backdrop.querySelector("form");
+    void showAddressRequest();
     DF.phoneInput($("dfContactPhone"));
     const address = A ? A.wire(form, m, S.catalog) : null;
     const own = DF.validate(form, { dfContactName: v => (v.trim().length < 2 ? "Enter the contact name" : ""), dfContactEmail: v => (v.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? "Enter a valid email address" : "") });
@@ -1528,7 +1549,12 @@
       const address = form.dfAddress ? form.dfAddress.body() : {};
       try {
         const before = S.merchant.pickupHub?.id || null;
+        const pendingBefore = S.addressRequest?.status === "PENDING" ? S.addressRequest.id : null;
         const saved = await DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { contactName: $("dfContactName").value.trim(), contactPhone: $("dfContactPhone").value.trim(), contactEmail: email || null, ...address } });
+        S.addressRequest = saved.addressRequest || null;
+        // Active merchants: a changed address waits for Delivery Fast's approval (the hub follows it once approved).
+        if (saved.addressRequest?.status === "PENDING" && saved.addressRequest.id !== pendingBefore)
+          return done(async () => {}, `Profile saved. Your address change was sent to Delivery Fast for approval${saved.addressRequest.hubChanges ? ` (pickups would move to ${saved.addressRequest.proposedHub?.name || "another hub"})` : ""}; until then your current address stays.`);
         const hubNote = (saved.pickupHub?.id || null) !== before ? (saved.pickupHub ? ` Your pickups are now served by ${saved.pickupHub.name}.` : " No hub serves the new pickup area yet; operations will assign one.") : "";
         return done(async () => {}, `Profile saved.${hubNote}`);
       } catch (error) {
@@ -1806,6 +1832,13 @@
       return void DF.confirm({ title: "Remove this webhook endpoint?", message: "Pending deliveries to it are dropped.", confirm: "Remove webhook", danger: true }).then(ok => ok && integrationAction(() => DF.api(`/merchants/me/webhooks/${hookId}${q()}`, { method: "DELETE" }), "Webhook removed."));
     }
     // Settings dialogs
+    if (hit("[data-df-cancel-address]")) {
+      stop(event);
+      return void DF.api(`/merchants/me/address-request/cancel${q()}`, { method: "POST" }).then(
+        () => (showToast("Address change cancelled."), showAddressRequest()),
+        error => showToast(DF.describe(error)),
+      );
+    }
     if (hit("[data-df-close]")) {
       stop(event);
       return closeDialog();

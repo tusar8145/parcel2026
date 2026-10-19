@@ -95,6 +95,7 @@ export const IN_APP: Partial<Record<NotificationEvent, (v: Vars, panel: Panel) =
   "merchant.info_requested": v => ({ title: `More information needed for ${s(v.businessName)}`, body: s(v.details) || null, target: { page: "overview" } }),
   "merchant.member_added": v => ({ title: `You were added to ${s(v.businessName)}`, body: s(v.role) ? `As ${s(v.role)}` : null, target: { page: "overview" } }),
   "merchant.payout_account_changed": v => ({ title: "Payout account changed", body: join(s(v.businessName), s(v.account)), target: { page: "settings" } }),
+  "merchant.address_change": v => ({ title: `Address change ${s(v.status)}`, body: s(v.details) || s(v.businessName) || null, target: { page: "settings" } }),
   "merchant.kyc_status": v => ({ title: `KYC: ${s(v.status)}`, body: s(v.details) || s(v.businessName) || null, target: { page: "settings" } }),
   "finance.settlement_paid": v => ({ title: `Settlement ${s(v.number)} paid`, body: join(money(v.amount), s(v.reference) ? `Ref ${s(v.reference)}` : ""), target: { page: "payments" } }),
   "finance.invoice_issued": (v, panel) => ({ title: `Invoice ${s(v.number)} issued`, body: join(money(v.amount), s(v.dueDate) ? `due ${s(v.dueDate)}` : ""), target: { page: panel === "/banking-merchant" ? "billing" : "payments" } }),

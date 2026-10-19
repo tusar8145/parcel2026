@@ -2,7 +2,7 @@ import { type Browser, type Locator, type Page } from "@playwright/test";
 import { Fixtures, expect, opsNav, sql, test, type TempMerchant, type TempUser } from "./support";
 
 /**
- * The single-order booking forms (owner decisions 2026-10-18): Courier Operations "New shipment"
+ * The single-order booking forms (owner decisions 2026-10-18): Courier Operations "New order"
  * (merchant and walk-in sender), the e-commerce merchant order form and the Banking & Financial
  * request form.
  *   - the form's live price equals the booked price, with a Document-type product (the quote sends it);
@@ -101,14 +101,14 @@ async function parcelRow(trackingId: string) {
   return row;
 }
 
-test("operations New shipment: product priced like the booking, no old fields, Banking without weight / COD, inline phone errors", async ({ browser }) => {
+test("operations New order: product priced like the booking, no old fields, Banking without weight / COD, inline phone errors", async ({ browser }) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, OPS, /\/courier-operation/, errors);
   await opsNav(ops, "ecommerce");
   await ops.click('[data-action="newEcommerce"]');
   const fields = ops.locator("#modalFields");
-  await expect(ops.locator("#modalTitle")).toHaveText("Create e-commerce shipment");
+  await expect(ops.locator("#modalTitle")).toHaveText("Create e-commerce order");
 
   // ── The old fields are gone; places start at "Choose …" ──
   for (const id of ["bkLevel", "bkIntake", "bkHub", "bkCod", "bkLine"]) await expect(ops.locator(`#${id}`)).toHaveCount(0);
@@ -158,7 +158,7 @@ test("operations New shipment: product priced like the booking, no old fields, B
   // ── Banking & Financial: no weight, no COD; its own product list ──
   await opsNav(ops, "banking");
   await ops.click('[data-action="newDocument"]');
-  await expect(ops.locator("#modalTitle")).toHaveText("Create Banking & Financial shipment");
+  await expect(ops.locator("#modalTitle")).toHaveText("Create Banking & Financial order");
   await chooseOption(ops, "#bkMerchant", bank.name);
   await expect(ops.locator("#bkSvcProduct option", { hasText: "Bank Statements · Document" })).toHaveCount(1, { timeout: 15_000 });
   await expect(ops.locator("#bkWeight")).toBeHidden();
@@ -191,7 +191,7 @@ test("operations walk-in sender: a customer parcel without a merchant, on the Cu
   const ops = await signedIn(browser, OPS, /\/courier-operation/, errors);
   await opsNav(ops, "customerParcels");
   await ops.click('[data-action="newWalkIn"]');
-  await expect(ops.locator("#modalTitle")).toHaveText("Create walk-in shipment");
+  await expect(ops.locator("#modalTitle")).toHaveText("Create walk-in order");
   await expect(ops.locator("#bkMerchant")).toBeHidden();
   const senderPhone = `019${String(Date.now()).slice(-8)}`;
   const sender = `E2E Walk-in ${fx.stamp}`;

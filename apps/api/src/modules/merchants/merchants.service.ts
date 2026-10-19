@@ -44,6 +44,10 @@ const ROLES_REFRESH_MESSAGE =
 const loginLink = () => `${env().APP_URL}/#/login`;
 const payoutLabel = (p: { method: string; accountNumber: string }) => `${{ BKASH: "bKash", NAGAD: "Nagad", BANK: "Bank" }[p.method] ?? p.method} ••••${p.accountNumber.slice(-4)}`;
 
+type AddressChanges = { business?: MerchantPlaceInput; pickupSameAsBusiness?: boolean; pickup?: MerchantPlaceInput };
+type AddressSnapshot = { pickup: string; business: string | null; pickupSameAsBusiness: boolean };
+type AddressRequestRow = Prisma.MerchantAddressRequestGetPayload<object>;
+
 @Injectable()
 export class MerchantsService {
   constructor(
@@ -284,6 +288,8 @@ export class MerchantsService {
     const q = query.q;
     const rows = await this.prisma.merchant.findMany({
       where: {
+        // The hub a merchant belongs to (from its pickup address); "none": no hub serves its pickup area.
+        ...(query.hubId ? { pickupHubId: query.hubId === "none" ? null : query.hubId } : {}),
         status: query.status,
         type: query.type,
         kycStatus: query.kycStatus,
@@ -402,9 +408,16 @@ export class MerchantsService {
     // The business name is reviewed: applicants may correct it until they're approved.
     if (name !== undefined && !(OPEN_APPLICATION_STATUSES as readonly string[]).includes(current.status))
       throw new AppError("NAME_LOCKED", "The business name can only change while the application is being reviewed. Contact support to rename an approved account.", HttpStatus.UNPROCESSABLE_ENTITY);
+    // An active merchant's own change of its business / pickup address waits for operations' approval (its hub follows
+    // the pickup address); the other Settings fields apply at once. Applicants still being reviewed change it freely, and
+    // older merchants completing an address they never structured (no pickup zone yet) aren't held up.
+    const { business, pickupSameAsBusiness, pickup, ...otherAddress } = addressInput;
+    const review = current.status === "ACTIVE" && !!current.pickupZone && (business !== undefined || pickupSameAsBusiness !== undefined || pickup !== undefined);
     const outbox: string[] = [];
+    let addressRequest: AddressRequestRow | null = null;
     const merchant = await this.prisma.$transaction(async tx => {
-      const address = await this.addressData(tx, addressInput, current);
+      const address = await this.addressData(tx, review ? otherAddress : addressInput, current);
+      if (review) addressRequest = await this.requestAddressChange(tx, actor, current, { business, pickupSameAsBusiness, pickup }, meta);
       const updated = await tx.merchant.update({
         where: { id: current.id },
         data: { ...rest, ...address.data, ...(name !== undefined ? { name } : {}), ...(payoutAccount !== undefined ? { payoutAccount: payoutAccount === null ? Prisma.DbNull : payoutAccount } : {}) },
@@ -421,7 +434,7 @@ export class MerchantsService {
         );
       const changes = {
         ...rest,
-        ...addressInput,
+        ...(review ? otherAddress : addressInput),
         ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}),
         ...(name !== undefined ? { name } : {}),
         ...(payoutAccount !== undefined ? { payoutAccount: payoutAccount ? { method: payoutAccount.method, accountLast4: payoutAccount.accountNumber.slice(-4) } : null } : {}),
@@ -431,7 +444,176 @@ export class MerchantsService {
     });
     await this.outbox.flush(outbox);
     this.publish(current.id);
-    return { ...merchantView(merchant), myRole: "MERCHANT_OWNER" };
+    if (addressRequest) this.publishAddressRequests(current.id);
+    return { ...merchantView(merchant), myRole: "MERCHANT_OWNER", addressRequest: await this.latestAddressRequest(current.id) };
+  }
+
+  // ───────────── address changes awaiting approval ─────────────
+
+  /** The pickup / business address of a merchant row, readable, for the reviewer. */
+  private addressSnapshot(m: Pick<Merchant, "pickupAddress" | "pickupArea" | "pickupZone" | "pickupDistrict" | "pickupSameAsBusiness" | "businessStreet" | "businessArea" | "businessZone" | "businessDistrict">) {
+    const line = (...parts: (string | null | undefined)[]) => [...new Set(parts.filter(Boolean))].join(", ");
+    return {
+      pickup: line(m.pickupAddress, m.pickupArea, m.pickupZone, m.pickupDistrict),
+      business: m.businessDistrict ? line(m.businessStreet, m.businessArea, m.businessZone, m.businessDistrict) : null,
+      pickupSameAsBusiness: m.pickupSameAsBusiness,
+    };
+  }
+
+  /**
+   * Records an active merchant's own address change for approval (replacing an older pending one), checked now.
+   * Null when the address sent is the one on file (Settings sends it with every save).
+   */
+  private async requestAddressChange(tx: Db, actor: Actor, current: Merchant, changes: AddressChanges, meta: RequestMeta) {
+    const preview = await this.addressData(tx, changes, current);
+    const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null) || String(a ?? "") === String(b ?? "");
+    if (Object.entries(preview.data).every(([k, v]) => same((current as Record<string, unknown>)[k], v))) return null;
+    const proposed = { ...current, ...(preview.data as Partial<Merchant>) } as Merchant;
+    const now = new Date();
+    await tx.merchantAddressRequest.updateMany({ where: { merchantId: current.id, status: "PENDING" }, data: { status: "CANCELLED", decidedAt: now, note: "Replaced by a newer request" } });
+    const request = await tx.merchantAddressRequest.create({
+      data: {
+        merchantId: current.id,
+        changes: JSON.parse(JSON.stringify(changes)) as Prisma.InputJsonObject,
+        previous: this.addressSnapshot(current),
+        proposed: this.addressSnapshot(proposed),
+        previousHubId: current.pickupHubId,
+        proposedHubId: preview.pickupMoved ? (preview.hub?.id ?? null) : current.pickupHubId,
+        requestedById: actor.kind === "user" ? actor.userId : null,
+        requestedByName: actorLabel(actor),
+      },
+    });
+    await this.audit.record(actor, { action: "merchant.address_requested", entityType: "merchant", entityId: current.id, data: { requestId: request.id, changes, previousHubId: request.previousHubId, proposedHubId: request.proposedHubId } }, meta, tx);
+    return request;
+  }
+
+  private publishAddressRequests(merchantId: string) {
+    this.realtime.publish({ type: "merchant.address_request", id: merchantId, merchantId, staffPermission: "merchant:address" });
+  }
+
+  private async addressRequestView(r: AddressRequestRow, merchant?: { id: string; code: string; name: string; status: string } | null) {
+    const hubIds = [r.previousHubId, r.proposedHubId].filter((x): x is string => !!x);
+    const hubs = hubIds.length ? await this.prisma.hub.findMany({ where: { id: { in: hubIds } }, select: { id: true, code: true, name: true } }) : [];
+    const hub = (id: string | null) => hubs.find(h => h.id === id) ?? null;
+    return {
+      id: r.id,
+      status: r.status,
+      merchant: merchant ?? null,
+      previous: r.previous as AddressSnapshot,
+      proposed: r.proposed as AddressSnapshot,
+      previousHub: hub(r.previousHubId),
+      proposedHub: hub(r.proposedHubId),
+      hubChanges: r.previousHubId !== r.proposedHubId,
+      requestedBy: r.requestedByName,
+      decidedBy: r.decidedByName,
+      decidedAt: r.decidedAt,
+      note: r.note,
+      createdAt: r.createdAt,
+    };
+  }
+
+  /** The merchant's pending request, else its latest decided one (shown in Settings). */
+  private async latestAddressRequest(merchantId: string) {
+    const r =
+      (await this.prisma.merchantAddressRequest.findFirst({ where: { merchantId, status: "PENDING" } })) ??
+      (await this.prisma.merchantAddressRequest.findFirst({ where: { merchantId, status: { in: ["APPROVED", "REJECTED"] } }, orderBy: { createdAt: "desc" } }));
+    return r ? this.addressRequestView(r) : null;
+  }
+
+  async myAddressRequest(actor: Actor, merchantId: string | undefined) {
+    const m = await this.resolveOwn(actor, merchantId, { allowInactive: true });
+    return { request: await this.latestAddressRequest(m.id) };
+  }
+
+  async cancelMyAddressRequest(actor: Actor, merchantId: string | undefined, meta: RequestMeta) {
+    const m = await this.resolveOwn(actor, merchantId, { ownerOnly: true });
+    const cancelled = await this.prisma.$transaction(async tx => {
+      const r = await tx.merchantAddressRequest.findFirst({ where: { merchantId: m.id, status: "PENDING" } });
+      if (!r) throw notFound("Pending address change");
+      await tx.merchantAddressRequest.update({ where: { id: r.id }, data: { status: "CANCELLED", decidedAt: new Date(), note: "Cancelled by the merchant" } });
+      await this.audit.record(actor, { action: "merchant.address_request_cancelled", entityType: "merchant", entityId: m.id, data: { requestId: r.id } }, meta, tx);
+      return r;
+    });
+    this.publishAddressRequests(m.id);
+    return { cancelled: cancelled.id, request: await this.latestAddressRequest(m.id) };
+  }
+
+  /** Operations: address changes to review (pending: oldest first; decided: newest first). */
+  async listAddressRequests(query: { status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" }) {
+    const status = query.status ?? "PENDING";
+    const rows = await this.prisma.merchantAddressRequest.findMany({
+      where: { status },
+      include: { merchant: { select: { id: true, code: true, name: true, status: true } } },
+      orderBy: { createdAt: status === "PENDING" ? "asc" : "desc" },
+      take: 200,
+    });
+    return { items: await Promise.all(rows.map(r => this.addressRequestView(r, r.merchant))) };
+  }
+
+  /** Operations decide: approved, the address is applied (checked again against today's catalog) and the hub follows. */
+  async decideAddressRequest(actor: Actor, id: string, input: { approve: boolean; note?: string }, meta: RequestMeta) {
+    const outbox: string[] = [];
+    const result = await this.prisma.$transaction(async tx => {
+      const r = await tx.merchantAddressRequest.findUnique({ where: { id } });
+      if (!r) throw notFound("Address change");
+      if (r.status !== "PENDING") throw conflict("ADDRESS_REQUEST_DECIDED", `This address change was already ${r.status.toLowerCase()}`);
+      if (!input.approve && !input.note)
+        throw new AppError("VALIDATION_FAILED", "Some fields need attention", HttpStatus.UNPROCESSABLE_ENTITY, [{ path: "note", message: "Tell the merchant why the change isn't approved" }]);
+      const current = await tx.merchant.findUniqueOrThrow({ where: { id: r.merchantId } });
+      let hub: HubRef | null | undefined;
+      if (input.approve) {
+        const address = await this.addressData(tx, r.changes as AddressChanges, current);
+        await tx.merchant.update({ where: { id: current.id }, data: address.data });
+        hub = address.pickupMoved ? address.hub : undefined;
+        await this.audit.record(
+          actor,
+          { action: "merchant.address_approved", entityType: "merchant", entityId: current.id, data: { requestId: r.id, changes: r.changes, ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}) } },
+          meta,
+          tx,
+        );
+      } else await this.audit.record(actor, { action: "merchant.address_rejected", entityType: "merchant", entityId: current.id, data: { requestId: r.id, note: input.note } }, meta, tx);
+      const decided = await tx.merchantAddressRequest.update({
+        where: { id: r.id },
+        data: { status: input.approve ? "APPROVED" : "REJECTED", decidedById: actor.kind === "user" ? actor.userId : null, decidedByName: actorLabel(actor), decidedAt: new Date(), note: input.note ?? null },
+      });
+      const details = input.approve
+        ? hub === undefined
+          ? "Your new address is saved."
+          : hub
+            ? `Pickups now go through ${hub.name}.`
+            : "No hub serves the new pickup area yet; Delivery Fast will set one up."
+        : (input.note ?? "");
+      outbox.push(
+        ...(await this.notify.notify(tx, {
+          event: "merchant.address_change",
+          to: { phone: current.contactPhone, email: current.contactEmail, name: current.contactName },
+          vars: { businessName: `${current.name} (${current.code})`, status: input.approve ? "approved" : "not approved", details },
+        })),
+      );
+      return { decided, merchant: { id: current.id, code: current.code, name: current.name, status: current.status } };
+    });
+    await this.outbox.flush(outbox);
+    this.publish(result.merchant.id);
+    this.publishAddressRequests(result.merchant.id);
+    return this.addressRequestView(result.decided, result.merchant);
+  }
+
+  /** Operations change a merchant's address directly (no approval); the hub follows the pickup address. */
+  async updateAddress(actor: Actor, id: string, input: AddressChanges, meta: RequestMeta) {
+    await this.prisma.$transaction(async tx => {
+      const current = await tx.merchant.findUnique({ where: { id } });
+      if (!current) throw notFound("Merchant");
+      const address = await this.addressData(tx, input, current);
+      await tx.merchant.update({ where: { id }, data: address.data });
+      await this.audit.record(
+        actor,
+        { action: "merchant.address_update", entityType: "merchant", entityId: id, data: { changes: input, ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}) } },
+        meta,
+        tx,
+      );
+    });
+    this.publish(id);
+    return this.detail(id);
   }
 
   // ───────────── members ─────────────

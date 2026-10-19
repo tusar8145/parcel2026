@@ -11,6 +11,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { ParcelsService } from "../parcels/parcels.service";
 import { opsHubScope } from "../parcels/ops-scope";
 import { ScansService } from "../scans/scans.service";
+import { HubDeskService } from "../parcels/hub-desk.service";
 import { LinehaulService } from "../linehaul/linehaul.service";
 import { assertHubInScope, codeVariants } from "./ops-common";
 import type { hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
@@ -37,6 +38,7 @@ export class HubIntakeService {
     private readonly scans: ScansService,
     private readonly audit: AuditService,
     private readonly linehaul: LinehaulService,
+    private readonly desk: HubDeskService,
   ) {}
 
   // ───────────── receive desk ─────────────
@@ -120,6 +122,15 @@ export class HubIntakeService {
       const message = `${id} is booked for rider pickup, not drop-off. Accept it and assign a pickup rider instead.`;
       void scan(false, message);
       return result("NOT_DROP_OFF", message, parcel);
+    }
+
+    // Coming back from a rider (failed delivery, given to a rider but not taken out, unfinished return): the hub desk's
+    // receive-back rules (the rider released, the return run left). Still out for delivery: the failed attempt first.
+    if (["RETRY_SCHEDULED", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) || (parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId)) {
+      const back = await this.desk.receiveBack(actor, { code: id, hubId: hub.id, source: input.source }, meta);
+      void scan(back.ok, back.message);
+      parcel = (await find()) ?? parcel;
+      return result(back.ok && back.outcome === "RECEIVED" ? "RECEIVED" : back.ok ? "ALREADY_RECEIVED" : "REFUSED", back.message, parcel);
     }
 
     try {

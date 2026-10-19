@@ -14,6 +14,8 @@ import {
   listReturnRunsQuerySchema,
   listReturnsQuerySchema,
   returnRequestSchema,
+  deskReturnAssignSchema,
+  deskReturnRunsQuerySchema,
 } from "./returns.service";
 
 @ApiTags("returns")
@@ -108,5 +110,22 @@ export class ReturnsController {
   @HttpCode(200)
   cancel(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
     return this.returns.cancelRun(actor, id, meta);
+  }
+
+  /** Scan desk → Return rider assign: the scanned parcel joins the rider's planned run for its merchant (created when none). */
+  @RequirePermissions("parcel:dispatch")
+  @Post("hub-desk/return-assign")
+  @HttpCode(200)
+  @ApiZodBody(deskReturnAssignSchema)
+  deskAssign(@CurrentActor() actor: Actor, @ZBody(deskReturnAssignSchema) body: z.infer<typeof deskReturnAssignSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.returns.deskAssign(actor, body, meta);
+  }
+
+  /** Scan desk: the planned return runs of the hub, to send out (POST /returns/runs/:id/dispatch). */
+  @RequirePermissions("parcel:read:any")
+  @Get("hub-desk/return-runs")
+  @ApiZodQuery(deskReturnRunsQuerySchema)
+  deskRuns(@CurrentActor() actor: Actor, @ZQuery(deskReturnRunsQuerySchema) query: z.infer<typeof deskReturnRunsQuerySchema>) {
+    return this.returns.deskPlannedRuns(actor, query);
   }
 }

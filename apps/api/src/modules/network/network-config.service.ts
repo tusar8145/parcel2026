@@ -10,6 +10,7 @@ import { pageArgs, toPage } from "../../common/pagination";
 import type { Prisma } from "../../generated/prisma/client";
 import { PricingService } from "../pricing/pricing.service";
 import { opsHubScope } from "../parcels/ops-scope";
+import { merchantsInZone, rederiveMerchantHubs } from "../merchants/merchant-hubs";
 import type { listRoutesQuerySchema, listZonesQuerySchema, routeSchema, updateRouteSchema, updateZoneSchema, zoneSchema } from "./network-config.schemas";
 
 const zoneInclude = {
@@ -72,6 +73,8 @@ export class NetworkConfigService {
     const zone = await this.prisma.$transaction(async tx => {
       const created = await tx.deliveryZone.create({ data: input, include: zoneInclude });
       await this.audit.record(actor, { action: "zone.create", entityType: "delivery_zone", entityId: created.id, data: input }, meta, tx);
+      // Merchants picking up in this zone now belong to its hub.
+      await rederiveMerchantHubs(tx, this.audit, actor, meta, merchantsInZone(created.district, created.name), "zone.create");
       return created;
     });
     this.changed("zone", zone.code);
@@ -88,6 +91,9 @@ export class NetworkConfigService {
     const updated = await this.prisma.$transaction(async tx => {
       const row = await tx.deliveryZone.update({ where: { id }, data: input, include: zoneInclude });
       await this.audit.record(actor, { action: "zone.update", entityType: "delivery_zone", entityId: id, data: input }, meta, tx);
+      // Another serving hub (or other areas, or switched on / off): the zone's merchants follow.
+      if (input.hubId !== undefined || input.areas !== undefined || input.active !== undefined)
+        await rederiveMerchantHubs(tx, this.audit, actor, meta, merchantsInZone(row.district, row.name), "zone.update");
       return row;
     });
     this.changed("zone", updated.code);
@@ -100,6 +106,7 @@ export class NetworkConfigService {
     await this.prisma.$transaction(async tx => {
       await tx.deliveryZone.delete({ where: { id } });
       await this.audit.record(actor, { action: "zone.delete", entityType: "delivery_zone", entityId: id, data: { code: zone.code, name: zone.name, district: zone.district } }, meta, tx);
+      await rederiveMerchantHubs(tx, this.audit, actor, meta, merchantsInZone(zone.district, zone.name), "zone.delete");
     });
     this.changed("zone", zone.code);
     return { deleted: true };

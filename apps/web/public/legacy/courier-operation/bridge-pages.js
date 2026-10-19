@@ -122,10 +122,10 @@
     if (!heading) return;
     if (page === "Customer parcels") {
       const link = q('a[href="/#/request"]', heading);
-      if (link && Ops.can("dispatch")) link.outerHTML = `<button class="button button-primary" type="button" data-action="newWalkIn">${icon("plus")} New walk-in shipment</button>`;
+      if (link && Ops.can("dispatch")) link.outerHTML = `<button class="button button-primary" type="button" data-action="newWalkIn">${icon("plus")} New walk-in order</button>`;
     } else {
       const button = q('[data-action="newDocument"], [data-action="newDomestic"], [data-action="newEcommerce"]', heading);
-      if (button) button.innerHTML = `${icon("plus")} New ${page === "E-commerce operations" ? "e-commerce order" : "Banking & Financial shipment"}`;
+      if (button) button.innerHTML = `${icon("plus")} New ${page === "E-commerce operations" ? "e-commerce order" : "Banking & Financial order"}`;
     }
   }
   for (const page of ["Customer parcels", "E-commerce operations", "Banking & Financial operations"]) Ops.enhance[page] = enhanceServiceLine;
@@ -369,7 +369,7 @@
   const LINE_LABEL = { ecommerce: "E-commerce merchant", banking: "Banking & Financial merchant", walkin: "Walk-in sender (customer parcel)" };
   const BOOKING_KINDS = { newShipment: "", newEcommerce: "ecommerce", newDomestic: "banking", newDocument: "banking", newWalkIn: "walkin" };
   const LINE_PAGE = { ecommerce: "E-commerce operations", banking: "Banking & Financial operations", walkin: "Customer parcels" };
-  const LINE_TITLE = { ecommerce: "Create e-commerce shipment", banking: "Create Banking & Financial shipment", walkin: "Create walk-in shipment" };
+  const LINE_TITLE = { ecommerce: "Create e-commerce order", banking: "Create Banking & Financial order", walkin: "Create walk-in order" };
   const booking = { line: "ecommerce", pkg: null, pkgKey: "", checks: [], quoteSeq: 0 };
   const svcApi = () => window.DFOrderServices;
   const lineNow = () => $("bkLine")?.value || booking.line;
@@ -390,6 +390,7 @@
       #modalFields .df-svc-checks label{display:flex;align-items:center;gap:7px;color:#3c4859;font-size:13px}
       #modalFields details label{color:#3c4859;font-weight:400}
       #modalBackdrop .modal{max-height:calc(100vh - 40px);overflow-y:auto}
+      #modalFields .df-req>label::after{content:" *";color:#c2410c;font-weight:700}
       @media(max-width:560px){#modalFields.form-grid{grid-template-columns:minmax(0,1fr)}#modalBackdrop{padding:10px}#modalBackdrop .modal{padding:16px}}
     </style>`,
   );
@@ -404,9 +405,14 @@
       ? ""
       : bkField("bkLine", "Booking for", `<select id="bkLine">${Object.entries(LINE_LABEL).map(([v, l]) => `<option value="${v}" ${v === line ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`, { full: true });
     return [
-      bkSection("Sender"),
+      bkSection(fixed === "walkin" ? "Booking" : "Account"),
       lineSelect,
       bkField("bkMerchant", "Merchant account", `<select id="bkMerchant"></select><small id="bkMerchantPickup" style="color:#64748b;font-size:12px"></small>`, { full: true, cls: "df-bk-merchant" }),
+      // The service first: it decides which addresses are needed (drop at hub: no sender address; Hub Pickup: no street).
+      bkSection("Service"),
+      `<div id="bkServices" style="display:contents"></div>`,
+      bkSection("Sender", "df-bk-walkin"),
+      `<p class="field full df-bk-walkin" id="bkDropNote" hidden style="margin:-4px 0 0;color:#64748b;font-size:12.5px">Dropped at the hub: the sender's address is optional. A return comes back to the drop-off hub for the sender to collect.</p>`,
       bkField("bkSenderName", "Sender name", `<input id="bkSenderName" maxlength="120" autocomplete="off" placeholder="Walk-in sender's name">`, { cls: "df-bk-walkin" }),
       bkField("bkSenderPhone", "Sender phone", `<input id="bkSenderPhone">`, { cls: "df-bk-walkin" }),
       bkField("bkPickupDistrict", "Sender district", placeSelect("bkPickupDistrict"), { cls: "df-bk-walkin" }),
@@ -427,8 +433,6 @@
       bkField("bkContents", "Contents (optional)", `<input id="bkContents" maxlength="120">`),
       bkField("bkRef", "Order reference (optional)", `<input id="bkRef" maxlength="80">`),
       bkField("bkCn", "Pre-printed CN (optional)", `<input id="bkCn" maxlength="24" autocomplete="off" placeholder="Label from CN stock">`),
-      bkSection("Service"),
-      `<div id="bkServices" style="display:contents"></div>`,
       `<div class="field full" id="bkPrice" aria-live="polite" style="font-size:13px;color:#637083"></div>`,
     ].join("");
   }
@@ -466,7 +470,7 @@
       contents.closest(".field").querySelector("label").textContent = line === "banking" ? "Item description (optional)" : "Contents (optional)";
       contents.placeholder = line === "banking" ? "e.g. Credit card for account ending 4821" : "e.g. 2 T-shirts";
     }
-    $("modalTitle").textContent = LINE_TITLE[line] || "Create shipment";
+    $("modalTitle").textContent = LINE_TITLE[line] || "Create order";
     $("modalDescription").textContent = walkIn
       ? "Books a customer parcel for a walk-in sender (no merchant): picked up from the sender's address or dropped off at a hub. Priced with the Customer default package."
       : "Books the parcel for a merchant: picked up by a rider from the merchant's registered address, or dropped off at a hub. The price comes from the merchant's service package.";
@@ -479,12 +483,48 @@
     const line = lineNow();
     if (line === "walkin") return;
     const keep = select.value;
-    const list = merchantsFor(line);
+    // Every merchant belongs to the hub serving its pickup address; hub managers book for their hub's merchants.
+    const mine = Ops.myHubs()?.map(h => h.id);
+    const list = merchantsFor(line).filter(m => !mine || (m.pickupHub && mine.includes(m.pickupHub.id)));
     select.innerHTML = Ops.cache.merchants?.value
-      ? `<option value="">${list.length ? "Choose the merchant" : "No active merchants for this category"}</option>${list.map(m => `<option value="${m.id}">${esc(`${m.name} · ${m.code}`)}</option>`).join("")}`
+      ? `<option value="">${list.length ? "Choose the merchant" : mine ? "No active merchants of your hub for this category" : "No active merchants for this category"}</option>${list.map(m => `<option value="${m.id}">${esc(`${m.name} · ${m.code} · ${m.pickupHub?.name || "no hub"}`)}</option>`).join("")}`
       : `<option value="">Loading merchants…</option>`;
     select.value = list.some(m => m.id === keep) ? keep : list.length === 1 ? list[0].id : "";
     svcApi()?.searchable(select, { label: "merchants" });
+  }
+
+  /** The service chosen on the form (first / last mile…), once the package is loaded. */
+  const serviceNow = () => (booking.pkg && svcApi() ? svcApi().read(booking.pkg, "bkSvc") : {});
+
+  /** Red * on the fields the current choices make required; the sender's address is optional for a drop-off. */
+  function markRequired() {
+    const line = lineNow();
+    const svc = serviceNow();
+    const walkIn = line === "walkin";
+    const drop = svc.firstMile === "HUB_DROP";
+    const need = {
+      bkMerchant: !walkIn,
+      bkSenderName: walkIn,
+      bkSenderPhone: walkIn,
+      bkPickupDistrict: walkIn && !drop,
+      bkPickupZone: walkIn && !drop,
+      bkPickupStreet: walkIn && !drop,
+      bkRecipient: true,
+      bkPhone: true,
+      bkDistrict: true,
+      bkZone: true,
+      bkStreet: svc.lastMile !== "HUB_COLLECT",
+      bkWeight: line !== "banking",
+      bkSvcDropHub: drop,
+      bkSvcCodAmount: !!svc.cod,
+    };
+    for (const [id, on] of Object.entries(need)) $(id)?.closest(".field")?.classList.toggle("df-req", on);
+    const street = $("bkPickupStreet")?.closest(".field")?.querySelector("label");
+    if (street) street.textContent = drop ? "Sender address (optional)" : "Sender address (pickup and returns)";
+    const delivery = $("bkStreet")?.closest(".field")?.querySelector("label");
+    if (delivery) delivery.textContent = svc.lastMile === "HUB_COLLECT" ? "Street address (optional for Hub Pickup)" : "Street address";
+    const note = $("bkDropNote");
+    if (note) note.hidden = !(walkIn && drop);
   }
 
   /** Inline checks for the form's own fields; the package fields add theirs when they load. */
@@ -494,16 +534,18 @@
       return el ? DF.validate.field(el, () => (shown(el) ? fn(el.value.trim(), el) : "")) : null;
     };
     const required = message => v => (v ? "" : message);
+    // Drop at hub: the sender's address is optional; Hub Pickup: the recipient's street is.
+    const unlessDropOff = message => v => (v || serviceNow().firstMile === "HUB_DROP" ? "" : message);
     const list = [
       rule("bkMerchant", required("Choose the merchant account")),
       rule("bkSenderName", required("Enter the sender's name")),
-      rule("bkPickupDistrict", required("Choose the sender's district")),
-      rule("bkPickupZone", required("Choose the sender's zone")),
-      rule("bkPickupStreet", required("Enter the sender's address")),
+      rule("bkPickupDistrict", unlessDropOff("Choose the sender's district")),
+      rule("bkPickupZone", unlessDropOff("Choose the sender's zone")),
+      rule("bkPickupStreet", unlessDropOff("Enter the sender's address")),
       rule("bkRecipient", required("Enter the recipient's name")),
       rule("bkDistrict", required("Choose the delivery district")),
       rule("bkZone", required("Choose the delivery zone")),
-      rule("bkStreet", required("Enter the street address")),
+      rule("bkStreet", v => (v || serviceNow().lastMile === "HUB_COLLECT" ? "" : "Enter the street address")),
       rule("bkWeight", v => (!v ? "Enter the weight" : !(Number(v) >= 0.01) ? "At least 0.01 kg" : Number(v) > 50 ? "At most 50 kg" : "")),
       rule("bkCn", v => (!v || /^[A-Za-z]{2,4}-\d{6}-[0-9A-Za-z]{4,8}$/.test(v) ? "" : "Enter the consignment number printed on the label")),
     ].filter(Boolean);
@@ -527,7 +569,7 @@
     booking.pkg = null;
     booking.pkgKey = "";
     modalContext = { kind: "booking", line: booking.line };
-    $("modalSubmit").textContent = "Book shipment";
+    $("modalSubmit").textContent = "Book order";
     $("modalFields").innerHTML = bookingFields(fixed);
     if ($("bkLine")) $("bkLine").value = booking.line;
     // Inline validation replaces the browser's checks (closeModal turns them back on).
@@ -540,6 +582,7 @@
     cascade("bk");
     cascade("bkPickup");
     applyLine();
+    markRequired();
     booking.checks = [bookingChecks()];
     $("modalBackdrop").classList.add("open");
     void loadBookingPackage();
@@ -594,6 +637,7 @@
       box.innerHTML = S.block(view, { prefix: "bkSvc", fieldClass: "field", hubs, codAmount: true, codChecked: false, productSelect: "bkSvcProduct" });
       booking.checks.push(S.checks("bkSvc"));
       S.sync("bkSvc");
+      markRequired();
       bookingQuote();
     } catch (error) {
       $("bkPrice").textContent = DF.describe(error);
@@ -615,9 +659,13 @@
     const line = lineNow();
     const svc = svcApi().read(booking.pkg, "bkSvc");
     const merchant = bookingMerchant();
+    // A walk-in drop-off may have no sender address: it's priced from the drop-off hub.
+    const dropHub = svc.firstMile === "HUB_DROP" ? (DF.state.hubs || []).find(h => h.id === svc.dropHubId) : null;
     const pickup =
       line === "walkin"
-        ? { pickupDistrict: $("bkPickupDistrict").value, pickupZone: $("bkPickupZone").value || undefined, pickupArea: $("bkPickupArea").value || undefined }
+        ? $("bkPickupDistrict").value || !dropHub
+          ? { pickupDistrict: $("bkPickupDistrict").value, pickupZone: $("bkPickupZone").value || undefined, pickupArea: $("bkPickupArea").value || undefined }
+          : { pickupDistrict: dropHub.district, pickupZone: dropHub.zone || undefined }
         : { pickupDistrict: merchant?.pickupDistrict, pickupZone: merchant?.pickupZone || undefined };
     const { cod, codAmount, notifications, ...choices } = svc;
     return {
@@ -658,12 +706,14 @@
     const id = event.target.id;
     if (id === "bkLine") {
       applyLine();
+      markRequired();
       return void loadBookingPackage();
     }
     if (id === "bkMerchant") return void (showMerchantPickup(), loadBookingPackage());
     if (id === "bkDistrict" || id === "bkPickupDistrict") cascade(id === "bkDistrict" ? "bk" : "bkPickup");
     if (id === "bkZone" || id === "bkPickupZone") cascadeAreas(id === "bkZone" ? "bk" : "bkPickup");
     svcApi()?.sync("bkSvc");
+    markRequired();
     bookingQuote();
   });
   window.addEventListener("input", event => {
@@ -692,7 +742,9 @@
           ? { merchantId: merchant.id }
           : {
               sender: { name: $("bkSenderName").value.trim(), phone: $("bkSenderPhone").value.trim() },
-              pickup: { category: "HOME", street: $("bkPickupStreet").value.trim(), area: pickupArea, zone: $("bkPickupZone").value, district: $("bkPickupDistrict").value },
+              ...(dropOff && !$("bkPickupStreet").value.trim()
+                ? {}
+                : { pickup: { category: "HOME", street: $("bkPickupStreet").value.trim(), area: pickupArea, zone: $("bkPickupZone").value, district: $("bkPickupDistrict").value } }),
             }),
         // Drop at hub is the hub drop-off intake (the hub receive desk expects it); other first miles go as chosen.
         intake: dropOff ? "DROP_OFF" : "PICKUP",

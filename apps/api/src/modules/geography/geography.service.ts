@@ -11,6 +11,7 @@ import { catalogSchema, PricingService, type Catalog } from "../pricing/pricing.
 import { GEO_META_KEY, inactiveAreasOf, listed, lockGeography, norm, readMeta, same, type GeoMeta, type LatLng } from "./geo-catalog";
 import { childUsage, describeUsage, placeUsage, type Usage } from "./geo-usage";
 import type { addAreasSchema, createDistrictSchema, createZoneSchema, updateAreaSchema, updateDistrictSchema, updateZoneSchema } from "./geography.schemas";
+import { merchantsInZone, rederiveMerchantHubs } from "../merchants/merchant-hubs";
 
 type State = { catalog: Catalog; meta: GeoMeta; tx: Db };
 type Change<T> = { result: T; audit: { action: string; entityId: string; data: Prisma.InputJsonObject }[] };
@@ -177,6 +178,8 @@ export class GeographyService {
               data: { code: await freeZoneCode(tx, district, input.name), name: input.name, district, areas: [], hubId: hub.id, lat: input.lat ?? null, lng: input.lng ?? null },
               select: { id: true, code: true, hubId: true },
             });
+        // Merchants picking up in this zone now belong to its hub.
+        await rederiveMerchantHubs(tx, this.audit, actor, meta, merchantsInZone(district, input.name), "geo.zone.create");
       }
       return {
         result: { district, zone: input.name, deliveryZone },

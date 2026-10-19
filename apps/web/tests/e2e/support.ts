@@ -84,20 +84,32 @@ export const OPS_NAV = {
   newOrders: ["New orders"],
   pickup: ["Pickup", "Assign pickup rider"],
   scheduledPickups: ["Pickup", "Scheduled pickups"],
-  hubReceive: ["Hub desk", "Receive"],
+  hubReceive: ["Scan desk", "Receive entry"],
   /** The receive desk handles every arrival, drop-offs included (the old "Drop-off receive" tab). */
-  dropOffReceive: ["Hub desk", "Receive"],
+  dropOffReceive: ["Scan desk", "Receive entry"],
   hubAtHub: ["Hub desk", "At my hub"],
-  hubPickupCounter: ["Hub desk", "Hub Pickup counter"],
+  hubPickupCounter: ["Scan desk", "Collect from hub"],
+  hubPickupEntry: ["Scan desk", "Pickup entry"],
+  hubTransferOut: ["Scan desk", "Transfer out"],
+  hubOutForDelivery: ["Scan desk", "Out for delivery entry"],
+  hubDeliveredEntry: ["Scan desk", "Delivery entry"],
+  hubFailedDelivery: ["Scan desk", "Failed delivery entry"],
+  hubReturnAssign: ["Scan desk", "Return rider assign"],
+  hubReturnEntry: ["Scan desk", "Return entry"],
   hubEndOfDay: ["Hub desk", "End of day"],
-  transfers: ["Transfers"],
+  transfers: ["Transfers", "Send"],
+  transfersReceive: ["Transfers", "Receive"],
+  transfersOnTheRoad: ["Transfers", "On the road"],
   delivery: ["Delivery"],
   exceptions: ["Problems", "Exceptions"],
   failedDelivery: ["Problems", "Failed delivery"],
   needsInfo: ["Problems", "Needs info"],
   slaRisk: ["Problems", "SLA late-risk"],
   returns: ["Returns"],
-  cod: ["COD & settlement"],
+  cod: ["COD & settlement", "Cash from riders"],
+  codFranchise: ["COD & settlement", "Franchise"],
+  codSettlements: ["COD & settlement", "Settlements & payouts"],
+  codAccounts: ["COD & settlement", "Invoices & accounts"],
   allParcels: ["All parcels", "All"],
   ecommerce: ["All parcels", "E-commerce"],
   banking: ["All parcels", "Banking & Financial"],
@@ -119,9 +131,11 @@ export async function opsNav(page: Page, area: OpsArea) {
   await expect(page.locator("#breadcrumbLabel")).toHaveText(view);
   if (tab) {
     const button = page.locator(`#mainContent [data-nav-tab="${tab}"]`);
-    // Single-tab views have no tab bar.
-    if (await button.count()) await button.click();
-    if (await button.count()) await expect(button).toHaveAttribute("aria-selected", "true");
+    // Single-tab views have no tab bar; tabs with nothing for this role are hidden (COD's finance tabs for operations).
+    if ((await button.count()) && (await button.isVisible())) {
+      await button.click();
+      await expect(button).toHaveAttribute("aria-selected", "true");
+    }
   }
 }
 

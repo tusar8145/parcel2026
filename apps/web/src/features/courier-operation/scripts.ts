@@ -23,6 +23,8 @@ export const scripts = [
   "/legacy/shared/merchant-address.js",
   "/legacy/courier-operation/bridge.js",
   "/legacy/courier-operation/bridge-pages.js",
+  // Merchants: hub column and filter, address changes to approve, change address (the hub follows).
+  "/legacy/courier-operation/bridge-merchant-hubs.js",
   "/legacy/courier-operation/bridge-network.js",
   "/legacy/courier-operation/bridge-hubs.js",
   "/legacy/courier-operation/bridge-maps.js",
@@ -50,6 +52,8 @@ export const scripts = [
   "/legacy/courier-operation/bridge-lists.js",
   // Desk tools: live chip, alerts bell, zone → hub lookup, keyboard shortcuts, Hub desk › End of day.
   "/legacy/courier-operation/bridge-desk.js",
+  // Hub desk: Delivered entry (signed slips, slip photo) and Out for delivery, by scanning.
+  "/legacy/courier-operation/bridge-hub-desk.js",
   // "Where is it now" map in the parcel drawer (DFParcelMap, GET /parcels/:id/position; Leaflet loads on first use).
   "/legacy/shared/parcel-map.js",
   // Last: the parcel drawer / next action / global search, then the journey navigation (menu,
@@ -59,6 +63,10 @@ export const scripts = [
   "/legacy/courier-operation/bridge-failed.js",
   // "Log in as" on the Merchants and Riders lists (support access in a new tab; shared/api.js DF.startSupportAccess).
   "/legacy/courier-operation/bridge-login-as.js",
+  // Work queue: each parcel's next step, grouped, with Excel and scan-to-do (its own menu).
+  "/legacy/courier-operation/bridge-workqueue.js",
+  // Long pages in tabs by task: Transfers, COD & settlement, Riders (sections tagged by title).
+  "/legacy/courier-operation/bridge-section-tabs.js",
   "/legacy/courier-operation/bridge-nav.js",
   // Period filter on Today, COD & settlement and Analytics & SLA (after the navigation has laid the page out).
   "/legacy/courier-operation/bridge-period.js"

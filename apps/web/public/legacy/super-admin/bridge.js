@@ -552,6 +552,7 @@
     // "Pricing & catalogs" → Delivery address hierarchy: the geography admin (bridge-geo.js).
     if (page === "Merchants") setText(".metrics .metric:first-child .metric-foot span:last-child", "merchant accounts");
     // The merchant tables' plan column shows the service package.
+    if (["Merchants", "E-commerce merchants", "Banking & Financial merchants"].includes(page)) merchantHubColumn();
     if (["Overview", "Merchants", "E-commerce merchants", "Banking & Financial merchants"].includes(page)) {
       document.querySelectorAll("#mainContent table th").forEach(th => th.textContent === "PLAN" && (th.textContent = "PACKAGE"));
       document.querySelectorAll("#mainContent .panel-subtitle").forEach(p => p.textContent === "Account status and service plan oversight" && (p.textContent = "Account status and service packages"));
@@ -589,6 +590,21 @@
       });
     }
     if (page === "Service plans") decoratePlanEditor();
+  }
+
+  /** Merchant tables: a HUB column (the hub serving the merchant's pickup address; it follows the address). */
+  function merchantHubColumn() {
+    const body = document.getElementById("merchantBody");
+    const table = body?.closest("table");
+    if (!table || table.dataset.hubColumn) return;
+    table.dataset.hubColumn = "1";
+    const byCode = new Map(merchants.map(m => [m.id, m._api]));
+    table.querySelector("thead th:nth-child(2)")?.insertAdjacentHTML("afterend", "<th>HUB</th>");
+    for (const tr of body.querySelectorAll("tr")) {
+      const api = byCode.get(tr.querySelector("[data-merchant]")?.dataset.merchant);
+      const hub = api?.pickupHub || null;
+      tr.children[1]?.insertAdjacentHTML("afterend", `<td>${hub ? escapeHtml(hub.name) : '<span class="subcell">No hub</span>'}${api?.pickupZone ? `<span class="subcell">${escapeHtml(`${api.pickupZone}, ${api.pickupDistrict}`)}</span>` : ""}</td>`);
+    }
   }
 
   function decoratePlanEditor() {

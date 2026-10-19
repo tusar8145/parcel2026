@@ -64,7 +64,7 @@ test("finance: the settlement schedule is a form with a searchable merchant, inl
   const errors: string[] = [];
   const native: string[] = [];
   const page = await signedIn(browser, FIN, errors, native);
-  await opsNav(page, "cod");
+  await opsNav(page, "codSettlements");
   await page.locator("#finSchedules [data-fin-schedule-set]").click();
   await expect(page.locator("#modalTitle")).toHaveText("Settlement schedule");
 

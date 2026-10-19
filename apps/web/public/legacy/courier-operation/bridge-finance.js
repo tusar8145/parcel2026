@@ -87,7 +87,7 @@
     if (register && !register.children.length) {
       const error = Ops.lazyError(finance() ? "settlements" : "handovers");
       const loading = finance() ? !Ops.cache.settlements?.value : !Ops.cache.handovers?.value;
-      register.innerHTML = `<tr><td colspan="${genericPages["COD & finance"].cols.length}" class="empty-state">${esc(error ? DF.describe(error) : loading ? "Loading…" : finance() ? "No settlement batches yet. Draft one from the merchant settlements panel below." : "No cash handovers yet. Riders' cash appears below; receive it against their collections.")}</td></tr>`;
+      register.innerHTML = `<tr><td colspan="${genericPages["COD & finance"].cols.length}" class="empty-state">${esc(error ? DF.describe(error) : loading ? "Loading…" : finance() ? "No settlement batches yet. Draft one from the merchant settlements panel below." : "No cash handovers yet. Receive riders' cash in Rider cash on hand above.")}</td></tr>`;
     }
 
     if (Ops.can("receiveCash")) {

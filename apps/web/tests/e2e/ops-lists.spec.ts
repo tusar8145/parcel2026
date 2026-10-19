@@ -136,7 +136,7 @@ test("tables page 100 rows at a time from the server; New orders accepts (one by
   expect(errors).toEqual([]);
 });
 
-test("Hub desk: one Receive tab (with Find), parcels at my hub with their next action, the counter only on its tab", async ({ browser }) => {
+test("Scan desk: one Receive entry tab (with Find), parcels at my hub with their next action, the counter only on its tab", async ({ browser }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, OPS, errors);
@@ -148,7 +148,8 @@ test("Hub desk: one Receive tab (with Find), parcels at my hub with their next a
 
   // ── Receive: the receive desk only; the old scan, manual receive and transfer forms are gone ──
   await opsNav(ops, "hubReceive");
-  await expect(ops.locator("#mainContent [data-nav-tab]")).toHaveText(["Receive", "At my hub", "Hub Pickup counter", "End of day"]);
+  await expect(ops.locator("#mainContent [data-nav-tab]")).toHaveText(["Receive entry", "Pickup entry", "Transfer out", "Collect from hub", "Out for delivery entry", "Delivery entry", "Failed delivery entry", "Return rider assign", "Return entry"]);
+  await expect(ops.locator("#mainContent h1")).toHaveText("Scan desk");
   await expect(ops.locator("#receiveDesk")).toBeVisible();
   for (const gone of ["#hubScanForm", "#hubReceiveForm", "#hubTransferForm", "#hubShipmentRows", "#collectCounter"]) await expect(ops.locator(gone)).toHaveCount(0);
   await expect(ops.locator("#mainContent")).not.toContainText("Shipment transfer report");
@@ -160,7 +161,7 @@ test("Hub desk: one Receive tab (with Find), parcels at my hub with their next a
   await ops.click("#parcelDrawerClose");
   expect(await status(trackingId)).toBe("AT_HUB");
 
-  // ── The Hub Pickup counter shows on its own tab and nowhere else ──
+  // ── Collect from hub shows on its own tab and nowhere else ──
   await opsNav(ops, "hubPickupCounter");
   await expect(ops.locator("#collectCounter")).toBeVisible();
   await expect(ops.locator("#collectCounter")).not.toContainText("Loading", { timeout: 20_000 });
@@ -179,8 +180,15 @@ test("Hub desk: one Receive tab (with Find), parcels at my hub with their next a
   await expect(ops.locator("#networkConfig")).toContainText("Delivery zones");
   await ops.context().close();
 
-  // ── The Gulshan hub operator: At my hub lists the parcel with its next action and no status dropdown ──
+  // ── Hub desk keeps At my hub and End of day; old Hub desk links to the scan tabs open them on Scan desk ──
   const hubPage = await signedIn(browser, HUB, errors);
+  await opsNav(hubPage, "hubAtHub");
+  await expect(hubPage.locator("#mainContent [data-nav-tab]")).toHaveText(["At my hub", "End of day"]);
+  await hubPage.goto("/courier-operation?page=hub-desk&tab=delivered-entry");
+  await expect(hubPage.locator("#breadcrumbLabel")).toHaveText("Scan desk");
+  await expect(hubPage.locator('#mainContent [data-nav-tab="Delivery entry"]')).toHaveAttribute("aria-selected", "true");
+
+  // ── The Gulshan hub operator: At my hub lists the parcel with its next action and no status dropdown ──
   await opsNav(hubPage, "hubAtHub");
   await expect(hubPage.locator('[data-list="hub-now"] .panel-title')).toHaveText("At my hub now");
   await hubPage.fill("#listSearch-hub-now", trackingId);

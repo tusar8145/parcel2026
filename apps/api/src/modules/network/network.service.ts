@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
+import { merchantsInZone, rederiveMerchantHubs } from "../merchants/merchant-hubs";
 import { hashPassword } from "../../common/crypto";
 import { nextCounter } from "../../common/counters";
 import { AppError, conflict, notFound } from "../../common/errors";
@@ -122,6 +123,11 @@ export class NetworkService {
         meta,
         tx,
       );
+      // Switched off / on: merchants of the zones it serves (and those it served) are derived again.
+      if (input.active !== undefined && input.active !== current.active) {
+        const zones = await tx.deliveryZone.findMany({ where: { hubId: id }, select: { district: true, name: true } });
+        await rederiveMerchantHubs(tx, this.audit, actor, meta, { OR: [{ pickupHubId: id }, ...zones.map(z => merchantsInZone(z.district, z.name))] }, input.active ? "hub.activate" : "hub.deactivate");
+      }
       return updated;
     });
     this.hubsChanged(hub.code);

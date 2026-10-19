@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import BrandMark from "@/shared/BrandMark";
 import { ToastProvider, api, describe, df, errorCode, type Me } from "./ui";
 import Overview from "./Overview";
 import Parcels from "./Parcels";
@@ -23,16 +24,7 @@ const pageFromUrl = (): Slug => {
 };
 
 function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" aria-hidden="true">
-      <path d="m12 3 4-2 4 2v5l-4 2-4-2V3Z" stroke="#fcc118" strokeWidth="1.8" />
-      <path d="M16 10v2" />
-      <rect x="5" y="12" width="22" height="13" rx="4" />
-      <path d="M9 17h14" stroke="#fcc118" strokeWidth="1.5" />
-      <circle cx="10" cy="28" r="2" fill="currentColor" stroke="none" />
-      <circle cx="22" cy="28" r="2" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <BrandMark size={36} />;
 }
 
 /** The franchise panel: one account per franchise hub (Role FRANCHISE). */

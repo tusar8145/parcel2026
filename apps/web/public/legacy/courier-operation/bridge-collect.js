@@ -1,5 +1,5 @@
 /*
- * Courier Operations → Hubs → "Hub Pickup counter" (service packages): parcels waiting at the hub for
+ * Courier Operations → Hub desk → "Collect from hub" (service packages): parcels waiting at the hub for
  * their receivers (GET /ops/collections), handed over against the collection code — or a photo of
  * the receiver's ID when the code is lost — with the COD taken into the hub's cash
  * (POST /parcels/:trackingId/collect), and a new code sent again (POST /parcels/:id/collection-code).
@@ -47,7 +47,7 @@
           }`;
       })
       .join("");
-    return `<section class="panel table-panel" id="collectCounter" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">Hub Pickup counter</h2><p class="panel-subtitle">Parcels waiting for their receivers. Hand them over against the collection code; cash on delivery goes into this hub's cash.</p></div>
+    return `<section class="panel table-panel" id="collectCounter" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">Collect from hub</h2><p class="panel-subtitle">Parcels waiting for their receivers. Hand them over against the collection code; cash on delivery goes into this hub's cash.</p></div>
       <div class="table-tools"><label class="subcell" style="display:flex;gap:6px;align-items:center">Hub <select class="select-small" id="collectHub">${hubs().map(h => `<option value="${esc(h.id)}" ${h.id === state.hubId ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</select></label><span class="status status-blue" id="collectCount">${state.items.length} waiting</span></div></div>
       <form class="workflow-form" id="collectScanForm" autocomplete="off" style="padding:0 16px"><label>Find a waiting parcel<input id="collectScan" placeholder="Scan the label or type the tracking ID, then Enter" autocomplete="off"></label></form>
       <p class="panel-subtitle" id="collectMessage" aria-live="polite">${esc(state.message)}</p>

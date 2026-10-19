@@ -57,15 +57,15 @@ const visibleMenu = (page: Page) => page.locator("#navigation [data-nav]:visible
 test("each role sees its own menu", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const all = ["Today", "New orders", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Reports", "Riders", "Merchants", "Hubs & zones", "CN stock", "Settings"];
+  const all = ["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Reports", "Riders", "Merchants", "Hubs & zones", "CN stock", "Settings"];
 
   const ops = await signedIn(browser, OPS, errors);
   await expect.poll(() => visibleMenu(ops)).toEqual(all);
   await ops.context().close();
 
-  // Hub managers: the journey, All parcels, Riders (they read riders) and the COD page where they receive riders' cash.
+  // Hub managers: the work queue, the journey, All parcels, Riders (they read riders) and the COD page where they receive riders' cash.
   const hub = await signedIn(browser, HUB, errors);
-  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Riders"]);
+  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Riders"]);
   await hub.context().close();
 
   // Finance: COD & settlement first, and it opens there.
@@ -177,10 +177,10 @@ test("stage counts, the New orders filter, the next action, the drawer from the 
   await expect(page.locator('[data-nav-tab="Scheduled pickups"]')).toHaveAttribute("aria-selected", "true");
   for (const [old, label, tab] of [
     ["Linehaul", "Transfers", null],
-    ["Hubs", "Hub desk", "Receive"],
+    ["Hubs", "Scan desk", "Receive entry"],
     ["E-commerce operations", "All parcels", "E-commerce"],
     ["Exceptions", "Problems", "Exceptions"],
-    ["hub desk", "Hub desk", "Receive"],
+    ["hub desk", "Hub desk", "At my hub"],
   ] as const) {
     await page.goto(`/courier-operation?page=${encodeURIComponent(old)}`);
     await ready(page);

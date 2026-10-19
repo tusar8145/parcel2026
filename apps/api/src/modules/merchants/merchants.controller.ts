@@ -10,7 +10,10 @@ import { forbidden } from "../../common/errors";
 import { quoteRequestSchema } from "@delivery-fast/shared";
 import {
   addMemberSchema,
+  addressRequestQuerySchema,
   adminUpdateMerchantSchema,
+  merchantAddressSchema,
+  rejectAddressRequestSchema,
   createApiKeySchema,
   createWebhookSchema,
   listDeliveriesQuerySchema,
@@ -78,6 +81,45 @@ export class MerchantsController {
   update(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(adminUpdateMerchantSchema) body: z.infer<typeof adminUpdateMerchantSchema>, @ReqMeta() meta: RequestMeta) {
     return this.merchants.adminUpdate(actor, id, body, meta);
   }
+
+  /** Operations change the business / pickup address (no approval); the merchant's hub follows the pickup address. */
+  @RequirePermissions("merchant:address")
+  @Patch(":id/address")
+  @ApiZodBody(merchantAddressSchema)
+  updateAddress(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(merchantAddressSchema) body: z.infer<typeof merchantAddressSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.merchants.updateAddress(actor, id, body, meta);
+  }
+}
+
+/** Address changes active merchants asked for in Settings, waiting for operations (approve: the hub follows). */
+@ApiTags("merchant address changes")
+@Controller("merchant-address-requests")
+export class MerchantAddressRequestsController {
+  constructor(private readonly merchants: MerchantsService) {}
+
+  /** Pending by default (oldest first). */
+  @RequirePermissions("merchant:address")
+  @Get()
+  @ApiZodQuery(addressRequestQuerySchema)
+  list(@ZQuery(addressRequestQuerySchema) query: z.infer<typeof addressRequestQuerySchema>) {
+    return this.merchants.listAddressRequests(query);
+  }
+
+  @RequirePermissions("merchant:address")
+  @Post(":id/approve")
+  @HttpCode(200)
+  approve(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
+    return this.merchants.decideAddressRequest(actor, id, { approve: true }, meta);
+  }
+
+  /** The note goes to the merchant. */
+  @RequirePermissions("merchant:address")
+  @Post(":id/reject")
+  @HttpCode(200)
+  @ApiZodBody(rejectAddressRequestSchema)
+  reject(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(rejectAddressRequestSchema) body: z.infer<typeof rejectAddressRequestSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.merchants.decideAddressRequest(actor, id, { approve: false, note: body.note }, meta);
+  }
 }
 
 /** The signed-in member's own merchant. Members of several merchants pass ?merchantId=. */
@@ -104,6 +146,22 @@ export class MerchantSelfController {
   @ApiZodBody(updateMyMerchantSchema)
   updateMine(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector, @ZBody(updateMyMerchantSchema) body: z.infer<typeof updateMyMerchantSchema>, @ReqMeta() meta: RequestMeta) {
     return this.merchants.updateMine(actor, query.merchantId, body, meta);
+  }
+
+  /** The address change waiting for approval, else the latest decided one (null when none). */
+  @Get("address-request")
+  @ApiZodQuery(merchantSelectorSchema)
+  addressRequest(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector) {
+    return this.merchants.myAddressRequest(actor, query.merchantId);
+  }
+
+  /** Owners withdraw their pending address change. */
+  @RequirePermissions("merchant:self")
+  @Post("address-request/cancel")
+  @HttpCode(200)
+  @ApiZodQuery(merchantSelectorSchema)
+  cancelAddressRequest(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector, @ReqMeta() meta: RequestMeta) {
+    return this.merchants.cancelMyAddressRequest(actor, query.merchantId, meta);
   }
 
   /** Dashboard counters and the orders chart (owners and staff; money figures for owners only). */

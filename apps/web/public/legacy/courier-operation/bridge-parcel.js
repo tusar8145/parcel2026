@@ -10,7 +10,7 @@
  *                                                 another hub serves the delivery zone (Transfers)
  *                        Exception              → Resolve                 (the exception dialog)
  *                        Needs info             → Edit details            (completion form)
- *                        Ready for collection   → Hand over               (Hub desk › Hub Pickup counter)
+ *                        Ready for collection   → Hand over               (Scan desk › Collect from hub)
  *                        Return scheduled       → Add to return run       (Returns › Return a parcel)
  *                        Failed delivery        → Re-attempt (Assign rider) + Return to sender (bridge-failed.js)
  *                      Shipment table rows show it first, then "Details" (the drawer), and the
@@ -89,7 +89,7 @@
       if (needsTransfer(p)) return { kind: "transfer", label: "Add to transfer", title: `${servingHub(p).name} serves ${p.delivery.zone}: bag it for the transfer` };
       return { kind: "assign", label: "Assign rider", title: "Assign a delivery rider" };
     }
-    if (p.status === "READY_FOR_COLLECTION") return { kind: "handover", label: "Hand over", title: "Hand it to the receiver at the Hub Pickup counter" };
+    if (p.status === "READY_FOR_COLLECTION") return { kind: "handover", label: "Hand over", title: "Hand it to the receiver on Collect from hub" };
     if (p.status === "RETURN_SCHEDULED" && !p.returnInfo?.runId) return { kind: "returnRun", label: "Add to return run", title: "Plan a return run to the merchant" };
     return null;
   };
@@ -122,7 +122,7 @@
         return;
       }
       case "receive":
-        go("Hub desk", "Drop-off receive");
+        go("Scan desk", "Receive entry");
         return whenShown("#rdCode", input => {
           if (p.dropOffHub && $("rdHub") && $("rdHub").value !== p.dropOffHub.id && [...$("rdHub").options].some(o => o.value === p.dropOffHub.id)) {
             $("rdHub").value = p.dropOffHub.id;
@@ -142,7 +142,7 @@
         });
       }
       case "handover":
-        go("Hub desk", "Hub Pickup counter");
+        go("Scan desk", "Collect from hub");
         return whenShown("#collectCounter", () => {
           const select = $("collectHub");
           if (select && p.currentHub && select.value !== p.currentHub.id && [...select.options].some(o => o.value === p.currentHub.id)) {

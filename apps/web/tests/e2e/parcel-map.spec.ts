@@ -174,7 +174,7 @@ test("parcel position: with rider, at a hub, in a shared vehicle (ops and mercha
   await expect(position.locator("[data-df-position-label]")).toContainText(`In vehicle ${trip.vehicleRegNo} (Gulshan Sorting Hub → Dhanmondi Hub)`);
   await expect(position.locator("[data-df-position-map].leaflet-container")).toBeVisible();
   await opsPage.keyboard.press("Escape");
-  await opsNav(opsPage, "transfers");
+  await opsNav(opsPage, "transfersOnTheRoad");
   await expect(opsPage.locator(`#vhPanel [data-vehicle-trip="${trip.number}"]`)).toContainText(trip.vehicleRegNo);
   await expect(opsPage.locator("#vhPanel .leaflet-container")).toBeVisible();
 

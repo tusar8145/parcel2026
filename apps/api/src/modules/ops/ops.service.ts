@@ -1,7 +1,7 @@
 import { merchantPickupArea } from "../merchants/merchant-address";
 import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
+import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus, parseLastMile } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
@@ -285,6 +285,8 @@ export class OpsService {
         financeStaff: can("finance:read") && isFinanceStaff(actor),
         manageFinance: can("finance:manage"),
         manageConfig: can("config:manage"),
+        /** Change merchant addresses and approve merchants' own address changes (the merchant's hub follows). */
+        merchantAddress: can("merchant:address"),
         /** "Log in as" a merchant member or rider (Merchants / Riders lists); full access only with user:impersonate. */
         loginAs: actor.kind === "user" && !actor.impersonation && (can("user:impersonate") || can("user:login-as")),
         loginAsFull: actor.kind === "user" && !actor.impersonation && can("user:impersonate"),
@@ -617,6 +619,16 @@ export class OpsService {
         ...(merchant.pickupLat != null && merchant.pickupLng != null ? { lat: merchant.pickupLat, lng: merchant.pickupLng } : {}),
       };
     }
+    // A walk-in sender dropping the parcel at a hub may leave the address out: the drop-off hub stands in for it
+    // (the parcel starts there, and a return goes back there for the sender to collect).
+    const pickup = body.pickup as { street?: string; zone?: string; district?: string } | undefined;
+    if (!merchantId && dropOff && !pickup?.street?.trim()) {
+      const hub = await this.prisma.hub.findUniqueOrThrow({ where: { id: dropOff.hub.id }, select: { name: true, address: true, zone: true, district: true } });
+      body.pickup = { category: "OTHER", street: `Drop-off at ${hub.name}${hub.address ? `, ${hub.address}` : ""}`.slice(0, 200), zone: pickup?.zone || hub.zone || (await this.zoneFor(hub.district, hub.name)), district: pickup?.district || hub.district };
+    }
+    // Hub Pickup: the recipient comes to the hub serving their zone, so the street may be left out.
+    const delivery = body.delivery as { street?: string } | undefined;
+    if (delivery && !delivery.street?.trim() && parseLastMile(String(body.lastMile ?? "")) === "HUB_COLLECT") body.delivery = { ...delivery, street: "Collects at the hub" };
     const input = createParcelSchema.parse(body); // ZodError -> 422 VALIDATION_FAILED
     return this.parcels.create(actor, input, meta, { merchantId, dropOff });
   }

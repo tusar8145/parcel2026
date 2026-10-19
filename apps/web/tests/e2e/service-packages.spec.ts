@@ -9,7 +9,7 @@ import { Fixtures, apiUrl, API_BASE, expect, opsNav, sql, test, type TempMerchan
  *  - products have one "Send SMS & email" switch; a product with it off disables the messages
  *    checklist on the order form and its parcel stores no messages;
  *  - a Hub Pickup parcel waits at its collection hub and the hub operator hands it over at the
- *    Hub Pickup counter (Courier Operations → Hubs).
+ *    Collect from hub (Courier Operations → Hub desk).
  * Every account is temporary (support.ts); the package the test creates is deleted afterwards.
  */
 const WEB = { "x-df-client": "web" };
@@ -220,7 +220,7 @@ test("a Hub Pickup parcel waits at its hub and the hub operator hands it over", 
   expect(picked.ok(), await picked.text()).toBeTruthy();
   await expect.poll(async () => (await sql<{ status: string }>(`SELECT status FROM parcels WHERE "trackingId" = $1`, [trackingId]))[0].status).toBe("READY_FOR_COLLECTION");
 
-  // ── Courier Operations → Hub desk → Hub Pickup counter ──
+  // ── Courier Operations → Hub desk → Collect from hub ──
   const errors: string[] = [];
   const page = await newPage(browser, errors);
   await signIn(page, hubOperator, /\/courier-operation/);

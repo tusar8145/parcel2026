@@ -16,6 +16,7 @@ import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "../parcels
 import { assertRiderAssignable, opsHubScope } from "../parcels/ops-scope";
 import { recordFranchiseReturn } from "../franchise/franchise-commission";
 import { returnChargeFor } from "./return-charge";
+import { codeVariants } from "../ops/ops-common";
 
 /** Standard reasons (free text is also accepted). */
 export const RETURN_REASONS = [
@@ -34,6 +35,17 @@ const RETURNABLE: ParcelStatus[] = ["PICKED_UP", "AT_HUB", "IN_TRANSIT", "ASSIGN
 const SCHEDULABLE: ParcelStatus[] = ["AT_HUB", "RETRY_SCHEDULED", "EXCEPTION"];
 
 const reason = z.string().trim().min(3, "Enter the reason (at least 3 characters)").max(300, "Use at most 300 characters");
+
+/** Scan desk → Return rider assign: the scanned parcel joins the rider's planned run for its merchant (created when none). */
+export const deskReturnAssignSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  riderId: z.uuid("Choose the rider"),
+  hubId: z.uuid().optional(),
+  /** For parcels without a return reason yet. */
+  reason: reason.optional(),
+  source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("KEYBOARD"),
+});
+export const deskReturnRunsQuerySchema = z.object({ hubId: z.uuid().optional() });
 export const returnRequestSchema = z.object({ reason });
 export const listReturnsQuerySchema = pageQuerySchema.extend({
   /** requested: asked for (or scheduled for return), not yet on a run · scheduled: on a run · returned: back with the merchant · received: merchant confirmed. */
@@ -482,6 +494,64 @@ export class ReturnsService {
     await this.workflow.flush(after);
     this.publishRun(id, merchantId);
     return this.run(actor, id);
+  }
+
+  // ───────────── scan desk ─────────────
+
+  /**
+   * Return rider assign (Scan desk): the scanned parcel goes on the chosen rider's planned run for its merchant at
+   * this hub, created when there's none (createRun / addToRun, so every return rule applies). Never throws for a
+   * parcel problem: the answer says what happened.
+   */
+  async deskAssign(actor: Actor, input: z.infer<typeof deskReturnAssignSchema>, meta: RequestMeta) {
+    const variants = codeVariants(input.code);
+    const parcel = await this.prisma.parcel.findFirst({ where: { trackingId: { in: variants } }, select: { trackingId: true, merchantId: true, currentHubId: true, status: true, returnRunId: true, merchant: { select: { name: true } } } });
+    if (!parcel) return { ok: false, outcome: "NOT_FOUND", message: `No parcel found for ${variants[0]}.`, code: variants[0] };
+    const id = parcel.trackingId;
+    if (!parcel.merchantId) return { ok: false, outcome: "NOT_MERCHANT", message: `${id} isn't a merchant parcel; return runs go to merchants.`, code: id };
+    if (parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId) {
+      const on = await this.prisma.returnRun.findUnique({ where: { id: parcel.returnRunId }, select: { number: true } });
+      return { ok: true, outcome: "ALREADY_ON_RUN", message: `${id} is already on return run ${on?.number ?? ""}.`, code: id };
+    }
+    const scope = opsHubScope(actor);
+    const hubId = input.hubId ?? (scope?.length === 1 ? scope[0] : (parcel.currentHubId ?? undefined));
+    try {
+      const run = await this.prisma.returnRun.findFirst({ where: { merchantId: parcel.merchantId, riderId: input.riderId, status: "PLANNED", ...(hubId ? { hubId } : {}) }, orderBy: { createdAt: "desc" }, select: { id: true } });
+      const result = run
+        ? await this.addToRun(actor, run.id, { trackingIds: [id], reason: input.reason }, meta)
+        : await this.createRun(actor, { merchantId: parcel.merchantId, trackingIds: [id], hubId, riderId: input.riderId, reason: input.reason }, meta);
+      const r = result as { number: string; parcelCount?: number; parcels?: unknown[]; rider?: { label?: string; name?: string } | null };
+      const count = r.parcelCount ?? r.parcels?.length;
+      return { ok: true, outcome: "ASSIGNED", message: `${id} on return run ${r.number} for ${parcel.merchant?.name ?? "the merchant"}${count ? ` (${count} parcel${count === 1 ? "" : "s"})` : ""}.`, code: id, run: r.number };
+    } catch (error) {
+      if (error instanceof AppError) {
+        const res = error.getResponse() as { message?: string; error?: { message?: string; details?: { problems?: { message: string }[] } }; details?: { problems?: { message: string }[] } };
+        const problem = res.details?.problems?.[0]?.message ?? res.error?.details?.problems?.[0]?.message;
+        return { ok: false, outcome: "REFUSED", message: `${id}: ${problem ?? res.message ?? res.error?.message ?? error.message}`, code: id };
+      }
+      throw error;
+    }
+  }
+
+  /** The planned return runs of the desk's hub(s), to send out. */
+  async deskPlannedRuns(actor: Actor, query: z.infer<typeof deskReturnRunsQuerySchema>) {
+    const scope = opsHubScope(actor);
+    if (scope && query.hubId && !scope.includes(query.hubId)) throw forbidden("You can only see your own hub's return runs");
+    const hubIds = query.hubId ? [query.hubId] : scope;
+    const runs = await this.prisma.returnRun.findMany({
+      where: { status: "PLANNED", ...(hubIds ? { hubId: { in: hubIds } } : {}) },
+      include: { merchant: { select: { name: true, code: true } }, _count: { select: { parcels: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    const riderIds = [...new Set(runs.map(r => r.riderId).filter((x): x is string => !!x))];
+    const riders = riderIds.length ? await this.prisma.rider.findMany({ where: { id: { in: riderIds } }, select: { id: true, code: true, user: { select: { name: true } } } }) : [];
+    return {
+      items: runs.map(r => {
+        const rider = riders.find(x => x.id === r.riderId);
+        return { id: r.id, number: r.number, merchant: r.merchant, rider: rider ? `${rider.user.name} (${rider.code})` : null, parcels: r._count.parcels, createdAt: r.createdAt };
+      }),
+    };
   }
 
   /** Cancels a planned run: its parcels go back to the hub (the return request stays). */

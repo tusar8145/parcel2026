@@ -259,3 +259,12 @@ Both should return `200`. This is separate from the earlier `/_next/static` chun
 
 
 
+///  frontend deploy
+
+API_ORIGIN=http://127.0.0.1:4000 npm run build -w @delivery-fast/web
+
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+
+pm2 reload df-web
+pm2 status

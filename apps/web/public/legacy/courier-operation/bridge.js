@@ -725,15 +725,21 @@
   // ───────────── start ─────────────
 
   DF.showSignedInUser(Ops.roleName());
+  window.addEventListener("df:ops-lookups", () => Ops.ready && Ops.rerender());
   // Sample data the API replaces: shown empty until real data loads.
   for (const page of ["Riders", "Merchants", "COD & finance", "Analytics", "Settings"]) if (genericPages[page]) genericPages[page].rows = [];
   hubTransferEvents.length = 0;
   riderReportState.from = riderReportState.to = Ops.dayKey();
   syncShipments();
 
+  void DF.api("/catalog")
+    .then(catalog => {
+      Ops.catalog = catalog;
+      if (Ops.ready) Ops.rerender();
+    })
+    .catch(() => undefined);
   DF.bridgeReady = (async () => {
-    const [overview, catalog] = await Promise.allSettled([loadOverview(), DF.api("/catalog")]);
-    if (catalog.status === "fulfilled") Ops.catalog = catalog.value;
+    const overview = await Promise.allSettled([loadOverview()]);
     if (overview.status === "rejected") showToast(DF.describe(overview.reason));
     const role = document.querySelector(".user-profile small");
     if (role && Ops.me?.hubs?.length) role.textContent = `${Ops.roleName()} · ${Ops.me.hubs.map(h => h.name).join(", ")}`;

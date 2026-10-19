@@ -683,7 +683,8 @@
     }
     // Platform settings managed in super admin (GET /settings/platform-config, 404 until saved).
     const jobs = [];
-    if (app !== "franchise") jobs.push(rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined));
+    if (app !== "franchise" && app !== "courier-operation")
+      jobs.push(rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined));
     if (app === "website") {
       jobs.push(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
       setCustomerSession(auth.isWebsiteCustomer() ? user : null);
@@ -697,9 +698,11 @@
     if (app === "courier-operation") {
       // Parcels are loaded per table on screen (server-paged lists, courier-operation/bridge-lists.js).
       // Not every operations role may list riders (e.g. finance); the page copes without them.
+      const lookups = [];
       if (auth.hasRole("SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "SUPPORT_AGENT"))
-        jobs.push(api("/riders?active=true").then(r => (state.riders = r)).catch(() => (state.riders = [])));
-      jobs.push(api("/hubs").then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
+        lookups.push(api("/riders?active=true").then(r => (state.riders = r)).catch(() => (state.riders = [])));
+      lookups.push(api("/hubs").then(h => (state.hubs = h)).catch(() => (state.hubs = [])));
+      void Promise.all(lookups).then(() => window.dispatchEvent(new Event("df:ops-lookups")));
     }
     if (app === "rider") {
       const hubs = () => api("/hubs");

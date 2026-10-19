@@ -1,7 +1,8 @@
 /*
  * Courier Operations → Merchants: every merchant belongs to the hub serving its pickup address (derived, never
  * set by hand; change the address and the hub follows).
- * - HUB column (the hub serving the merchant's pickup address).
+ * - HUB column (the hub serving the merchant's pickup address) and a hub filter (All hubs / a hub / No hub).
+ * - The table's cells are shown as text (merchant names and addresses can't inject markup).
  * - "Address changes to approve": active merchants' own address changes (GET /merchant-address-requests),
  *   approve or reject with a reason (POST …/:id/approve | reject).
  * - "Change address" per merchant (PATCH /merchants/:id/address): district → zone → area → street.
@@ -14,21 +15,24 @@
   const PAGE = "Merchants";
   const $ = id => document.getElementById(id);
   const esc = Ops.esc;
-  const state = { shown: [] };
+  const state = { hub: "", shown: [] };
+  /** The page draws cells as HTML: names and addresses typed by merchants are shown as text (the CSV keeps "&"). */
+  const asText = cell => String(cell ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const can = () => Ops.can("merchantAddress");
   const pickupText = m => (m ? `${m.pickupZone || m.pickupArea}, ${m.pickupDistrict}${m.pickupZone ? "" : " (address not completed)"}${m.handover === "HUB_DROP" ? " · drops at hub" : ""}` : "");
   const loadRequests = () => (can() ? Ops.lazy("address-requests", () => DF.api("/merchant-address-requests"), 20000) : null);
 
-  // Rows: PICKUP and HUB as their own columns.
+  // Rows: PICKUP and HUB as their own columns, filtered by hub.
   const basePrepare = Ops.prepare[PAGE];
   Ops.prepare[PAGE] = (...args) => {
     basePrepare?.(...args);
     const cfg = genericPages[PAGE];
     const all = Ops.cache.merchants?.value || [];
     const i = cfg.cols.indexOf("PICKUP & HUB");
-    if (i < 0) return;
+    if (i < 0) return void (cfg.rows = cfg.rows.map(row => row.map(asText)));
     cfg.cols.splice(i, 1, "PICKUP", "HUB");
-    const pairs = cfg.rows.map((row, k) => ({ m: all[k], row: [...row.slice(0, i), pickupText(all[k]), all[k]?.pickupHub?.name || "No hub", ...row.slice(i + 1)] }));
+    let pairs = cfg.rows.map((row, k) => ({ m: all[k], row: [...row.slice(0, i), pickupText(all[k]), all[k]?.pickupHub?.name || "No hub", ...row.slice(i + 1)].map(asText) }));
+    if (state.hub) pairs = pairs.filter(p => (state.hub === "none" ? !p.m?.pickupHub : p.m?.pickupHub?.id === state.hub));
     cfg.rows = pairs.map(p => p.row);
     state.shown = pairs.map(p => p.m);
     loadRequests();
@@ -40,6 +44,15 @@
     if (Ops.page() !== PAGE) return;
     const panel = document.querySelector("#mainContent .table-panel");
     if (!panel) return;
+    // Hub filter beside the search.
+    const tools = panel.querySelector(".table-tools") || panel.querySelector(".panel-heading");
+    if (tools && !$("merchantHubFilter")) {
+      const hubs = DF.state.hubs || [];
+      tools.insertAdjacentHTML(
+        "beforeend",
+        `<select class="select-small" id="merchantHubFilter" aria-label="Filter by hub"><option value="">All hubs</option>${hubs.map(h => `<option value="${esc(h.id)}" ${state.hub === h.id ? "selected" : ""}>${esc(h.name)}</option>`).join("")}<option value="none" ${state.hub === "none" ? "selected" : ""}>No hub</option></select>`,
+      );
+    }
     // Change address, per row (the rows are in the order of state.shown).
     if (can())
       panel.querySelectorAll("tbody tr").forEach((tr, k) => {
@@ -172,6 +185,11 @@
     },
     true,
   );
+  document.addEventListener("change", event => {
+    if (Ops.page() !== PAGE || event.target?.id !== "merchantHubFilter") return;
+    state.hub = event.target.value;
+    Ops.rerender(true);
+  });
   DF.live?.(["merchant.address_request", "merchant.updated"], () => {
     Ops.invalidate("merchants", "address-requests");
     if (Ops.page() === PAGE) Ops.rerender();

@@ -264,7 +264,10 @@ export class HubDeskService {
     if (!parcel) return problem;
     try {
       const rider = parcel.deliveryRider;
-      if (!DELIVERABLE.includes(parcel.status as ParcelStatus) || !rider)
+      // Already recorded (a second scan, a retried request): no second attempt, re-attempt fee or attempt count.
+      if (parcel.status === "RETRY_SCHEDULED")
+        return { ok: true, outcome: "ALREADY_RECORDED", message: `${parcel.trackingId}: the failed attempt is already recorded. When the rider brings it back, receive it on Scan desk → Receive entry.`, code: parcel.trackingId };
+      if (!["ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) || !rider)
         return { ok: false, outcome: "NOT_WITH_RIDER", message: `${parcel.trackingId} is ${parcelStatusLabel(parcel.status as ParcelStatus).toLowerCase()}; only parcels with a delivery rider can have a failed attempt.`, code: parcel.trackingId };
       let hub: { id: string; name: string } | null = null;
       if (input.nextAction === "RETURN_TO_HUB") {

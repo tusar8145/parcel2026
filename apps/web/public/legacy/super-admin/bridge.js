@@ -592,20 +592,49 @@
     if (page === "Service plans") decoratePlanEditor();
   }
 
-  /** Merchant tables: a HUB column (the hub serving the merchant's pickup address; it follows the address). */
+  /**
+   * Merchant tables (Merchants, E-commerce merchants, Banking & Financial merchants): a HUB column (the hub serving
+   * the merchant's pickup address; it follows the address) and a hub filter that works alongside the page's search.
+   */
+  let hubFilter = "";
+  document.head.insertAdjacentHTML("beforeend", `<style id="saHubFilterStyle">tr[data-hub-off]{display:none!important}</style>`);
   function merchantHubColumn() {
-    const body = document.getElementById("merchantBody");
+    const body = document.getElementById("merchantBody") || document.getElementById("segmentMerchantBody");
     const table = body?.closest("table");
     if (!table || table.dataset.hubColumn) return;
     table.dataset.hubColumn = "1";
     const byCode = new Map(merchants.map(m => [m.id, m._api]));
     table.querySelector("thead th:nth-child(2)")?.insertAdjacentHTML("afterend", "<th>HUB</th>");
+    const hubs = new Map();
     for (const tr of body.querySelectorAll("tr")) {
-      const api = byCode.get(tr.querySelector("[data-merchant]")?.dataset.merchant);
+      const code = tr.querySelector("[data-merchant]")?.dataset.merchant;
+      if (!code) continue; // the "no accounts yet" row
+      const api = byCode.get(code);
       const hub = api?.pickupHub || null;
+      if (hub) hubs.set(hub.id, hub.name);
+      tr.dataset.hub = hub?.id || "none";
       tr.children[1]?.insertAdjacentHTML("afterend", `<td>${hub ? escapeHtml(hub.name) : '<span class="subcell">No hub</span>'}${api?.pickupZone ? `<span class="subcell">${escapeHtml(`${api.pickupZone}, ${api.pickupDistrict}`)}</span>` : ""}</td>`);
     }
+    const tools = table.closest(".panel, section")?.querySelector(".table-tools, .panel-heading");
+    if (tools && !document.getElementById("saMerchantHub"))
+      tools.insertAdjacentHTML(
+        "beforeend",
+        `<select class="select-small" id="saMerchantHub" aria-label="Filter by hub"><option value="">All hubs</option>${[...hubs]
+          .sort((a, b) => a[1].localeCompare(b[1]))
+          .map(([id, name]) => `<option value="${escapeHtml(id)}" ${hubFilter === id ? "selected" : ""}>${escapeHtml(name)}</option>`)
+          .join("")}<option value="none" ${hubFilter === "none" ? "selected" : ""}>No hub</option></select>`,
+      );
+    applyHubFilter();
   }
+  function applyHubFilter() {
+    const body = document.getElementById("merchantBody") || document.getElementById("segmentMerchantBody");
+    for (const tr of body?.querySelectorAll("tr[data-hub]") || []) tr.toggleAttribute("data-hub-off", !!hubFilter && tr.dataset.hub !== hubFilter);
+  }
+  document.addEventListener("change", event => {
+    if (event.target?.id !== "saMerchantHub") return;
+    hubFilter = event.target.value;
+    applyHubFilter();
+  });
 
   function decoratePlanEditor() {
     const form = document.getElementById("servicePlanEditor");

@@ -126,7 +126,8 @@ export class HubIntakeService {
 
     // Coming back from a rider (failed delivery, given to a rider but not taken out, unfinished return): the hub desk's
     // receive-back rules (the rider released, the return run left). Still out for delivery: the failed attempt first.
-    if (["RETRY_SCHEDULED", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) || (parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId)) {
+    // A parcel with no rider (e.g. a re-attempt not given to anyone yet) is received the regular way below.
+    if ((["RETRY_SCHEDULED", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) && parcel.deliveryRiderId) || (parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId)) {
       const back = await this.desk.receiveBack(actor, { code: id, hubId: hub.id, source: input.source }, meta);
       void scan(back.ok, back.message);
       parcel = (await find()) ?? parcel;

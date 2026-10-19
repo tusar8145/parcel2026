@@ -90,6 +90,13 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect(early.body).toMatchObject({ ok: false, outcome: "REFUSED", message: expect.stringContaining("Failed delivery entry") });
     expect(await scan(s.desk.token, "failed", { code: id, reason: "Recipient unavailable", nextAction: "RETRY" })).toMatchObject({ ok: true, outcome: "RETRY_SCHEDULED" });
     expect(await ctx.prisma.deliveryAttempt.count({ where: { parcel: { trackingId: id }, outcome: "FAILED" } })).toBe(1);
+    // Scanned again (double scan / retried request): already recorded; no second attempt, fee or attempt count.
+    const before = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id }, select: { attemptCount: true, totalCharge: true } });
+    expect(await scan(s.desk.token, "failed", { code: id, reason: "Recipient unavailable", nextAction: "RETRY" })).toMatchObject({ ok: true, outcome: "ALREADY_RECORDED" });
+    expect(await ctx.prisma.deliveryAttempt.count({ where: { parcel: { trackingId: id }, outcome: "FAILED" } })).toBe(1);
+    const after = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id }, select: { attemptCount: true, totalCharge: true } });
+    expect(after.attemptCount).toBe(before.attemptCount);
+    expect(Number(after.totalCharge)).toBe(Number(before.totalCharge));
     // The receive desk takes it like any arrival (the rider released).
     const back = await ctx.api("POST", "/ops/hub-receive", { token: s.desk.token, body: { code: id, hubId: s.gulshan.id } });
     expect(back.body).toMatchObject({ ok: true, outcome: "RECEIVED", message: `${id} received back at Test Hub HUB-GUL.` });
@@ -164,5 +171,14 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect((await ctx.api("GET", "/hub-desk/return-runs", { token: s.desk.token })).body.items).toEqual([]);
     expect(await scan(s.desk.token, "return", { code: a })).toMatchObject({ ok: true, outcome: "RETURNED" });
     expect(await scan(s.desk.token, "return", { code: b })).toMatchObject({ ok: true, outcome: "RETURNED", message: expect.stringContaining("completed") });
+  });
+  it("receives a re-attempt that has no rider the regular way at the receive desk", async () => {
+    const s = await setup();
+    const id = await atHub(s);
+    // A re-attempt nobody has been given yet (e.g. moved there by operations): no rider to release.
+    await ctx.prisma.parcel.update({ where: { trackingId: id }, data: { status: "RETRY_SCHEDULED", deliveryRiderId: null } });
+    const res = await ctx.api("POST", "/ops/hub-receive", { token: s.desk.token, body: { code: id, hubId: s.gulshan.id } });
+    expect(res.body).toMatchObject({ ok: true, outcome: "RECEIVED" });
+    expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id } })).toMatchObject({ status: "AT_HUB", currentHubId: s.gulshan.id });
   });
 });

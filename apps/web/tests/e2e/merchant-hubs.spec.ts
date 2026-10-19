@@ -1,9 +1,10 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
+import { authenticator } from "otplib";
+import { Fixtures, apiUrl, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
 
 /**
  * Every merchant belongs to the hub serving its pickup address (never set by hand):
- * - Courier Operations → Merchants: HUB column, "Change address" (the hub follows), and the
+ * - Courier Operations → Merchants and super admin's merchant lists: HUB column and hub filter (names shown as text), "Change address" (the hub follows), and the
  *   address changes merchants asked for, approved or rejected there.
  * - Walk-in shipment form: Service first; Drop at hub makes the sender's address optional; required fields marked *.
  * - Hub managers book only for their hub's merchants.
@@ -71,7 +72,13 @@ test("merchants: hub column, change address, and approving a merchant's own addr
   await expect.poll(() => hubOf(other.id)).toBe("Uttara Delivery Hub");
 
   await expect(o.page.locator(`#mainContent tr[data-merchant-id="${other.id}"]`)).toContainText("Uttara Delivery Hub");
-  await expect(o.page.locator("#merchantHubFilter")).toHaveCount(0);
+  // Filter by hub: Uttara shows the moved merchant, not the other one; "No hub" neither.
+  const [uttara] = await sql<{ id: string }>(`SELECT id FROM hubs WHERE name = 'Uttara Delivery Hub'`);
+  await o.page.selectOption("#merchantHubFilter", uttara.id);
+  await expect(o.page.locator(`#mainContent tr[data-merchant-id="${other.id}"]`)).toBeVisible();
+  await expect(o.page.locator(`#mainContent tr[data-merchant-id="${shop.id}"]`)).toHaveCount(0);
+  await o.page.selectOption("#merchantHubFilter", "");
+  await expect(o.page.locator(`#mainContent tr[data-merchant-id="${shop.id}"]`)).toBeVisible();
 
   // Operations change an address directly: the hub follows (Dhanmondi).
   await o.page.locator(`#mainContent tr[data-merchant-id="${shop.id}"] [data-merchant-address]`).click();
@@ -155,4 +162,44 @@ test("walk-in form: service first, required marks, drop-off without a sender add
   expect(names.some(n => n.includes(elsewhere.name))).toBe(false);
 
   expect([...o.errors, ...h.errors]).toEqual([]);
+});
+
+test("merchant lists: names show as text; super admin sees the hub and filters by it on every merchant page", async ({ browser }) => {
+  test.setTimeout(180_000);
+  const tricky = await structuredMerchant();
+  await sql(`UPDATE merchants SET name = $2 WHERE id = $1`, [tricky.id, `E2E <b>Bold</b> Shop ${fx.stamp}`]);
+  const plain = await fx.merchant({ type: "ECOMMERCE", label: "Hubless Shop" });
+
+  // Courier Operations: the name is text, not markup.
+  const ops = await fx.staff("OPS_MANAGER");
+  const o = await signIn(browser, ops, /\/courier-operation/);
+  await opsNav(o.page, "merchants");
+  const row = o.page.locator(`#mainContent tr[data-merchant-id="${tricky.id}"]`);
+  await expect(row).toContainText("E2E <b>Bold</b> Shop");
+  await expect(row.locator("b")).toHaveCount(0);
+
+  // Super admin → E-commerce merchants: HUB column and the hub filter.
+  const admin = await fx.user(`E2E Hub Admin ${fx.stamp}`, [{ role: "SUPER_ADMIN" }]);
+  const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+  const WEB = { "x-df-client": "web" };
+  const login = await (await page.request.post(apiUrl("/api/v1/auth/login"), { headers: WEB, data: { identifier: admin.phone, password: admin.password } })).json();
+  const setup = await (await page.request.post(apiUrl("/api/v1/auth/mfa/setup"), { headers: WEB, data: { mfaToken: login.mfaToken } })).json();
+  await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
+  await page.goto("/super-admin");
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await page.click('#navigation [data-page="E-commerce merchants"]');
+  const table = page.locator("#segmentMerchantBody").locator("xpath=ancestor::table");
+  await expect(table.locator("thead")).toContainText("HUB");
+  const trickyRow = page.locator("#segmentMerchantBody tr", { has: page.locator(`[data-merchant="${tricky.code}"]`) });
+  const plainRow = page.locator("#segmentMerchantBody tr", { has: page.locator(`[data-merchant="${plain.code}"]`) });
+  await expect(trickyRow).toContainText("Gulshan Sorting Hub");
+  await expect(plainRow).toContainText("No hub");
+  const [gulshan] = await sql<{ id: string }>(`SELECT id FROM hubs WHERE name = 'Gulshan Sorting Hub'`);
+  await page.selectOption("#saMerchantHub", gulshan.id);
+  await expect(trickyRow).toBeVisible();
+  await expect(plainRow).toBeHidden();
+  await page.selectOption("#saMerchantHub", "none");
+  await expect(plainRow).toBeVisible();
+  await expect(trickyRow).toBeHidden();
+  expect(o.errors).toEqual([]);
 });

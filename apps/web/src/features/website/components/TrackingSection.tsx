@@ -50,24 +50,6 @@ export default function TrackingSection({ legacy = false }: { legacy?: boolean }
                 Track parcel
               </button>
             </form>
-            <div className="track-hint">
-              {"Try a sample: "}
-              <button
-                type="button"
-                data-track-sample="PP-260914-1042"
-                onClick={legacy ? undefined : () => goToTracking("PP-260914-1042")}
-              >
-                PP-260914-1042
-              </button>
-              {" · "}
-              <button
-                type="button"
-                data-track-sample="PP-260913-0821"
-                onClick={legacy ? undefined : () => goToTracking("PP-260913-0821")}
-              >
-                PP-260913-0821
-              </button>
-            </div>
           </div>
           {!legacy && <div className="tracking-result" id="trackingResult" aria-live="polite" />}
         </div>

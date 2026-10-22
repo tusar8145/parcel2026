@@ -22,6 +22,10 @@ const envSchema = z
     FILE_STORAGE_DIR: z.string().default(".data/files"),
     /** Where phones open "Scan with phone" links (default APP_URL; in development a localhost APP_URL becomes this computer's LAN address). */
     SCAN_LINK_ORIGIN: z.url().optional(),
+    /** Local AI that reads scanned labels (Ollama, e.g. http://127.0.0.1:11434); unset = rules only. */
+    SCAN_AI_URL: z.url().optional(),
+    SCAN_AI_MODEL: z.string().min(1).default("qwen2.5:3b"),
+    SCAN_AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(60_000),
     TRUST_PROXY: bool.default(false),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

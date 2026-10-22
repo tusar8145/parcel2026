@@ -198,7 +198,8 @@
         if (scan.hasPhoto) void thumbnail(scan.id, tr.querySelector('[data-scan="photo"]'));
       }
       const [label, tone] = scan.trackingId ? [`Booked · ${scan.trackingId}`, "status-good"] : STATUS[scan.status] || [scan.status, "status-blue"];
-      tr.querySelector("[data-scan-status]").innerHTML = `<span class="status ${tone}">${esc(label)}</span>`;
+      // Hover: the text read from the photo (why a field is empty or wrong).
+      tr.querySelector("[data-scan-status]").innerHTML = `<span class="status ${tone}"${scan.text ? ` title="${esc(`Read from the photo:\n${scan.text}`)}"` : ""}>${esc(label)}</span>`;
       for (const input of tr.querySelectorAll("[data-cell]")) {
         input.disabled = !!scan.trackingId;
         if (document.activeElement === input || s.saving.has(`${scan.id}:${input.dataset.cell}`)) continue;

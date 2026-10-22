@@ -437,6 +437,13 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `parseLabel` (scan-parser.ts) fills the import columns (phones, labelled name / address / note, COD,
   weight, order ref, district / zone / area matched against the catalog). Fields typed in the modal win.
   The modal hears `parcel_scan.updated` (to its creator only).
+- Reading (2026-10-22): `scan-reader.ts` turns the photo upright (EXIF), tries 90/270/180° when it reads
+  poorly, straightens it by the text lines' tilt and enlarges / cleans it (`scan-image.ts`, sharp), and
+  reads side-by-side sender | receiver blocks one after the other. `scan-parser.ts` handles ৳ read as
+  "$"/"$5" (the amount that equals price + charge wins), "Tk 2,300/-", grams, letter slips in phones;
+  `scan-geo.ts` matches places with Bangla names (prisma/data/bd-geo.json + Dhaka city list) and OCR slips.
+  Optional local AI (`scan-ai.ts`, Ollama `SCAN_AI_URL`) reads the text into fields; `mergeAi` keeps only
+  values the label supports. Tests: `test/scan-reading.test.ts` (real OCR on test/fixtures/scan).
 - Excel: `GET …/workbook` is the import template filled with the rows plus a **Scan ID** column;
   `POST …/workbook` reads an edited file back (rows matched by Scan ID, new rows added). Submit hands that
   workbook to the import dialog (`Ops.importConfig`, the session's merchant chosen). The import engine keeps

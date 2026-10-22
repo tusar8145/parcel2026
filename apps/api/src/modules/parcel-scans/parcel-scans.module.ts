@@ -4,11 +4,12 @@ import { PricingModule } from "../pricing/pricing.module";
 import { ParcelScansController } from "./parcel-scans.controller";
 import { ParcelScansService } from "./parcel-scans.service";
 import { ScanReaderService } from "./scan-reader";
+import { ScanAiService } from "./scan-ai";
 
 @Module({
   imports: [ImportsModule, PricingModule],
   controllers: [ParcelScansController],
-  providers: [ParcelScansService, ScanReaderService],
+  providers: [ParcelScansService, ScanReaderService, ScanAiService],
   exports: [ParcelScansService],
 })
 export class ParcelScansModule {}

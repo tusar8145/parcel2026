@@ -58,6 +58,8 @@ RUN_WORKERS=false
 FILE_STORAGE_DIR=/var/www/deliveryfast-files
 # Optional: the address phones open "Scan with phone" links on (default APP_URL).
 # SCAN_LINK_ORIGIN=https://app.example.com
+# Optional: local AI that reads scanned labels (section 9). Unset = rules only.
+SCAN_AI_URL=http://127.0.0.1:11434
 LOG_LEVEL=info
 ```
 
@@ -187,3 +189,24 @@ pm2 reload all
 - **Backups.** A daily `pg_dump` (cron) of the database, plus the files in `FILE_STORAGE_DIR`.
 - **Health.** `GET /api/v1/health/live` (process) and `/api/v1/health/ready` (database + Redis)
   for uptime monitoring.
+
+## 9. Local AI for "Scan with phone" (optional)
+
+Photos are read with tesseract (OCR) on the server; a small local language model then reads that
+text into the order fields for label layouts the built-in rules don't know (no external service; the
+photos never leave the server). Without it, the rules alone fill the rows.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh     # installs Ollama as a service on 127.0.0.1:11434
+ollama pull qwen2.5:3b                            # ~1.9 GB; keeps ~2.5 GB RAM while loaded
+```
+
+Then `SCAN_AI_URL=http://127.0.0.1:11434` in `apps/api/.env` and `pm2 reload df-worker` (the worker
+reads the photos). Optional: `SCAN_AI_MODEL` (default `qwen2.5:3b`), `SCAN_AI_TIMEOUT_MS` (default
+60000; on a timeout the rules' reading is kept).
+
+- Speed on a CPU: about 10–20 s per photo after OCR (rows show "Reading…" meanwhile). A GPU makes it ~1 s.
+- The model's answers are checked against the label before use: phones and amounts must be printed
+  on it, names and addresses made of its words, places from the service catalog.
+- The OCR language data folder is created next to `FILE_STORAGE_DIR` (e.g. `/var/www/tesseract`):
+  the PM2 user needs write access to its parent the first time.

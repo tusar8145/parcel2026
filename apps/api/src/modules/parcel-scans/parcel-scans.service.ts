@@ -18,6 +18,7 @@ import { ImportJobsService } from "../imports/import-jobs.service";
 import { PricingService } from "../pricing/pricing.service";
 import { parseLabel, type ScanCells } from "./scan-parser";
 import { ScanReaderService } from "./scan-reader";
+import { mergeAi, ScanAiService } from "./scan-ai";
 import type { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
 
 const QUEUE = "parcel-scans";
@@ -54,6 +55,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
     private readonly pricing: PricingService,
     private readonly imports: ImportJobsService,
     private readonly reader: ScanReaderService,
+    private readonly ai: ScanAiService,
   ) {}
 
   onApplicationBootstrap() {
@@ -335,8 +337,14 @@ export class ParcelScansService implements OnApplicationBootstrap {
     let cells: ScanCells = {};
     let status: "READ" | "FAILED" = "READ";
     try {
-      text = (await this.reader.read(await this.storage.read(scan.file.storageKey))).trim();
-      cells = parseLabel(text, kindKeyOf(scan.session.kind), await this.pricing.catalog());
+      const read = await this.reader.read(await this.storage.read(scan.file.storageKey));
+      text = read.text.trim();
+      const kind = kindKeyOf(scan.session.kind);
+      const catalog = await this.pricing.catalog();
+      cells = parseLabel(text, kind, catalog);
+      // The local AI (when configured) for layouts the rules don't know; only what the label supports is kept.
+      const ai = text ? await this.ai.extract(text, kind) : null;
+      if (ai) cells = mergeAi(cells, ai, text, kind, catalog);
       if (!text) status = "FAILED";
     } catch (err) {
       this.logger.warn({ err, scan: scanId }, "A parcel photo could not be read");

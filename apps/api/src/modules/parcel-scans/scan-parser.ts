@@ -1,41 +1,55 @@
 import type { Catalog } from "../pricing/pricing.service";
 import { COLUMNS, type ColumnKey, type ImportKindKey } from "../imports/columns";
+import { placeIn } from "./scan-geo";
 
 /** Order fields read from a parcel photo, by import column key. */
 export type ScanCells = Partial<Record<ColumnKey, string>>;
+type Places = Pick<Catalog, "districts" | "zonesByDistrict" | "areasByZone">;
 
 type Section = "none" | "recipient" | "sender";
 interface Line {
   text: string;
   section: Section;
+  /** The line was a section heading ("To:", "SHIP TO") with this left after it. */
+  marker?: "to" | "from";
 }
 
 const BN_DIGITS = "০১২৩৪৫৬৭৮৯";
-/** Bangla digits → ASCII, unusual separators → spaces. */
-const normalizeText = (s: string) =>
+/** Bangla digits → ASCII, unusual separators → spaces, "$" before an amount → "৳" (OCR reads ৳ as $). */
+export const normalizeText = (s: string) =>
   s
     .replace(/[০-৯]/g, d => String(BN_DIGITS.indexOf(d)))
     .replace(/[|¦]/g, " ")
-    .replace(/ /g, " ");
+    .replace(/ /g, " ")
+    .replace(/\$\s*(?=\d)/g, "৳");
 
 // Words that start a section of a label ("To:", "From:", "প্রাপক").
 // (?![\p{L}\p{M}\p{N}]) instead of \b, which only knows ASCII letters (Bangla words never match it).
-const RECIPIENT_MARK = /^(?:to|ship\s*to|deliver(?:y)?\s*to|receiver|recipient|consignee|customer|প্রাপক|গ্রাহক)(?![\p{L}\p{M}\p{N}])\s*[:：\-–]?/iu;
-const SENDER_MARK = /^(?:from|sender|shipper|pick\s*up|pickup|return\s*to|প্রেরক|পাঠানো)(?![\p{L}\p{M}\p{N}])\s*[:：\-–]?/iu;
+const RECIPIENT_MARK = /^(?:to|ship\s*to|deliver(?:y)?\s*to|receiver|recipient|consignee|customer|buyer|প্রাপক|গ্রাহক|ক্রেতা)(?![\p{L}\p{M}\p{N}])\s*(?:name|নাম)?\s*[:：\-–]?/iu;
+const SENDER_MARK = /^(?:from|sender|shipper|seller|merchant|pick\s*up|pickup|return\s*to|প্রেরক|পাঠানো|বিক্রেতা)(?![\p{L}\p{M}\p{N}])\s*(?:name|নাম)?\s*[:：\-–]?/iu;
 
 const LABELS: Partial<Record<ColumnKey, RegExp>> = {
-  recipient_name: /^(?:name|customer\s*name|receiver\s*name|recipient\s*name|নাম|প্রাপকের\s*নাম)\s*[:：\-–]\s*(.+)$/i,
-  address: /^(?:address|addr|delivery\s*address|shipping\s*address|ঠিকানা)\s*[:：\-–]?\s*(.+)$/i,
-  instructions: /^(?:note|notes|instruction|instructions|remarks?|comment|নোট|মন্তব্য)\s*[:：\-–]?\s*(.+)$/i,
+  recipient_name: /^(?:name|customer\s*name|receiver\s*name|recipient\s*name|নাম|প্রাপকের\s*নাম)\s*[:：\-–]\s*(.+)$/iu,
+  address: /^(?:address|addr|delivery\s*address|shipping\s*address|ঠিকানা)\s*[:：\-–.;]?\s*(.+)$/iu,
+  instructions: /^(?:note|notes|instruction|instructions|remarks?|comment|নোট|মন্তব্য)\s*[:：\-–.;]?\s*(.+)$/iu,
 };
-const PHONE_LABEL = /^(?:phone|mobile|mob|cell|contact|tel|ফোন|মোবাইল)\s*(?:no\.?|number)?\s*[:：\-–]?\s*/i;
-const ADDRESS_WORDS = /\b(?:house|h#|road|rd|block|sector|lane|avenue|village|vill|para|thana|upazila|union|post|p\.?o|flat|floor|bazar|market|mor|more|word|ward)\b|বাসা|বাড়ি|রোড|গ্রাম|থানা|উপজেলা/i;
+const PHONE_LABEL = /^(?:phone|mobile|mob|cell|contact|tel|ফোন|মোবাইল)\s*(?:no\.?|number|নং)?\s*[:：\-–.;]?\s*/iu;
+const ADDRESS_WORDS = /\b(?:house|h#|road|rd|block|sector|lane|avenue|village|vill|para|thana|upazila|union|post|p\.?o|flat|floor|bazar|market|mor|more|word|ward)\b|বাসা|বাড়ি|রোড|গ্রাম|থানা|উপজেলা/iu;
 
-/** BD mobile numbers on a line (separators between digits are dropped): local 01XXXXXXXXX form. */
+/** Letters OCR puts in place of digits inside a phone number. */
+const DIGIT_SLIPS: Record<string, string> = { O: "0", o: "0", D: "0", Q: "0", I: "1", l: "1", "|": "1", "!": "1", i: "1", Z: "2", z: "2", S: "5", s: "5", B: "8", b: "6", G: "6", T: "7" };
+
+/** BD mobile numbers on a line (separators between digits dropped, letter slips fixed): local 01XXXXXXXXX form. */
 export function phonesIn(line: string): string[] {
   const joined = normalizeText(line).replace(/(?<=\d)[\s\-–.()]+(?=\d)/g, "");
   const out: string[] = [];
-  for (const m of joined.matchAll(/(?<!\d)(?:\+?88)?0?(1[3-9]\d{8})(?!\d)/g)) out.push(`0${m[1]}`);
+  // A run of digits (with a few letter slips inside it) as long as a phone number.
+  for (const found of joined.match(/\+?[\dOoDQIl|!iZzSsBbGT]{10,15}/g) ?? []) {
+    const run = found.replace(/^[^\d+]+|[^\d]+$/g, "");
+    if ((run.match(/\d/g)?.length ?? 0) < 8) continue;
+    const digits = run.replace(/[^\d+]/g, c => DIGIT_SLIPS[c] ?? "");
+    for (const m of digits.matchAll(/(?<!\d)(?:\+?88)?0?(1[3-9]\d{8})(?!\d)/g)) if (!out.includes(`0${m[1]}`)) out.push(`0${m[1]}`);
+  }
   return out;
 }
 
@@ -50,47 +64,91 @@ const stripPhones = (s: string) =>
 /** A short line of words that can be a person's or shop's name. */
 const nameLike = (s: string) => {
   const t = s.trim();
-  if (t.length < 3 || t.length > 60 || /\d{3,}/.test(t) || /[:@]/.test(t)) return false;
+  if (t.length < 3 || t.length > 60 || /\d{3,}/.test(t) || /[:@৳$]/.test(t)) return false;
   const words = t.split(/\s+/);
-  return words.length >= 1 && words.length <= 5 && !ADDRESS_WORDS.test(t);
+  return words.length <= 5 && !ADDRESS_WORDS.test(t) && !/\b(?:label|invoice|order|shipping|delivery|slip|cod|total)\b|ডেলিভারি|স্লিপ/iu.test(t);
 };
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-/** The longest catalog name found in the text as a whole word (case-insensitive). */
-function findName(text: string, names: string[]): string | undefined {
-  const sorted = [...names].sort((a, b) => b.length - a.length);
-  return sorted.find(n => new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escapeRe(n)}(?![\\p{L}\\p{M}\\p{N}])`, "iu").test(text));
+// ───────────── money ─────────────
+
+export interface Money {
+  /** Taka, as read. */
+  value: number;
+  /** The amount without its first digit when that digit may be a misread ৳ ("৳51,450" for "৳1,450"). */
+  alt?: number;
+  /** Where the amount starts on the line. */
+  index: number;
+}
+const CURRENCY = /(?:৳|\btk\.?|\btaka\b|\bbdt\b|টাকা|tk(?=\d))/iu;
+/** Amounts on a line: "৳1,250.00", "Tk. 2,300/-", "850 টাকা", "BDT 1250". Numbers stuck to letters (GG-5521) or followed by kg are not money. */
+export function moneyIn(line: string): Money[] {
+  const t = normalizeText(line).replace(/(\d)\.(\d{3})(?=[.,]\d{1,2}\b|\b(?![.,]\d))/g, "$1,$2");
+  const out: Money[] = [];
+  for (const m of t.matchAll(/(৳\s*)?(?<![\p{L}\d\-#/])(\d{1,3}(?:,\d{3})+|\d+)(?:[.,](\d{1,2}))?(?![\d,]*\s*(?:kg|kgs|g|gm|gms|gram|grams|কেজি|গ্রাম|%|pcs|x\b))(?![\p{L}\d])/giu)) {
+    const whole = m[2].replace(/,/g, "");
+    const value = Number(whole) + (m[3] ? Number(m[3].padEnd(2, "0")) / 100 : 0);
+    if (!Number.isFinite(value) || value > 10_000_000) continue;
+    const money: Money = { value, index: m.index ?? 0 };
+    // "৳5 1,450": the ৳ sign read as a digit right before a well-grouped amount.
+    if (m[1] && /^[35689]\d{1,3}(,\d{3})+$/.test(m[2])) money.alt = Number(m[2].slice(1).replace(/,/g, "")) + (m[3] ? Number(m[3].padEnd(2, "0")) / 100 : 0);
+    out.push(money);
+  }
+  return out;
+}
+const money = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+
+/** Lines naming the amount to collect, most specific first. */
+const COD_KEYS: RegExp[] = [
+  /\b(?:cod|c\.o\.d|cash\s*on\s*delivery|collect(?:ion)?|amount\s*to\s*collect|to\s*collect|payable|due)\b|সংগ্রহ|আদায়|বাকি/iu,
+  /\b(?:grand\s*total|net\s*total|total\s*amount|total)\b|মোট/iu,
+  /\b(?:price|amount|value|bill)\b|মূল্য|দাম|টাকা/iu,
+];
+const NOT_COD = /\b(?:delivery\s*(?:charge|fee)|shipping|charge|fee|discount|paid|advance|vat|tax)\b|ডেলিভারি\s*চার্জ|পরিশোধিত/iu;
+
+/**
+ * The amount to collect: from the most specific line (COD / collect / due, then total, then price),
+ * else a lone taka amount. When the ৳ sign may have been read as a digit, the amount that equals the
+ * other amounts added up (price + delivery charge) is taken.
+ */
+export function codFrom(lines: string[]): string | undefined {
+  const all = lines.map(l => ({ line: l, amounts: moneyIn(l), currency: CURRENCY.test(normalizeText(l)) }));
+  let pick: { line: string; amounts: Money[] } | undefined;
+  for (const key of COD_KEYS) {
+    pick = all.find(x => key.test(x.line) && !(key !== COD_KEYS[0] && NOT_COD.test(x.line)) && x.amounts.length);
+    if (pick) break;
+  }
+  pick ??= all.filter(x => x.currency && x.amounts.length && !NOT_COD.test(x.line)).at(-1);
+  if (!pick) return undefined;
+  // The amount after the keyword ("Road 3 … bill 1,250/-" is 1,250).
+  const keyAt = COD_KEYS.map(k => pick!.line.search(k)).filter(i => i >= 0).sort((a, b) => a - b)[0] ?? 0;
+  const chosen = pick.amounts.find(m => m.index >= keyAt) ?? pick.amounts[0];
+  if (chosen.alt !== undefined) {
+    const others = all.filter(x => x !== pick && x.currency && x.amounts.length).map(x => x.amounts[0]);
+    const sum = others.reduce((a, m) => a + (m.alt !== undefined && m.value > 10 * m.alt ? m.alt : m.value), 0);
+    if (Math.abs(sum - chosen.alt) < 0.01 || (Math.abs(sum - chosen.value) >= 0.01 && chosen.value > 50_000 && chosen.alt <= 50_000)) return money(chosen.alt);
+  }
+  return money(chosen.value);
 }
 
-/** District, zone and area named in the text, as written in the service catalog. */
-export function matchPlace(text: string, catalog: Pick<Catalog, "districts" | "zonesByDistrict" | "areasByZone">) {
-  let district = findName(text, catalog.districts);
-  const zonesOf = (d: string) => catalog.zonesByDistrict[d] ?? [];
-  let zone = district ? findName(text, zonesOf(district)) : undefined;
-  if (!zone) {
-    // A zone named without its district (or with a district name that is also a zone): look it up.
-    const all = Object.entries(catalog.zonesByDistrict).flatMap(([d, zones]) => zones.map(z => ({ d, z })));
-    const hit = findName(
-      text,
-      all.map(x => x.z),
-    );
-    const owner = hit ? all.filter(x => x.z === hit) : [];
-    if (hit && (owner.length === 1 || owner.some(x => x.d === district))) {
-      zone = hit;
-      district = owner.find(x => x.d === district)?.d ?? owner[0].d;
-    }
-  }
-  const area = zone ? findName(text, catalog.areasByZone[zone] ?? []) : undefined;
-  return { district, zone, area };
+/** Weight in kg: "1.5 kg", "1.2KG", "500 gm" (= 0.5), "২ কেজি". */
+export function weightFrom(text: string): string | undefined {
+  const m = normalizeText(text).match(/(\d+(?:[.,]\d+)?)\s*(kgs?|kilo(?:gram)?s?|কেজি|g|gms?|grams?|গ্রাম)(?![\p{L}])/iu);
+  if (!m) return undefined;
+  const n = Number(m[1].replace(",", "."));
+  const kg = /^(?:g|gms?|grams?|গ্রাম)$/iu.test(m[2]) ? n / 1000 : n;
+  return kg > 0 && kg <= 100 ? String(Math.round(kg * 1000) / 1000) : undefined;
 }
+
+// ───────────── the label ─────────────
 
 /**
  * Reads order fields from the text of a parcel label (OCR output, English or Bangla): the phone
- * numbers, the labelled name / address / note, COD, weight, the order reference and the district /
- * zone / area named in it. Lines after "To:" belong to the recipient, after "From:" to the sender.
- * Only the columns of the kind's template are returned; anything not found is left out.
+ * numbers, the labelled name / address / note, the amount to collect, weight, the order reference and
+ * the district / zone / area (scan-geo.ts: Bangla names and small OCR slips too). Lines after "To:" /
+ * "SHIP TO" belong to the recipient, after "From:" to the sender. Only the columns of the kind's
+ * template are returned; anything not found is left out.
  */
-export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Pick<Catalog, "districts" | "zonesByDistrict" | "areasByZone">): ScanCells {
+export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places): ScanCells {
   const lines: Line[] = [];
   let section: Section = "none";
   for (const raw of normalizeText(rawText).split(/\r?\n/)) {
@@ -99,34 +157,33 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Pick<C
     if (RECIPIENT_MARK.test(text)) {
       section = "recipient";
       text = text.replace(RECIPIENT_MARK, "").trim();
-      lines.push({ text: `\u0000to ${text}`, section });
+      lines.push({ text, section, marker: "to" });
       continue;
     }
     if (SENDER_MARK.test(text)) {
       section = "sender";
       text = text.replace(SENDER_MARK, "").trim();
-      lines.push({ text: `\u0000from ${text}`, section });
+      lines.push({ text, section, marker: "from" });
       continue;
     }
     lines.push({ text, section });
   }
-  const plain = (l: Line) => l.text.replace(/^\u0000(?:to|from) /, "");
   const out: ScanCells = {};
   const notSender = lines.filter(l => l.section !== "sender");
 
   // Phones: the recipient's in the "To" part (else the first outside the sender part); the sender's in "From".
-  const recipientPhones = lines.filter(l => l.section === "recipient").flatMap(l => phonesIn(plain(l)));
-  const otherPhones = lines.filter(l => l.section === "none").flatMap(l => phonesIn(plain(l)));
-  const senderPhones = lines.filter(l => l.section === "sender").flatMap(l => phonesIn(plain(l)));
-  const recipientPhone = recipientPhones[0] ?? otherPhones[0];
+  const recipientPhones = lines.filter(l => l.section === "recipient").flatMap(l => phonesIn(l.text));
+  const otherPhones = lines.filter(l => l.section === "none").flatMap(l => phonesIn(l.text));
+  const senderPhones = lines.filter(l => l.section === "sender").flatMap(l => phonesIn(l.text));
+  const recipientPhone = recipientPhones[0] ?? otherPhones.find(p => !senderPhones.includes(p));
   if (recipientPhone) out.recipient_phone = recipientPhone;
   if (senderPhones[0] && senderPhones[0] !== recipientPhone) out.sender_phone = senderPhones[0];
 
   // Labelled values ("Name: …", "Address: …", "Note: …").
   const used = new Set<Line>();
   for (const [key, re] of Object.entries(LABELS) as [ColumnKey, RegExp][]) {
-    const line = notSender.find(l => re.test(plain(l)));
-    const value = line ? stripPhones(plain(line).match(re)![1]) : "";
+    const line = notSender.find(l => re.test(l.text));
+    const value = line ? stripPhones(line.text.match(re)![1]) : "";
     if (line && value) {
       out[key] = value;
       used.add(line);
@@ -134,64 +191,61 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Pick<C
   }
   // An address may continue on the next unlabeled line.
   if (out.address) {
-    const at = lines.findIndex(l => used.has(l) && LABELS.address!.test(plain(l)));
+    const at = lines.findIndex(l => used.has(l) && LABELS.address!.test(l.text));
     const next = lines[at + 1];
-    if (next && next.section === lines[at].section && !/[:：]/.test(plain(next)) && !phonesIn(plain(next)).length && (ADDRESS_WORDS.test(plain(next)) || findName(plain(next), catalog.districts)))
-      out.address = `${out.address}, ${plain(next)}`;
+    if (next && !next.marker && next.section === lines[at].section && !/[:：]/.test(next.text) && !phonesIn(next.text).length && !moneyIn(next.text).length && ADDRESS_WORDS.test(next.text))
+      out.address = `${out.address}, ${next.text}`;
   }
 
-  // The recipient's name: "To: Name" (its first part), else a name-like line next to the recipient phone.
+  // The recipient's name: "To: Name" (its first part), else the first name-like line of the "To" part,
+  // else a name-like line next to the recipient phone.
+  const to = lines.find(l => l.marker === "to");
   if (!out.recipient_name) {
-    const to = lines.find(l => l.text.startsWith("\u0000to "));
-    const first = to ? stripPhones(plain(to).split(",")[0]) : "";
-    if (first && nameLike(first)) {
-      out.recipient_name = first;
-      used.add(to!);
-    } else if (recipientPhone) {
-      const at = notSender.findIndex(l => phonesIn(plain(l)).includes(recipientPhone));
-      const same = at >= 0 ? stripPhones(plain(notSender[at])) : "";
-      const candidates = [same, at > 0 ? plain(notSender[at - 1]) : ""].filter(c => c && nameLike(c));
-      if (candidates[0]) out.recipient_name = candidates[0];
+    const first = to ? stripPhones(to.text.split(",")[0]) : "";
+    const toPart = lines.filter(l => l.section === "recipient" && !l.marker);
+    const candidate = first && nameLike(first) ? first : toPart.map(l => stripPhones(l.text)).find(t => t && nameLike(t) && !LABELS.address!.test(t));
+    if (candidate) out.recipient_name = candidate;
+    else if (recipientPhone) {
+      const at = notSender.findIndex(l => phonesIn(l.text).includes(recipientPhone));
+      const same = at >= 0 ? stripPhones(notSender[at].text) : "";
+      const near = [same, at > 0 ? notSender[at - 1].text : ""].filter(c => c && nameLike(c));
+      if (near[0]) out.recipient_name = near[0];
     }
   }
   // "To: Name, House 12, Road 5…": the rest of the line is the address.
-  if (!out.address) {
-    const to = lines.find(l => l.text.startsWith("\u0000to "));
-    const rest = to ? stripPhones(plain(to).split(",").slice(1).join(",")) : "";
+  if (!out.address && to) {
+    const rest = stripPhones(to.text.split(",").slice(1).join(","));
     if (rest && (ADDRESS_WORDS.test(rest) || rest.includes(","))) out.address = rest;
   }
-  // Else the longest address-looking line outside the sender part.
+  // Else the longest address-looking line of the "To" part, then outside the sender part.
   if (!out.address) {
-    const candidate = notSender
-      .filter(l => !used.has(l))
-      .map(plain)
-      .map(stripPhones)
-      .filter(t => t.length >= 8 && !/^(?:cod|weight|order|invoice|total|amount|note)\b/i.test(t) && (ADDRESS_WORDS.test(t) || (t.match(/,/g)?.length ?? 0) >= 2))
-      .sort((a, b) => b.length - a.length)[0];
+    const looks = (t: string) => t.length >= 8 && !moneyIn(t).some(() => CURRENCY.test(t)) && !/^(?:cod|weight|wt|order|invoice|total|amount|note|product|price)\b/i.test(t) && (ADDRESS_WORDS.test(t) || (t.match(/,/g)?.length ?? 0) >= 2);
+    const pool = (ls: Line[]) => ls.filter(l => !used.has(l) && !l.marker).map(l => stripPhones(l.text)).filter(looks).sort((a, b) => b.length - a.length)[0];
+    const candidate = pool(lines.filter(l => l.section === "recipient")) ?? pool(notSender);
     if (candidate) out.address = candidate;
   }
 
-  // Sender (customer parcels): "From: Name, phone".
-  const from = lines.find(l => l.text.startsWith("\u0000from "));
-  const senderName = from ? stripPhones(plain(from).split(",")[0]) : "";
-  if (senderName && nameLike(senderName)) out.sender_name = senderName;
+  // Sender (customer parcels): "From: Name, phone", or the first name-like line of the "From" part.
+  const from = lines.find(l => l.marker === "from");
+  const fromFirst = from ? stripPhones(from.text.split(",")[0]) : "";
+  const senderName = fromFirst && nameLike(fromFirst) ? fromFirst : lines.filter(l => l.section === "sender" && !l.marker).map(l => stripPhones(l.text)).find(t => t && nameLike(t));
+  if (senderName) out.sender_name = senderName;
 
-  const all = lines.map(plain).join("\n");
-  // Cash to collect: a COD / collect / amount line, in taka.
-  const codLine = lines.map(plain).find(t => /\b(?:cod|c\.o\.d|cash\s*on\s*delivery|collect(?:ion)?|amount\s*to\s*collect|due)\b|টাকা|৳/i.test(t));
-  const cod = codLine?.match(/(\d[\d,]*(?:\.\d{1,2})?)/);
-  if (cod) out.cod_amount = cod[1].replace(/,/g, "");
-  const weight = all.match(/(\d+(?:\.\d+)?)\s*(?:kg|kgs|কেজি)\b/i);
-  if (weight) out.weight_kg = weight[1];
+  const texts = lines.map(l => l.text);
+  const all = texts.join("\n");
+  const cod = codFrom(texts);
+  if (cod) out.cod_amount = cod;
+  const weight = weightFrom(all);
+  if (weight) out.weight_kg = weight;
   const ref = all.match(/\b(?:order|invoice|inv|ref(?:erence)?)\s*(?:no\.?|number|id)?\s*[:#]?\s*#?\s*([A-Z0-9][A-Z0-9\-/]{2,30})/i);
   if (ref && /\d/.test(ref[1])) out.order_ref = ref[1];
 
   // District / zone / area: from the address first, else anywhere outside the sender part.
-  const place = matchPlace(out.address ?? "", catalog);
-  const anywhere = place.district || place.zone ? place : matchPlace(notSender.map(plain).join("\n"), catalog);
-  if (anywhere.district) out.district = anywhere.district;
-  if (anywhere.zone) out.zone = anywhere.zone;
-  if (anywhere.area) out.area = anywhere.area;
+  const fromAddress = placeIn(out.address ?? "", catalog);
+  const place = fromAddress.zone || fromAddress.district ? fromAddress : placeIn(notSender.map(l => l.text).join("\n"), catalog);
+  if (place.district) out.district = place.district;
+  if (place.zone) out.zone = place.zone;
+  if (place.area) out.area = place.area;
 
   const allowed = new Set(COLUMNS[kind].map(c => c.key));
   return Object.fromEntries(Object.entries(out).filter(([k, v]) => allowed.has(k as ColumnKey) && v)) as ScanCells;

@@ -116,15 +116,20 @@
     } catch {}
     const startButton = document.querySelector('[data-scan="start"]');
     if (startButton) startButton.disabled = true;
+    let created;
     try {
-      s.session = await DF.api("/parcel-scans/sessions", { method: "POST", body: { kind, ...(merchantId ? { merchantId } : {}) } });
+      created = await DF.api("/parcel-scans/sessions", { method: "POST", body: { kind, ...(merchantId ? { merchantId } : {}) } });
     } catch (e) {
       error.textContent = DF.describe(e);
       error.hidden = false;
       if (startButton) startButton.disabled = false;
       return;
     }
-    if (!s) return void closeSession(s?.session?.id);
+    // The window was closed meanwhile: end the new session (its link) at once.
+    if (!s) return void closeSession(created.id);
+    s.session = created;
+    await loadCatalog(); // the district / zone / area dropdowns
+    if (!s) return void closeSession(created.id);
     s.timer = setInterval(() => void keepalive(), KEEPALIVE_MS);
     s.off = DF.events.on("parcel_scan.updated", data => {
       if (s?.session && data?.id === s.session.id) void reload();
@@ -143,12 +148,16 @@
     frame(
       "Scan with phone",
       `${who} · photos taken through the link appear below, read from the label. Check each row, then submit.`,
-      `<div style="display:grid;grid-template-columns:minmax(200px,240px) 1fr;gap:18px;align-items:start" class="df-scan-layout">
-        <div style="display:grid;gap:10px;justify-items:center;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe">
-          <div id="dfScanQr" style="width:190px;height:190px" role="img" aria-label="QR code of the phone link">${session.qrSvg}</div>
-          <p style="margin:0;font-size:12px;color:var(--muted);text-align:center">Scan with the phone's camera, or open the link on the phone.</p>
-          <div style="display:flex;gap:6px;width:100%"><input class="table-search" id="dfScanLink" value="${esc(session.url)}" readonly aria-label="Phone link" style="flex:1;min-width:0;font-size:12px"><button type="button" class="button button-sm" data-scan="copy">Copy</button></div>
-          <p style="margin:0;font-size:12px;color:#946200;text-align:center">The link stops working when you close this window.</p>
+      `<div style="display:grid;grid-template-columns:minmax(200px,240px) 1fr;gap:18px;align-items:start" class="df-scan-layout" id="dfScanLayout">
+        <div style="padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;min-width:0">
+          <div id="dfScanQrView" style="display:grid;gap:10px;justify-items:center">
+            <div id="dfScanQr" style="width:190px;height:190px" role="img" aria-label="QR code of the phone link">${session.qrSvg}</div>
+            <p style="margin:0;font-size:12px;color:var(--muted);text-align:center">Scan with the phone's camera, or open the link on the phone.</p>
+            <div style="display:flex;gap:6px;width:100%"><input class="table-search" id="dfScanLink" value="${esc(session.url)}" readonly aria-label="Phone link" style="flex:1;min-width:0;font-size:12px"><button type="button" class="button button-sm" data-scan="copy">Copy</button></div>
+            <p style="margin:0;font-size:12px;color:#946200;text-align:center">The link stops working when you close this window.</p>
+            <p style="margin:0;font-size:12px;color:var(--muted);text-align:center">Click a row's photo to see it here and compare it with what was read.</p>
+          </div>
+          <div id="dfScanPhotoView" hidden></div>
         </div>
         <div style="min-width:0">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px"><strong id="dfScanCount"></strong><span class="panel-subtitle" style="margin:0">Changes are saved as you type · they go into the Excel file and the order</span></div>
@@ -191,7 +200,11 @@
         body.insertAdjacentHTML(
           "beforeend",
           `<tr data-scan-id="${esc(scan.id)}"><td>${scan.number}</td><td data-scan-photo>${scan.hasPhoto ? `<button type="button" class="button button-sm" data-scan="photo" style="padding:0;width:52px;height:52px;overflow:hidden" aria-label="Photo of parcel ${scan.number}"></button>` : '<span class="subcell">Excel</span>'}</td><td data-scan-status></td>${cols
-            .map(c => `<td><input class="table-search" data-cell="${esc(c.key)}" aria-label="${esc(c.header)} (parcel ${scan.number})" style="width:${WIDE[c.key] || 130}px;min-width:0"></td>`)
+            .map(c =>
+              PLACE[c.key]
+                ? `<td><select class="select-small" data-cell="${esc(c.key)}" data-place aria-label="${esc(c.header)} (parcel ${scan.number})" style="width:150px"></select></td>`
+                : `<td><input class="table-search" data-cell="${esc(c.key)}" aria-label="${esc(c.header)} (parcel ${scan.number})" style="width:${WIDE[c.key] || 130}px;min-width:0"></td>`,
+            )
             .join("")}<td><button type="button" class="button button-sm" data-scan="remove" title="Remove this row and its photo" aria-label="Remove parcel ${scan.number}">×</button></td></tr>`,
         );
         tr = body.lastElementChild;
@@ -203,15 +216,139 @@
       for (const input of tr.querySelectorAll("[data-cell]")) {
         input.disabled = !!scan.trackingId;
         if (document.activeElement === input || s.saving.has(`${scan.id}:${input.dataset.cell}`)) continue;
+        if (input.dataset.place !== undefined) {
+          placeOptions(input, scan.cells);
+          continue;
+        }
         const value = scan.cells[input.dataset.cell] ?? "";
         if (input.value !== value) input.value = value;
       }
       tr.querySelector('[data-scan="remove"]').disabled = !!scan.trackingId;
     }
+    // The photo being viewed: its text once read (or back to the QR code if its row was removed).
+    if (s.viewing) {
+      const viewed = scans.find(x => x.id === s.viewing);
+      if (!viewed) showQr();
+      else if (viewed.status !== s.viewedStatus || viewed.text !== s.viewedText) {
+        s.viewedStatus = viewed.status;
+        s.viewedText = viewed.text;
+        viewer();
+      }
+    }
   }
 
+  // ───────────── the photo beside the rows (compare it with what was read) ─────────────
+
+  const VIEWER_CSS = `
+#dfScanPhotoView .df-scan-pic{position:relative;height:min(52vh,480px);display:grid;place-items:center;overflow:hidden;border-radius:8px;background:#eef2f7;cursor:zoom-in}
+#dfScanPhotoView .df-scan-pic img{max-width:100%;max-height:100%;object-fit:contain;transition:transform .08s ease-out;will-change:transform}
+#dfScanPhotoView .df-scan-ocr{position:absolute;inset:0;overflow:auto;margin:0;padding:12px;background:rgba(255,255,255,.95);color:#172033;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;display:none;cursor:auto}
+#dfScanPhotoView .df-scan-pic.pinned .df-scan-ocr{display:block}
+#dfScanRows tr.df-scan-viewing td{background:#eef3ff}`;
+  /** Hover zoom: starting level, and the range the mouse wheel moves it in. */
+  const ZOOM = { start: 2.5, min: 1.5, max: 6 };
+
+  /** Shows a row's photo in the left panel (instead of the QR code): hover to zoom, "Keep text shown" for the text read from it. */
+  async function showPhoto(scanId) {
+    if (!s?.session) return;
+    if (!document.getElementById("dfScanCss")) document.head.insertAdjacentHTML("beforeend", `<style id="dfScanCss">${VIEWER_CSS}</style>`);
+    s.viewing = scanId;
+    s.turn = 0;
+    $("dfScanQrView").style.display = "none";
+    $("dfScanPhotoView").hidden = false;
+    // A wider panel for the photo (one column on small screens).
+    if (!window.matchMedia("(max-width: 760px)").matches) $("dfScanLayout").style.gridTemplateColumns = "minmax(280px,380px) 1fr";
+    viewer();
+    if (!s.photos.get(scanId)) {
+      await thumbnail(scanId, null);
+      viewer();
+    }
+  }
+
+  function showQr() {
+    if (!s) return;
+    s.viewing = null;
+    $("dfScanPhotoView").hidden = true;
+    $("dfScanQrView").style.display = "grid";
+    if (!window.matchMedia("(max-width: 760px)").matches) $("dfScanLayout").style.gridTemplateColumns = "minmax(200px,240px) 1fr";
+    document.querySelectorAll("#dfScanRows tr.df-scan-viewing").forEach(tr => tr.classList.remove("df-scan-viewing"));
+  }
+
+  /** Draws the photo panel for the row being viewed (again when the row is read or changes). */
+  function viewer() {
+    const box = $("dfScanPhotoView");
+    if (!box || !s?.viewing) return;
+    const scan = s.session.scans.find(x => x.id === s.viewing);
+    if (!scan) return showQr();
+    document.querySelectorAll("#dfScanRows tr[data-scan-id]").forEach(tr => tr.classList.toggle("df-scan-viewing", tr.dataset.scanId === scan.id));
+    const url = s.photos.get(s.turn ? `${scan.id}@${s.turn}` : scan.id) || s.photos.get(scan.id);
+    const text = scan.status === "READING" ? "Still reading this photo…" : scan.text || "No text could be read from this photo.";
+    const state = scan.trackingId ? `Booked · ${scan.trackingId}` : (STATUS[scan.status] || [scan.status])[0];
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><strong style="font-size:13px">Parcel #${scan.number} · ${esc(state)}</strong><span style="display:flex;gap:6px">${button("turn", "Turn ↻")}${button("qr", "QR code")}</span></div>
+      <div class="df-scan-pic${s.pinText ? " pinned" : ""}" id="dfScanPic">${url ? `<img src="${url}" alt="Photo of parcel ${scan.number}" id="dfScanPicImg" draggable="false">` : '<span class="subcell">Loading the photo…</span>'}<pre class="df-scan-ocr" id="dfScanOcr" aria-label="Text read from the photo"></pre></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span class="panel-subtitle" style="margin:0">Point at the photo to zoom (mouse wheel: more / less).</span>${button("pin-text", s.pinText ? "Hide text" : "Keep text shown")}</div>`;
+    $("dfScanOcr").textContent = `Read from the photo:\n\n${text}`;
+    zoomable($("dfScanPic"), $("dfScanPicImg"));
+  }
+
+  /** Hover zoom: the part of the photo under the mouse, enlarged in place (not while the text is shown). */
+  function zoomable(pic, img) {
+    if (!pic || !img) return;
+    let base = null;
+    const level = () => s?.zoom || ZOOM.start;
+    const follow = event => {
+      if (!base || s?.pinText) return;
+      const x = Math.min(1, Math.max(0, (event.clientX - base.left) / base.width));
+      const y = Math.min(1, Math.max(0, (event.clientY - base.top) / base.height));
+      img.style.transformOrigin = `${(x * 100).toFixed(1)}% ${(y * 100).toFixed(1)}%`;
+      img.style.transform = `scale(${level()})`;
+    };
+    const reset = () => {
+      base = null;
+      img.style.transform = "";
+    };
+    pic.addEventListener("mouseenter", event => {
+      if (s?.pinText) return;
+      img.style.transform = "";
+      base = img.getBoundingClientRect();
+      follow(event);
+    });
+    pic.addEventListener("mousemove", follow);
+    pic.addEventListener("mouseleave", reset);
+    pic.addEventListener(
+      "wheel",
+      event => {
+        if (!base || s?.pinText) return;
+        event.preventDefault();
+        s.zoom = Math.min(ZOOM.max, Math.max(ZOOM.min, level() * (event.deltaY < 0 ? 1.2 : 1 / 1.2)));
+        follow(event);
+      },
+      { passive: false },
+    );
+  }
+
+  /** The photo turned by `deg` (drawn turned, so zooming follows the mouse on sideways photos too); kept for the session. */
+  async function turned(scanId, deg) {
+    const key = `${scanId}@${deg}`;
+    if (!deg || s.photos.get(key)) return;
+    const source = s.photos.get(scanId);
+    if (!source) return;
+    const bitmap = await createImageBitmap(await (await fetch(source)).blob());
+    const canvas = document.createElement("canvas");
+    const sideways = deg % 180 !== 0;
+    canvas.width = sideways ? bitmap.height : bitmap.width;
+    canvas.height = sideways ? bitmap.width : bitmap.height;
+    const ctx = canvas.getContext("2d");
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    bitmap.close?.();
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (blob && s) s.photos.set(key, URL.createObjectURL(blob));
+  }
+
+  /** Loads a row's photo once (kept as an object URL) and shows it in `target` (a thumbnail button), if given. */
   async function thumbnail(scanId, target) {
-    if (!target) return;
     let url = s?.photos.get(scanId);
     if (!url) {
       try {
@@ -222,7 +359,7 @@
       if (!s) return URL.revokeObjectURL(url);
       s.photos.set(scanId, url);
     }
-    target.innerHTML = `<img src="${url}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`;
+    if (target) target.innerHTML = `<img src="${url}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`;
   }
 
   async function reload() {
@@ -250,11 +387,88 @@
     }
   }
 
+  // ───────────── district / zone / area dropdowns (the service catalog) ─────────────
+
+  /** The place columns: each one's parent column (zones of the district, areas of the zone). */
+  const PLACE = { district: { parent: null }, zone: { parent: "district" }, area: { parent: "zone" }, pickup_district: { parent: null }, pickup_zone: { parent: "pickup_district" }, pickup_area: { parent: "pickup_zone" } };
+  const familyOf = key => (key.startsWith("pickup_") ? { district: "pickup_district", zone: "pickup_zone", area: "pickup_area" } : { district: "district", zone: "zone", area: "area" });
+
+  /** The active catalog (GET /catalog), loaded once per window. */
+  async function loadCatalog() {
+    if (s && !s.catalog) s.catalog = DF.state?.catalog || (await DF.api("/catalog").catch(() => null));
+  }
+  const zoneOwner = zone => Object.keys(s?.catalog?.zonesByDistrict || {}).find(d => s.catalog.zonesByDistrict[d].includes(zone));
+
+  /**
+   * A place dropdown's choices: districts; the chosen district's zones (every zone while no district is
+   * chosen: picking one fills its district); the chosen zone's areas. A value read from the photo that
+   * isn't in the catalog stays, marked, until it is changed.
+   */
+  function placeOptions(select, cells) {
+    const c = s?.catalog;
+    const key = select.dataset.cell;
+    const f = familyOf(key);
+    const value = cells[key] ?? "";
+    let list = [];
+    let empty = "Choose…";
+    if (c && key === f.district) list = c.districts;
+    else if (c && key === f.zone) {
+      const district = cells[f.district];
+      list = district ? c.zonesByDistrict[district] || [] : [...new Set(Object.values(c.zonesByDistrict).flat())].sort((a, b) => a.localeCompare(b));
+      empty = district ? `Choose a zone (${list.length})` : "Choose a zone";
+    } else if (c && key === f.area) {
+      const zone = cells[f.zone];
+      list = zone ? c.areasByZone[zone] || [] : [];
+      empty = zone ? (list.length ? `Choose an area (${list.length})` : "No areas listed") : "Choose the zone first";
+    }
+    const signature = `${value}|${list.length}|${list[0] ?? ""}|${empty}`;
+    if (select.dataset.signature === signature) return;
+    select.dataset.signature = signature;
+    const unknown = value && !list.includes(value);
+    select.innerHTML = `<option value="">${esc(empty)}</option>${unknown ? `<option value="${esc(value)}" selected>${esc(value)} (not in the list)</option>` : ""}${list.map(name => `<option value="${esc(name)}"${name === value ? " selected" : ""}>${esc(name)}</option>`).join("")}`;
+    select.value = value;
+    // Searchable (shared/select-search.js), short lists too.
+    DF.searchSelect?.(select, { label: key.replace("pickup_", "pickup ").replace(/^./, ch => ch.toUpperCase()) });
+  }
+
+  /** A place was chosen: the dependent places follow (a zone brings its district; a new district or zone clears what no longer fits). */
+  async function placeChanged(select) {
+    const tr = select.closest("tr");
+    const scan = s?.session?.scans.find(x => x.id === tr?.dataset.scanId);
+    if (!scan || !s.catalog) return;
+    const key = select.dataset.cell;
+    const f = familyOf(key);
+    const cells = { ...scan.cells, [key]: select.value };
+    if (key === f.zone && select.value) {
+      const district = zoneOwner(select.value);
+      if (district) cells[f.district] = district;
+    }
+    // Cleared: what lies inside it goes too.
+    if (!select.value && key === f.district) cells[f.zone] = cells[f.area] = "";
+    if (!select.value && key === f.zone) cells[f.area] = "";
+    if (cells[f.zone] && cells[f.district] && !(s.catalog.zonesByDistrict[cells[f.district]] || []).includes(cells[f.zone])) cells[f.zone] = "";
+    if (cells[f.area] && !(s.catalog.areasByZone[cells[f.zone]] || []).includes(cells[f.area])) cells[f.area] = "";
+    const columns = new Set(s.session.columns.map(col => col.key));
+    const changed = Object.fromEntries([f.district, f.zone, f.area].filter(k => columns.has(k) && (cells[k] ?? "") !== (scan.cells[k] ?? "")).map(k => [k, cells[k] || null]));
+    if (!Object.keys(changed).length) return;
+    const saving = `${scan.id}:${key}`;
+    s.saving.set(saving, 0);
+    try {
+      const fresh = await DF.api(`/parcel-scans/sessions/${s.session.id}/scans/${scan.id}`, { method: "PATCH", body: { cells: changed } });
+      Object.assign(scan, fresh);
+    } catch (e) {
+      showToast(DF.describe(e));
+    } finally {
+      s?.saving.delete(saving);
+      rows();
+    }
+  }
+
   // ───────────── editing ─────────────
 
   function onInput(event) {
     const input = event.target.closest?.("[data-cell]");
-    if (!input || !s?.session) return;
+    if (!input || !s?.session || input.dataset.place !== undefined) return;
     const scanId = input.closest("tr").dataset.scanId;
     const key = `${scanId}:${input.dataset.cell}`;
     clearTimeout(s.saving.get(key));
@@ -306,10 +520,16 @@
       }
       return;
     }
-    if (action === "photo") {
-      const url = s.photos.get(target.closest("tr").dataset.scanId);
-      if (url) window.open(url, "_blank", "noopener");
-      return;
+    if (action === "photo") return showPhoto(target.closest("tr").dataset.scanId);
+    if (action === "qr") return showQr();
+    if (action === "turn") {
+      s.turn = ((s.turn || 0) + 90) % 360;
+      await turned(s.viewing, s.turn);
+      return viewer();
+    }
+    if (action === "pin-text") {
+      s.pinText = !s.pinText;
+      return viewer();
     }
     if (action === "remove") {
       const tr = target.closest("tr");
@@ -340,6 +560,7 @@
 
   function onChange(event) {
     if (event.target.id === "dfScanKind") return fillMerchants("");
+    if (event.target.matches?.("select[data-place]")) return void placeChanged(event.target);
     if (event.target.id === "dfScanFile" && event.target.files?.length) {
       const file = event.target.files[0];
       event.target.value = "";

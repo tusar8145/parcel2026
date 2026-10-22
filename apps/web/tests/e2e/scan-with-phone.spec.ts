@@ -80,6 +80,63 @@ test("a label photographed on the phone becomes an order row, is submitted throu
   await expect(row.locator('[data-scan="photo"] img')).toBeVisible();
   await expect(mobile.locator(".list .state.sent")).toContainText("Read", { timeout: 30_000 });
 
+  // ── District / zone / area are dropdowns of the catalog, linked: the zones of the district, the areas
+  //    of the zone; a new district clears a zone outside it; with no district, any zone (it brings its district) ──
+  const district = row.locator('select[data-cell="district"]');
+  const zone = row.locator('select[data-cell="zone"]');
+  const area = row.locator('select[data-cell="area"]');
+  const opts = { timeout: 15_000 };
+  await expect(district).toHaveValue("Dhaka Central");
+  await expect(zone).toHaveValue("Dhanmondi");
+  await expect(zone.locator("option", { hasText: /^Banani$/ })).toHaveCount(0); // a Dhaka North zone
+  await district.selectOption("Dhaka North", opts);
+  await expect(zone).toHaveValue("");
+  await zone.selectOption("Banani", opts);
+  await expect(area.locator("option", { hasText: "Banani Block C" })).toHaveCount(1);
+  await area.selectOption("Banani Block C", opts);
+  await expect(area).toHaveValue("Banani Block C");
+  await district.selectOption("", opts);
+  await expect(zone).toHaveValue("");
+  await expect(area).toHaveValue("");
+  await zone.selectOption("Mirpur", opts);
+  await expect(district).toHaveValue("Dhaka Central");
+  await area.selectOption("Mirpur 10", opts);
+  await expect
+    .poll(async () => (await sql<{ d: string; z: string; a: string }>(`SELECT cells->>'district' d, cells->>'zone' z, cells->>'area' a FROM parcel_scans s JOIN parcel_scan_sessions x ON x.id = s."sessionId" WHERE x."createdById" = $1`, [OPS.id]))[0])
+    .toEqual({ d: "Dhaka Central", z: "Mirpur", a: "Mirpur 10" });
+  if (process.env.SCAN_SHOT) await page.screenshot({ path: process.env.SCAN_SHOT.replace(".png", "-places.png") });
+
+  // ── The photo beside the rows: a click shows it in the left panel (no new tab); pointing at it zooms in;
+  //    "Keep text shown" shows the text read from it ──
+  await row.locator('[data-scan="photo"]').click();
+  await expect(page.locator("#dfScanPhotoView")).toBeVisible();
+  await expect(page.locator("#dfScanQrView")).toBeHidden();
+  const pic = page.locator("#dfScanPicImg");
+  await expect(pic).toBeVisible();
+  await expect(row).toHaveClass(/df-scan-viewing/);
+  expect(page.context().pages()).toHaveLength(1);
+  const ocr = page.locator("#dfScanOcr");
+  const box = (await page.locator("#dfScanPic").boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4);
+  await expect(pic).toHaveAttribute("style", /scale\(2\.5\)/);
+  await expect(ocr).toBeHidden();
+  if (process.env.SCAN_SHOT) await page.screenshot({ path: process.env.SCAN_SHOT.replace(".png", "-zoom.png") });
+  await page.mouse.move(0, 0);
+  await expect(pic).not.toHaveAttribute("style", /scale/);
+  await page.click('[data-scan="pin-text"]');
+  await expect(ocr).toBeVisible();
+  await expect(ocr).toContainText("Rahim Uddin");
+  await expect(ocr).toContainText("01712-345678");
+  if (process.env.SCAN_SHOT) await page.screenshot({ path: process.env.SCAN_SHOT });
+  await page.click('[data-scan="pin-text"]');
+  await expect(ocr).toBeHidden();
+  // Turn: the image itself is turned (a new picture), so zooming still follows the mouse.
+  const before = await pic.getAttribute("src");
+  await page.click('[data-scan="turn"]');
+  await expect(page.locator("#dfScanPicImg")).not.toHaveAttribute("src", before!);
+  await page.click('[data-scan="qr"]');
+  await expect(page.locator("#dfScanQrView")).toBeVisible();
+
   // ── Edited in the table (saved as you type) ──
   await row.locator('[data-cell="recipient_name"]').fill("Rahim Uddin Khan");
   await expect

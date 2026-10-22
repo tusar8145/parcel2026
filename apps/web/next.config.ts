@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
@@ -33,6 +34,18 @@ function legacyAssetVersions(root: string, directory = root): Record<string, str
   return versions;
 }
 
+/**
+ * This computer's network (LAN) addresses. Phones open the dev server through one of them ("Scan
+ * with phone" links); Next.js blocks its dev scripts for any other host than localhost unless listed,
+ * so the page would load without its JavaScript and never connect.
+ */
+function lanAddresses(): string[] {
+  return Object.values(networkInterfaces())
+    .flatMap(list => list ?? [])
+    .filter(a => a.family === "IPv4" && !a.internal)
+    .map(a => a.address);
+}
+
 export default function nextConfig(phase: string): NextConfig {
   // The dev server reads public/legacy on every request and the files change while it runs: no
   // version hashes (they would be the ones from start-up) and no long-lived caching there.
@@ -40,6 +53,8 @@ export default function nextConfig(phase: string): NextConfig {
   const legacyVersions = dev ? {} : legacyAssetVersions(path.join(__dirname, "public", "legacy"));
   return {
     env: { LEGACY_ASSET_VERSIONS: JSON.stringify(legacyVersions) },
+    // Development only: phones on the same Wi-Fi may use the dev server (e.g. the Scan with phone page).
+    ...(dev ? { allowedDevOrigins: lanAddresses() } : {}),
     // Self-contained server for the Docker image (apps/web/Dockerfile). Dependencies are
     // hoisted to the monorepo root, so trace from there.
     output: "standalone",

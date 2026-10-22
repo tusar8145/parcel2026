@@ -30,9 +30,17 @@ export default function PwaInstall() {
     window.addEventListener("appinstalled", onInstalled);
 
     if ("serviceWorker" in navigator && window.isSecureContext) {
-      void navigator.serviceWorker.register("/app-sw.js", { scope: "/" }).catch(error => {
-        console.warn("Delivery Fast: the app could not be made installable", error);
-      });
+      if (process.env.NODE_ENV === "production") {
+        void navigator.serviceWorker.register("/app-sw.js", { scope: "/" }).catch(error => {
+          console.warn("Delivery Fast: the app could not be made installable", error);
+        });
+      } else {
+        // Development: a cached copy would hide edits to public/legacy. Remove one left from earlier.
+        void navigator.serviceWorker.getRegistrations().then(registrations => {
+          for (const r of registrations) if (r.active?.scriptURL.endsWith("/app-sw.js")) void r.unregister();
+        });
+        if ("caches" in window) void caches.keys().then(names => names.filter(n => n.startsWith("delivery-fast-static-")).forEach(n => void caches.delete(n)));
+      }
     }
 
     return () => {

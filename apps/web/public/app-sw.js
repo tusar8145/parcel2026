@@ -1,4 +1,4 @@
-const VERSION = "2026.10.20-1";
+const VERSION = "2026.10.22-1";
 const CACHE = `delivery-fast-static-${VERSION}`;
 const MAX_ENTRIES = 250;
 
@@ -20,12 +20,14 @@ self.addEventListener("fetch", event => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || !isStaticAsset(url.pathname)) return;
+  if (url.origin !== self.location.origin || !isStaticAsset(url)) return;
   event.respondWith(cacheStaticAsset(request));
 });
 
-function isStaticAsset(pathname) {
-  return pathname.startsWith("/legacy/") || pathname.startsWith("/_next/static/") || pathname.startsWith("/vendor/") || pathname.startsWith("/pwa/");
+function isStaticAsset(url) {
+  // Page scripts change under the same path: only their content-versioned URLs (?v=hash) are kept.
+  if (url.pathname.startsWith("/legacy/")) return url.searchParams.has("v");
+  return url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/vendor/") || url.pathname.startsWith("/pwa/");
 }
 
 async function cacheStaticAsset(request) {

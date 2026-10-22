@@ -145,6 +145,7 @@
     else if (f.status) params.set("status", f.status);
     if (f.from) params.set("from", new Date(`${f.from}T00:00:00`).toISOString());
     if (f.to) params.set("to", new Date(`${f.to}T23:59:59.999`).toISOString());
+    if (f.line && !fixed.line) params.set("line", f.line);
     if (f.merchantId) params.set("merchantId", f.merchantId);
     if (f.hubId) params.set("hubId", f.hubId);
     if (f.failedBefore) params.set("failedBefore", f.failedBefore);
@@ -163,6 +164,7 @@
     const f = list.filters;
     if (fixed.stage && STAGE[fixed.stage] && !STAGE[fixed.stage](p)) return false;
     if (fixed.line && lineOf(p) !== fixed.line) return false;
+    if (f.line && lineOf(p) !== f.line) return false;
     if (fixed.status && !String(fixed.status).split(",").includes(p.status)) return false;
     if (f.status === "Needs info" ? !p.incomplete : f.status && ![norm(p.status), norm(p.statusLabel)].includes(norm(f.status)) && !(norm(f.status) === "pending operations confirmation" && p.status === "PENDING_CONFIRMATION")) return false;
     if (f.merchantId && p.merchant?.id !== f.merchantId) return false;
@@ -312,14 +314,24 @@
 
   // ── the page's own shipment table (New orders, All parcels, Problems) ──
 
-  const MAIN_INPUTS = { shipmentSearch: "q", statusFilter: "status", shipmentDateFrom: "from", shipmentDateTo: "to", merchantFilter: "merchantId" };
+  const MAIN_INPUTS = { shipmentSearch: "q", statusFilter: "status", shipmentDateFrom: "from", shipmentDateTo: "to", lineFilter: "line", merchantFilter: "merchantId" };
+  /** The parcel type filter (cfg.lines): GET /parcels ?line. Customer parcels have no merchant. */
+  const LINES = [
+    ["CUSTOMER", "Customer parcel"],
+    ["ECOMMERCE", "E-commerce"],
+    ["BANKING_FINANCIAL", "Banking & Financial"],
+  ];
 
   function merchantOptions(list, select) {
+    const line = list.filters.line || "";
+    // Customer parcels have no merchant; for a merchant type, only that type's merchants.
+    select.hidden = line === "CUSTOMER";
     const known = new Map();
-    for (const m of Ops.cache.merchants?.value || []) known.set(m.id, m.name);
+    for (const m of Ops.cache.merchants?.value || []) if (!line || m.type === line) known.set(m.id, m.name);
     for (const id of list.ids) {
-      const m = Ops.apiParcel(id)?.merchant;
-      if (m && !known.has(m.id)) known.set(m.id, m.name);
+      const p = Ops.apiParcel(id);
+      const m = p?.merchant;
+      if (m && !known.has(m.id) && (!line || lineOf(p) === line)) known.set(m.id, m.name);
     }
     const chosen = list.filters.merchantId || "";
     if (chosen && !known.has(chosen)) known.set(chosen, list.merchantName || "Chosen merchant");
@@ -351,10 +363,16 @@
     $("productFilter")?.remove();
     $("shipmentDateField")?.closest("label")?.remove();
     const merchant = $("merchantFilter");
+    if (cfg.lines && !$("lineFilter")) {
+      const html = `<select class="select-small" id="lineFilter" aria-label="Filter by parcel type"><option value="">All parcel types</option>${LINES.map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join("")}</select>`;
+      if (merchant) merchant.insertAdjacentHTML("beforebegin", html);
+      else host.querySelector(".table-tools")?.insertAdjacentHTML("beforeend", html);
+    }
     if (merchant) {
       if (cfg.merchants === false) merchant.remove();
       else {
         merchantOptions(list, merchant);
+        DF.searchSelect?.(merchant, { label: "Merchants", placeholder: "Search merchants…" });
         loadMerchantsOnce();
       }
     }
@@ -395,6 +413,13 @@
     if ((list.filters[key] || "") === (value || "")) return;
     list.filters[key] = value || "";
     if (key === "merchantId") list.merchantName = value ? Ops.cache.merchants?.value?.find(m => m.id === value)?.name : "";
+    if (key === "line") {
+      // A merchant of another type (or any merchant, for customer parcels) no longer applies.
+      const chosen = list.filters.merchantId && Ops.cache.merchants?.value?.find(m => m.id === list.filters.merchantId);
+      if (list.filters.merchantId && value && (value === "CUSTOMER" || (chosen && chosen.type !== value))) list.filters.merchantId = "";
+      const select = hostOf(list)?.querySelector("#merchantFilter");
+      if (select) merchantOptions(list, select);
+    }
     clearTimeout(list.timer);
     list.timer = setTimeout(() => void load(list), delay);
   }

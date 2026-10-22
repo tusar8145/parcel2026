@@ -268,3 +268,10 @@ cp -r apps/web/public apps/web/.next/standalone/apps/web/
 
 pm2 reload df-web
 pm2 status
+
+
+
+#env changed
+pm2 reload df-api --update-env
+pm2 reload df-worker --update-env
+pm2 status

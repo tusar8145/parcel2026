@@ -325,14 +325,13 @@
     else $("mainContent").insertAdjacentHTML("afterbegin", bar);
   }
 
-  /** Shipment-page headings: the main buttons stay, the rest go under "More actions". */
-  function groupShipmentButtons() {
-    const actions = headingActions();
-    if (!actions || q(".df-more", actions)) return;
-    // One Export: "Download orders / shipments" wrote the same CSV as Export.
+  /**
+   * One print control: the format select reads "Print…" and prints the choice (labels included).
+   * The old Print button is kept hidden (the page script's handler). One Export: "Download orders /
+   * shipments" wrote the same CSV as Export.
+   */
+  function printMenu() {
     $("courierDownload")?.remove();
-    // One print control: the format select reads "Print…" and prints the choice (labels included);
-    // "Print labels" stays as the one shortcut. The old Print button is kept hidden (the page script's handler).
     const format = $("courierPrintFormat");
     if (format && !format.dataset.printMenu) {
       format.dataset.printMenu = "1";
@@ -350,6 +349,71 @@
       cn.textContent = "CN stock";
       cn.title = "Pre-printed consignment number labels (allocate, print, check)";
     }
+  }
+
+  const svg = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  const ICONS = {
+    plus: svg('<use href="#i-plus"/>'),
+    upload: svg('<path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>'),
+    sheet: svg('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/>'),
+    print: svg('<path d="M7 9V4h10v5"/><path d="M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2"/><path d="M7 14h10v6H7z"/>'),
+    download: svg('<use href="#i-download"/>'),
+    box: svg('<use href="#i-box"/>'),
+  };
+  const withIcon = (el, name) => el && !el.querySelector(":scope > svg") && el.insertAdjacentHTML("afterbegin", ICONS[name]);
+
+  /**
+   * New orders heading, no "More actions": New order · Import Excel · Bulk update Excel · Print… ·
+   * Export · CN stock, each with an icon. The Excel template and both histories are in the import and
+   * bulk-update dialogs; labels print from Print… (Shipment labels).
+   */
+  function newOrdersButtons() {
+    const actions = headingActions();
+    if (!actions) return;
+    if (!$("dfIconActionsCss"))
+      document.head.insertAdjacentHTML(
+        "beforeend",
+        `<style id="dfIconActionsCss">.df-icon-actions{flex-wrap:wrap;justify-content:flex-end}.df-icon-actions .button{white-space:nowrap}.df-icon-actions svg{flex:none}.df-icon-actions #courierPrintFormat{width:118px}</style>`,
+      );
+    actions.classList.add("df-icon-actions");
+    printMenu();
+    for (const id of ["printGeneratedCNs", "courierTemplate", "courierImportHistory", "courierBulkHistory"]) $(id)?.remove();
+    const bulk = $("stageBulkUpdate");
+    if (bulk) bulk.textContent = "Bulk update Excel";
+    const format = $("courierPrintFormat");
+    let print = format?.closest(".df-print-select");
+    if (format && !print) {
+      format.insertAdjacentHTML("beforebegin", `<span class="df-print-select" style="position:relative;display:inline-flex;align-items:center">${ICONS.print}</span>`);
+      print = format.previousElementSibling;
+      const icon = print.firstElementChild;
+      icon.setAttribute("style", "position:absolute;left:9px;width:13px;height:13px;color:#586577;pointer-events:none");
+      print.append(format);
+      format.style.paddingLeft = "28px";
+    }
+    const order = [
+      [q('[data-action^="new"], a.button', actions), "plus"],
+      [$("courierImport"), "upload"],
+      [bulk, "sheet"],
+      [print, null],
+      [q('[data-action="export"]', actions), "download"],
+      [$("generateCNs"), "box"],
+    ];
+    for (const [el, icon] of order) {
+      if (!el) continue;
+      el.classList.remove("button-primary");
+      if (icon) withIcon(el, icon);
+      actions.append(el);
+    }
+    order[0][0]?.classList.add("button-primary");
+    // The page script's hidden Print button and the file input stay (their handlers), out of the way.
+    for (const el of [$("courierPrint"), ...actions.querySelectorAll('input[type="file"]')]) if (el && el.parentElement === actions) actions.append(el);
+  }
+
+  /** Shipment-page headings: the main buttons stay, the rest go under "More actions". */
+  function groupShipmentButtons() {
+    const actions = headingActions();
+    if (!actions || q(".df-more", actions)) return;
+    printMenu();
     const keep = '[data-action^="new"], a.button, #courierImport, #courierBulkUpdate, #stageBulkUpdate, #printGeneratedCNs, #courierPrintFormat, #courierPrint';
     const rest = [...actions.children].filter(el => !el.matches(keep) && !el.matches('input[type="file"]'));
     const primary = q('[data-action^="new"], a.button', actions);
@@ -513,11 +577,12 @@
       if (panelTitle) panelTitle.textContent = "Orders waiting for operations";
       const panelSub = q("#mainContent .table-panel .panel-subtitle");
       if (panelSub) panelSub.textContent = "Newest first · 100 a page · tick orders to accept and assign them together";
-      Ops.lists.main("new-orders", { params: () => ({ ...tab.list }), bulkAccept: tab.bulkAccept, noun: "order", empty: "No orders are waiting for operations." });
+      Ops.lists.main("new-orders", { params: () => ({ ...tab.list }), bulkAccept: tab.bulkAccept, noun: "order", lines: true, empty: "No orders are waiting for operations." });
     }
     if (view === "All parcels") Ops.lists.main(`all-${tab.id}`, { params: () => ({ ...tab.list }), merchants: tab.merchants, empty: "No parcels match." });
     stageBulkButton(view, tab);
-    if (v.shipmentPage) groupShipmentButtons();
+    if (view === "New orders") newOrdersButtons();
+    else if (v.shipmentPage) groupShipmentButtons();
     consistentLabels();
     applyMenu();
     updateCounts();

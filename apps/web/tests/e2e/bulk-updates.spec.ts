@@ -101,7 +101,7 @@ test("New orders → choose Accept & assign → download → 2 riders + 1 invali
 
   await signIn(page, ops);
   await opsNav(page, "newOrders");
-  await expect(page.locator("#stageBulkUpdate")).toHaveText("Bulk update New orders by Excel");
+  await expect(page.locator("#stageBulkUpdate")).toHaveText("Bulk update Excel");
   await page.click("#stageBulkUpdate");
   await expect(page.locator("#dfImportTitle")).toHaveText("Bulk update New orders by Excel");
 

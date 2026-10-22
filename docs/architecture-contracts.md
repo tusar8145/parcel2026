@@ -442,8 +442,9 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   reads side-by-side sender | receiver blocks one after the other. `scan-parser.ts` handles ৳ read as
   "$"/"$5" (the amount that equals price + charge wins), "Tk 2,300/-", grams, letter slips in phones;
   `scan-geo.ts` matches places with Bangla names (prisma/data/bd-geo.json + Dhaka city list) and OCR slips.
-  Optional local AI (`scan-ai.ts`, Ollama `SCAN_AI_URL`) reads the text into fields; `mergeAi` keeps only
-  values the label supports. Tests: `test/scan-reading.test.ts` (real OCR on test/fixtures/scan).
+  Optional local AI (`scan-ai.ts`, Ollama `SCAN_AI_URL`): a vision model (default qwen2.5vl:3b) reads the photo
+  itself (`mergeVision` checks each value's form), a text model reads the OCR text (`mergeAi` keeps only
+  values the label supports). Tests: `test/scan-reading.test.ts` (real OCR on test/fixtures/scan).
 - Excel: `GET …/workbook` is the import template filled with the rows plus a **Scan ID** column;
   `POST …/workbook` reads an edited file back (rows matched by Scan ID, new rows added). Submit hands that
   workbook to the import dialog (`Ops.importConfig`, the session's merchant chosen). The import engine keeps

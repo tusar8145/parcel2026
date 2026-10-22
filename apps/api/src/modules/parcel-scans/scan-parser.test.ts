@@ -64,3 +64,22 @@ From: Shop Bari, 01811-000222`;
     expect(phonesIn("Order 20451234567890 · weight 2 kg")).toEqual([]);
   });
 });
+
+describe("tables read word by word (sparse OCR of a real photo: labels lost, values kept)", () => {
+  it("finds the name by the phone, the unlabelled order code, the place and the lone amount", () => {
+    // test/fixtures/scan/real-table.jpg, sparse-text OCR with rows rebuilt (rowsText).
+    const text = "Individual Customer Sales D\nDummy parcel delivery customer records — Bang!\nSale 1 — CUS-1001\nRahim Uddin\n01800000476\nNot provided\nddress Mirpur-10 Dhaka\nLOU 850";
+    expect(parseLabel(text, "ecommerce", { districts: ["Dhaka"], zonesByDistrict: { Dhaka: ["Mirpur"] }, areasByZone: { Mirpur: ["Mirpur 10"] } })).toMatchObject({
+      recipient_name: "Rahim Uddin",
+      recipient_phone: "01800000476",
+      order_ref: "CUS-1001",
+      cod_amount: "850",
+      zone: "Mirpur",
+      area: "Mirpur 10",
+    });
+  });
+
+  it("a lone number is not an amount when it is a house number or a date", () => {
+    expect(parseLabel("To: Karim\n01712345678\nHouse 12\n2026", "ecommerce", { districts: [], zonesByDistrict: {}, areasByZone: {} }).cod_amount).toBeUndefined();
+  });
+});

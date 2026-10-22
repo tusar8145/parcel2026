@@ -29,7 +29,8 @@ const RECIPIENT_MARK = /^(?:to|ship\s*to|deliver(?:y)?\s*to|receiver|recipient|c
 const SENDER_MARK = /^(?:from|sender|shipper|seller|merchant|pick\s*up|pickup|return\s*to|প্রেরক|পাঠানো|বিক্রেতা)(?![\p{L}\p{M}\p{N}])\s*(?:name|নাম)?\s*[:：\-–]?/iu;
 
 const LABELS: Partial<Record<ColumnKey, RegExp>> = {
-  recipient_name: /^(?:name|customer\s*name|receiver\s*name|recipient\s*name|নাম|প্রাপকের\s*নাম)\s*[:：\-–]\s*(.+)$/iu,
+  // "Name: …", or a table row "Name  Rahim Uddin" (no colon).
+  recipient_name: /^(?:name|customer\s*name|receiver\s*name|recipient\s*name|নাম|প্রাপকের\s*নাম)(?:\s*[:：\-–]\s*|\s+)(.+)$/iu,
   address: /^(?:address|addr|delivery\s*address|shipping\s*address|ঠিকানা)\s*[:：\-–.;]?\s*(.+)$/iu,
   instructions: /^(?:note|notes|instruction|instructions|remarks?|comment|নোট|মন্তব্য)\s*[:：\-–.;]?\s*(.+)$/iu,
 };
@@ -76,6 +77,8 @@ export interface Money {
   value: number;
   /** The amount without its first digit when that digit may be a misread ৳ ("৳51,450" for "৳1,450"). */
   alt?: number;
+  /** The amount had a currency sign before it (৳ / $): its first digit is more likely a misread ৳. */
+  marked?: boolean;
   /** Where the amount starts on the line. */
   index: number;
 }
@@ -89,8 +92,9 @@ export function moneyIn(line: string): Money[] {
     const value = Number(whole) + (m[3] ? Number(m[3].padEnd(2, "0")) / 100 : 0);
     if (!Number.isFinite(value) || value > 10_000_000) continue;
     const money: Money = { value, index: m.index ?? 0 };
-    // "৳5 1,450": the ৳ sign read as a digit right before a well-grouped amount.
-    if (m[1] && /^[35689]\d{1,3}(,\d{3})+$/.test(m[2])) money.alt = Number(m[2].slice(1).replace(/,/g, "")) + (m[3] ? Number(m[3].padEnd(2, "0")) / 100 : 0);
+    // The ৳ sign read as a digit right before a well-grouped amount ("৳1,450" → "$51,450" or "51,450").
+    if (/^[35689]\d{1,3}(,\d{3})+$/.test(m[2])) money.alt = Number(m[2].slice(1).replace(/,/g, "")) + (m[3] ? Number(m[3].padEnd(2, "0")) / 100 : 0);
+    if (m[1]) money.marked = true;
     out.push(money);
   }
   return out;
@@ -125,9 +129,30 @@ export function codFrom(lines: string[]): string | undefined {
   if (chosen.alt !== undefined) {
     const others = all.filter(x => x !== pick && x.currency && x.amounts.length).map(x => x.amounts[0]);
     const sum = others.reduce((a, m) => a + (m.alt !== undefined && m.value > 10 * m.alt ? m.alt : m.value), 0);
-    if (Math.abs(sum - chosen.alt) < 0.01 || (Math.abs(sum - chosen.value) >= 0.01 && chosen.value > 50_000 && chosen.alt <= 50_000)) return money(chosen.alt);
+    // The shorter amount when it adds up (price + charge), or when a marked amount is implausibly large.
+    if (others.length && Math.abs(sum - chosen.alt) < 0.01) return money(chosen.alt);
+    if (chosen.marked && Math.abs(sum - chosen.value) >= 0.01 && chosen.value > 50_000 && chosen.alt <= 50_000) return money(chosen.alt);
   }
   return money(chosen.value);
+}
+
+/**
+ * No COD / total keyword anywhere (e.g. a table cell whose "COD" label the OCR lost): a row that holds
+ * only an amount (beside at most a couple of short specks) is taken as the amount to collect.
+ */
+export function loneAmount(lines: string[]): string | undefined {
+  for (const line of [...lines].reverse()) {
+    const t = normalizeText(line).trim();
+    const amounts = moneyIn(t);
+    if (amounts.length !== 1 || phonesIn(t).length) continue;
+    const rest = t.replace(/[৳$]|\btk\.?|\btaka\b|\bbdt\b|টাকা|\/-|[\d,.]+/giu, " ").trim().split(/\s+/).filter(Boolean);
+    if (rest.length > 2 || rest.some(w => w.length > 3 || ADDRESS_WORDS.test(w))) continue;
+    const { value, marked } = amounts[0];
+    // A bare year ("2026") is a date, not taka.
+    if (!marked && !CURRENCY.test(t) && Number.isInteger(value) && value >= 1990 && value <= 2100) continue;
+    if (value >= 50 && value <= 200_000) return money(value);
+  }
+  return undefined;
 }
 
 /** Weight in kg: "1.5 kg", "1.2KG", "500 gm" (= 0.5), "২ কেজি". */
@@ -152,7 +177,8 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   const lines: Line[] = [];
   let section: Section = "none";
   for (const raw of normalizeText(rawText).split(/\r?\n/)) {
-    let text = raw.replace(/\s+/g, " ").trim();
+    // Table borders read as brackets around cells ("[Name [Rahim Uddin").
+    let text = raw.replace(/[[\]{}]/g, " ").replace(/\s+/g, " ").trim();
     if (!text) continue;
     if (RECIPIENT_MARK.test(text)) {
       section = "recipient";
@@ -183,7 +209,10 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   const used = new Set<Line>();
   for (const [key, re] of Object.entries(LABELS) as [ColumnKey, RegExp][]) {
     const line = notSender.find(l => re.test(l.text));
-    const value = line ? stripPhones(line.text.match(re)![1]) : "";
+    let value = line ? stripPhones(line.text.match(re)![1]) : "";
+    // A labelled name ends where the next label starts ("Name Karim Mia Mob 0181…").
+    if (key === "recipient_name") value = value.split(/\b(?:mob|mobile|phone|cell|add|addr|address|cod|bill|price|seller|from)\b/i)[0].trim();
+    if (key === "recipient_name" && value && !nameLike(value)) value = "";
     if (line && value) {
       out[key] = value;
       used.add(line);
@@ -233,12 +262,17 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
 
   const texts = lines.map(l => l.text);
   const all = texts.join("\n");
-  const cod = codFrom(texts);
+  const cod = codFrom(texts) ?? loneAmount(texts);
   if (cod) out.cod_amount = cod;
   const weight = weightFrom(all);
   if (weight) out.weight_kg = weight;
-  const ref = all.match(/\b(?:order|invoice|inv|ref(?:erence)?)\s*(?:no\.?|number|id)?\s*[:#]?\s*#?\s*([A-Z0-9][A-Z0-9\-/]{2,30})/i);
+  const ref = all.match(/\b(?:order|invoice|inv|ref(?:erence)?)\s*(?:no\.?|number|id|code)?\s*[:#]?\s*#?\s*([A-Z0-9][A-Z0-9\-/]{2,30})/i);
   if (ref && /\d/.test(ref[1])) out.order_ref = ref[1];
+  // No "Order …" label: a code shaped like one ("CUS-1001", "INV-2045") written on its own.
+  else {
+    const code = all.match(/(?<![\w-])([A-Z]{2,6}-\d{3,10})(?![\w-])/);
+    if (code && !/^(?:road|house|block|sector|flat)$/i.test(code[1].split("-")[0])) out.order_ref = code[1];
+  }
 
   // District / zone / area: from the address first, else anywhere outside the sender part.
   const fromAddress = placeIn(out.address ?? "", catalog);

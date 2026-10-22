@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { mergeAi } from "./scan-ai";
+import { mergeAi, mergeVision } from "./scan-ai";
 import { parseLabel } from "./scan-parser";
 
 const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/catalog.json"), "utf8"));
@@ -56,5 +56,45 @@ Payable 2,300`;
     const label = "Price ৳1,300\nDelivery charge ৳150\nCollect ৳1,450";
     const merged = mergeAi(parseLabel(label, "ecommerce", catalog), { cod_amount: "1300" }, label, "ecommerce", catalog);
     expect(merged.cod_amount).toBe("1450");
+  });
+});
+
+describe("vision model answers are checked for their form", () => {
+  // qwen2.5vl:3b on test/fixtures/scan/real-table.jpg (a sideways photo of a table the OCR can't read).
+  const answer = { recipient_name: "Rahim Uddin", recipient_phone: "01800000476", address: "Mirpur-10, Dhaka", district: "Dhaka", zone: "Mirpur", area: "10", cod_amount: "850", weight_kg: null, order_ref: "CUS-1001", instructions: null };
+
+  it("takes the photo's reading and matches its places to the catalog", () => {
+    expect(mergeVision({}, answer, "ecommerce", catalog, false)).toEqual({
+      recipient_name: "Rahim Uddin",
+      recipient_phone: "01800000476",
+      address: "Mirpur-10, Dhaka",
+      order_ref: "CUS-1001",
+      cod_amount: "850",
+      district: "Dhaka Central",
+      zone: "Mirpur",
+      area: "Mirpur 10",
+    });
+  });
+
+  it("drops values of the wrong form", () => {
+    const merged = mergeVision({}, { recipient_name: "01800000476", recipient_phone: "0180000047", cod_amount: "৳ not paid", weight_kg: "500", order_ref: "Not provided" }, "ecommerce", catalog, false);
+    expect(merged).toEqual({});
+  });
+
+  it("uses the rules' reading only when the OCR read the photo well", () => {
+    const rules = { recipient_phone: "01712345678", instructions: "Call before delivery" };
+    expect(mergeVision(rules, { recipient_name: "Rahim Uddin" }, "ecommerce", catalog, true)).toMatchObject({ recipient_phone: "01712345678", instructions: "Call before delivery", recipient_name: "Rahim Uddin" });
+    expect(mergeVision(rules, { recipient_name: "Rahim Uddin" }, "ecommerce", catalog, false)).toEqual({ recipient_name: "Rahim Uddin" });
+  });
+});
+
+describe("vision model slips seen in tests", () => {
+  it("keeps the rules' amount when the OCR read well (৳1,450 read as 51,450), and drops a note that repeats the address or the COD line", () => {
+    const rules = { cod_amount: "1450", address: "Flat 4B, House 22, Road 7, Block C, Banani, Dhaka" };
+    const a = mergeVision(rules, { cod_amount: "51,450.00", instructions: "Flat 4B, House 22, Road 7, Block C, Banani, Dhaka", address: rules.address }, "ecommerce", catalog, true);
+    expect(a.cod_amount).toBe("1450");
+    expect(a.instructions).toBeUndefined();
+    const b = mergeVision({}, { instructions: "COD Tk. 2,300/- - Order ID: GG-5521 - 1.2KG" }, "ecommerce", catalog, false);
+    expect(b.instructions).toBeUndefined();
   });
 });

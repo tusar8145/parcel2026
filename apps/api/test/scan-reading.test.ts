@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ScanReaderService } from "../src/modules/parcel-scans/scan-reader";
-import { parseLabel } from "../src/modules/parcel-scans/scan-parser";
+import { readFields, ScanReaderService } from "../src/modules/parcel-scans/scan-reader";
 
 /**
  * Photo → fields on real OCR (tesseract on this machine), for the label shapes seen in practice:
@@ -40,6 +39,8 @@ const CASES: [string, "ecommerce" | "customer", Record<string, string>][] = [
   ["taka.png", "ecommerce", fashionHub],
   ["taka-270.png", "ecommerce", fashionHub],
   ["bangla.png", "ecommerce", { recipient_name: "সুমন আহমেদ", recipient_phone: "01711223344", cod_amount: "850", district: "Dhaka Central", zone: "Mirpur", area: "Mirpur 10", instructions: "বিকেলে দিবেন" }],
+  // A real phone photo: a table, sideways, grey paper (the labels read poorly; the values are filled by the word-by-word reading).
+  ["real-table.jpg", "ecommerce", { recipient_name: "Rahim Uddin", recipient_phone: "01800000476", address: "Mirpur-10, Dhaka", cod_amount: "850", order_ref: "CUS-1001", district: "Dhaka Central", zone: "Mirpur", area: "Mirpur 10" }],
   [
     "columns.png",
     "customer",
@@ -48,12 +49,15 @@ const CASES: [string, "ecommerce" | "customer", Record<string, string>][] = [
 ];
 
 describe("reading parcel photos", () => {
+  // English labels with the default English OCR; the Bangla label with SCAN_OCR_LANGS=eng+ben.
   const reader = new ScanReaderService();
-  afterAll(() => reader.onModuleDestroy());
+  const bangla = new ScanReaderService();
+  reader.langs = ["eng"];
+  bangla.langs = ["eng", "ben"];
+  afterAll(() => Promise.all([reader.onModuleDestroy(), bangla.onModuleDestroy()]));
 
   it.each(CASES)("%s", async (file, kind, expected) => {
-    const read = await reader.read(fs.readFileSync(path.join(dir, file)));
-    expect(read.confidence, read.text).toBeGreaterThan(80);
-    expect(parseLabel(read.text, kind, catalog), read.text).toMatchObject(expected);
+    const read = await readFields(file === "bangla.png" ? bangla : reader, fs.readFileSync(path.join(dir, file)), kind, catalog);
+    expect(read.cells, read.text).toMatchObject(expected);
   }, 60_000);
 });

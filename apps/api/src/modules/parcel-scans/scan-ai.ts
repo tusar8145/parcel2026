@@ -99,19 +99,44 @@ export function mergeAi(rules: ScanCells, ai: Partial<Record<Field, string | num
 export class ScanAiService {
   private readonly logger = new Logger(ScanAiService.name);
 
+  private vision?: Promise<boolean>;
+
   enabled() {
     return !!env().SCAN_AI_URL;
   }
 
-  async extract(text: string, kind: ImportKindKey): Promise<Partial<Record<Field, string | number | null>> | null> {
-    const url = env().SCAN_AI_URL;
-    if (!url || !text.trim()) return null;
-    const columns = new Set<string>(COLUMNS[kind].map(c => c.key as ColumnKey));
+  private base = () => env().SCAN_AI_URL!.replace(/\/+$/, "");
+
+  /** Whether the configured model reads images (Ollama reports "vision" among its capabilities). */
+  seesImages(): Promise<boolean> {
+    if (!this.enabled()) return Promise.resolve(false);
+    this.vision ??= fetch(`${this.base()}/api/show`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: env().SCAN_AI_MODEL }), signal: AbortSignal.timeout(10_000) })
+      .then(r => (r.ok ? (r.json() as Promise<{ capabilities?: string[] }>) : { capabilities: [] }))
+      .then(b => !!b.capabilities?.includes("vision"))
+      .catch(() => {
+        this.vision = undefined; // ask again next time (Ollama may be starting)
+        return false;
+      });
+    return this.vision;
+  }
+
+  /**
+   * The order fields of a label: from the photo itself when the model reads images (with the OCR text
+   * as a hint when it read well), else from the OCR text. Null when the AI is off or fails.
+   */
+  async extract(input: { text: string; kind: ImportKindKey; image?: Buffer; ocrGood?: boolean }): Promise<AiReading | null> {
+    if (!this.enabled()) return null;
+    const vision = !!input.image && (await this.seesImages());
+    if (!vision && !input.text.trim()) return null;
+    const columns = new Set<string>(COLUMNS[input.kind].map(c => c.key as ColumnKey));
     const fields = (Object.keys(FIELDS) as Field[]).filter(f => columns.has(f));
     const schema = { type: "object", properties: Object.fromEntries(fields.map(f => [f, { type: ["string", "null"], description: FIELDS[f] }])), required: fields };
-    const prompt = `Fields:\n${fields.map(f => `- ${f}: ${FIELDS[f]}`).join("\n")}\n\nLabel text:\n"""\n${text.slice(0, 3000)}\n"""`;
+    const list = `Fields:\n${fields.map(f => `- ${f}: ${FIELDS[f]}`).join("\n")}`;
+    const user = vision
+      ? `${list}\n\nThe photo shows one parcel's label, slip or order sheet (it may be a table, printed or handwritten). Read it carefully and fill in the fields.${input.ocrGood && input.text.trim() ? `\n\nText read from it by OCR (may have mistakes; the photo is right):\n"""\n${input.text.slice(0, 2000)}\n"""` : ""}`
+      : `${list}\n\nLabel text:\n"""\n${input.text.slice(0, 3000)}\n"""`;
     try {
-      const res = await fetch(`${url.replace(/\/+$/, "")}/api/chat`, {
+      const res = await fetch(`${this.base()}/api/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: AbortSignal.timeout(env().SCAN_AI_TIMEOUT_MS),
@@ -120,20 +145,78 @@ export class ScanAiService {
           stream: false,
           format: schema,
           keep_alive: "30m",
-          options: { temperature: 0, num_ctx: 4096 },
+          options: { temperature: 0, num_ctx: vision ? 8192 : 4096 },
           messages: [
-            { role: "system", content: SYSTEM },
-            { role: "user", content: prompt },
+            { role: "system", content: vision ? SYSTEM_VISION : SYSTEM },
+            { role: "user", content: user, ...(vision ? { images: [input.image!.toString("base64")] } : {}) },
           ],
         }),
       });
       if (!res.ok) throw new Error(`Ollama answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
       const body = (await res.json()) as { message?: { content?: string } };
       const parsed = JSON.parse(body.message?.content ?? "{}") as Record<string, unknown>;
-      return Object.fromEntries(fields.map(f => [f, typeof parsed[f] === "string" || typeof parsed[f] === "number" ? (parsed[f] as string | number) : null]));
+      const values = Object.fromEntries(fields.map(f => [f, typeof parsed[f] === "string" || typeof parsed[f] === "number" ? (parsed[f] as string | number) : null]));
+      return { values, vision };
     } catch (err) {
       this.logger.warn({ err: err instanceof Error ? err.message : err }, "The label AI could not read a photo; the rules' reading is kept");
       return null;
     }
   }
+}
+
+export interface AiReading {
+  values: Partial<Record<Field, string | number | null>>;
+  /** Read from the photo itself (true) or from the OCR text. */
+  vision: boolean;
+}
+
+const SYSTEM_VISION = `You read photos of Bangladeshi parcel labels, delivery slips and order sheets (English and/or Bangla; the photo may be rotated, tilted, shadowed or a table) and return the delivery order fields as JSON.
+Rules:
+- Read only what is written in the photo; never invent. Use null when a field is not there or you can't read it.
+- The recipient is who receives the parcel (To, Ship to, Deliver to, Customer, Name, Receiver, প্রাপক). The sender is the shop or person sending it (From, Sender, Shipper, Seller, প্রেরক). Never mix them up.
+- Phone numbers: Bangladeshi mobiles, 11 digits starting with 01 (drop +88). Copy every digit exactly.
+- Amounts: digits only, no commas or currency (৳ is the taka sign, not a digit).
+- Keep Bangla text in Bangla.`;
+
+/**
+ * A reading from the photo itself (vision model): it can't be checked against the OCR text (that may be
+ * unreadable), so each value is checked for its form instead: a valid BD mobile, an amount, a weight in
+ * range, a name without digits, a place of the catalog. The rules fill what it left out, but only when
+ * the OCR read the photo well.
+ */
+export function mergeVision(rules: ScanCells, ai: AiReading["values"], kind: ImportKindKey, places: Places, ocrGood: boolean): ScanCells {
+  const str = (v: unknown) => (v === null || v === undefined ? "" : String(v).trim());
+  const out: ScanCells = ocrGood ? { ...rules } : {};
+  for (const key of ["recipient_phone", "sender_phone"] as const) {
+    const phone = phonesIn(str(ai[key]))[0];
+    if (phone) out[key] = phone;
+  }
+  if (out.sender_phone && out.sender_phone === out.recipient_phone) delete out.sender_phone;
+  for (const key of ["recipient_name", "sender_name"] as const) {
+    const value = str(ai[key]);
+    if (value && value.length <= 80 && !/\d{3,}/.test(value)) out[key] = value;
+  }
+  for (const key of ["address", "instructions", "order_ref"] as const) {
+    const value = str(ai[key]);
+    if (!value || value.length > 300) continue;
+    if (key === "order_ref" && /\s{2,}|not provided|n\/a|none/i.test(value)) continue;
+    // A "note" that is really the address, the order number or an amount is not a delivery note.
+    if (key === "instructions" && (normPlace(value) === normPlace(out.address ?? "") || /\b(?:order|invoice|inv|ref|cod|total|tk|bdt)\b|৳|\d{5,}/i.test(normalizeText(value)))) continue;
+    out[key] = value;
+  }
+  // The amount: the rules' when the OCR read the label well (they check price + charge = total, which
+  // catches ৳ read as a 5 or 8 — models make that slip too); else the model's.
+  const cod = Number(str(ai.cod_amount).replace(/[^\d.]/g, ""));
+  if (cod > 0 && cod <= 1_000_000 && !(ocrGood && rules.cod_amount)) out.cod_amount = String(cod);
+  const kg = Number(str(ai.weight_kg).replace(/[^\d.]/g, ""));
+  if (kg > 0 && kg <= 100) out.weight_kg = String(kg);
+  const place = placeIn([str(ai.area), str(ai.zone), str(ai.district), out.address ?? ""].filter(Boolean).join(", "), places);
+  if (place.zone || place.district) {
+    delete out.district;
+    delete out.zone;
+    delete out.area;
+    Object.assign(out, place);
+  }
+  const allowed = new Set<string>(COLUMNS[kind].map(c => c.key));
+  return Object.fromEntries(Object.entries(out).filter(([k, v]) => allowed.has(k) && v)) as ScanCells;
 }

@@ -190,23 +190,125 @@ pm2 reload all
 - **Health.** `GET /api/v1/health/live` (process) and `/api/v1/health/ready` (database + Redis)
   for uptime monitoring.
 
-## 9. Local AI for "Scan with phone" (optional)
+## 9. Reading parcel photos ("Scan with phone")
 
-Photos are read with tesseract (OCR) on the server; a small local language model then reads that
-text into the order fields for label layouts the built-in rules don't know (no external service; the
-photos never leave the server). Without it, the rules alone fill the rows.
+Without any AI, the server reads photos with tesseract OCR: it turns the photo the right way up,
+straightens it, reads it, and when the phone, name or amount is missing (tables, scattered labels) reads
+it again word by word and fills in what's missing. Settings in `apps/api/.env`:
+
+- `SCAN_OCR_LANGS=eng` (default): English labels, fastest. `eng+ben` also reads Bangla labels (about 40% slower).
+- **Small servers (4 GB RAM, 2 cores):** use OCR only: don't install Ollama, leave `SCAN_AI_URL` unset. A
+  photo then takes about 2–10 s for a clear label and up to ~40 s for a hard one (sideways, a table).
+  The vision AI below needs about 3.5 GB of RAM on its own: on a 4 GB server it makes everything slow.
+  It can run on another, bigger machine instead: point `SCAN_AI_URL` at that machine's Ollama.
+
+### Local vision AI (8 GB RAM or more)
+
+A local vision model reads each parcel photo itself (rotated, tables, Bangla, poor light) on this
+server, with no external service: the photos never leave it. Tesseract OCR still runs first (it turns
+the photo the right way up, and its text feeds the checks). Without the AI, OCR + rules alone fill the
+rows: fine for clean printed labels, weak on real-world photos.
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh     # installs Ollama as a service on 127.0.0.1:11434
-ollama pull qwen2.5:3b                            # ~1.9 GB; keeps ~2.5 GB RAM while loaded
+ollama pull qwen2.5vl:3b                          # ~3.2 GB; uses ~3.5 GB RAM while loaded
 ```
 
 Then `SCAN_AI_URL=http://127.0.0.1:11434` in `apps/api/.env` and `pm2 reload df-worker` (the worker
-reads the photos). Optional: `SCAN_AI_MODEL` (default `qwen2.5:3b`), `SCAN_AI_TIMEOUT_MS` (default
-60000; on a timeout the rules' reading is kept).
+reads the photos). Optional: `SCAN_AI_MODEL` (default `qwen2.5vl:3b`; a text-only model such as
+`qwen2.5:3b` reads the OCR text instead of the photo), `SCAN_AI_TIMEOUT_MS` (default 600000 = 10
+minutes; on a timeout the OCR + rules reading is kept).
 
-- Speed on a CPU: about 10–20 s per photo after OCR (rows show "Reading…" meanwhile). A GPU makes it ~1 s.
-- The model's answers are checked against the label before use: phones and amounts must be printed
-  on it, names and addresses made of its words, places from the service catalog.
+- **Speed without a GPU:** about 1.5–3 minutes per photo, one photo at a time (rows show "Reading…";
+  20 parcels take roughly 40 minutes). An NVIDIA GPU makes it a few seconds.
+- **Memory:** 8 GB RAM is enough for the model next to PostgreSQL, Redis and the app. The model is
+  unloaded after 30 minutes without photos.
+- **Checks:** every answer is checked before use: a valid BD mobile, a plain amount, a name without
+  digits, places from the service catalog. When the OCR also read the label well, the rules' amount
+  wins (they catch ৳ read as a 5 or 8, a slip the models make too).
 - The OCR language data folder is created next to `FILE_STORAGE_DIR` (e.g. `/var/www/tesseract`):
   the PM2 user needs write access to its parent the first time.
+
+
+////////////////////////////////
+Run step 0 on your PC; everything after it runs on the server.
+
+**Step 0 — on your PC: commit and push (not done yet).** The latest photo-reading work (rotation, ৳ amounts, Bangla places, local AI) is uncommitted, so a pull on the server won't get it:
+```bash
+git add -A
+git commit -m "Scan with phone: rotation, image cleanup, taka/Bangla parsing, local AI"
+git push
+```
+The password line from `README.md` is already in a commit on GitHub. Change that password and remove it from the file.
+
+---
+
+**On the server** (as the user that runs PM2):
+
+**1. Go to the app folder and back up the database**
+```bash
+cd /var/www/deliveryfast
+pg_dump -U deliveryfast -h localhost deliveryfast > ~/backup-$(date +%F-%H%M).sql
+```
+
+**2. Get the new code**
+```bash
+git pull
+```
+
+**3. Install packages** (includes the OCR and image-cleanup packages)
+```bash
+npm ci
+```
+
+**4. Build**
+```bash
+API_ORIGIN=http://127.0.0.1:4000 npm run build
+```
+
+**5. Update the database** (adds the scan tables if this server doesn't have them yet; otherwise it does nothing)
+```bash
+(cd apps/api && npx prisma migrate deploy)
+```
+
+**6. Copy the web's static files**
+```bash
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+```
+
+**7. OCR language folder** (first time only; it goes next to `FILE_STORAGE_DIR`, e.g. `/var/www/tesseract`)
+```bash
+sudo mkdir -p /var/www/tesseract
+sudo chown $(whoami) /var/www/tesseract
+```
+
+**8. Local AI: skip it on a 4 GB / 2-core server.** The vision model needs ~3.5 GB RAM by itself; OCR alone
+reads the photos there (section 9). Make sure `apps/api/.env` has **no** `SCAN_AI_URL` line, and if Ollama was
+installed earlier, stop it:
+```bash
+sudo systemctl disable --now ollama
+```
+(On a server with 8 GB+ RAM: `curl -fsSL https://ollama.com/install.sh | sh`, `ollama pull qwen2.5vl:3b`, then
+`SCAN_AI_URL=http://127.0.0.1:11434` in `apps/api/.env`.)
+
+**9. Restart the app**
+```bash
+pm2 reload all
+```
+
+**10. Check**
+```bash
+curl http://127.0.0.1:4000/api/v1/health/ready   # should say ok
+pm2 logs df-worker --lines 30                     # no errors
+```
+Then on the live site:
+1. Open Courier Operations → New orders.
+2. Press Ctrl+Shift+R once.
+3. Click **Scan with phone**, scan the QR code with a phone, and take a photo of a label. A row should fill in after about 5–40 seconds (OCR only, 2 cores).
+
+**If something breaks:**
+1. Run `git log --oneline -5` and `git checkout <previous commit>`.
+2. Repeat steps 3, 4 and 6, then `pm2 reload all`.
+
+The new tables can stay. Restore the step 1 backup only if data itself is damaged.

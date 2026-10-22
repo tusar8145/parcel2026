@@ -22,10 +22,12 @@ const envSchema = z
     FILE_STORAGE_DIR: z.string().default(".data/files"),
     /** Where phones open "Scan with phone" links (default APP_URL; in development a localhost APP_URL becomes this computer's LAN address). */
     SCAN_LINK_ORIGIN: z.url().optional(),
-    /** Local AI that reads scanned labels (Ollama, e.g. http://127.0.0.1:11434); unset = rules only. */
-    SCAN_AI_URL: z.url().optional(),
-    SCAN_AI_MODEL: z.string().min(1).default("qwen2.5:3b"),
-    SCAN_AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(60_000),
+    /** Local AI that reads scanned labels (Ollama, e.g. http://127.0.0.1:11434); unset = OCR + rules only. A vision model (default qwen2.5vl:3b) reads the photo itself; a text model reads the OCR text. */
+    /** OCR languages for scanned labels: "eng" (English labels, fastest) or "eng+ben" (Bangla too). */
+    SCAN_OCR_LANGS: z.string().regex(/^(eng|ben)(\+(eng|ben))*$/, "Use eng or eng+ben").default("eng"),
+    SCAN_AI_URL: z.union([z.url(), z.literal("")]).optional(),
+    SCAN_AI_MODEL: z.string().min(1).default("qwen2.5vl:3b"),
+    SCAN_AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(600_000),
     TRUST_PROXY: bool.default(false),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

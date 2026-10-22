@@ -176,7 +176,7 @@
     const cols = columnsOf(session);
     const scans = session.scans;
     const open = scans.filter(x => !x.trackingId);
-    $("dfScanCount").textContent = `${scans.length} parcel${scans.length === 1 ? "" : "s"}${scans.some(x => x.status === "READING") ? ` · ${scans.filter(x => x.status === "READING").length} being read` : ""}`;
+    $("dfScanCount").textContent = `${scans.length} parcel${scans.length === 1 ? "" : "s"}${scans.some(x => x.status === "READING") ? ` · ${scans.filter(x => x.status === "READING").length} being read (a minute or two each, one at a time)` : ""}`;
     $("dfScanEmpty").hidden = scans.length > 0;
     const submit = $("dfScanSubmit");
     if (submit) {

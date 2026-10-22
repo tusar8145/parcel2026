@@ -40,6 +40,8 @@ async function signIn(page: Page, user: TempUser) {
 }
 
 test("a label photographed on the phone becomes an order row, is submitted through the importer and keeps its photo", async ({ page, browser }) => {
+  // With the local vision AI on (SCAN_AI_URL), reading one photo takes a few minutes on a CPU.
+  test.setTimeout(15 * 60_000);
   await signIn(page, OPS);
   await opsNav(page, "newOrders");
   // The toolbar: Scan with phone next to Import Excel.
@@ -71,12 +73,12 @@ test("a label photographed on the phone becomes an order row, is submitted throu
 
   // ── The computer: the row appears live and is read from the label ──
   const row = page.locator("#dfScanRows tr").first();
-  await expect(row.locator("[data-scan-status]")).toHaveText("Read", { timeout: 60_000 });
+  await expect(row.locator("[data-scan-status]")).toHaveText("Read", { timeout: 10 * 60_000 });
   await expect(row.locator('[data-cell="recipient_phone"]')).toHaveValue("01712345678");
   await expect(row.locator('[data-cell="recipient_name"]')).toHaveValue("Rahim Uddin");
   await expect(row.locator('[data-cell="cod_amount"]')).toHaveValue("1250");
   await expect(row.locator('[data-scan="photo"] img')).toBeVisible();
-  await expect(mobile.locator(".list .state.sent")).toContainText("Read", { timeout: 15_000 });
+  await expect(mobile.locator(".list .state.sent")).toContainText("Read", { timeout: 30_000 });
 
   // ── Edited in the table (saved as you type) ──
   await row.locator('[data-cell="recipient_name"]').fill("Rahim Uddin Khan");

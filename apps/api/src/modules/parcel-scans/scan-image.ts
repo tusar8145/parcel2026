@@ -21,6 +21,12 @@ export async function prepare(image: Buffer, { angle = 0, size = 2000 }: { angle
     .toBuffer();
 }
 
+/** The photo for a vision model: turned the way it reads (`angle`), at most 1280 px, JPEG. */
+export async function forModel(image: Buffer, angle = 0) {
+  const turned = angle ? await sharp(image, { failOn: "none" }).rotate(angle, { background: "#ffffff" }).toBuffer() : image;
+  return sharp(turned, { failOn: "none" }).resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 88 }).toBuffer();
+}
+
 export interface OcrWord {
   text: string;
   bbox: { x0: number; y0: number; x1: number; y1: number };
@@ -94,4 +100,27 @@ export function layoutText(lines: OcrLine[]): string {
   });
   flush();
   return out.join("\n");
+}
+
+/**
+ * Text rows rebuilt from scattered words (tesseract's sparse-text mode reads table cells and stray
+ * labels one by one): words whose heights overlap are one row, read left to right. Specks the OCR
+ * isn't sure of (confidence below `minConfidence`) are left out.
+ */
+export function rowsText(words: (OcrWord & { confidence?: number })[], minConfidence = 35): string {
+  const sure = words.filter(w => w.text.trim() && (w.confidence ?? 100) >= minConfidence).sort((a, b) => (a.bbox.y0 + a.bbox.y1) / 2 - (b.bbox.y0 + b.bbox.y1) / 2);
+  const rows: { y0: number; y1: number; words: OcrWord[] }[] = [];
+  for (const w of sure) {
+    const h = w.bbox.y1 - w.bbox.y0;
+    const row = rows.find(r => Math.min(r.y1, w.bbox.y1) - Math.max(r.y0, w.bbox.y0) >= 0.5 * Math.min(h, r.y1 - r.y0));
+    if (row) {
+      row.words.push(w);
+      row.y0 = Math.min(row.y0, w.bbox.y0);
+      row.y1 = Math.max(row.y1, w.bbox.y1);
+    } else rows.push({ y0: w.bbox.y0, y1: w.bbox.y1, words: [w] });
+  }
+  return rows
+    .sort((a, b) => a.y0 - b.y0)
+    .map(r => r.words.sort((a, b) => a.bbox.x0 - b.bbox.x0).map(w => w.text).join(" "))
+    .join("\n");
 }

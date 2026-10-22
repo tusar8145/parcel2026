@@ -16,9 +16,10 @@ import type { ParcelScan, ParcelScanSession } from "../../generated/prisma/clien
 import { COLUMNS, KIND_ENUM, KIND_LABEL, kindKeyOf, merchantTypeOf, type ImportKindKey } from "../imports/columns";
 import { ImportJobsService } from "../imports/import-jobs.service";
 import { PricingService } from "../pricing/pricing.service";
-import { parseLabel, type ScanCells } from "./scan-parser";
-import { ScanReaderService } from "./scan-reader";
-import { mergeAi, ScanAiService } from "./scan-ai";
+import type { ScanCells } from "./scan-parser";
+import { readFields, ScanReaderService } from "./scan-reader";
+import { mergeAi, mergeVision, ScanAiService } from "./scan-ai";
+import { forModel, upright } from "./scan-image";
 import type { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
 
 const QUEUE = "parcel-scans";
@@ -65,7 +66,10 @@ export class ParcelScansService implements OnApplicationBootstrap {
 
   private async queueReady() {
     await (this.queues as unknown as { ready?: Promise<void> }).ready;
-    if (!(await this.queues.boss.getQueue(QUEUE))) await this.queues.boss.createQueue(QUEUE, { name: QUEUE, retryLimit: 2, retryDelay: 10, expireInSeconds: 300 });
+    // A vision model on a CPU can take minutes per photo: a job is given 30 minutes before it counts as stuck.
+    const policy = { name: QUEUE, retryLimit: 2, retryDelay: 10, expireInSeconds: 1800 };
+    if (!(await this.queues.boss.getQueue(QUEUE))) await this.queues.boss.createQueue(QUEUE, policy);
+    else await this.queues.boss.updateQueue(QUEUE, policy);
   }
 
   private async startWorkers() {
@@ -337,15 +341,21 @@ export class ParcelScansService implements OnApplicationBootstrap {
     let cells: ScanCells = {};
     let status: "READ" | "FAILED" = "READ";
     try {
-      const read = await this.reader.read(await this.storage.read(scan.file.storageKey));
-      text = read.text.trim();
+      const photo = await this.storage.read(scan.file.storageKey);
       const kind = kindKeyOf(scan.session.kind);
       const catalog = await this.pricing.catalog();
-      cells = parseLabel(text, kind, catalog);
-      // The local AI (when configured) for layouts the rules don't know; only what the label supports is kept.
-      const ai = text ? await this.ai.extract(text, kind) : null;
-      if (ai) cells = mergeAi(cells, ai, text, kind, catalog);
-      if (!text) status = "FAILED";
+      // OCR + rules (a word-by-word second reading fills fields the first one missed).
+      const read = await readFields(this.reader, photo, kind, catalog);
+      text = read.text;
+      cells = read.cells;
+      // The OCR read it well: sure of itself and the phone found (a confident read of the title alone isn't).
+      const ocrGood = read.confidence >= 75 && !!cells.recipient_phone;
+      // The local AI (when configured): a vision model reads the photo itself (turned the way the OCR read
+      // it best), a text model the OCR text; either way only checked values are kept.
+      const image = (await this.ai.seesImages()) ? await forModel(await upright(photo), read.angle) : undefined;
+      const ai = await this.ai.extract({ text, kind, image, ocrGood });
+      if (ai) cells = ai.vision ? mergeVision(cells, ai.values, kind, catalog, ocrGood) : mergeAi(cells, ai.values, text, kind, catalog);
+      if (!Object.keys(cells).length && !ocrGood) status = "FAILED";
     } catch (err) {
       this.logger.warn({ err, scan: scanId }, "A parcel photo could not be read");
       status = "FAILED";

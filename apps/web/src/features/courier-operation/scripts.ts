@@ -48,6 +48,8 @@ export const scripts = [
   "/legacy/shared/importer.js",
   "/legacy/courier-operation/bridge-imports.js",
   "/legacy/courier-operation/bridge-bulk.js",
+  // New orders › Scan with phone: QR link, phone photos read into rows, Excel out / in, submit through the importer.
+  "/legacy/courier-operation/bridge-scan.js",
   // Server-paged parcel tables, the "my hub" scope, stage counts and bulk Accept & assign.
   "/legacy/courier-operation/bridge-lists.js",
   // Desk tools: live chip, alerts bell, zone → hub lookup, keyboard shortcuts, Hub desk › End of day.

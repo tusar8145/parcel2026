@@ -20,6 +20,8 @@ const envSchema = z
     EXPOSE_DEV_OTP: bool.default(false),
     RUN_WORKERS: bool.default(true),
     FILE_STORAGE_DIR: z.string().default(".data/files"),
+    /** Where phones open "Scan with phone" links (default APP_URL; in development a localhost APP_URL becomes this computer's LAN address). */
+    SCAN_LINK_ORIGIN: z.url().optional(),
     TRUST_PROXY: bool.default(false),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

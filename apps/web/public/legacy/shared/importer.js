@@ -215,6 +215,8 @@
 
   async function open(cfg) {
     ui = { cfg: { tones: DEFAULT_TONES, ...cfg }, step: "choose", filter: "all", page: 1, filters: { ...(cfg.filters || {}) } };
+    // Operations opening it for a known merchant (e.g. Scan with phone): that merchant is chosen already.
+    if (cfg.forOps && cfg.merchantId && !isBulk(cfg)) ui.merchantId = cfg.merchantId;
     draw(isBulk(cfg) ? bulkTitle(cfg) : `Import ${noun(cfg)} from Excel`, "Loading the limits…", "", button("close", "Cancel"));
     try {
       const [limits, config] = isBulk(cfg)

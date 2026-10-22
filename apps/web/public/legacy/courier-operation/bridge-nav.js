@@ -363,7 +363,7 @@
   const withIcon = (el, name) => el && !el.querySelector(":scope > svg") && el.insertAdjacentHTML("afterbegin", ICONS[name]);
 
   /**
-   * New orders heading, no "More actions": New order · Import Excel · Bulk update Excel · Print… ·
+   * New orders heading, no "More actions": New order · Import Excel · Scan with phone · Bulk update Excel · Print… ·
    * Export · CN stock, each with an icon. The Excel template and both histories are in the import and
    * bulk-update dialogs; labels print from Print… (Shipment labels).
    */
@@ -390,9 +390,12 @@
       print.append(format);
       format.style.paddingLeft = "28px";
     }
+    // Scan with phone (bridge-scan.js; its button carries its own camera icon).
+    if (!$("scanWithPhone") && Ops.scanButton) actions.insertAdjacentHTML("beforeend", Ops.scanButton());
     const order = [
       [q('[data-action^="new"], a.button', actions), "plus"],
       [$("courierImport"), "upload"],
+      [$("scanWithPhone"), null],
       [bulk, "sheet"],
       [print, null],
       [q('[data-action="export"]', actions), "download"],

@@ -48,6 +48,8 @@
       onDone: () => Ops.refresh().catch(() => undefined),
     };
   }
+  /** The importer's operations config (Scan with phone hands its rows to the same dialog). */
+  Ops.importConfig = config;
 
   window.addEventListener(
     "click",

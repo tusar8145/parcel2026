@@ -56,6 +56,8 @@ EXPOSE_DEV_OTP=false
 TRUST_PROXY=true
 RUN_WORKERS=false
 FILE_STORAGE_DIR=/var/www/deliveryfast-files
+# Optional: the address phones open "Scan with phone" links on (default APP_URL).
+# SCAN_LINK_ORIGIN=https://app.example.com
 LOG_LEVEL=info
 ```
 

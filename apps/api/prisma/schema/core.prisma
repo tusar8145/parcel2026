@@ -228,8 +228,8 @@ model Merchant {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 
-  plan               ServicePlan?          @relation(fields: [planId], references: [id])
-  pickupHub          Hub?                  @relation("MerchantPickupHub", fields: [pickupHubId], references: [id], onDelete: SetNull)
+  plan               ServicePlan?             @relation(fields: [planId], references: [id])
+  pickupHub          Hub?                     @relation("MerchantPickupHub", fields: [pickupHubId], references: [id], onDelete: SetNull)
   addressRequests    MerchantAddressRequest[]
   members            UserRole[]
   parcels            Parcel[]
@@ -616,6 +616,8 @@ model Parcel {
   deliveryRider        Rider?                  @relation("DeliveryRider", fields: [deliveryRiderId], references: [id])
   currentHub           Hub?                    @relation("ParcelCurrentHub", fields: [currentHubId], references: [id])
   events               TrackingEvent[]
+  /// Phone scans of this parcel (Scan with phone), with their photos.
+  scans                ParcelScan[]
   attempts             DeliveryAttempt[]
   proof                DeliveryProof?
   codCollection        CodCollection?
@@ -993,6 +995,7 @@ model StoredFile {
   proofs               DeliveryProof[]
   kycDocuments         RiderKycDocument[]
   merchantKycDocuments MerchantKycDocument[]
+  parcelScans          ParcelScan[]
 
   @@map("stored_files")
 }

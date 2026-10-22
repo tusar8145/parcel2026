@@ -1,5 +1,5 @@
 import { columnLetter, sheetRef, STYLE, writeXlsx, type Cell, type DataValidation, type Sheet } from "./xlsx/xlsx-writer";
-import { KIND_LABEL, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey } from "./columns";
+import { KIND_LABEL, SCAN_HEADER, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey } from "./columns";
 import { packageOwner, type EngineContext } from "./import-engine.service";
 
 export const DATA_SHEET: Record<ImportKindKey, string> = { ecommerce: "Orders", document: "Consignments", customer: "Parcels" };
@@ -22,7 +22,9 @@ export interface TemplateOptions {
   maxRows: number;
   maxFileMb: number;
   /** Failed-rows download: data rows (cells by column) and their error text. */
-  rows?: { cells: Partial<Record<ColumnKey, string>>; error: string }[];
+  rows?: { cells: Partial<Record<ColumnKey, string>>; error?: string; scanId?: string }[];
+  /** Scan with phone workbook: the rows carry a "Scan ID" column (last) instead of an Error column. */
+  scan?: boolean;
 }
 
 const listName = (key: ListKey) => `L_${key}`;
@@ -148,17 +150,19 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
       validations.push({ sqref: range, type: "textLength", operator: "lessThanOrEqual", formula1: String(col.maxLength), errorTitle: col.header, error: `Use at most ${col.maxLength} characters.`, ...prompt });
   });
 
-  const failed = !!opts.rows;
+  const failed = !!opts.rows && !opts.scan;
   const header: Cell[] = cols.map(col => ({ value: settings[col.key]?.required ? `${col.header} *` : col.header, style: settings[col.key]?.required ? STYLE.headerRequired : STYLE.headerOptional }));
   if (failed) header.push({ value: "Error", style: STYLE.headerRequired });
+  if (opts.scan) header.push({ value: SCAN_HEADER, style: STYLE.headerOptional });
   const dataRows: Cell[][] = (opts.rows ?? []).map(r => [
     ...cols.map(col => ({ value: r.cells[col.key] ?? "", style: col.text ? STYLE.text : STYLE.normal })),
-    ...(failed ? [{ value: r.error, style: STYLE.error }] : []),
+    ...(failed ? [{ value: r.error ?? "", style: STYLE.error }] : []),
+    ...(opts.scan ? [{ value: r.scanId ?? "", style: STYLE.text }] : []),
   ]);
   const data: Sheet = {
     name: DATA_SHEET[ctx.kind],
     rows: [header, ...dataRows],
-    widths: [...cols.map(c => c.width), ...(failed ? [60] : [])],
+    widths: [...cols.map(c => c.width), ...(failed ? [60] : opts.scan ? [40] : [])],
     columnStyles: cols.map(c => (c.text ? STYLE.text : undefined)),
     freezeHeader: true,
     validations,

@@ -424,6 +424,28 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `bulk-bookings` pg-boss queue rows left in the `pgboss` schema. Dropping them needs an explicit
   owner decision and a migration; no data was removed.
 
+## Scan with phone (modules/parcel-scans; web: courier-operation/bridge-scan.js, app/(scan)/scan/[token]) — 2026-10-22
+
+- New orders › "Scan with phone": choose the parcel type and merchant (one per session) →
+  `POST /parcel-scans/sessions` returns `{ url, qrSvg }`. The link (`/scan/<token>`, token stored only as
+  a SHA-256) works while the modal is open: the modal calls `…/keepalive` every minute (link valid 3 minutes
+  past the last call, 12 hours at most) and `DELETE /parcel-scans/sessions/:id` on close or page exit.
+- The phone page compresses each photo to JPEG (≤ 1600 px) and posts it to the public
+  `POST /parcel-scans/public/:token/photos` (410 `SCAN_LINK_EXPIRED` once closed). Photos are kept with
+  `StorageService`; the `parcel-scans` pg-boss job reads them with tesseract (English + Bangla, on this
+  server, language data from the `@tesseract.js-data/*` packages copied next to `FILE_STORAGE_DIR`) and
+  `parseLabel` (scan-parser.ts) fills the import columns (phones, labelled name / address / note, COD,
+  weight, order ref, district / zone / area matched against the catalog). Fields typed in the modal win.
+  The modal hears `parcel_scan.updated` (to its creator only).
+- Excel: `GET …/workbook` is the import template filled with the rows plus a **Scan ID** column;
+  `POST …/workbook` reads an edited file back (rows matched by Scan ID, new rows added). Submit hands that
+  workbook to the import dialog (`Ops.importConfig`, the session's merchant chosen). The import engine keeps
+  the Scan ID as `cells.__scan` and links the booked parcel (`ParcelScan.parcelId`) in the booking
+  transaction, so the photo stays with the parcel (`GET /parcel-scans/scans/:id/photo`).
+- Rows never booked are deleted with their photos after 7 days (nightly `parcel-scans-cleanup`).
+- Phone link address: `SCAN_LINK_ORIGIN`, else `APP_URL`; in development a localhost `APP_URL` is replaced
+  by this computer's LAN address (the phone must be on the same Wi-Fi and reach the web port).
+
 ## Bulk operations by Excel (modules/bulk-updates, web: shared/importer.js bulk mode)
 Courier Operations changes many parcels from one spreadsheet, **one file per action** (2026-10-18): on a page
 choose an action ("Accept & assign pickup rider"), download its file (only the parcels that can take that

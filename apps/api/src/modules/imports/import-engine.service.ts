@@ -34,7 +34,8 @@ import type { PackageView } from "../packages/package-resolver";
 import { columnsFor, KIND_LABEL, segmentOf, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
 import type { ImportSettings } from "./import-config.service";
 
-export type Cells = Partial<Record<ColumnKey | "__cod", string>>;
+/** `__scan`: the Scan ID of a "Scan with phone" row (parcel-scans); the booked parcel keeps its photo. */
+export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan", string>>;
 export interface CellError {
   column: string;
   message: string;

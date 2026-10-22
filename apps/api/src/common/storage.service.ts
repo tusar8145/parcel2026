@@ -56,6 +56,15 @@ export class StorageService {
     return fs.readFile(this.safePath(storageKey));
   }
 
+  /** Deletes stored files (the objects, then their rows); objects already gone are skipped. */
+  async remove(ids: string[], db: Db = this.prisma) {
+    if (!ids.length) return 0;
+    const files = await db.storedFile.findMany({ where: { id: { in: ids } }, select: { id: true, storageKey: true } });
+    for (const f of files) await fs.rm(this.safePath(f.storageKey), { force: true });
+    const { count } = await db.storedFile.deleteMany({ where: { id: { in: files.map(f => f.id) } } });
+    return count;
+  }
+
   private async writeObject(key: string, data: Buffer) {
     const file = this.safePath(key);
     await fs.mkdir(path.dirname(file), { recursive: true });

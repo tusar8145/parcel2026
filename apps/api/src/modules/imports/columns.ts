@@ -395,15 +395,24 @@ export const columnsFor = (kind: ImportKindKey, pkg?: PackageColumnOptions | nul
 
 const COD_HEADERS = ["cod", "cod_amount", "cod_(৳)", "cod_amount_(৳)", "cash_on_delivery", "collect_amount"];
 
+/** The "Scan ID" column of a Scan with phone workbook (parcel-scans): kept with the row (cells.__scan), not a field. */
+export const SCAN_HEADER = "Scan ID";
+const SCAN_HEADERS = ["scan_id", "scan_ref"];
+
 /** Maps each header cell to a column (or null when unknown / ignored); duplicates map once. */
-export function matchHeaders(kind: ImportKindKey, headers: string[]): { map: (ColumnKey | "__cod" | null)[]; unknown: string[]; forbidden: string[] } {
+export function matchHeaders(kind: ImportKindKey, headers: string[]): { map: (ColumnKey | "__cod" | "__scan" | null)[]; unknown: string[]; forbidden: string[] } {
   const cols = COLUMNS[kind];
   const used = new Set<ColumnKey>();
   const unknown: string[] = [];
   const forbidden: string[] = [];
-  const map = headers.map((raw): ColumnKey | "__cod" | null => {
+  let scan = false;
+  const map = headers.map((raw): ColumnKey | "__cod" | "__scan" | null => {
     const h = normalizeHeader(raw);
     if (!h || IGNORED_HEADERS.has(h)) return null;
+    if (SCAN_HEADERS.includes(h) && !scan) {
+      scan = true;
+      return "__scan";
+    }
     const col = cols.find(x => normalizeHeader(x.header) === h || x.key === h) ?? cols.find(x => x.aliases.includes(h));
     if (!col) {
       // A COD column on the Banking & Financial template: values are checked (never cash on delivery).

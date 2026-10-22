@@ -42,6 +42,8 @@ const ROWS_RETENTION_DAYS = 90;
 const QUEUE_DEPTH_PER_WORKER = 5;
 /** Concurrent file parses per API instance (CPU-bound). */
 const PARSE_SLOTS = 2;
+/** A Scan ID cell (parcel-scans): a UUID. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type StoredActor = { kind: "api_key"; apiKeyId: string; name: string } | { kind: "user"; userId: string; name: string };
 type Scope = { forOps: boolean; merchantId: string | null; source: ParcelChannel };
@@ -197,6 +199,23 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const ctx = await this.engine.context({ kind, settings, merchantId: scope.merchantId });
     const limits = this.limitsFor(settings, scope.forOps);
     return { buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb }), fileName: TEMPLATE_FILE[kind] };
+  }
+
+  /** "Scan with phone" (parcel-scans): the template filled with the session's rows, each with its Scan ID. */
+  async scanWorkbook(actor: Actor, kind: ImportKindKey, merchantId: string | undefined, rows: { scanId: string; cells: Cells }[]) {
+    const scope = this.scopeFor(actor, merchantId);
+    await this.checkSubject(scope, kind, { merchantRequired: false });
+    const settings = await this.config.settings();
+    const ctx = await this.engine.context({ kind, settings, merchantId: scope.merchantId });
+    const limits = this.limitsFor(settings, scope.forOps);
+    return buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, scan: true, rows: rows.map(r => ({ cells: r.cells, scanId: r.scanId })) });
+  }
+
+  /** The rows of an uploaded template (cells by column key; a Scan ID column as `__scan`). */
+  async readRows(actor: Actor, kind: ImportKindKey, file: { buffer: Buffer; fileName: string }) {
+    const settings = await this.config.settings();
+    const limits = this.limitsFor(settings, this.scopeFor(actor).forOps);
+    return this.withParseSlot(async () => this.sheetToRows(kind, this.parseFile(file.buffer, file.fileName, limits.maxRows, kind)).rows);
   }
 
   /**
@@ -809,6 +828,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
               where: { id: row.id },
               data: { status: "CREATED", trackingId: parcel.trackingId, charge: parcel.totalCharge, ...(result.lines ? { priceLines: result.lines as unknown as Prisma.InputJsonArray } : {}) },
             });
+            // A "Scan with phone" row (Scan ID column): the parcel keeps the photo it was read from.
+            const scanId = (row.cells as Cells).__scan;
+            if (scanId && UUID.test(scanId)) await tx.parcelScan.updateMany({ where: { id: scanId, parcelId: null }, data: { parcelId: parcel.id } });
           }
           await tx.importJob.update({ where: { id: job.id }, data: { processedRows: { increment: items.length }, createdCount: { increment: items.length } } });
         },

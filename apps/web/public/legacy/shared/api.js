@@ -138,10 +138,11 @@
    * Authenticated request that isn't JSON: `body` may be FormData (file uploads); resolves to the
    * Response (e.g. `.blob()` for downloads). Errors throw ApiError like DF.api.
    */
-  async function apiRaw(path, { method = "GET", body, headers = {} } = {}) {
+  async function apiRaw(path, { method = "GET", body, headers = {}, keepalive = false } = {}) {
     if ((accessToken && Date.now() > accessExpiresAt) || (!accessToken && state.offlineSession)) await refresh();
+    // keepalive: the request outlives the page (e.g. closing something when the tab is closed).
     const send = () =>
-      fetch(BASE + path, { method, credentials: "same-origin", headers: { "x-df-client": "web", ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...headers }, body });
+      fetch(BASE + path, { method, credentials: "same-origin", keepalive, headers: { "x-df-client": "web", ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...headers }, body });
     let response = await send();
     if (response.status === 401) {
       const data = await response.clone().json().catch(() => null);

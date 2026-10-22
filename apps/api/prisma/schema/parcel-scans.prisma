@@ -1,0 +1,62 @@
+// ───────────────────────────── Phone scanning (modules/parcel-scans) ─────────────────────────────
+// Courier Operations › New orders › "Scan with phone": a modal opens a session with a one-time link
+// (QR code). Photos taken on the phone through that link are kept (compressed) and read (OCR) into
+// order fields; the rows are edited in the modal, downloaded / re-imported as Excel and submitted
+// through the import engine, which links each booked parcel to its photo.
+
+/// A scanning session: alive while its modal is open (the modal keeps extending expiresAt).
+model ParcelScanSession {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  /// SHA-256 of the link token; the token itself is only in the link.
+  tokenHash   String       @unique
+  /// The parcel type of every row (one type and merchant per session).
+  kind        ImportKind
+  merchantId  String?      @db.Uuid
+  createdById String       @db.Uuid
+  /// Photos received so far (numbers the rows 1, 2, 3…).
+  scanCount   Int          @default(0)
+  /// The link works until then; closing the modal ends it at once (closedAt).
+  expiresAt   DateTime
+  closedAt    DateTime?
+  createdAt   DateTime     @default(now())
+  scans       ParcelScan[]
+
+  @@index([createdById, createdAt])
+  @@map("parcel_scan_sessions")
+}
+
+enum ParcelScanStatus {
+  /// Photo received, being read.
+  READING
+  /// Read (fields filled where they were found).
+  READ
+  /// The photo couldn't be read: fields are typed in by hand.
+  FAILED
+}
+
+/// One parcel of a session: its photo, the text read from it and the order fields.
+model ParcelScan {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  sessionId String            @db.Uuid
+  /// 1, 2, 3… in the session.
+  number    Int
+  /// The compressed photo (none for rows added from an Excel file).
+  fileId    String?           @db.Uuid
+  status    ParcelScanStatus  @default(READING)
+  /// Text read from the photo (OCR).
+  text      String?
+  /// Order fields by import column key { recipient_phone: "017…" }: read from the photo, then edited.
+  cells     Json              @default("{}")
+  /// The order booked from this row (import "Scan ID" column), which keeps the photo.
+  parcelId  String?           @db.Uuid
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  session   ParcelScanSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  file      StoredFile?       @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  parcel    Parcel?           @relation(fields: [parcelId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, number])
+  @@index([parcelId])
+  @@index([createdAt])
+  @@map("parcel_scans")
+}

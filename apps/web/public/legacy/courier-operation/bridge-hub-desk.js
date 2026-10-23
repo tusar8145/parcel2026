@@ -79,7 +79,7 @@
       returnReason: true,
       hub: true,
       runs: true,
-      hint: "The reason is used only for parcels nobody asked to return yet. When the rider is back, enter what the merchants took on Return entry.",
+      hint: "The reason is used only for parcels nobody asked to return yet. The rider sees the assigned returns in the rider app (Home › Assigned returns) and scans each parcel the merchant takes back; or enter them on Return entry when the rider is back.",
     },
     returns: {
       path: "return",

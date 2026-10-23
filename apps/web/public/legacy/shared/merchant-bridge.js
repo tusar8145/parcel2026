@@ -1374,6 +1374,13 @@
       const cell = row.querySelector("[data-merchant-history]")?.parentElement;
       if (cell && EDITABLE_INCOMPLETE.includes(p.status)) cell.insertAdjacentHTML("beforeend", ` <button type="button" class="button button-sm" data-df-complete="${esc(p.trackingId)}">Complete</button>`);
     }
+    // Returned to the merchant and not confirmed yet: "Confirm return received" in the row (merchant-features.js handles it).
+    for (const row of document.querySelectorAll("#tableBody tr[data-merchant-record-id]")) {
+      const p = byId(row.dataset.merchantRecordId);
+      if (!p || p.status !== "RETURNED" || p.returnInfo?.receivedAt || row.querySelector("[data-dff-return-received]")) continue;
+      const cell = row.querySelector("[data-merchant-history]")?.parentElement;
+      cell?.insertAdjacentHTML("beforeend", ` <button type="button" class="button button-sm button-primary" data-dff-return-received="${esc(p.trackingId)}">Confirm return received</button>`);
+    }
     const select = $("merchantStatusFilter");
     if (select && !select.querySelector(`option[value="${NEEDS_INFO}"]`)) {
       const n = S.parcels.filter(p => p.incomplete).length;

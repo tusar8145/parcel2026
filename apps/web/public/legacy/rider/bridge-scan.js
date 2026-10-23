@@ -17,8 +17,10 @@
  * - Deliver                opens the parcel's delivery screen: proof (code / signature / photo) and COD
  *                          are still required; nothing is delivered by a scan alone.
  * - Failed delivery / return to hub   POST /rider/parcels/:id/delivery { outcome: FAILED, reason, nextAction }.
- * - Return to merchant     GET /rider/return-runs: checks parcels against the run (read-only; operations
- *                          mark them Returned when they complete the run).
+ * - Return to merchant     GET /rider/return-runs (runs assigned to the rider, planned or out for return);
+ *                          each scan: POST /rider/parcels/:id/return { runId, receivedBy } → Returned (the
+ *                          merchant took it back). A planned run goes out with the first one; the run
+ *                          completes with its last parcel.
  * Deep link: /rider?page=Scan%20parcel&scan=pickup|handover|start|deliver|failed|return
  */
 (() => {
@@ -76,7 +78,7 @@
       key: "return",
       title: "Return to merchant",
       icon: "pin",
-      text: "Taking parcels back to a merchant: choose the return run and scan each parcel to check it belongs to that run.",
+      text: "Taking parcels back to a merchant: choose the return run and scan each parcel the merchant takes back. It's marked returned.",
     },
   ];
 
@@ -277,14 +279,27 @@
       if (!run) return feedback(false, "Choose the return run first.");
       const onRun = run.parcels.some(p => p.trackingId === id);
       const other = !onRun && (returnRuns || []).find(r => r.parcels.some(p => p.trackingId === id));
-      if (onRun) {
-        S.ctx.checked.add(id);
-        log(id, true, `On ${run.number} for ${run.merchant.name}`);
-        return feedback(true, `${id} belongs to this return.`);
+      if (!onRun) {
+        const message = other ? `${id} is on ${other.number} (${other.merchant.name}), not this run.` : `${id} isn't on this return run. Keep it for the hub.`;
+        log(id, false, message);
+        return feedback(false, message);
       }
-      const message = other ? `${id} is on ${other.number} (${other.merchant.name}), not this run.` : `${id} isn't on this return run. Keep it for the hub.`;
-      log(id, false, message);
-      feedback(false, message);
+      // The merchant took it back: Returned (sent now, or queued while offline).
+      try {
+        const out = await send(id, "return", "return", { runId: run.id, receivedBy: S.ctx.receivedBy?.trim() || undefined, source: S.ctx.source || undefined });
+        S.ctx.checked.add(id);
+        run.parcels = run.parcels.filter(p => p.trackingId !== id);
+        const done = !out.queued && out.result?.runCompleted;
+        const text = out.queued ? `${id}: returned (sends when you're back online)` : `${id} returned to ${run.merchant.name}${done ? ` · ${run.number} completed` : ""}`;
+        log(id, true, text);
+        feedback(true, text);
+        if (done) returnRuns = returnRuns.filter(r => r.id !== run.id);
+        draw();
+      } catch (error) {
+        const message = DF.describe(error);
+        log(id, false, message);
+        feedback(false, message);
+      }
     },
   };
 
@@ -383,10 +398,10 @@
     }
     if (section === "return") {
       if (!returnRuns) return `<div class="empty-state" id="dfScanNoContext">Loading your return runs…</div>`;
-      if (!returnRuns.length) return `<div class="empty-state" id="dfScanNoContext">No return runs are dispatched to you. Dispatch assigns them in Courier Operations → Returns.</div>`;
+      if (!returnRuns.length) return `<div class="empty-state" id="dfScanNoContext">No returns are assigned to you. The hub assigns them on Scan desk › Return rider assign.</div>`;
       return `<div class="field"><label for="dfScanRun">Return run</label><select id="dfScanRun"><option value="">Choose the return run</option>${returnRuns
-        .map(r => `<option value="${esc(r.id)}">${esc(r.number)} · ${esc(r.merchant.name)} · ${r.parcels.length} parcel${r.parcels.length === 1 ? "" : "s"}</option>`)
-        .join("")}</select></div>`;
+        .map(r => `<option value="${esc(r.id)}">${esc(r.number)} · ${esc(r.merchant.name)} · ${r.parcels.length} parcel${r.parcels.length === 1 ? "" : "s"}${r.status === "PLANNED" ? " · assigned" : ""}</option>`)
+        .join("")}</select></div><div class="field" style="margin-top:10px"><label for="dfScanReceivedBy">Received by at the merchant (optional)</label><input id="dfScanReceivedBy" maxlength="120" placeholder="Who took the parcels back" value="${esc(S?.ctx?.receivedBy || "")}"></div>`;
     }
     return "";
   }
@@ -397,7 +412,7 @@
     start: "Going out for delivery can't be undone from the app.",
     deliver: "A scan never completes a delivery: the proof (and the COD, if any) is always required.",
     failed: "Each scan records a failed attempt (re-attempts beyond the package's free ones may carry a fee). It can't be undone from the app.",
-    return: "This is a check only. Operations mark the parcels Returned when they complete the run.",
+    return: "Each scan marks the parcel returned to the merchant; it can't be undone from the app. Scan only what the merchant takes back: the rest goes back to the hub.",
   };
 
   /** Lines under the scan box: what's expected, what's done, what's missing. */
@@ -442,7 +457,7 @@
       const run = (returnRuns || []).find(r => r.id === c.runId);
       if (!run) return "";
       const missing = run.parcels.filter(p => !c.checked.has(p.trackingId));
-      return `<div class="df-scan-stats" id="dfScanStats"><span data-tone="ok">Checked ${run.parcels.length - missing.length} of ${run.parcels.length}</span><span data-tone="${missing.length ? "warn" : "ok"}" data-missing-count="${missing.length}">${missing.length ? `${missing.length} not checked` : "All checked"}</span></div><p class="panel-subtitle">Return to ${esc(run.merchant.name)} · ${esc(run.merchant.address)}</p>${missing.map(p => row(p, [p.recipientName, p.returnReason].filter(Boolean).join(" · "))).join("")}`;
+      return `<div class="df-scan-stats" id="dfScanStats"><span data-tone="ok">Returned ${c.checked.size}</span><span data-tone="${missing.length ? "warn" : "ok"}" data-missing-count="${missing.length}">${missing.length ? `${missing.length} to return` : "All returned"}</span></div><p class="panel-subtitle">Return to ${esc(run.merchant.name)} · ${esc(run.merchant.address)}${run.merchant.phone ? ` · ${esc(run.merchant.phone)}` : ""}</p>${missing.map(p => row(p, [p.recipientName, p.returnReason].filter(Boolean).join(" · "))).join("")}`;
     }
     return "";
   }
@@ -652,6 +667,7 @@
       else if (id === "dfScanNext") c.nextAction = event.target.value;
       else if (id === "dfScanNote") c.note = event.target.value.trim();
       else if (id === "dfScanRun") (c.runId = event.target.value || null), (c.checked = new Set());
+      else if (id === "dfScanReceivedBy") c.receivedBy = event.target.value;
       else return;
       event.stopImmediatePropagation();
       draw();

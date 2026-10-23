@@ -23,9 +23,11 @@ export const partialDeliveryFields = {
 };
 
 /** The cash for a delivery: the full COD, or (partial) what was entered, from 0 to the COD amount. */
-export function cashFor(parcel: Pick<Parcel, "trackingId" | "codAmount">, input: { partial?: boolean; codCollected?: number }) {
+export function cashFor(parcel: Pick<Parcel, "trackingId" | "codAmount" | "merchantId">, input: { partial?: boolean; codCollected?: number }) {
   const cod = Number(parcel.codAmount);
   if (!input.partial) return { cod, collected: cod };
+  // What the recipient didn't keep goes back to the merchant on a return run: merchant orders only.
+  if (!parcel.merchantId) throw new AppError("PARTIAL_NOT_MERCHANT", `${parcel.trackingId} isn't a merchant order: partial delivery is for merchant orders (the rest goes back to the merchant).`, HttpStatus.UNPROCESSABLE_ENTITY);
   if (input.codCollected === undefined || input.codCollected === null || Number.isNaN(input.codCollected))
     throw new AppError("COD_COLLECTED_REQUIRED", "Enter the cash collected for this partial delivery.", HttpStatus.UNPROCESSABLE_ENTITY);
   const collected = Math.round(input.codCollected * 100) / 100;

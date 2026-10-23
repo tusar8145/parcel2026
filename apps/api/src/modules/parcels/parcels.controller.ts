@@ -18,7 +18,7 @@ import { PrismaService } from "../../common/prisma.service";
 import { withIdempotency } from "../../common/idempotency";
 import { ParcelsService } from "./parcels.service";
 import { RiderTasksService } from "./rider-tasks.service";
-import { parcelNoteSchema, riderHandoverSchema, riderHandoversQuerySchema, trackQuerySchema, updateParcelDetailsSchema } from "./parcels.schemas";
+import { parcelNoteSchema, riderHandoverSchema, riderReturnSchema, riderHandoversQuerySchema, trackQuerySchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import { listParcelsWithStageSchema } from "./parcel-stages";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { AnalyticsService } from "../analytics/analytics.service";
@@ -240,11 +240,27 @@ export class ParcelsController {
     return this.riderTasks.hubHandovers(actor, query.hubId);
   }
 
-  /** Return runs dispatched to the rider, with their parcels (read-only checklist; operations complete the run). */
+  /** Return runs assigned to the rider (planned or out for return), with the parcels still to return. */
   @RequirePermissions("parcel:rider-update")
   @Get("rider/return-runs")
   returnRuns(@CurrentUser() actor: UserActor) {
     return this.riderTasks.returnRuns(actor);
+  }
+
+  /** "Return to merchant": the merchant took this parcel back from the rider of its return run: Returned. */
+  @RequirePermissions("parcel:rider-update")
+  @Post("rider/parcels/:trackingId/return")
+  @HttpCode(200)
+  @ApiHeader({ name: "Idempotency-Key", required: false })
+  @ApiZodBody(riderReturnSchema)
+  returnToMerchant(
+    @CurrentUser() actor: UserActor,
+    @Param("trackingId") trackingId: string,
+    @ZBody(riderReturnSchema) body: z.infer<typeof riderReturnSchema>,
+    @ReqMeta() meta: RequestMeta,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    return withIdempotency(this.prisma, `rider:${actor.userId}`, idempotencyKey, { op: "return", trackingId, body }, () => this.riderTasks.returnToMerchant(actor, trackingId, body, meta));
   }
 
   @RequirePermissions("cod:collect")

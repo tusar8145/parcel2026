@@ -246,7 +246,19 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
   describe("partial delivery", () => {
     it("the rider ticks Partial delivery and enters the cash collected: only that cash is with the rider, and a return order goes back", async () => {
       const s = await setup();
-      const trackingId = await outForDelivery(s, { codAmount: 1500 });
+      // A customer parcel has no merchant to return to: no partial delivery.
+      const customerParcel = await outForDelivery(s, { codAmount: 900 });
+      const refused = await ctx.api("POST", `/rider/parcels/${customerParcel}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "N", proof: { method: "SIGNATURE", image: PNG }, partial: true, codCollected: 100 } });
+      expect(refused.body.error.code).toBe("PARTIAL_NOT_MERCHANT");
+      // A merchant order, booked by operations and taken out for delivery.
+      const shop = await ctx.prisma.merchant.create({
+        data: { code: "MR-PD1", type: "ECOMMERCE", name: "Partial Shop", status: "ACTIVE", contactName: "Owner", contactPhone: "+8801911000009", pickupAddress: "House 5 Road 2", pickupArea: "Gulshan", pickupDistrict: "Dhaka North" },
+      });
+      const booked = await ctx.api("POST", "/ops/parcels", { token: s.ops.token, body: { merchantId: shop.id, ...parcelBody({ codAmount: 1500 }), sender: undefined, pickup: undefined } });
+      expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+      const trackingId = booked.body.trackingId as string;
+      await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      expect((await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } })).body.status).toBe("OUT_FOR_DELIVERY");
       const deliver = (body: Record<string, unknown>) => ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "Nabila", proof: { method: "SIGNATURE", image: PNG }, ...body } });
       expect((await deliver({ codCollected: 400 })).body.error.code).toBe("COD_MISMATCH");
       expect((await deliver({ partial: true, codCollected: 1600 })).body.error.code).toBe("COD_COLLECTED_INVALID");
@@ -260,6 +272,22 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       // The rider hands over ৳400, not ৳1,500.
       const request = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
       expect(request.body).toMatchObject({ amount: 400, collections: 1 });
+
+      // The hub assigns the return order to the rider: the rider sees it (planned) and returns it by scanning.
+      const back = parcel.returnOrders[0].trackingId;
+      const assigned = await ctx.api("POST", "/hub-desk/return-assign", { token: s.ops.token, body: { code: back, riderId: s.rider.rider.id, hubId: s.h.id } });
+      expect(assigned.body, JSON.stringify(assigned.body)).toMatchObject({ ok: true });
+      const runs = (await ctx.api("GET", "/rider/return-runs", { token: s.rider.token })).body.items;
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ status: "PLANNED", parcels: [{ trackingId: back }] });
+      // Another rider can't return it.
+      const other = await riderUser(ctx, "R-2099", s.h.id);
+      expect((await ctx.api("POST", `/rider/parcels/${back}/return`, { token: other.token, body: {} })).status).toBe(403);
+      const returned = await ctx.api("POST", `/rider/parcels/${back}/return`, { token: s.rider.token, body: { runId: runs[0].id, receivedBy: "Shop manager" } });
+      expect(returned.body, JSON.stringify(returned.body)).toMatchObject({ outcome: "RETURNED", runCompleted: true });
+      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: back } })).toMatchObject({ status: "RETURNED" });
+      expect(await ctx.prisma.returnRun.findUniqueOrThrow({ where: { id: runs[0].id } })).toMatchObject({ status: "COMPLETED" });
+      expect((await ctx.api("GET", "/rider/return-runs", { token: s.rider.token })).body.items).toHaveLength(0);
     });
   });
 

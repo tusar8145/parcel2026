@@ -19,6 +19,7 @@ import type { Parcel, Prisma } from "../../generated/prisma/client";
 import { addDays, dhakaDayStart, dhakaMonthStart, dhakaWeekStart, opsHubScope } from "./ops-scope";
 import { recordTaskEarning } from "../rider/earnings";
 import { LedgerService } from "../finance/ledger.service";
+import { recordFranchiseReturn } from "../franchise/franchise-commission";
 
 /** Service lines riders are paid for (rider plans in the platform settings use these keys). */
 type ServiceLine = "ecommerce" | "document" | "parcel";
@@ -410,15 +411,15 @@ export class RiderTasksService {
   }
 
   /**
-   * Return runs the rider is taking back to merchants (dispatched to them, OUT_FOR_RETURN), with their
-   * parcels: the rider app's "Return to merchant" checklist. Read-only: only operations mark a parcel
-   * Returned (completing the run), as the lifecycle requires.
+   * Return runs assigned to the rider (planned at the hub, or out for return), with the parcels still to
+   * return: the rider app's "Assigned returns" and "Return to merchant". The rider scans each parcel the
+   * merchant takes back (returnToMerchant); the run completes with its last parcel.
    */
   async returnRuns(actor: UserActor) {
     const riderId = this.riderId(actor);
     const runs = await this.prisma.returnRun.findMany({
-      where: { riderId, status: "OUT_FOR_RETURN" },
-      orderBy: { dispatchedAt: "asc" },
+      where: { riderId, status: { in: ["PLANNED", "OUT_FOR_RETURN"] } },
+      orderBy: [{ dispatchedAt: "asc" }, { createdAt: "asc" }],
       include: {
         merchant: { select: { id: true, name: true, pickupAddress: true, pickupArea: true, contactPhone: true } },
         parcels: { where: { status: "RETURN_SCHEDULED" }, select: { trackingId: true, recipientName: true, returnReason: true, merchantOrderRef: true }, orderBy: { trackingId: "asc" } },
@@ -428,11 +429,65 @@ export class RiderTasksService {
       items: runs.map(r => ({
         id: r.id,
         number: r.number,
+        status: r.status,
         dispatchedAt: r.dispatchedAt,
         merchant: { id: r.merchant.id, name: r.merchant.name, address: addressText(r.merchant.pickupAddress, r.merchant.pickupArea), phone: r.merchant.contactPhone },
         parcels: r.parcels,
       })),
     };
+  }
+
+  /**
+   * "Return to merchant" scan: the merchant took this parcel back from the rider of its return run:
+   * Returned (as on Scan desk > Return entry: the return charge earned, a franchise rider's return pay).
+   * A planned run is sent out with the rider's first return; the run completes with its last parcel.
+   */
+  async returnToMerchant(actor: UserActor, trackingId: string, input: { runId?: string; receivedBy?: string; note?: string }, meta: RequestMeta) {
+    const riderId = this.riderId(actor);
+    const after = this.workflow.newAfterCommit();
+    const result = await this.prisma.$transaction(
+      async tx => {
+        const parcel = await tx.parcel.findUnique({ where: { trackingId: trackingId.trim().toUpperCase() } });
+        if (!parcel) throw notFound("Parcel");
+        const run = parcel.returnRunId ? await tx.returnRun.findUnique({ where: { id: parcel.returnRunId }, include: { merchant: { select: { name: true } } } }) : null;
+        if (parcel.status === "RETURNED") return { trackingId: parcel.trackingId, outcome: "ALREADY_RETURNED" as const, run: run?.number ?? null, merchant: run?.merchant.name ?? null, runCompleted: false };
+        if (!run || run.riderId !== riderId || !["PLANNED", "OUT_FOR_RETURN"].includes(run.status)) throw forbidden(`${parcel.trackingId} isn't on a return run assigned to you`);
+        if (input.runId && input.runId !== run.id) throw new AppError("OTHER_RETURN_RUN", `${parcel.trackingId} is on ${run.number} (${run.merchant.name}), not this run`, HttpStatus.CONFLICT, { run: run.number });
+        if (parcel.status !== "RETURN_SCHEDULED") throw new AppError("NOT_ON_RETURN", `${parcel.trackingId} isn't waiting to be returned`, HttpStatus.CONFLICT);
+        const now = operationNow();
+        // The rider is on the way: a planned run is out for return with the first parcel taken back.
+        if (run.status === "PLANNED") await tx.returnRun.update({ where: { id: run.id }, data: { status: "OUT_FOR_RETURN", dispatchedAt: now } });
+        const returned = await this.workflow.transition(
+          tx,
+          parcel,
+          {
+            to: "RETURNED",
+            actorRole: "rider",
+            data: { deliveredAt: null },
+            description: `Returned to ${run.merchant.name}${input.receivedBy ? ` (received by ${input.receivedBy})` : ""} by the rider.`,
+            internalNote: input.note,
+            metadata: { returnRunId: run.id, riderId, receivedBy: input.receivedBy ?? null },
+          },
+          actor,
+          meta,
+          after,
+        );
+        const charge = returned.returnCharge == null ? 0 : Number(returned.returnCharge);
+        if (charge > 0)
+          await this.ledger.record(tx, { type: "DELIVERY_CHARGE_EARNED", amount: charge, reference: `${returned.trackingId}:return`, merchantId: returned.merchantId, hubId: run.hubId ?? returned.currentHubId, memo: "Return charge" });
+        await recordFranchiseReturn(tx, this.ledger, { riderId, parcel: returned });
+        let runCompleted = false;
+        if (!(await tx.parcel.count({ where: { returnRunId: run.id, status: "RETURN_SCHEDULED" } }))) {
+          await tx.returnRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now } });
+          runCompleted = true;
+        }
+        await this.audit.record(actor, { action: "parcel.rider_return", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, returnRun: run.number, receivedBy: input.receivedBy ?? null, runCompleted } }, meta, tx);
+        return { trackingId: parcel.trackingId, outcome: "RETURNED" as const, run: run.number, merchant: run.merchant.name, runCompleted };
+      },
+      { timeout: 15_000 },
+    );
+    await this.workflow.flush(after);
+    return result;
   }
 
   /** The rider's view of their COD cash. */

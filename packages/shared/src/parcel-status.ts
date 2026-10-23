@@ -91,7 +91,8 @@ const TRANSITIONS: Record<ParcelStatus, Record<TransitionActor, ParcelStatus[]>>
     ["ASSIGNED", "OUT_FOR_DELIVERY", "AT_HUB", "RETURN_SCHEDULED", "EXCEPTION"],
     ["OUT_FOR_DELIVERY", "DELIVERED", "RETRY_SCHEDULED", "AT_HUB", "EXCEPTION"],
   ),
-  RETURN_SCHEDULED: T(["RETURNED", "AT_HUB", "EXCEPTION"]),
+  // The rider taking a return run back may mark its parcels Returned (the API checks it is their run).
+  RETURN_SCHEDULED: T(["RETURNED", "AT_HUB", "EXCEPTION"], ["RETURNED"]),
   EXCEPTION: T(
     ["PICKUP_ASSIGNED", "AT_HUB", "ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "RETURN_SCHEDULED", "PICKUP_CANCELLED"],
     ["OUT_FOR_DELIVERY", "DELIVERED", "RETRY_SCHEDULED", "AT_HUB"],

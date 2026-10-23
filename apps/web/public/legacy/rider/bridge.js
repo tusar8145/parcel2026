@@ -35,7 +35,7 @@
   const sameDay = iso => new Date(iso).toDateString() === new Date().toDateString();
 
   const rider = DF.auth.user.rider;
-  const state = { summary: null, cash: null, status: null, earnings: null, handovers: [] };
+  const state = { summary: null, cash: null, status: null, earnings: null, handovers: [], returnRuns: [] };
   DF.riderState = state; // read by the other rider bridges
   const statusPillFor = text => pill(text); // the page's own status pill
   const VEHICLE = { MOTORBIKE: "Motorcycle", BICYCLE: "Bicycle", VAN: "Van", ON_FOOT: "On foot" };
@@ -133,8 +133,17 @@
     if (pending) setTimeout(() => rerender(), 0);
   };
 
+  /** Return runs assigned to the rider (planned or out for return): Home › Assigned returns. */
+  async function loadReturns() {
+    try {
+      state.returnRuns = (await DF.api("/rider/return-runs")).items || [];
+    } catch {
+      // Keep the last list (offline).
+    }
+  }
+
   async function refresh() {
-    await Promise.all([DF.rider.reload(), loadSummary()]);
+    await Promise.all([DF.rider.reload(), loadSummary(), loadReturns()]);
     syncDeliveries();
     rerender();
   }
@@ -257,6 +266,49 @@
     if (stop) stop.textContent = next ? `Next · ${next.zone}` : "No stops yet";
   }
 
+  /**
+   * Home › "Assigned returns": the return runs the hub gave this rider (Scan desk › Return rider assign),
+   * each with its merchant and parcels; "Return now" opens Scan › Return to merchant on that run.
+   */
+  function returnsCard() {
+    const runs = state.returnRuns || [];
+    q("#dfReturnsCard")?.remove();
+    if (!runs.length) return;
+    const anchor = q("#mainContent .metrics") || q("#mainContent .page-heading");
+    if (!anchor) return;
+    const rows = runs
+      .map(
+        r => `<div class="alert-item" data-return-run="${esc(r.id)}"><div class="alert-copy"><strong>${esc(r.merchant.name)} · ${r.parcels.length} parcel${r.parcels.length === 1 ? "" : "s"}</strong>${esc(r.merchant.address || "")}<small>${esc(r.number)} · ${r.status === "OUT_FOR_RETURN" ? "Out for return" : "Assigned to you"}${r.merchant.phone ? ` · ${esc(r.merchant.phone)}` : ""}</small></div><button type="button" class="button button-sm button-primary alert-action" data-return-now="${esc(r.id)}">Return now</button></div>`,
+      )
+      .join("");
+    anchor.insertAdjacentHTML(
+      "afterend",
+      `<section class="panel" id="dfReturnsCard" style="margin:12px 0"><div class="panel-heading"><div><h2 class="panel-title">Assigned returns</h2><p class="panel-subtitle">Take these back to the merchants. Scan each parcel the merchant takes back.</p></div><span class="status status-warn">${runs.reduce((n, r) => n + r.parcels.length, 0)} to return</span></div><div class="alert-list">${rows}</div></section>`,
+    );
+  }
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target instanceof Element ? event.target.closest("[data-return-now]") : null;
+      if (!button || !DF.scanSections) return;
+      event.preventDefault();
+      const runId = button.dataset.returnNow;
+      void Promise.resolve(DF.scanSections.open("return")).then(() => {
+        const S = DF.scanSections.state;
+        if (S?.key === "return" && S.ctx) {
+          S.ctx.runId = runId;
+          S.ctx.checked = new Set();
+          const select = document.getElementById("dfScanRun");
+          if (select) {
+            select.value = runId;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }
+      });
+    },
+    true,
+  );
+
   const enhance = {
     Overview() {
       const s = state.summary;
@@ -276,6 +328,7 @@
         ["COD to collect", money(s.today.codToCollect), "wallet", next ? `${next.cod} next` : "nothing due", "cash on delivery"],
         ["Today's earnings", money(pay.today), "chart", `${pay.completed} deliveries`, "earned today"],
       ]);
+      returnsCard();
       const route = panelTitled(/^Route overview$/);
       setText(q(".panel-subtitle", route || document.createElement("div")), `${deliveries.length + s.today.openPickups} stops remaining · ${hubName()}`);
       routeMapLabels();
@@ -475,6 +528,37 @@
     true,
   );
 
+  // ───────────── call the recipient ─────────────
+  // The recipient's number with a call button (tel:) wherever a delivery is listed, and in its dialog.
+  // A number printed masked on the label (019***545) can't be called: shown as is, without the button.
+  const CALL_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>`;
+  const callable = phone => !!phone && !String(phone).includes("*") && /\d{10,}/.test(String(phone).replace(/\D/g, ""));
+  const telOf = phone => `tel:${String(phone).startsWith("+") ? phone : `+880${String(phone).replace(/\D/g, "").replace(/^(880|0)/, "")}`}`;
+  function callLink(apiPhone) {
+    if (!apiPhone) return "";
+    const shown = DF.localPhone(apiPhone);
+    if (!callable(apiPhone)) return `<span class="df-call" data-df-call-masked style="display:inline-flex;align-items:center;gap:5px;color:#647184;font-size:12px">${esc(shown)} · can't be called</span>`;
+    return `<a class="df-call" href="${esc(telOf(apiPhone))}" data-df-call style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:4px 9px;border-radius:999px;background:#e9f7ef;color:#0f7a3d;font-size:12px;font-weight:600;text-decoration:none" aria-label="Call ${esc(shown)}">${CALL_ICON}${esc(shown)}</a>`;
+  }
+  function addCallLinks() {
+    const byId = new Map((DF.rider?.tasks?.deliveries || []).map(p => [p.trackingId, p]));
+    for (const cell of document.querySelectorAll("#mainContent td.tracking")) {
+      const id = cell.firstChild?.textContent?.trim();
+      const p = id && byId.get(id);
+      const recipient = cell.parentElement?.querySelector(".recipient");
+      if (!p || !recipient || recipient.parentElement.querySelector(".df-call")) continue;
+      recipient.parentElement.insertAdjacentHTML("beforeend", `<div>${callLink(p.recipient?.phone)}</div>`);
+    }
+    // Home: the next stops (matched by recipient name and address, as the page lists them).
+    const list = [...byId.values()];
+    for (const item of document.querySelectorAll("#mainContent .queue-item")) {
+      if (item.querySelector(".df-call")) continue;
+      const name = item.querySelector(".queue-copy strong")?.textContent?.trim();
+      const p = list.find(x => (x.recipient?.name || "Recipient") === name);
+      if (p) item.querySelector(".queue-copy")?.insertAdjacentHTML("beforeend", callLink(p.recipient?.phone));
+    }
+  }
+
   const baseRender = render;
   render = function (name) {
     baseRender(name);
@@ -482,6 +566,11 @@
       enhance[name]?.(name);
     } catch (error) {
       console.error(`Delivery Fast: ${name} could not be updated`, error);
+    }
+    try {
+      addCallLinks();
+    } catch (error) {
+      console.error("Delivery Fast: call buttons could not be added", error);
     }
   };
 
@@ -539,6 +628,9 @@
         $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags data-df-start-hint style="color:#b87913;font-weight:600">${esc(text)}${start}</p>`);
       }
     }
+    // The delivery dialog: call the recipient from it.
+    if (type === "delivery" && parcel?.recipient?.phone && !document.querySelector("[data-df-call-dialog]"))
+      $("modalDescription")?.insertAdjacentHTML("afterend", `<p data-parcel-flags data-df-call-dialog style="margin:6px 0 0">${esc(parcel.recipient.name || "Recipient")} · ${callLink(parcel.recipient.phone)}</p>`);
     // Who received it, as related to the recipient (super admin's Receiver relations; Self by default).
     const proofBox = $("proofFields");
     if (type === "delivery" && parcel && proofBox && !$("dfRelationBox")) {
@@ -546,7 +638,8 @@
       if (!relations.list) void loadRelations();
     }
     // Partial delivery: the recipient keeps part of the order; the rider enters the cash actually collected.
-    if (type === "delivery" && parcel && proofBox && !$("dfPartialBox")) {
+    // Merchant orders only: what the recipient didn't keep goes back to the merchant.
+    if (type === "delivery" && parcel && parcel.merchant && proofBox && !$("dfPartialBox")) {
       const cod = Number(parcel.codAmount) || 0;
       ($("dfRelationBox") || proofBox).insertAdjacentHTML(
         "afterend",

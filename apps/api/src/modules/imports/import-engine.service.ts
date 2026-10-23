@@ -88,7 +88,9 @@ export interface RowResult {
   destination?: { district: string; zone: string };
   /** Priced and checked against the package. */
   quote?: PackageQuote;
-  product?: { id: string; name: string; type: string; sendMessages: boolean } | null;
+  product?: { id: string | null; name: string; type: string; sendMessages: boolean } | null;
+  /** E-commerce: a product name that isn't one of the listed products (booked as written, priced as Regular). */
+  freeProduct?: string;
 }
 
 export interface EngineContext {
@@ -271,7 +273,7 @@ export class ImportEngineService {
       if (r.status === "ERROR" || !r.booking) continue;
       const b = r.booking;
       try {
-        const product = await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
+        const product = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR", sendMessages: true } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
         const quote = await this.packages.quote(
           subject,
           {
@@ -443,12 +445,15 @@ export class ImportEngineService {
     const openBox = banking ? false : (yesNo("open_box") ?? false);
     const ref = text("order_ref", 80);
     // Product (optional): the category's list, by its dropdown label or its name; its type prices the row.
+    // E-commerce takes any name: one that isn't listed is booked as written and priced as Regular.
     let product: string | undefined;
+    let freeProduct: string | undefined;
     if (value("product_type")) {
       const wanted = productNameOfCell(value("product_type"));
       const hit = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type")));
-      if (!hit) err("product_type", `"${value("product_type")}" is not an option (choose a product of the ${SEGMENT_LABEL[ctx.pkg.segment]} list)`);
-      else product = hit.name;
+      if (hit) product = hit.name;
+      else if (ctx.kind === "ecommerce") freeProduct = value("product_type").replace(/\s+/g, " ").slice(0, 120);
+      else err("product_type", `"${value("product_type")}" is not an option (choose a product of the ${SEGMENT_LABEL[ctx.pkg.segment]} list)`);
     }
     let codAmount = 0;
     if (!banking) codAmount = number("cod_amount", 0, 1_000_000, "") ?? 0;
@@ -512,6 +517,7 @@ export class ImportEngineService {
       zone: zone ?? (district ? (district === pickup.district ? pickup.zone : (ctx.catalog.zonesByDistrict[district]?.[0] ?? fallback.zone)) : fallback.zone),
     };
     result.booking = booking;
+    result.freeProduct = freeProduct;
     result.destination = destination;
     result.status = result.missing.length ? "INCOMPLETE" : "VALID";
     // The content hash keeps the fields of the older templates in place (re-uploads of older files stay

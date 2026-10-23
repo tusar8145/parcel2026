@@ -35,6 +35,8 @@ export const collectSchema = z
     receivedBy: z.string().trim().min(1, "Enter who collected it").max(120),
     /** Cash paid at the counter; must equal the parcel's COD amount. */
     codCollected: amount.default(0),
+    /** Who collected it, as related to the recipient (super admin's Receiver relations; default Self). */
+    receiverRelation: z.string().trim().max(60).optional(),
     note: z.string().trim().max(500).optional(),
     expectedVersion: z.number().int().min(0).optional(),
   })
@@ -139,9 +141,9 @@ export class CollectionsService implements OnApplicationBootstrap {
           {
             to: "DELIVERED",
             actorRole: "ops",
-            data: { deliveredAt: now, attemptCount: { increment: 1 }, collectionCodeEncrypted: null, deliveryOtpEncrypted: null },
+            data: { deliveredAt: now, attemptCount: { increment: 1 }, collectionCodeEncrypted: null, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self" },
             title: `Collected at ${hub.name}`,
-            description: `${input.receivedBy} collected the parcel at ${hub.name}${method === "COLLECTION_CODE" ? " with the collection code" : ` (${method === "PHOTO" ? "photo" : "signature"} proof)`}.`,
+            description: `${input.receivedBy}${input.receiverRelation && input.receiverRelation !== "Self" ? ` (${input.receiverRelation})` : ""} collected the parcel at ${hub.name}${method === "COLLECTION_CODE" ? " with the collection code" : ` (${method === "PHOTO" ? "photo" : "signature"} proof)`}.`,
             location: hub.name,
             metadata: { hubId: hub.id, kind: "collected_at_hub" },
             internalNote: input.note,

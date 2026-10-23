@@ -487,6 +487,23 @@
 
   // ───────────── dialogs ─────────────
 
+  // Receiver relations (GET /delivery/receiver-relations), loaded once; Self is first and the default.
+  const relations = { list: null };
+  const relationOptions = () => (relations.list || ["Self"]).map(r => `<option value="${esc(r)}">${esc(r === "Self" ? "Self (the recipient)" : r)}</option>`).join("");
+  async function loadRelations() {
+    try {
+      relations.list = (await DF.api("/delivery/receiver-relations")).relations;
+    } catch {
+      relations.list = ["Self"];
+    }
+    const select = $("dfRelation");
+    if (select) {
+      const chosen = select.value;
+      select.innerHTML = relationOptions();
+      if (relations.list.includes(chosen)) select.value = chosen;
+    }
+  }
+
   // Real hubs and the real delivery-code hint in the dialogs.
   const originalOpenModal = window.openModal;
   window.openModal = function (type, id) {
@@ -521,6 +538,20 @@
         const start = queued ? "" : ` <button type="button" class="button button-sm button-primary" data-df-start="${esc(id)}">Start delivery</button>`;
         $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags data-df-start-hint style="color:#b87913;font-weight:600">${esc(text)}${start}</p>`);
       }
+    }
+    // Who received it, as related to the recipient (super admin's Receiver relations; Self by default).
+    const proofBox = $("proofFields");
+    if (type === "delivery" && parcel && proofBox && !$("dfRelationBox")) {
+      proofBox.insertAdjacentHTML("afterend", `<div class="field full" id="dfRelationBox" data-parcel-flags><label for="dfRelation">Received by</label><select id="dfRelation">${relationOptions()}</select></div>`);
+      if (!relations.list) void loadRelations();
+    }
+    // Partial delivery: the recipient keeps part of the order; the rider enters the cash actually collected.
+    if (type === "delivery" && parcel && proofBox && !$("dfPartialBox")) {
+      const cod = Number(parcel.codAmount) || 0;
+      ($("dfRelationBox") || proofBox).insertAdjacentHTML(
+        "afterend",
+        `<div class="field full" id="dfPartialBox" data-parcel-flags><label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="dfPartial" style="width:auto"> Partial delivery (the recipient kept only part of the order)</label><div id="dfPartialCash" hidden style="margin-top:8px"><label for="dfCashCollected">Cash collected (৳)${cod ? ` · COD ৳${cod.toLocaleString("en-BD")}` : ""}</label><input id="dfCashCollected" type="number" min="0" max="${cod}" step="1" inputmode="numeric" placeholder="What the recipient paid"><small>What they didn't keep goes back to the sender: hand it in at the hub.</small></div></div>`,
+      );
     }
     const otp = $("deliveryOtp");
     if (otp && apiParcel(id)) {
@@ -591,6 +622,15 @@
     const request = { path: `/rider/parcels/${encodeURIComponent(id)}/${path}`, method: "POST", body, trackingId: id, op: path };
     return window.DFOffline ? window.DFOffline.send(request) : DF.api(request.path, { method: "POST", body }).then(result => ({ queued: false, result }));
   };
+
+  document.addEventListener("change", event => {
+    if (event.target?.id === "dfPartial") {
+      const box = $("dfPartialCash");
+      if (box) box.hidden = !event.target.checked;
+      if (event.target.checked) $("dfCashCollected")?.focus();
+    }
+    if (event.target?.id === "outcome") for (const box of [$("dfPartialBox"), $("dfRelationBox")]) if (box) box.hidden = event.target.value !== "Delivered successfully";
+  });
 
   window.addEventListener(
     "submit",
@@ -670,8 +710,18 @@
             proof = { method: "PHOTO", image: DF.proof ? await DF.proof.stampPhoto(file, stamp) : await photoDataUrl(file) };
           }
           const cod = Number(parcel.codAmount) || 0;
+          // Partial delivery: the cash actually collected (0 … COD); the rest goes back on a return order.
+          if ($("dfPartial")?.checked) {
+            const raw = $("dfCashCollected")?.value.trim() ?? "";
+            const cash = Number(raw);
+            if (raw === "" || !(cash >= 0)) throw new Error("Enter the cash collected for the partial delivery.");
+            if (cash > cod) throw new Error(`The cash collected can be at most the COD amount (৳${cod.toLocaleString("en-BD")}).`);
+            if (!(await DF.confirm({ title: "Partial delivery?", message: `Confirm you collected ৳${cash.toLocaleString("en-BD")}${cod ? ` of ৳${cod.toLocaleString("en-BD")}` : ""}. What the recipient didn't keep goes back to the sender: bring it to the hub.`, confirm: "Yes, partly delivered", cancel: "Not yet" })))
+              throw new Error("Check the cash collected before completing the partial delivery.");
+            return post(id, "delivery", { outcome: "DELIVERED", receivedBy: parcel.recipient.name || "Recipient", receiverRelation: $("dfRelation")?.value || "Self", proof, codCollected: cash, partial: true, note, capture });
+          }
           if (cod > 0 && !(await DF.confirm({ title: "Cash collected?", message: `Confirm you collected ৳${cod.toLocaleString("en-BD")} cash from the recipient.`, confirm: `Yes, ৳${cod.toLocaleString("en-BD")} collected`, cancel: "Not yet" }))) throw new Error("Collect the COD amount before completing the delivery.");
-          return post(id, "delivery", { outcome: "DELIVERED", receivedBy: parcel.recipient.name || "Recipient", proof, codCollected: cod, note, capture });
+          return post(id, "delivery", { outcome: "DELIVERED", receivedBy: parcel.recipient.name || "Recipient", receiverRelation: $("dfRelation")?.value || "Self", proof, codCollected: cod, note, capture });
         }, `${id} delivered. ${method} proof saved with time and location.`);
       }
 

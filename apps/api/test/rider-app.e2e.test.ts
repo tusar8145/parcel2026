@@ -243,6 +243,26 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
     });
   });
 
+  describe("partial delivery", () => {
+    it("the rider ticks Partial delivery and enters the cash collected: only that cash is with the rider, and a return order goes back", async () => {
+      const s = await setup();
+      const trackingId = await outForDelivery(s, { codAmount: 1500 });
+      const deliver = (body: Record<string, unknown>) => ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "Nabila", proof: { method: "SIGNATURE", image: PNG }, ...body } });
+      expect((await deliver({ codCollected: 400 })).body.error.code).toBe("COD_MISMATCH");
+      expect((await deliver({ partial: true, codCollected: 1600 })).body.error.code).toBe("COD_COLLECTED_INVALID");
+      const done = await deliver({ partial: true, codCollected: 400, note: "Returned 2 of 3 items" });
+      expect(done.status, JSON.stringify(done.body)).toBeLessThan(300);
+      const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId }, include: { codCollection: true, returnOrders: true } });
+      expect(parcel).toMatchObject({ status: "DELIVERED", partialDelivery: true });
+      expect(Number(parcel.codCollection!.amount)).toBe(400);
+      expect(parcel.returnOrders).toHaveLength(1);
+      expect(parcel.returnOrders[0]).toMatchObject({ status: "RETURN_SCHEDULED", returnOfId: parcel.id });
+      // The rider hands over ৳400, not ৳1,500.
+      const request = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
+      expect(request.body).toMatchObject({ amount: 400, collections: 1 });
+    });
+  });
+
   describe("cash handover requests", () => {
     it("lets a rider ask a hub to receive their cash, and hub staff complete it", async () => {
       const s = await setup();

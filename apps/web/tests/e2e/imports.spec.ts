@@ -480,9 +480,9 @@ test.describe.serial("spreadsheet imports", () => {
     await expect(page.locator("#toast")).toContainText("Import settings saved");
     await expect(panel.locator('[data-import-required="district"]')).toHaveClass(/\bon\b/);
 
-    // The template marks District as required…
+    // Blank templates have no District column (the full address names it, import-places.ts)…
     const file = await downloaded(page, () => panel.locator('[data-import-template="ecommerce"]').click());
-    expect(unzip(file.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>District *</t>");
+    expect(unzip(file.buffer).get("xl/worksheets/sheet1.xml")).not.toContain("<t>District");
     // Three templates: a tab and a download button each; removed columns are gone from the settings.
     await expect(panel.locator("[data-import-tab]")).toHaveText(["Customer parcel template", "E-commerce template", "Banking & Financial template"]);
     await expect(panel.locator('[data-import-column="packaging"], [data-import-column="merchant"], [data-import-column="parcel_type"]')).toHaveCount(0);

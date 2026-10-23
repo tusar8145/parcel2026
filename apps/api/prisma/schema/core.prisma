@@ -559,6 +559,18 @@ model Parcel {
   returnRunId       String?   @db.Uuid
   returnReceivedAt  DateTime?
 
+  /// Partial delivery: the recipient kept part of the order and paid codCollectedAmount (entered at
+  /// delivery); the rest goes back to the merchant on a new return order (returnOrders).
+  partialDelivery    Boolean  @default(false)
+  codCollectedAmount Decimal? @db.Decimal(12, 2)
+  partialNote        String?
+  /// A return order: the parcel whose partial delivery it carries back (COD 0; its returnCharge is billed when returned).
+  returnOfId         String?  @db.Uuid
+  returnOf           Parcel?  @relation("PartialReturn", fields: [returnOfId], references: [id], onDelete: SetNull)
+  returnOrders       Parcel[] @relation("PartialReturn")
+  /// Operations chose not to charge this return (returnCharge 0).
+  returnChargeWaived Boolean  @default(false)
+
   /// How the parcel reaches the network: PICKUP (a pickup rider collects it) or DROP_OFF (the sender brings it to dropOffHubId).
   intake         ParcelIntake @default(PICKUP)
   /// DROP_OFF: the only hub that may receive it before pickup (PENDING_CONFIRMATION -> AT_HUB).
@@ -649,6 +661,7 @@ model Parcel {
   @@index([status, pickupDueAt])
   @@index([updatedAt])
   @@index([returnRunId])
+  @@index([returnOfId])
   @@index([merchantId, returnRequestedAt])
   @@index([status, createdAt])
   @@index([customerId, createdAt])

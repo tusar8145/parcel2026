@@ -19,6 +19,8 @@
   async function load() {
     if (!state.hubId) return;
     state.loadedFor = state.hubId;
+    // Who collected it, as related to the recipient (super admin's Receiver relations; Self first).
+    if (!state.relations) state.relations = (await DF.api("/delivery/receiver-relations").catch(() => ({ relations: ["Self"] }))).relations;
     try {
       state.items = (await DF.api(`/ops/collections?hubId=${encodeURIComponent(state.hubId)}`)).items;
     } catch (error) {
@@ -39,6 +41,7 @@
               ? `<tr><td colspan="5"><form id="collectForm" class="workflow-form" data-tracking="${esc(p.trackingId)}" autocomplete="off">
                 <label>Collection code<input id="collectCode" inputmode="numeric" maxlength="8" placeholder="6-digit code from the receiver"></label>
                 <label>Collected by<input id="collectBy" maxlength="120" value="${esc(p.recipient?.name || "")}" required></label>
+                <label>Relation to the recipient<select id="collectRelation">${(state.relations || ["Self"]).map(r => `<option value="${esc(r)}">${esc(r === "Self" ? "Self (the recipient)" : r)}</option>`).join("")}</select></label>
                 <label>Cash received (৳)<input id="collectCod" type="number" min="0" value="${esc(p.codAmount || 0)}"></label>
                 <label>No code? Photo of the receiver's ID<input id="collectPhoto" type="file" accept="image/*" capture="environment" data-file-button="Take or choose photo"></label>
                 <div class="form-actions"><button class="button button-primary" type="submit">Confirm hand-over</button><button class="button" type="button" data-collect-cancel>Cancel</button></div>
@@ -174,7 +177,7 @@
       try {
         await DF.api(`/parcels/${encodeURIComponent(id)}/collect`, {
           method: "POST",
-          body: { receivedBy: $("collectBy").value.trim(), codCollected: Number($("collectCod").value) || 0, ...(code ? { code } : { proof: { method: "PHOTO", image: await photo(file) } }) },
+          body: { receivedBy: $("collectBy").value.trim(), receiverRelation: $("collectRelation")?.value || "Self", codCollected: Number($("collectCod").value) || 0, ...(code ? { code } : { proof: { method: "PHOTO", image: await photo(file) } }) },
         });
         state.handing = null;
         state.message = `${id} handed over.`;

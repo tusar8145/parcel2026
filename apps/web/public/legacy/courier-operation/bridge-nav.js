@@ -552,37 +552,43 @@
   }
 
   /**
-   * Scan desk: one date & time for every tab's entries, now by default. A chosen time is sent with
-   * each entry (DF.setOperationTime → X-Operation-Time) and recorded as when it happened; up to
-   * 30 days back, never ahead. It stays while you move between the tabs; other views use now.
+   * Scan desk and Work queue: "☐ Set operation time". Unticked (the default), entries are recorded at
+   * the current time. Ticked, a date & time appears (now to start with) and every entry on these pages
+   * is sent with it (DF.setOperationTime → X-Operation-Time) and recorded as when it happened: up to
+   * 30 days back, never ahead. It stays while you move between their tabs; other views use now.
    */
   const OP_TIME_DAYS = 30;
-  const opTime = { value: null };
+  const OP_TIME_VIEWS = ["Scan desk", "Work queue"];
+  const opTime = { on: false, value: null };
   const localInput = date => {
     const d = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
     return d.toISOString().slice(0, 16);
   };
   const opTimeText = date => date.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  const opTimeHere = () => OP_TIME_VIEWS.includes(state.view);
   function operationTimeBar(on) {
-    DF.setOperationTime(on && opTime.value ? opTime.value.toISOString() : null);
+    DF.setOperationTime(on && opTime.on && opTime.value ? opTime.value.toISOString() : null);
     const old = $("opTimeBar");
     if (!on) return void old?.remove();
     const heading = q("#mainContent .page-heading");
     if (!heading) return;
-    let bar = old;
-    if (!bar || !heading.contains(bar)) {
+    if (!old || !heading.contains(old)) {
       old?.remove();
       heading.insertAdjacentHTML(
         "beforeend",
-        `<div class="heading-actions" id="opTimeBar" style="flex-wrap:wrap;justify-content:flex-end">
-          <label for="opTimeInput" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#586577"><span style="display:inline-flex;width:14px;height:14px">${ICONS.clock}</span>Operation time</label>
-          <input type="datetime-local" id="opTimeInput" class="select-small" style="min-width:190px" aria-describedby="opTimeNote">
-          <button type="button" class="button button-sm" id="opTimeNow">Now</button>
+        `<div class="heading-actions" id="opTimeBar" style="flex-wrap:wrap;justify-content:flex-end;align-items:center">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#586577;cursor:pointer"><input type="checkbox" id="opTimeOn"><span style="display:inline-flex;width:14px;height:14px">${ICONS.clock}</span>Set operation time</label>
+          <input type="datetime-local" id="opTimeInput" class="select-small" style="min-width:190px" aria-label="Operation date and time" aria-describedby="opTimeNote" hidden>
           <small id="opTimeNote" style="flex-basis:100%;text-align:right;font-size:12px"></small>
         </div>`,
       );
-      bar = $("opTimeBar");
       const input = $("opTimeInput");
+      $("opTimeOn").addEventListener("change", event => {
+        opTime.on = event.target.checked;
+        if (!opTime.on) opTime.value = null;
+        operationTimeBar(true);
+        if (opTime.on) input.focus();
+      });
       input.addEventListener("change", () => {
         const picked = input.value ? new Date(input.value) : null;
         const now = Date.now();
@@ -596,24 +602,27 @@
         } else opTime.value = picked;
         operationTimeBar(true);
       });
-      $("opTimeNow").addEventListener("click", () => {
-        opTime.value = null;
-        operationTimeBar(true);
-      });
     }
+    const box = $("opTimeOn");
     const input = $("opTimeInput");
+    const note = $("opTimeNote");
+    box.checked = opTime.on;
+    input.hidden = !opTime.on;
     const now = new Date();
     input.max = localInput(now);
     input.min = localInput(new Date(now.getTime() - OP_TIME_DAYS * 86_400_000));
     if (document.activeElement !== input) input.value = localInput(opTime.value || now);
-    const note = $("opTimeNote");
-    $("opTimeNow").hidden = !opTime.value;
-    input.style.borderColor = opTime.value ? "#b87913" : "";
-    note.style.color = opTime.value ? "#b87913" : "#8b96a4";
-    note.textContent = opTime.value ? `Entries on every tab are recorded at ${opTimeText(opTime.value)}.` : "Entries are recorded at the current time.";
+    const custom = opTime.on && opTime.value;
+    input.style.borderColor = custom ? "#b87913" : "";
+    note.style.color = custom ? "#b87913" : "#8b96a4";
+    note.textContent = custom ? `Entries on this page are recorded at ${opTimeText(opTime.value)}.` : opTime.on ? "Choose the date & time the work happened (up to 30 days back)." : "Entries are recorded at the current time.";
   }
-  // While "now" is shown, keep the picker on the current minute.
+  // While no time is chosen, keep the picker on the current minute.
   setInterval(() => !opTime.value && $("opTimeBar") && operationTimeBar(true), 30_000);
+  // Pages that draw their own heading (Work queue): the bar comes back when the heading is redrawn.
+  new MutationObserver(() => {
+    if (opTimeHere() && !$("opTimeBar") && q("#mainContent .page-heading")) operationTimeBar(true);
+  }).observe($("mainContent") || document.body, { childList: true, subtree: true });
 
   function decorate() {
     const label = $("breadcrumbLabel");
@@ -631,7 +640,7 @@
       if (sub && v.subtitle) sub.textContent = v.subtitle;
     }
     tabsBar(view);
-    operationTimeBar(view === "Scan desk");
+    operationTimeBar(OP_TIME_VIEWS.includes(view));
     if (view === "Today") {
       todayCards();
       todayLayout();

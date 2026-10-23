@@ -66,7 +66,8 @@ export interface BookingOptions {
   /** Already priced and checked against the package (imports re-check each row with PackagesService.quote). */
   quote?: PackageQuote;
   /** The product, when already resolved (null = none). */
-  product?: { id: string; name: string; type: string; sendMessages: boolean } | null;
+  /** id null: a product name that isn't listed (E-commerce imports), priced as Regular. */
+  product?: { id: string | null; name: string; type: string; sendMessages: boolean } | null;
 }
 
 /** A booking whose delivery details may be missing (imports book incomplete orders; see parcels/incomplete.ts). */

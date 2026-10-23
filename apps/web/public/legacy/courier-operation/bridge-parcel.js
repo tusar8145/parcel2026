@@ -349,7 +349,7 @@
     const METHOD = { OTP: "Delivery code", SIGNATURE: "Signature", PHOTO: "Photo" };
     const rows = [
       ["Method", esc(METHOD[p.proof.method] || p.proof.method)],
-      ["Received by", esc(p.proof.receivedBy || "—")],
+      ["Received by", esc([p.proof.receivedBy || "—", p.receiverRelation && p.receiverRelation !== "Self" ? `(${p.receiverRelation})` : p.receiverRelation === "Self" ? "(self)" : ""].filter(Boolean).join(" "))],
       ["Recorded", esc(Ops.when(p.proof.recordedAt))],
     ];
     if (full && !full.error) {
@@ -432,6 +432,9 @@
       if (p.status === "PENDING_CONFIRMATION") buttons.push(`<button type="button" class="button button-sm" data-customer-cancel="${id}">Cancel request</button>`);
     }
     buttons.push(`<button type="button" class="button button-sm" data-drawer-labels="${id}">Print label (PDF)</button>`);
+    // Rare corrections (bridge-partial.js): product type, return charge.
+    const more = Ops.correctionItems?.(p) || "";
+    if (more) buttons.push(moreMenu(more));
     return `<div class="df-actions">${buttons.filter(Boolean).join("")}</div>`;
   }
 
@@ -455,7 +458,7 @@
     const body = $("parcelDrawerBody");
     const scroll = body.scrollTop;
     const typing = document.activeElement?.id === "drawerNote" ? document.activeElement.selectionStart : null;
-    body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>${Ops.failureSection?.(p) || ""}
+    body.innerHTML = `${matchesMarkup()}<section><h3>Actions</h3>${actionsMarkup(p)}</section>${Ops.failureSection?.(p) || ""}${Ops.partialSection?.(p) || ""}
       ${window.DFParcelMap ? `<section id="drawerPosition"><h3>Where is it now</h3>${window.DFParcelMap.slot("ops")}</section>` : ""}
       <section><h3>Parcel</h3>${kv([
         ["Merchant / sender", esc(p.merchant?.name || p.sender?.name || "—")],

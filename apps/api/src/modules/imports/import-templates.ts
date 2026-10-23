@@ -76,6 +76,7 @@ export const dependentListFormula = (parentColumn: string, allName: string, pref
 
 function allowedText(col: ColumnDef, ctx: EngineContext) {
   if (col.key === "recipient_phone" || col.key === "sender_phone") return "Bangladeshi mobile number: 17XXXXXXXX or 017XXXXXXXX (+880 is added)";
+  if (col.list === "products" && !col.strictList) return ctx.lists.products.length ? `Any product name; the dropdown suggests your ${ctx.lists.products.length} ${KIND_LABEL[ctx.kind]} products (other names are priced as Regular)` : "Any product name (priced as Regular)";
   if (col.list && col.strictList) {
     const values = ctx.lists[col.list];
     if (col.parent && col.list === "zones") return "A zone of the chosen district (the dropdown follows the district)";

@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { cashFor, createPartialReturn, partialData } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { addressText } from "../../common/address";
 import type { z } from "zod";
@@ -208,9 +209,11 @@ export class RiderTasksService {
     return this.change(actor, trackingId, async (tx, parcel, after) => {
       if (parcel.deliveryRiderId !== riderId) throw forbidden("This delivery isn't assigned to you");
       if (input.outcome === "DELIVERED") {
-        const cod = Number(parcel.codAmount);
-        if (cod > 0 && input.codCollected !== cod)
-          throw new AppError("COD_MISMATCH", `Collect exactly ৳${cod.toLocaleString("en-BD")} before completing the delivery`, 422, { expected: cod });
+        // Partial delivery: the cash actually collected (0 … COD); else exactly the COD amount.
+        const partial = !!input.partial;
+        const { cod, collected } = cashFor(parcel, { partial, codCollected: input.codCollected });
+        if (!partial && cod > 0 && input.codCollected !== cod)
+          throw new AppError("COD_MISMATCH", `Collect exactly ৳${cod.toLocaleString("en-BD")} before completing the delivery (or tick Partial delivery)`, 422, { expected: cod });
         // Service packages: only the proof methods active for this parcel (OTP needs the delivery code message).
         const allowed = proofMethodsOf(parcel);
         if (!allowed.includes(input.proof.method))
@@ -236,8 +239,11 @@ export class RiderTasksService {
           {
             to: "DELIVERED",
             actorRole: "rider",
-            data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null },
-            description: `Delivered to ${input.receivedBy} with ${input.proof.method === "OTP" ? "OTP" : input.proof.method.toLowerCase()} proof.`,
+            data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self", ...(partial ? partialData(collected, input.note) : {}) },
+            ...(partial ? { title: "Partially delivered", metadata: { partial: true, codCollected: collected } } : {}),
+            description: partial
+              ? `Partly delivered to ${input.receivedBy} (${input.proof.method === "OTP" ? "OTP" : input.proof.method.toLowerCase()} proof): ৳${collected.toLocaleString("en-BD")} collected${cod > 0 ? ` of ৳${cod.toLocaleString("en-BD")}` : ""}. What the recipient didn't keep goes back to the sender.`
+              : `Delivered to ${input.receivedBy} with ${input.proof.method === "OTP" ? "OTP" : input.proof.method.toLowerCase()} proof.`,
             internalNote: input.note,
           },
           actor,
@@ -246,8 +252,12 @@ export class RiderTasksService {
         );
         await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: input.proof.method, receivedBy: input.receivedBy, fileId, otpVerified, note: input.note, ...capture } });
         await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "DELIVERED", note: input.note } });
-        if (cod > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: cod, collectedAt: now } });
-        if (cod > 0) await this.ledger.record(tx, { type: "COD_COLLECTED", amount: parcel.codAmount, reference: parcel.trackingId, riderId, merchantId: parcel.merchantId, occurredAt: now });
+        if (collected > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: collected, collectedAt: now } });
+        if (collected > 0) await this.ledger.record(tx, { type: "COD_COLLECTED", amount: collected, reference: parcel.trackingId, riderId, merchantId: parcel.merchantId, occurredAt: now });
+        if (partial) {
+          const rider = await tx.rider.findUniqueOrThrow({ where: { id: riderId }, select: { hubId: true } });
+          await createPartialReturn(tx, parcel, { hubId: parcel.currentHubId ?? rider.hubId, note: input.note, by: actorLabel(actor) }, after);
+        }
         await recordTaskEarning(tx, { riderId, type: "DELIVERY", parcel, at: now }, this.ledger);
         return;
       }

@@ -52,6 +52,13 @@ test("work queue: groups, Excel and scan-to-do from booking to out for delivery"
   expect(booked.status(), await booked.text()).toBe(201);
   const id = (await booked.json()).trackingId as string;
   fx.adoptParcel(id);
+  // A second order that stays waiting for a pickup rider (the last step opens that list).
+  const waiting = await page.request.post(apiUrl("/api/v1/ops/parcels"), {
+    headers: { authorization: `Bearer ${token}` },
+    data: { merchantId: shop.id, recipient: { name: `Queue E2E waiting ${fx.stamp}`, phone: "01812000001" }, delivery: { category: "Home", street: "Sadar Road 5", zone: "Kotwali (Barishal)", district: "Barishal" }, serviceLevel: "Regular", weightKg: 1, codAmount: 0 },
+  });
+  expect(waiting.status(), await waiting.text()).toBe(201);
+  fx.adoptParcel((await waiting.json()).trackingId as string);
   await page.context().clearCookies();
 
   await page.goto("/login");

@@ -445,6 +445,27 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `bulk-bookings` pg-boss queue rows left in the `pgboss` schema. Dropping them needs an explicit
   owner decision and a migration; no data was removed.
 
+## Partial delivery (modules/parcels/partial-delivery.ts, parcel-corrections) — 2026-10-24
+Kept simple: nothing changes except at delivery time.
+- Rider app (Deliver) and Scan desk › Delivery entry: **Partial delivery** checkbox + **Cash collected**
+  (`partial: true, codCollected`, 0 … the COD amount; without it the full COD is still required). The
+  delivery charge doesn't change. The parcel is DELIVERED with `partialDelivery`, `codCollectedAmount`
+  and `partialNote`; the COD collection and the `COD_COLLECTED` ledger posting use the cash collected,
+  so rider cash, the hub cash desk and the merchant's settlement follow it. Webhooks: `partial: true,
+  codCollected`.
+- A **return order** is created in the same transaction (`createPartialReturn`): a new parcel
+  (`returnOfId` → the delivered one), same merchant and addresses, COD 0, no delivery charge,
+  RETURN_SCHEDULED at the rider's hub, so Return rider assign / Return entry take it back. Its
+  `returnCharge` (the package's return percent of the original delivery charge) is billed when it is
+  returned, like any return.
+- Courier Operations › parcel › More ▾: **Return charge** (`POST /parcels/:id/return-charge { charge,
+  reason }`: charge or waive, `returnChargeWaived`; until RETURNED) and **Change product type**
+  (`POST /parcels/:id/product-type { productType }`: re-priced with the frozen package; refused once its
+  cash is settled or it is on a non-void invoice). Both audited and in the internal timeline.
+- E-commerce imports take any product name (`product_type`, `strictList: false` on the E-commerce
+  template): a listed product prices by its type; any other name is booked as written
+  (`productName`, `productId` null) and priced as Regular. Banking & Financial keeps its list.
+
 ## Phone scanner (modules/phone-scanner; web: courier-operation/bridge-phone-scanner.js, app/(scan)/scanner/[token]) — 2026-10-23
 Courier Operations only (`parcel:dispatch`: operations staff, hub managers). A phone becomes one panel
 tab's barcode scanner.

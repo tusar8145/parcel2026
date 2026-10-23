@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { cashFor, createPartialReturn, partialData, partialDeliveryFields } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { FAILURE_REASONS, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
 import { PrismaService } from "../../common/prisma.service";
 import { StorageService } from "../../common/storage.service";
-import type { Actor } from "../../common/auth/actor";
+import { actorLabel, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError } from "../../common/errors";
 import { codeVariants, scanSourceSchema } from "../ops/ops-common";
@@ -28,8 +29,11 @@ export const deskDeliverySchema = z.object({
   code: z.string().trim().min(3).max(64),
   /** Who signed the slip (default: the recipient on the parcel). */
   receivedBy: z.string().trim().max(120).optional(),
-  /** Cash the rider collected; must equal the parcel's COD amount (default: that amount). */
+  /** Cash the rider collected; must equal the parcel's COD amount (default: that amount), or with `partial` the cash actually collected (0 … COD). */
   codCollected: z.coerce.number().min(0).max(10_000_000).optional(),
+  ...partialDeliveryFields,
+  /** Who received it, as related to the recipient (super admin's Receiver relations; default Self). */
+  receiverRelation: z.string().trim().max(60).optional(),
   note: z.string().trim().max(500).optional(),
   /** Photo of the signed slip (the delivery proof). */
   photo: slipPhoto.optional(),
@@ -139,9 +143,12 @@ export class HubDeskService {
       }
       if (!DELIVERABLE.includes(parcel.status as ParcelStatus) || !parcel.deliveryRiderId || !parcel.deliveryRider)
         return { ok: false, outcome: "NOT_WITH_RIDER", message: `${parcel.trackingId} is ${parcelStatusLabel(parcel.status as ParcelStatus).toLowerCase()}; only parcels given to a delivery rider can be entered as delivered.`, code: parcel.trackingId };
-      const cod = Number(parcel.codAmount);
-      const collected = input.codCollected ?? cod;
-      if (cod > 0 && collected !== cod) return { ok: false, outcome: "COD_MISMATCH", message: `${parcel.trackingId}: the rider must have collected exactly ${taka(cod)} cash.`, code: parcel.trackingId };
+      // Partial delivery: the cash actually collected (0 … COD); else exactly the COD amount.
+      const { cod, collected } = cashFor(parcel, { partial: input.partial, codCollected: input.codCollected });
+      const partial = !!input.partial;
+      if (!partial && cod > 0 && (input.codCollected ?? cod) !== cod)
+        return { ok: false, outcome: "COD_MISMATCH", message: `${parcel.trackingId}: the rider must have collected exactly ${taka(cod)} cash (tick Partial delivery when the recipient kept only part of the order).`, code: parcel.trackingId };
+      let returnOrder: string | null = null;
       const rider = parcel.deliveryRider;
       const receivedBy = input.receivedBy || parcel.recipientName || "Recipient";
       const after = this.workflow.newAfterCommit();
@@ -157,10 +164,13 @@ export class HubDeskService {
             {
               to: "DELIVERED",
               actorRole: "rider",
-              data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null },
-              description: `Delivered to ${receivedBy} by ${rider.user.name}. The signed delivery slip was handed in at the hub.`,
+              data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self", ...(partial ? partialData(collected, input.note) : {}) },
+              ...(partial ? { title: "Partially delivered" } : {}),
+              description: partial
+                ? `Partly delivered to ${receivedBy} by ${rider.user.name}: ${taka(collected)} collected${cod > 0 ? ` of ${taka(cod)}` : ""}. What the recipient didn't keep goes back to the sender.`
+                : `Delivered to ${receivedBy} by ${rider.user.name}. The signed delivery slip was handed in at the hub.`,
               internalNote: input.note,
-              metadata: { deskEntry: true, riderId: rider.id },
+              metadata: { deskEntry: true, riderId: rider.id, ...(partial ? { partial: true, codCollected: collected } : {}) },
             },
             actor,
             meta,
@@ -168,20 +178,24 @@ export class HubDeskService {
           );
           await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: "SIGNATURE", receivedBy, fileId: file?.id, note: input.note ?? "Signed delivery slip handed in at the hub", capturedAt: now } });
           await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, createdAt: now, outcome: "DELIVERED", note: input.note ?? "Entered at the hub desk from the signed slip" } });
-          if (cod > 0) {
-            await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: rider.id, amount: cod, collectedAt: now } });
-            await this.ledger.record(tx, { type: "COD_COLLECTED", amount: parcel.codAmount, reference: parcel.trackingId, riderId: rider.id, merchantId: parcel.merchantId, occurredAt: now });
+          if (collected > 0) {
+            await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: rider.id, amount: collected, collectedAt: now } });
+            await this.ledger.record(tx, { type: "COD_COLLECTED", amount: collected, reference: parcel.trackingId, riderId: rider.id, merchantId: parcel.merchantId, occurredAt: now });
           }
           await recordTaskEarning(tx, { riderId: rider.id, type: "DELIVERY", parcel: current, at: now }, this.ledger);
-          await this.audit.record(actor, { action: "parcel.desk_delivery", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, riderId: rider.id, receivedBy, codCollected: cod, photo: !!file } }, meta, tx);
+          if (partial) returnOrder = (await createPartialReturn(tx, current, { hubId: current.currentHubId ?? rider.hubId, note: input.note, by: actorLabel(actor) }, after)).trackingId;
+          await this.audit.record(actor, { action: "parcel.desk_delivery", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, riderId: rider.id, receivedBy, codCollected: collected, photo: !!file, ...(partial ? { partial: true, returnOrder } : {}) } }, meta, tx);
         },
         { timeout: 15_000 },
       );
       await this.workflow.flush(after);
       return {
         ok: true,
-        outcome: "DELIVERED",
-        message: `${parcel.trackingId} delivered by ${rider.user.name}${cod > 0 ? ` · ${taka(cod)} cash with the rider` : ""}${input.photo ? " · slip photo saved" : ""}.`,
+        outcome: partial ? "PARTIALLY_DELIVERED" : "DELIVERED",
+        message: partial
+          ? `${parcel.trackingId} partly delivered by ${rider.user.name} · ${taka(collected)} cash with the rider · return order ${returnOrder}${input.photo ? " · slip photo saved" : ""}.`
+          : `${parcel.trackingId} delivered by ${rider.user.name}${cod > 0 ? ` · ${taka(cod)} cash with the rider` : ""}${input.photo ? " · slip photo saved" : ""}.`,
+        ...(returnOrder ? { returnOrder } : {}),
         code: parcel.trackingId,
         parcel: { ...this.summary(parcel), status: "DELIVERED" },
       };

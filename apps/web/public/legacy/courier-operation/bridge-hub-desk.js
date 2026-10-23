@@ -53,10 +53,10 @@
       path: "deliver",
       title: "Delivery entry",
       subtitle: "The rider handed in a signed delivery slip: scan it and it's delivered for that rider (cash on delivery stays with the rider for the cash handover).",
-      done: ["DELIVERED"],
+      done: ["DELIVERED", "PARTIALLY_DELIVERED"],
       counter: "entered",
       proof: true,
-      hint: "Each scan marks the parcel delivered at once. The receiver, note and photo above go with the next scan and then clear. Scanning a delivered parcel again updates its details (add the photo later the same way).",
+      hint: "Each scan marks the parcel delivered at once. The receiver, note, photo and partial delivery above go with the next scan and then clear. Partial delivery: enter the cash the recipient paid; what they didn't keep goes back to the sender on a new return order (Return rider assign). Scanning a delivered parcel again updates its details (add the photo later the same way).",
     },
     failed: {
       path: "failed",
@@ -107,6 +107,12 @@
     returnNote: "",
     photo: null,
     photoKb: 0,
+    // Delivery entry › Partial delivery: the recipient kept part of the order; the cash actually collected (next scan only).
+    partial: false,
+    cash: "",
+    // Who received it, as related to the recipient (GET /delivery/receiver-relations; next scan only, then Self).
+    relation: "Self",
+    relations: null,
     log: Object.fromEntries(Object.keys(TABS).map(k => [k, []])),
     count: Object.fromEntries(Object.keys(TABS).map(k => [k, 0])),
     queue: Promise.resolve(),
@@ -183,7 +189,14 @@
     }
     if (t.proof) {
       out.push(`<label>Received by (optional)<input id="hdReceivedBy" maxlength="120" autocomplete="off" placeholder="Name on the slip; empty = the recipient" value="${esc(state.receivedBy)}"></label>`);
-      out.push(`<label>Note (optional)<input id="hdNote" maxlength="500" autocomplete="off" placeholder="e.g. Signed by the guard" value="${esc(state.note)}"></label>`);
+      if (!state.relations) void loadRelations();
+      out.push(`<label>Relation to the recipient<select id="hdRelation">${(state.relations || ["Self"]).map(r => `<option value="${esc(r)}" ${r === state.relation ? "selected" : ""}>${esc(r === "Self" ? "Self (the recipient)" : r)}</option>`).join("")}</select></label>`);
+      out.push(`<label>Note (optional)<input id="hdNote" maxlength="500" autocomplete="off" placeholder="${state.partial ? "What came back, e.g. Kept the shirt, returned the jeans" : "e.g. Signed by the guard"}" value="${esc(state.note)}"></label>`);
+      out.push(
+        `<div style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#667085">Partial delivery<div class="hd-choice"><label><input type="checkbox" id="hdPartial" ${state.partial ? "checked" : ""}> The recipient kept only part of the order</label></div></div>`,
+      );
+      if (state.partial)
+        out.push(`<label>Cash collected (৳)<input id="hdCash" type="number" min="0" step="1" inputmode="numeric" autocomplete="off" placeholder="What the recipient paid" value="${esc(state.cash)}"></label>`);
       out.push(
         `<div class="hd-photo"><button type="button" class="button" id="hdTakePhoto">${state.photo ? "Retake photo" : "Take photo of the slip"}</button>${
           state.photo ? `<img id="hdPhotoPreview" src="${state.photo}" alt="Slip photo"><span class="subcell" id="hdPhotoSize">${state.photoKb} KB · goes with the next scan</span><button type="button" class="button button-sm" id="hdDropPhoto">Remove</button>` : ""
@@ -191,6 +204,15 @@
       );
     }
     return out.length ? `<div class="hd-row">${out.join("")}</div>` : "";
+  }
+
+  async function loadRelations() {
+    state.relations = ["Self"];
+    try {
+      state.relations = (await DF.api("/delivery/receiver-relations")).relations;
+    } catch {}
+    const select = $("hdRelation");
+    if (select) select.innerHTML = state.relations.map(r => `<option value="${esc(r)}" ${r === state.relation ? "selected" : ""}>${esc(r === "Self" ? "Self (the recipient)" : r)}</option>`).join("");
   }
 
   function tabMarkup(part) {
@@ -273,11 +295,18 @@
     if (t.toHub && state.toHubId) body.toHubId = state.toHubId;
     if (t.handover) Object.assign(body, { receivedBy: state.returnBy.trim() || undefined, note: state.returnNote.trim() || undefined });
     if (t.failure) Object.assign(body, { reason: state.reason, nextAction: state.nextAction, note: state.failNote.trim() || undefined });
-    const proof = t.proof ? { receivedBy: state.receivedBy, note: state.note, photo: state.photo, photoKb: state.photoKb } : null;
+    const proof = t.proof ? { receivedBy: state.receivedBy, note: state.note, photo: state.photo, photoKb: state.photoKb, partial: state.partial, cash: state.cash, relation: state.relation } : null;
     if (proof) {
-      Object.assign(body, { receivedBy: proof.receivedBy.trim() || undefined, note: proof.note.trim() || undefined, photo: proof.photo || undefined });
+      // Partial delivery: the cash actually collected is required (the API checks it is 0 … the COD amount).
+      if (proof.partial && String(proof.cash).trim() === "") {
+        state.log[part].unshift({ tone: "bad", message: "Enter the cash collected for the partial delivery, then scan.", at: new Date() });
+        $("hdCash")?.focus();
+        return void paintLog(part);
+      }
+      Object.assign(body, { receivedBy: proof.receivedBy.trim() || undefined, receiverRelation: proof.relation || "Self", note: proof.note.trim() || undefined, photo: proof.photo || undefined });
+      if (proof.partial) Object.assign(body, { partial: true, codCollected: Number(proof.cash) });
       // They go with this scan only.
-      Object.assign(state, { receivedBy: "", note: "", photo: null, photoKb: 0 });
+      Object.assign(state, { receivedBy: "", note: "", photo: null, photoKb: 0, partial: false, cash: "", relation: "Self" });
     }
     state.queue = state.queue.then(async () => {
       let r;
@@ -293,9 +322,9 @@
       if (r.ok && t.done.includes(r.outcome)) state.count[part]++;
       if (t.runs && r.ok) void loadRuns();
       // Not done: the receiver / note / photo come back for another try.
-      if (proof && !r.ok) Object.assign(state, { receivedBy: proof.receivedBy, note: proof.note, photo: proof.photo, photoKb: proof.photoKb });
+      if (proof && !r.ok) Object.assign(state, { receivedBy: proof.receivedBy, note: proof.note, photo: proof.photo, photoKb: proof.photoKb, partial: proof.partial, cash: proof.cash, relation: proof.relation });
       if (proof && onDesk() && Ops.hubPart === part) {
-        if (proof.photo || !r.ok) mount(true);
+        if (proof.photo || proof.partial || proof.relation !== "Self" || !r.ok) mount(true);
         else {
           const rb = $("hdReceivedBy");
           const nt = $("hdNote");
@@ -347,6 +376,7 @@
     const id = event.target.id;
     if (id === "hdReceivedBy") state.receivedBy = event.target.value;
     if (id === "hdNote") state.note = event.target.value;
+    if (id === "hdCash") state.cash = event.target.value;
     if (id === "hdFailNote") state.failNote = event.target.value;
     if (id === "hdReturnBy") state.returnBy = event.target.value;
     if (id === "hdReturnNote") state.returnNote = event.target.value;
@@ -360,6 +390,13 @@
       if (TABS[Ops.hubPart]?.runs) void loadRuns();
     }
     if (t.id === "hdRider") state.riderId = t.value;
+    if (t.id === "hdRelation") state.relation = t.value;
+    if (t.id === "hdPartial") {
+      state.partial = t.checked;
+      if (!t.checked) state.cash = "";
+      mount(false);
+      if (t.checked) setTimeout(() => $("hdCash")?.focus(), 30);
+    }
     if (t.id === "hdToHub") state.toHubId = t.value;
     if (t.id === "hdReason") state.reason = t.value;
     if (t.name === "hdNext") state.nextAction = t.value;

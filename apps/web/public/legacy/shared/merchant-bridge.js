@@ -926,6 +926,15 @@
     if (order.recipientRelation) grid.push(detail("Receiver relationship", order.recipientRelation));
     if (p.proof) grid.push(detail("Proof of delivery", `${{ OTP: "Recipient code", SIGNATURE: "Signature", PHOTO: "Photo" }[p.proof.method] || p.proof.method} · received by ${p.proof.receivedBy || p.recipient.name}`));
     if (p.cancelReason) grid.push(detail("Cancellation reason", p.cancelReason));
+    // Partial delivery: the cash actually collected, and the return order bringing back the rest.
+    if (p.partialDelivery)
+      grid.unshift(
+        detail(
+          "Partial delivery",
+          `The recipient kept part of the order and paid ${taka(p.partialDelivery.codCollected)}${p.partialDelivery.codAmount ? ` of ${taka(p.partialDelivery.codAmount)}` : ""}.${p.partialDelivery.returnOrders.length ? ` The rest comes back as ${p.partialDelivery.returnOrders.map(r => r.trackingId).join(", ")}.` : ""}${p.partialDelivery.note ? ` ${p.partialDelivery.note}` : ""}`,
+        ).replace("<div>", `<div data-df-partial style="grid-column:1/-1;padding:8px 10px;border-radius:8px;background:#fef6e7;color:#8a5a0b">`),
+      );
+    if (p.returnOf) grid.unshift(detail("Return order", `Brings back what the recipient didn't keep on ${p.returnOf} (partial delivery). Return charge: ${p.returnInfo?.chargeWaived ? "none" : taka(p.returnInfo?.charge)}.`).replace("<div>", `<div style="grid-column:1/-1">`));
     const timeline = events
       .map(
         (e, index) =>
@@ -1338,6 +1347,8 @@
     return {
       kind: S.cfg.document ? "document" : "ecommerce",
       merchantId: S.merchant?.id,
+      // Drop at hub: the merchant's own hub (the one serving its pickup area) is chosen by default.
+      hubId: S.merchant?.pickupHub?.id || undefined,
       noun: S.cfg.document ? "consignments" : "orders",
       tones: IMPORT_TONES,
       printLabels: (ids, job) => void printImportLabels(ids, job),
@@ -1368,10 +1379,9 @@
       const n = S.parcels.filter(p => p.incomplete).length;
       select.insertAdjacentHTML("beforeend", `<option value="${NEEDS_INFO}">Needs info${n ? ` (${n})` : ""}</option>`);
     }
-    const importButton = $("merchantBulkImport");
-    if (importButton && !$("merchantImportHistory")) importButton.insertAdjacentHTML("afterend", `<button class="button" id="merchantImportHistory" type="button">Import history</button>`);
-    const template = $("merchantBulkTemplate");
-    if (template && /sample/i.test(template.textContent)) template.lastChild.textContent = " Excel template";
+    // Orders toolbar: no Excel template / Import history buttons (both are inside the import dialog).
+    $("merchantBulkTemplate")?.remove();
+    $("merchantImportHistory")?.remove();
   }
 
   // ───────────── bills and statements ─────────────

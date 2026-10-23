@@ -404,7 +404,7 @@ export class PackagesService implements OnModuleInit {
   }
 
   /** Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). */
-  parcelFields(q: PackageQuote, product: { id: string; name: string; sendMessages: boolean } | null) {
+  parcelFields(q: PackageQuote, product: { id: string | null; name: string; sendMessages: boolean } | null) {
     return {
       baseCharge: q.columns.baseCharge,
       weightCharge: q.columns.weightCharge,

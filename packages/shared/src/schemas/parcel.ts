@@ -196,8 +196,12 @@ export const deliveryOutcomeSchema = z.discriminatedUnion("outcome", [
       z.object({ method: z.literal("SIGNATURE"), image: dataUrl }),
       z.object({ method: z.literal("PHOTO"), image: dataUrl }),
     ]),
-    /** Cash collected from the recipient; must equal the parcel's COD amount. */
+    /** Cash collected from the recipient; must equal the parcel's COD amount, or with `partial` the cash actually collected (0 … COD). */
     codCollected: amount.default(0),
+    /** Partial delivery: the recipient kept part of the order; the rest goes back on a new return order. */
+    partial: z.boolean().optional(),
+    /** Who received it, as related to the recipient (super admin's Receiver relations; default Self). */
+    receiverRelation: optionalText(60),
     note: optionalText(500),
     capture: proofCaptureSchema.optional(),
   }),

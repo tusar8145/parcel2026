@@ -317,7 +317,7 @@ describe("imports", () => {
         full("ORD-BOOKED"), // 14 booked before
         full("ORD-14", { District: "", Zone: "mirpur", "Customer phone": "+8801912345678" }), // 15 zone alone finds its district
         full("ORD-15", { Product: "Fashion & Apparel (Regular)", Service: "Regular" }), // 16 the dropdown label
-        full("ORD-16", { Product: "Spaceships" }), // 17 unknown option
+        full("ORD-16", { "Weight (kg)": "heavy" }), // 17 not a number
         full("ORD-17", { "Customer phone": "" }), // 18 the phone is required
         ECOM_HEADER.map(() => ""), // empty row: not a candidate
       ]);
@@ -345,7 +345,7 @@ describe("imports", () => {
       expect(at(14).errors[0].message).toBe(`ORD-BOOKED was already booked as ${booked.body.trackingId}`);
       expect(at(15)).toMatchObject({ status: "VALID" });
       expect(at(16)).toMatchObject({ status: "VALID" });
-      expect(at(17).errors[0]).toMatchObject({ column: "product_type", message: '"Spaceships" is not an option (choose a product of the E-commerce list)' });
+      expect(at(17).errors[0]).toMatchObject({ column: "weight_kg", message: '"heavy" is not a number' });
       expect(at(18).errors[0]).toMatchObject({ column: "recipient_phone", message: "required", text: "Row 18 · Customer phone: required" });
 
       // Paginated preview with filters.
@@ -388,6 +388,31 @@ describe("imports", () => {
   });
 
   describe("creating", () => {
+    it("E-commerce takes any product name: a listed product prices by its type, any other is booked as written and priced as Regular", async () => {
+      const { m, owner } = await merchant();
+      const res = await upload(owner.token, { kind: "ecommerce" }, {
+        name: "products.csv",
+        data: csv([ECOM_HEADER, full("FREE-1", { Product: "Blue cotton shirt x2" }), full("FREE-2", { Product: "Papers" }), full("FREE-3", { Product: "" })]),
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.counts).toMatchObject({ valid: 3, errors: 0 });
+      const commit = await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
+      expect(commit.body).toMatchObject({ status: "COMPLETED", result: { created: 3 } });
+      const parcels = await ctx.prisma.parcel.findMany({ where: { merchantId: m.id }, orderBy: { merchantOrderRef: "asc" } });
+      expect(parcels.map(p => [p.merchantOrderRef, p.productName, p.productType, p.productId === null])).toEqual([
+        ["FREE-1", "Blue cotton shirt x2", "REGULAR", true],
+        ["FREE-2", "Papers", "DOCUMENT", false],
+        ["FREE-3", null, "REGULAR", true],
+      ]);
+      // The same row with a listed Regular product costs the same as the free name.
+      expect(Number(parcels[0].totalCharge)).toBe(Number(parcels[2].totalCharge));
+
+      // Banking & Financial keeps its list.
+      const { owner: bank } = await merchant("BANKING_FINANCIAL");
+      const doc = await upload(bank.token, { kind: "document" }, { name: "docs.csv", data: csv([["Recipient name", "Recipient phone", "Delivery address", "District", "Zone", "Product"], ["Mahir", "01712345678", "House 1, Road 2, Dhanmondi", "Dhaka Central", "Dhanmondi", "Spaceships"]]) });
+      expect(doc.body.counts).toMatchObject({ errors: 1 });
+    });
+
     it("books valid and incomplete rows (incomplete ones priced with defaults), skips errors and keeps a history", async () => {
       const { m, owner } = await merchant();
       const res = await upload(owner.token, { kind: "ecommerce" }, {

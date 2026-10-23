@@ -55,7 +55,7 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     const done = await scan(s.desk.token, "deliver", { code: id, photo: PNG });
     expect(done).toMatchObject({ ok: true, outcome: "DELIVERED", message: `${id} delivered by Rider R-6001 · ৳1,500 cash with the rider · slip photo saved.` });
     const p = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id }, include: { proof: true, codCollection: true } });
-    expect(p).toMatchObject({ status: "DELIVERED", proof: { method: "SIGNATURE", receivedBy: "Nabila Ahmed" }, codCollection: { riderId: s.rider.rider.id } });
+    expect(p).toMatchObject({ status: "DELIVERED", receiverRelation: "Self", proof: { method: "SIGNATURE", receivedBy: "Nabila Ahmed" }, codCollection: { riderId: s.rider.rider.id } });
     expect(p.proof!.fileId).toBeTruthy();
     expect(Number(p.codCollection!.amount)).toBe(1500);
     expect(await ctx.prisma.auditLog.count({ where: { action: "parcel.desk_delivery", entityId: p.id } })).toBe(1);
@@ -72,6 +72,61 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect(await scan(s.desk.token, "deliver", { code: waiting })).toMatchObject({ ok: false, outcome: "NOT_WITH_RIDER" });
     expect(await scan(s.desk.token, "deliver", { code: "PP-000000-0000" })).toMatchObject({ ok: false, outcome: "NOT_FOUND" });
   });
+  it("partial delivery: the cash actually collected, a return order back to the merchant, its return charge and the product type set by operations", async () => {
+    const s = await setup();
+    const id = await atHub(s);
+    expect(await scan(s.desk.token, "dispatch", { code: id, riderId: s.rider.rider.id })).toMatchObject({ ok: true });
+
+    // The cash: required, from 0 to the COD amount (৳1,500).
+    expect(await scan(s.desk.token, "deliver", { code: id, partial: true })).toMatchObject({ ok: false, message: expect.stringContaining("Enter the cash collected") });
+    expect(await scan(s.desk.token, "deliver", { code: id, partial: true, codCollected: 2000 })).toMatchObject({ ok: false, message: expect.stringContaining("from ৳0 to the COD amount") });
+    // Without Partial delivery the full COD is still required.
+    expect(await scan(s.desk.token, "deliver", { code: id, codCollected: 600 })).toMatchObject({ ok: false, outcome: "COD_MISMATCH" });
+
+    // Receiver relations: the standard list (no super admin list saved), Self first.
+    const relations = (await ctx.api("GET", "/delivery/receiver-relations", { token: s.desk.token })).body.relations;
+    expect(relations[0]).toBe("Self");
+    expect(relations).toContain("Father");
+    const done = await scan(s.desk.token, "deliver", { code: id, partial: true, codCollected: 600, note: "Kept the shirt, returned the jeans", receiverRelation: "Father" });
+    expect(done).toMatchObject({ ok: true, outcome: "PARTIALLY_DELIVERED" });
+    const returnId = (done as unknown as { returnOrder: string }).returnOrder;
+    expect(returnId).toMatch(/^PP-/);
+
+    const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id }, include: { codCollection: true } });
+    expect(parcel).toMatchObject({ status: "DELIVERED", partialDelivery: true, partialNote: "Kept the shirt, returned the jeans", receiverRelation: "Father" });
+    expect(Number(parcel.codCollectedAmount)).toBe(600);
+    expect(Number(parcel.codCollection!.amount)).toBe(600);
+    const ledger = await ctx.prisma.journalEntry.findFirstOrThrow({ where: { eventType: "COD_COLLECTED", reference: id }, include: { lines: true } });
+    expect(ledger.lines.reduce((t, l) => t + Number(l.debit), 0)).toBe(600);
+
+    // The return order: same merchant, back to its pickup address, nothing to collect, no delivery charge, waiting at the hub.
+    const ret = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: returnId } });
+    expect(ret).toMatchObject({ merchantId: s.shop.id, returnOfId: parcel.id, status: "RETURN_SCHEDULED", currentHubId: s.gulshan.id, pickupStreet: parcel.pickupStreet, merchantOrderRef: null });
+    expect([Number(ret.codAmount), Number(ret.totalCharge)]).toEqual([0, 0]);
+    const charge = Number(ret.returnCharge);
+    expect(charge).toBeGreaterThan(0);
+    // Both directions show the link.
+    const view = await ctx.api("GET", `/parcels/${id}`, { token: s.ops.token });
+    expect(view.body.partialDelivery).toMatchObject({ codCollected: 600, codAmount: 1500, note: "Kept the shirt, returned the jeans", returnOrders: [{ trackingId: returnId, status: "RETURN_SCHEDULED" }] });
+    expect((await ctx.api("GET", `/parcels/${returnId}`, { token: s.ops.token })).body).toMatchObject({ returnOf: id, returnInfo: { charge } });
+
+    // Operations: no return charge for it (until it is returned), then charged again.
+    const waived = await ctx.api("POST", `/parcels/${returnId}/return-charge`, { token: s.ops.token, body: { charge: false, reason: "Customer's size issue" } });
+    expect(waived.body).toEqual({ trackingId: returnId, returnCharge: 0, waived: true });
+    expect((await ctx.api("POST", `/parcels/${returnId}/return-charge`, { token: s.ops.token, body: { charge: true } })).body).toMatchObject({ returnCharge: charge, waived: false });
+    expect((await ctx.api("POST", `/parcels/${id}/return-charge`, { token: s.ops.token, body: { charge: false } })).body.error.code).toBe("NOT_A_RETURN");
+    expect((await ctx.api("POST", `/parcels/${returnId}/return-charge`, { token: s.desk.token, body: { charge: false } })).status).toBe(200);
+
+    // Operations: priced as Books instead of Regular (re-priced with its package); the same type again is refused.
+    const before = Number(parcel.totalCharge);
+    const typed = await ctx.api("POST", `/parcels/${id}/product-type`, { token: s.ops.token, body: { productType: "BOOKS" } });
+    expect(typed.status, JSON.stringify(typed.body)).toBe(200);
+    expect(typed.body).toMatchObject({ productType: "BOOKS", from: "REGULAR", totalCharge: { from: before } });
+    expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id } })).productType).toBe("BOOKS");
+    expect((await ctx.api("POST", `/parcels/${id}/product-type`, { token: s.ops.token, body: { productType: "BOOKS" } })).body.error.code).toBe("NO_CHANGE");
+    expect(await ctx.prisma.auditLog.count({ where: { action: { in: ["parcel.product_type_change", "parcel.return_charge"] } } })).toBe(4);
+  });
+
   it("records entries at the operation time chosen on the Scan desk (X-Operation-Time)", async () => {
     const s = await setup();
     const id = await atHub(s);

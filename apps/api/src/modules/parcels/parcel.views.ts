@@ -26,6 +26,9 @@ export const parcelInclude = {
   merchant: { select: { id: true, code: true, name: true, type: true } },
   proof: { select: { method: true, receivedBy: true, fileId: true, otpVerified: true, createdAt: true } },
   codCollection: { select: { amount: true, state: true, collectedAt: true } },
+  // Partial delivery: the parcel a return order carries back, and the return orders of a partial delivery.
+  returnOf: { select: { trackingId: true } },
+  returnOrders: { select: { trackingId: true, status: true }, orderBy: { createdAt: "asc" } },
   events: { orderBy: { createdAt: "asc" } },
   // Delivery attempts (a handful per parcel, loaded in one batched query for a whole list page).
   attempts: {
@@ -173,11 +176,18 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
             requestedAt: p.returnRequestedAt,
             requestedBy: opts.internal ? p.returnRequestedBy : undefined,
             charge: num(p.returnCharge),
+            /** Operations chose not to charge this return. */
+            chargeWaived: p.returnChargeWaived,
             runId: opts.internal ? p.returnRunId : undefined,
             onReturnRun: !!p.returnRunId,
             receivedAt: p.returnReceivedAt,
           }
         : null,
+    /** Partial delivery: the recipient kept part of the order; `codCollected` is the cash actually collected, the rest went back on `returnOrders`. */
+    partialDelivery: p.partialDelivery ? { codCollected: num(p.codCollectedAmount) ?? 0, codAmount: num(p.codAmount) ?? 0, note: p.partialNote, returnOrders: p.returnOrders.map(r => ({ trackingId: r.trackingId, status: r.status })) } : null,
+    /** A return order: the parcel it carries back after a partial delivery. */
+    returnOf: p.returnOf?.trackingId ?? null,
+    productType: p.productType ?? "REGULAR",
     charges: {
       base: num(p.baseCharge),
       weight: num(p.weightCharge),

@@ -362,7 +362,16 @@ export class ParcelWorkflowService {
       );
     }
     if (parcel.merchantId) {
-      const data = { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, from, status: to, statusLabel: PARCEL_STATUS_LABEL[to], at: operationNow().toISOString() };
+      const data = {
+        trackingId: parcel.trackingId,
+        merchantOrderRef: parcel.merchantOrderRef,
+        from,
+        status: to,
+        statusLabel: PARCEL_STATUS_LABEL[to],
+        at: operationNow().toISOString(),
+        // Partial delivery: the cash actually collected; the rest returns on a new return order.
+        ...(to === "DELIVERED" && parcel.partialDelivery ? { partial: true, codCollected: Number(parcel.codCollectedAmount ?? 0) } : {}),
+      };
       after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, "shipment.status_updated", data)));
       const specific = WEBHOOK_FOR[to];
       if (specific) after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, specific, data)));

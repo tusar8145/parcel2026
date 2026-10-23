@@ -445,6 +445,25 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `bulk-bookings` pg-boss queue rows left in the `pgboss` schema. Dropping them needs an explicit
   owner decision and a migration; no data was removed.
 
+## Phone scanner (modules/phone-scanner; web: courier-operation/bridge-phone-scanner.js, app/(scan)/scanner/[token]) — 2026-10-23
+Courier Operations only (`parcel:dispatch`: operations staff, hub managers). A phone becomes one panel
+tab's barcode scanner.
+- Top bar › Phone scanner → `POST /phone-scanner/links` → QR code + link (`/scanner/<token>`, origin as in
+  Scan with phone: `common/phone-link.ts`). Kept in Redis only (no table): the tab keeps it alive
+  (`POST …/links/:id/keepalive` every minute, 3-minute TTL; the link id survives a reload in
+  sessionStorage); Disconnect (`DELETE …/links/:id`) ends it at once. Open and close are audited.
+- The phone (public, token): `GET /phone-scanner/public/:token` (who it scans for, the last results; the
+  first visit publishes `phone_scanner.status`), `POST …/:token/scans { code }` → `phone_scanner.scan`
+  `{ linkId, code, n }` to the link's owner only (`staffPermission: "phone_scanner:owner"`, which no role
+  has, so only `userIds` match), and the tab with that link id acts on it. 410 `SCANNER_LINK_CLOSED`
+  once disconnected.
+- In the tab, `DF.scanner.deliver(code)` puts the code into the open page's scan box (the boxes registered
+  with `DF.scanner.attach`, the one used last first) as a camera read; the page's `DF.scanner.feedback`
+  is its result, sent back with `POST …/links/:id/results { n, ok, message }` and shown on the phone
+  with a sound (high beep ✓, low buzz ✗). No scan box open: "Open parcel" popup, and ✗ on the phone.
+- Phone camera: BarcodeDetector, else ZXing; the live camera needs https (production). On plain http
+  (local LAN) the phone uses "Take photo" (decoded with ZXing) or a typed code.
+
 ## Scan with phone (modules/parcel-scans; web: courier-operation/bridge-scan.js, app/(scan)/scan/[token]) — 2026-10-22
 
 - New orders › "Scan with phone": choose the parcel type and merchant (one per session) →

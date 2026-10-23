@@ -182,10 +182,54 @@
     });
   }
 
+  // ───────────── scan boxes (for codes that arrive from elsewhere: the phone scanner) ─────────────
+  // Every attached box is remembered with its handler; the one focused last (or the one on screen)
+  // takes a delivered code exactly like a camera read.
+  const boxes = []; // { input, onScan }
+  let lastBox = null;
+  const visible = el => el.isConnected && !el.disabled && el.offsetParent !== null && !el.closest("[hidden]");
+
+  /** The open page's scan box: the one used last if it is still on screen, else the first one on screen. */
+  function activeBox() {
+    for (let i = boxes.length - 1; i >= 0; i--) if (!boxes[i].input.isConnected) boxes.splice(i, 1);
+    if (lastBox && visible(lastBox.input) && boxes.includes(lastBox)) return lastBox;
+    return boxes.find(b => visible(b.input)) || null;
+  }
+
+  /**
+   * A code from another device (shared/phone-scanner): into the active scan box, as a camera read.
+   * Resolves with { delivered: false } when no scan box is open, else with the box's result
+   * (DF.scanner.feedback within a few seconds: { delivered, ok, message }).
+   */
+  let pendingResult = null;
+  function deliver(raw) {
+    const code = normalize(raw);
+    const box = activeBox();
+    if (!code || !box) return Promise.resolve({ delivered: false, code });
+    return new Promise(resolve => {
+      pendingResult?.resolve({ delivered: true, ok: true });
+      const timer = setTimeout(() => {
+        if (pendingResult?.timer === timer) pendingResult = null;
+        resolve({ delivered: true, ok: true });
+      }, 6000);
+      pendingResult = { timer, input: box.input, resolve: r => (clearTimeout(timer), resolve(r)) };
+      box.input.value = code;
+      box.input.dispatchEvent(new Event("input", { bubbles: true }));
+      try {
+        box.onScan?.(code, "CAMERA");
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  }
+
   /** Adds a camera button after a typed input; the typed input keeps working. */
   function attach(input, { onScan, continuous = false, title, label = "Scan" } = {}) {
     if (!input || input.dataset.dfScanner) return input;
     input.dataset.dfScanner = "1";
+    const box = { input, onScan };
+    boxes.push(box);
+    input.addEventListener("focus", () => (lastBox = box));
     const button = document.createElement("button");
     button.type = "button";
     button.className = "button button-sm";
@@ -217,6 +261,12 @@
    */
   let feedbackCtx = null;
   function scanFeedback(input, ok, message) {
+    // A delivered code (phone scanner) waits for this: its result goes back to the phone.
+    if (pendingResult) {
+      const p = pendingResult;
+      pendingResult = null;
+      p.resolve({ delivered: true, ok: !!ok, message: message || undefined });
+    }
     try {
       navigator.vibrate?.(ok ? 60 : [80, 60, 80]);
       feedbackCtx ||= new (window.AudioContext || window.webkitAudioContext)();
@@ -255,5 +305,5 @@
     }
   }
 
-  DF.scanner = { start, stop, open, attach, normalize, supported, feedback: scanFeedback };
+  DF.scanner = { start, stop, open, attach, normalize, supported, feedback: scanFeedback, deliver, activeBox };
 })();

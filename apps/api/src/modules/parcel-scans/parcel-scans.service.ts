@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
-import os from "node:os";
 import QRCode from "qrcode";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
@@ -8,6 +7,7 @@ import { AuditService } from "../../common/audit.service";
 import { StorageService } from "../../common/storage.service";
 import { QueueService } from "../../common/queues";
 import { RealtimeService } from "../../common/realtime.service";
+import { phoneLinkOrigin } from "../../common/phone-link";
 import { AppError, notFound } from "../../common/errors";
 import type { UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
@@ -83,20 +83,9 @@ export class ParcelScansService implements OnApplicationBootstrap {
 
   // ───────────── sessions (the modal) ─────────────
 
-  /** The phone link's origin: SCAN_LINK_ORIGIN, else APP_URL (in development a localhost one becomes this computer's LAN address). */
+  /** The phone link's origin (common/phone-link.ts). */
   linkOrigin() {
-    const configured = env().SCAN_LINK_ORIGIN ?? env().APP_URL;
-    const url = new URL(configured);
-    if (!env().SCAN_LINK_ORIGIN && env().NODE_ENV !== "production" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
-      const virtual = /vethernet|wsl|docker|virtualbox|vmware|hyper-v|loopback|tailscale|zerotier/i;
-      const candidates = Object.entries(os.networkInterfaces())
-        .filter(([name]) => !virtual.test(name))
-        .flatMap(([, list]) => list ?? [])
-        .filter(a => a.family === "IPv4" && !a.internal);
-      const lan = candidates.find(a => a.address.startsWith("192.168.")) ?? candidates.find(a => a.address.startsWith("10.")) ?? candidates[0];
-      if (lan) url.hostname = lan.address;
-    }
-    return url.origin;
+    return phoneLinkOrigin();
   }
 
   async create(actor: UserActor, input: z.infer<typeof createScanSessionSchema>, meta: RequestMeta) {

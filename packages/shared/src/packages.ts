@@ -571,6 +571,19 @@ export function priceParcel(prices: PackagePrices, input: PriceInput): PriceBrea
   };
 }
 
+/**
+ * Price lines as shown: E-commerce shows the route and what is sent as one line, their sum
+ * ("Inside same district + Regular"), also for parcels priced before priceParcel did so.
+ */
+export function displayPriceLines<L extends { code: string; label: string; amount: number }>(lines: L[], segment: string | null | undefined): L[] {
+  if (segment !== "ECOMMERCE") return lines;
+  const route = lines.find(l => l.code === "route");
+  const type = lines.find(l => l.code === "product_type");
+  if (!route || !type) return lines;
+  const what = type.label.replace(/^What you send:\s*/i, "");
+  return lines.filter(l => l !== type).map(l => (l === route ? { ...l, label: `${route.label} + ${what}`, amount: route.amount + type.amount } : l));
+}
+
 /** Re-attempt fee for the n-th failed attempt (1-based): free for the first `freeReattempts`. */
 export function reattemptFeeFor(prices: Pick<PackagePrices, "freeReattempts" | "reattemptFee">, failedAttempts: number): number {
   return failedAttempts > prices.freeReattempts ? whole(prices.reattemptFee) : 0;

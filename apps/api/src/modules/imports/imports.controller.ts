@@ -14,6 +14,7 @@ import { ImportConfigService, importConfigSchema, LIMIT_CEILINGS, type ImportSet
 import { ImportEngineService } from "./import-engine.service";
 import { ImportJobsService } from "./import-jobs.service";
 import {
+  analyzeOptionsSchema,
   editRowSchema,
   failedRowsQuerySchema,
   importKindSchema,
@@ -126,6 +127,39 @@ export class ImportsController {
     if (!file) throw new AppError("VALIDATION_FAILED", "Choose a file to upload (form field \"file\")", 422);
     const options = importOptionsSchema.parse({ ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== "")) });
     return this.jobs.validateUpload(actor, options, file, meta);
+  }
+
+  /**
+   * Courier Operations: any merchant's spreadsheet. Finds the header row (extra lines skipped) and which
+   * column is which, from the headers and the data; the dialog shows it to correct, then sends the matching
+   * to POST /imports/validate as `mapping`. Nothing is stored.
+   */
+  @RequirePermissions("parcel:dispatch")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post("analyze")
+  @HttpCode(200)
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" }, kind: { enum: [...IMPORT_KINDS] }, merchantId: { type: "string" }, headerRow: { type: "integer" } }, required: ["file", "kind"] } })
+  async analyze(@CurrentActor() actor: Actor, @Req() req: FastifyRequest) {
+    if (!req.isMultipart()) throw new AppError("VALIDATION_FAILED", "Upload the file as multipart/form-data (field \"file\")", 422);
+    const settings = await this.config.settings();
+    const maxBytes = Math.round(settings.limits.maxFileMb * 1024 * 1024);
+    const fields: Record<string, string> = {};
+    let file: { buffer: Buffer; fileName: string } | null = null;
+    try {
+      for await (const part of req.parts({ limits: { fileSize: maxBytes, files: 1, fields: 10 } })) {
+        if (part.type === "file") file = { buffer: await part.toBuffer(), fileName: part.filename || "upload" };
+        else fields[part.fieldname] = String(part.value ?? "");
+      }
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "FST_REQ_FILE_TOO_LARGE") throw new AppError("FILE_TOO_LARGE", `Files can be at most ${settings.limits.maxFileMb} MB. Split it into smaller files.`, 413, { maxFileMb: settings.limits.maxFileMb });
+      if (code?.startsWith("FST_")) throw new AppError("INVALID_UPLOAD", "The upload could not be read. Choose the file again.", 400);
+      throw error;
+    }
+    if (!file) throw new AppError("VALIDATION_FAILED", "Choose a file to upload (form field \"file\")", 422);
+    const options = analyzeOptionsSchema.parse(Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== "")));
+    return this.jobs.analyze(actor, options, file);
   }
 
   /** Import history: merchants see their own imports, operations the operations imports (`mine=true`: yours). */

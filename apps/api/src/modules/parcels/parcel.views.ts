@@ -1,4 +1,5 @@
 import {
+  displayPriceLines,
   FIRST_MILE_LABEL,
   LAST_MILE_LABEL,
   PARCEL_NOTIFICATIONS,
@@ -54,7 +55,7 @@ export function pickupWindowOf(p: { pickupWindowStart: Date | null; pickupWindow
   };
 }
 
-type Snapshot = { engine?: string; packageName?: string; version?: number; lines?: { code: string; label: string; amount: number }[]; tier?: string; deliveryCharge?: number } | null;
+type Snapshot = { engine?: string; segment?: string; packageName?: string; version?: number; lines?: { code: string; label: string; amount: number }[]; tier?: string; deliveryCharge?: number } | null;
 
 /**
  * The service package side of a parcel (null for parcels booked before packages): the choices made
@@ -186,7 +187,7 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
       reattempt: num(p.reattemptCharge),
       total: num(p.totalCharge),
       /** Itemised price frozen at booking (service packages). */
-      lines: (p.pricingSnapshot as Snapshot)?.lines ?? null,
+      lines: (p.pricingSnapshot as Snapshot)?.lines ? displayPriceLines((p.pricingSnapshot as Snapshot)!.lines!, (p.pricingSnapshot as Snapshot)?.segment) : null,
     },
     /** Service package choices (null: booked before packages). */
     service: serviceView(p),

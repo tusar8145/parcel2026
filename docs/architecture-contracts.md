@@ -324,6 +324,17 @@ scanner, typing; `DF.scanner.feedback` per scan; scans are processed in order). 
 
 ## Spreadsheet imports (modules/imports, web: public/legacy/shared/importer.js)
 One engine for both merchant panels, merchant API keys (`parcels:write`) and Courier Operations.
+- Any merchant's file (2026-10-23, Courier Operations only; `imports/column-detect.ts`): `POST /imports/analyze`
+  (multipart: file, kind, merchantId, optional headerRow; `parcel:dispatch`) finds the header row in the
+  first 30 rows (or none), and each column's field from its header words and its values (BD phones,
+  amounts, addresses, names, catalog places, products, order codes). Lines that aren't orders (blank, one
+  cell, repeated headers, totals) are skipped. District / thana / area columns whose names the catalog
+  doesn't know become `__address_part` (added to the address; places are then found from it). The dialog's
+  "Match columns" step lets the user change any field, then `validate` gets `mapping` (JSON `{ headerRow,
+  columns }`); without it an operations file is matched automatically. The matching is stored in
+  `ImportJob.settings.layout` (`signature` = normalised headers), and the merchant's next operations file
+  with the same headers is matched the same way (`by: "saved"`). Our own template (`template: true`) skips
+  the step. Merchant uploads keep the template header rules (`sheetToRows`).
 - Blank templates have no district / zone / area columns (2026-10-23, `ColumnDef.inTemplate: false`): the
   address column asks for the full address and the places are found from it. Files carrying rows (Scan with
   phone workbook, rows not created) keep them; older files that have them are still read.

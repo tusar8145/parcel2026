@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { addressText } from "../../common/address";
 import type { Readable } from "node:stream";
 import type { z } from "zod";
-import { LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { displayPriceLines, LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
 import { env } from "../../config/env";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -297,9 +297,9 @@ export class DocumentsService {
       : [];
     return rows.map((p, i) => {
       const l = labels[i];
-      const snap = p.pricingSnapshot as { lines?: { label: string; amount: number }[] } | null;
+      const snap = p.pricingSnapshot as { segment?: string; lines?: { code: string; label: string; amount: number }[] } | null;
       const chargeLines = snap?.lines?.length
-        ? snap.lines.map(x => ({ label: x.label, amount: Number(x.amount) }))
+        ? displayPriceLines(snap.lines.map(x => ({ code: x.code, label: x.label, amount: Number(x.amount) })), snap.segment).map(x => ({ label: x.label, amount: x.amount }))
         : [
             { label: "Delivery (base)", amount: num(p.baseCharge) },
             { label: "Weight", amount: num(p.weightCharge) },

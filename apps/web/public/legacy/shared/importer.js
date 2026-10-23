@@ -267,7 +267,7 @@
     const choose = needsMerchant(cfg) && !ui.merchantId;
     const body = `<div style="display:grid;gap:14px">
       <div id="dfiLimits" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
-        <strong>Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB per file</strong> · Excel (.xlsx) or CSV with the template's headers.<br>
+        <strong>Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB per file</strong> · ${cfg.forOps ? "Excel (.xlsx) or CSV: our template or any merchant's own file (you match its columns next)." : "Excel (.xlsx) or CSV with the template's headers."}<br>
         Required columns: <strong>${esc(required.join(", ") || "none")}</strong> (red headers with * in the template). Other columns may stay empty; a value you enter must be valid or the row is not created.<br>
         The recipient phone is required. Rows missing the recipient name, address or destination are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.<br>
         First mile, the drop-off hub, last mile and the messages are chosen here for the whole file${cfg.forOps ? (cfg.kind === "customer" ? " (Customer package); the sender and pickup are in each row" : " (the merchant's package)") : ""}.
@@ -308,6 +308,7 @@
 
   function pick(file) {
     ui.file = null;
+    ui.layout = null;
     if (!/\.(xlsx|csv)$/i.test(file.name)) return chooseStep(/\.xls$/i.test(file.name) ? "Old .xls files can't be read: save it as Excel Workbook (.xlsx)." : "Choose an Excel (.xlsx) or CSV file.");
     if (file.size > ui.limits.maxFileMb * 1024 * 1024) return chooseStep(`This file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ${ui.limits.maxFileMb} MB. Split it into smaller files.`);
     ui.file = file;
@@ -332,11 +333,20 @@
   // ───────────── step 2: check (dry run) and preview ─────────────
 
   async function check() {
-    readOptions();
+    if (ui.step === "map") readMapping();
+    else readOptions();
     const { cfg, file } = ui;
     if (!file) return;
     if (!isBulk() && needsMerchant() && !ui.merchantId) return chooseStep("Choose the merchant for this file.");
     if (!isBulk() && ui.firstMile === "HUB_DROP" && !ui.hubId) return chooseStep("Choose the hub the parcels are dropped at.");
+    // Courier Operations: any merchant's file. The columns are matched (and can be corrected) first.
+    if (mapsColumns() && !ui.layout) return void analyzeStep();
+    // From the first step again (Back): show the matching before checking.
+    if (mapsColumns() && ui.step === "choose") return mappingStep();
+    if (mapsColumns()) {
+      const problem = mappingProblem();
+      if (problem) return mappingStep(problem);
+    }
     ui.step = "checking";
     draw(`Checking ${file.name}`, `Reading the file and checking every row. Nothing ${isBulk() ? "changes" : "is created"} yet.`, `<p class="panel-subtitle" id="dfiChecking" style="padding:28px 0;text-align:center">Checking rows…</p>`, button("close", "Cancel"));
     const form = new FormData();
@@ -351,6 +361,7 @@
       if (ui.pkg && ui.lastMile) form.append("lastMile", ui.lastMile);
       // The package's messages are the default; only an unticked one is sent.
       if (ui.pkg?.notifications?.length && ui.notifications.size !== ui.pkg.notifications.length) form.append("notifications", ui.notifications.size ? [...ui.notifications].join(",") : "none");
+      if (mapsColumns() && ui.layout) form.append("mapping", JSON.stringify({ headerRow: ui.layout.headerRow, columns: ui.layout.columns.map(c => c.key || null) }));
     }
     form.append("file", file, file.name);
     try {
@@ -365,8 +376,98 @@
       if (!ui) return;
       preview();
     } catch (error) {
+      if (!ui) return;
+      if (mapsColumns() && ui.layout) return mappingStep(describe(error));
+      chooseStep(describe(error));
+    }
+  }
+
+  // ───────────── any merchant's file: match the columns (Courier Operations) ─────────────
+  // POST /imports/analyze finds the header row (titles, blank lines, totals and notes are skipped) and
+  // which column is which, from the headers and the data; the user corrects it; validate gets `mapping`.
+  // A merchant's next file with the same headers is matched the same way (server side).
+
+  const mapsColumns = () => !isBulk() && !!ui.cfg.forOps;
+  const BY_LABEL = { saved: "as last time", header: "by its name", data: "by its data" };
+
+  async function analyzeStep(headerRow) {
+    const { cfg, file } = ui;
+    ui.step = "analyzing";
+    draw(`Reading ${file.name}`, "Finding the header row and which column is which…", `<p class="panel-subtitle" id="dfiAnalyzing" style="padding:28px 0;text-align:center">Reading the file…</p>`, button("close", "Cancel"));
+    const form = new FormData();
+    form.append("kind", cfg.kind);
+    const merchantId = cfg.merchantId || (needsMerchant(cfg) ? ui.merchantId : "");
+    if (merchantId) form.append("merchantId", merchantId);
+    if (headerRow !== undefined) form.append("headerRow", String(headerRow));
+    form.append("file", file, file.name);
+    try {
+      const response = await DF.apiRaw(`${base()}/analyze`, { method: "POST", body: form });
+      const layout = await response.json();
+      if (!ui) return;
+      ui.layout = layout;
+      // Our own template (or a Scan with phone workbook): nothing to match, check it straight away.
+      if (layout.template && headerRow === undefined) {
+        ui.step = "map";
+        return void check();
+      }
+      mappingStep();
+    } catch (error) {
       if (ui) chooseStep(describe(error));
     }
+  }
+
+  /** The choices in the table (kept when the step re-renders). */
+  function readMapping() {
+    if (!ui.layout) return;
+    for (const select of document.querySelectorAll("[data-dfi-map]")) {
+      const col = ui.layout.columns[Number(select.dataset.dfiMap)];
+      if (!col) continue;
+      const key = select.value || null;
+      if (key !== col.key) col.by = null;
+      col.key = key;
+    }
+  }
+
+  /** What stops the check: the phone column(s) not chosen, or a field chosen twice. */
+  function mappingProblem() {
+    const { columns, fields } = ui.layout;
+    const chosen = columns.map(c => c.key).filter(Boolean);
+    const missing = fields.filter(f => f.required && !chosen.includes(f.key)).map(f => f.header);
+    if (missing.length) return `Choose the ${missing.join(" and ")} column.`;
+    const twice = fields.find(f => f.key !== "__address_part" && chosen.filter(k => k === f.key).length > 1);
+    if (twice) return `${twice.header} is chosen for more than one column: keep one.`;
+    return "";
+  }
+
+  function mappingStep(message = "") {
+    const { layout, file } = ui;
+    ui.step = "map";
+    const fieldOptions = key =>
+      `<option value="">Ignore this column</option>${layout.fields.map(f => `<option value="${esc(f.key)}" ${f.key === key ? "selected" : ""}>${esc(f.header)}${f.required ? " *" : ""}</option>`).join("")}`;
+    const rows = layout.columns
+      .map(
+        c => `<tr data-dfi-map-row="${c.index}">
+          <td class="primary-cell" style="white-space:nowrap">${esc(c.letter)}${c.header ? ` · ${esc(c.header)}` : ""}</td>
+          <td style="max-width:340px">${c.samples.length ? c.samples.map(v => `<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#586577">${esc(v)}</span>`).join("") : `<span style="color:#98a2ae">empty</span>`}</td>
+          <td><select class="select-small" data-dfi-map="${c.index}" aria-label="Field for column ${esc(c.letter)}" style="min-width:210px${c.key ? "" : ";color:#98a2ae"}">${fieldOptions(c.key)}</select>${c.key && c.by ? `<small style="display:block;margin-top:3px;color:#16845b">Matched ${esc(BY_LABEL[c.by] || "")}</small>` : ""}</td>
+        </tr>`,
+      )
+      .join("");
+    const headerOptions = `<option value="0" ${layout.headerRow === 0 ? "selected" : ""}>No header row (data from row 1)</option>${layout.top
+      .filter(t => t.text)
+      .map(t => `<option value="${t.row}" ${t.row === layout.headerRow ? "selected" : ""}>Row ${t.row}: ${esc(t.text.slice(0, 90))}</option>`)
+      .join("")}`;
+    const body = `<div style="display:grid;gap:12px">
+      <div id="dfiMapSummary" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
+        <strong>${esc(fmt(layout.orders))} order${layout.orders === 1 ? "" : "s"}</strong> found${layout.extraLines ? ` · ${esc(fmt(layout.extraLines))} other line${layout.extraLines === 1 ? "" : "s"} (titles, totals, notes) will be skipped` : ""}.
+        ${layout.remembered ? "Matched as this merchant's last file with the same columns." : "Check each column's field; change any that is wrong, or ignore columns you don't need."}
+        Columns set to <strong>Add to delivery address</strong> (e.g. a separate City or Thana) are added to the address; district, zone and area are found from it.
+      </div>
+      <label style="${optionLabel}">Header row<select class="select-small" id="dfiHeaderRow">${headerOptions}</select></label>
+      <div class="table-scroll"><table id="dfiMapTable"><thead><tr><th>COLUMN IN THE FILE</th><th>VALUES</th><th>FIELD</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${message ? `<p role="alert" id="dfiMessage" style="margin:0;color:#b42318;font-weight:600">${esc(message)}</p>` : ""}
+    </div>`;
+    draw(`Match the columns of ${file.name}`, `${esc(KIND_LABEL[ui.cfg.kind] || ui.cfg.kind)}${ui.merchantId && needsMerchant() ? ` · ${esc(merchantsOf(ui.cfg).find(m => m.id === ui.merchantId)?.name || "")}` : ""} · any merchant's Excel or CSV. Nothing is created yet.`, body, `${button("map-back", "Back")}${button("check", "Check file", { primary: true })}`);
   }
 
   async function loadRows(filter = ui.filter, page = ui.page) {
@@ -543,7 +644,8 @@
       s.notifications ? ` · ${s.notifications.length} message${s.notifications.length === 1 ? "" : "s"}` : "",
     ].join("");
     const notes = [
-      job.ignoredColumns?.length ? `Ignored columns (not in the template): ${job.ignoredColumns.join(", ")}.` : "",
+      job.ignoredColumns?.length ? `Ignored columns (${ui.cfg.forOps ? "not matched to a field" : "not in the template"}): ${job.ignoredColumns.join(", ")}.` : "",
+      job.skippedLines?.count ? `${fmt(job.skippedLines.count)} line${job.skippedLines.count === 1 ? "" : "s"} that ${job.skippedLines.count === 1 ? "isn't an order was" : "aren't orders were"} skipped (row${job.skippedLines.count === 1 ? "" : "s"} ${job.skippedLines.rows.slice(0, 12).join(", ")}${job.skippedLines.count > 12 ? ", …" : ""}).` : "",
       c.errors ? `Rows with errors are skipped: correct the address and places below, or fix them in your file and upload it again (download them with the reason for each).` : "",
       editable() ? `District, zone and area left out of the file are picked from the address (green). Change any address or place below: the row is checked and priced again.` : "",
     ].filter(Boolean);
@@ -779,6 +881,10 @@
     if (action === "history") return void history(ui.cfg);
     if (action === "new") return void open(ui.cfg);
     if (action === "check") return void check();
+    if (action === "map-back") {
+      readMapping();
+      return chooseStep();
+    }
     if (action === "back") {
       const job = ui.job;
       ui.job = null;
@@ -803,6 +909,11 @@
 
   function onChange(event) {
     if (!ui) return;
+    if (event.target.id === "dfiHeaderRow" && ui.step === "map") return void analyzeStep(Number(event.target.value));
+    if (event.target.matches?.("[data-dfi-map]")) {
+      readMapping();
+      return mappingStep();
+    }
     if (event.target.matches?.("[data-dfi-edit]")) return void saveCell(event.target);
     if (event.target.id === "dfiFile") {
       readOptions();
@@ -816,6 +927,7 @@
     }
     if (event.target.id === "dfiKind") {
       readOptions();
+      ui.layout = null;
       ui.cfg.kind = event.target.value;
       ui.merchantId = "";
       return void loadPackage().then(() => ui && chooseStep());
@@ -846,6 +958,7 @@
     // Operations: the merchant chosen for the file brings its package (choices, template columns).
     if (event.target.id === "dfiMerchant" && !isBulk()) {
       readOptions();
+      ui.layout = null;
       return void loadPackage().then(() => ui && chooseStep());
     }
   }

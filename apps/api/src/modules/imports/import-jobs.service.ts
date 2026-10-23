@@ -23,10 +23,11 @@ import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, me
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
 import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
-import { FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
+import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
-import type { importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
+import type { analyzeOptionsSchema, importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
+import { checkMapping, columnLetter, detectLayout, isExtraRow, layoutSignature, type DetectLists, type MappedKey, type SheetLayout } from "./column-detect";
 import { readXlsx, type SheetData } from "./xlsx/xlsx-reader";
 
 const QUEUE = "imports";
@@ -309,6 +310,129 @@ export class ImportJobsService implements OnApplicationBootstrap {
     return { rows, ignoredColumns: match.unknown };
   }
 
+  // ───────────── any merchant's file (Courier Operations) ─────────────
+
+  /** The lists the detector compares values with (the file's merchant: its products and services). */
+  private async detectLists(kind: ImportKindKey, merchantId: string | null): Promise<DetectLists> {
+    const ctx = await this.engine.context({ kind, settings: await this.config.settings(), merchantId });
+    return { districts: ctx.lists.districts, zones: ctx.lists.zones, areas: ctx.lists.areas, products: ctx.lists.products, speeds: ctx.lists.speeds };
+  }
+
+  /** How the merchant's last operations file with the same headers was matched (normalised header → key). */
+  private async savedLayout(kind: ImportKindKey, merchantId: string | null, signature: string) {
+    if (!signature) return null;
+    const last = await this.prisma.importJob.findFirst({
+      where: { kind: KIND_ENUM[kind], merchantId, source: "OPERATIONS", settings: { path: ["layout", "signature"], equals: signature } },
+      orderBy: { createdAt: "desc" },
+      select: { settings: true },
+    });
+    return ((last?.settings as { layout?: { keys?: Record<string, MappedKey | null> } } | null)?.layout?.keys ?? null) as Record<string, MappedKey | null> | null;
+  }
+
+  private async layoutOf(kind: ImportKindKey, merchantId: string | null, sheet: SheetData, headerRow?: number): Promise<SheetLayout> {
+    const lists = await this.detectLists(kind, merchantId);
+    const first = detectLayout({ kind, rows: sheet.rows, lists, headerIndex: headerRow === undefined ? undefined : headerRow - 1 });
+    const saved = await this.savedLayout(kind, merchantId, first.signature);
+    return saved ? detectLayout({ kind, rows: sheet.rows, lists, headerIndex: first.headerRow - 1, saved }) : first;
+  }
+
+  /**
+   * POST /imports/analyze (Courier Operations): reads any merchant's file and tells which column is which,
+   * for the dialog's "Match columns" step. Nothing is stored.
+   */
+  async analyze(actor: Actor, options: z.infer<typeof analyzeOptionsSchema>, file: { buffer: Buffer; fileName: string }) {
+    const scope = this.scopeFor(actor, options.merchantId);
+    if (!scope.forOps) throw forbidden("Matching the columns of any file is for Courier Operations");
+    await this.checkSubject(scope, options.kind, { merchantRequired: true });
+    const settings = await this.config.settings();
+    const limits = this.limitsFor(settings, true);
+    if (file.buffer.length > limits.maxBytes) throw new AppError("FILE_TOO_LARGE", `Files can be at most ${limits.maxFileMb} MB. Split it into smaller files.`, 413, { maxFileMb: limits.maxFileMb });
+    const sheet = await this.withParseSlot(async () => this.parseFile(file.buffer, file.fileName, limits.maxRows, options.kind));
+    const layout = await this.layoutOf(options.kind, scope.merchantId, sheet, options.headerRow);
+    const header = layout.headerRow ? (sheet.rows[layout.headerRow - 1] ?? []) : null;
+    const orders = sheet.rows.slice(layout.headerRow).filter(r => !isExtraRow(r, header)).length;
+    const extraLines = sheet.rows.slice(layout.headerRow).filter(r => r.some(v => String(v ?? "").trim()) && isExtraRow(r, header)).length;
+    const required = options.kind === "customer" ? ["sender_phone", "recipient_phone"] : ["recipient_phone"];
+    const fields = COLUMNS[options.kind].map(c => ({ key: c.key, header: c.header, required: required.includes(c.key) }));
+    return {
+      sheetName: sheet.sheetName,
+      headerRow: layout.headerRow,
+      // The first lines as they are, to choose the header row.
+      top: sheet.rows.slice(0, 15).map((r, i) => ({ row: i + 1, text: r.map(v => String(v ?? "").trim()).filter(Boolean).join(" · ").slice(0, 160) })),
+      columns: layout.columns,
+      fields: [
+        ...fields,
+        { key: "__address_part", header: "Add to delivery address", required: false },
+        // Kept only when the file has them: a Scan with phone workbook's Scan ID, a COD column on a Banking & Financial file (checked: never cash).
+        ...(layout.columns.some(c => c.key === "__scan") ? [{ key: "__scan", header: "Scan ID (Scan with phone)", required: false }] : []),
+        ...(layout.columns.some(c => c.key === "__cod") ? [{ key: "__cod", header: "COD (checked: Banking & Financial has none)", required: false }] : []),
+      ],
+      template: layout.template,
+      orders,
+      extraLines,
+      remembered: layout.columns.some(c => c.by === "saved"),
+    };
+  }
+
+  /** The rows of an operations file by its matching: extra lines skipped, address parts added to the address. */
+  private async opsSheetRows(options: z.infer<typeof importOptionsSchema>, merchantId: string | null, sheet: SheetData) {
+    let headerRow: number;
+    let keys: (MappedKey | null)[];
+    if (options.mapping) {
+      const checked = checkMapping(options.kind, options.mapping.columns);
+      if (checked.problems.length) throw new AppError("COLUMN_MAPPING_INVALID", checked.problems.join(". "), 422, { problems: checked.problems });
+      headerRow = options.mapping.headerRow;
+      keys = checked.keys;
+    } else {
+      const layout = await this.layoutOf(options.kind, merchantId, sheet);
+      headerRow = layout.headerRow;
+      keys = layout.columns.map(c => c.key);
+    }
+    const required: ColumnKey[] = options.kind === "customer" ? ["sender_phone", "recipient_phone"] : ["recipient_phone"];
+    const missing = required.filter(k => !keys.includes(k));
+    if (missing.length)
+      throw new AppError(
+        "COLUMN_MAPPING_INCOMPLETE",
+        `Choose the file's ${missing.map(k => COLUMNS[options.kind].find(c => c.key === k)?.header ?? k).join(" and ")} column: no column is matched to it.`,
+        422,
+        { missing },
+      );
+    const header = headerRow ? (sheet.rows[headerRow - 1] ?? []) : null;
+    const headers = (header ?? []).map(v => String(v ?? "").trim());
+    const rows: { rowNumber: number; cells: Cells }[] = [];
+    const skippedRows: number[] = [];
+    for (let i = headerRow; i < sheet.rows.length; i++) {
+      const raw = sheet.rows[i] ?? [];
+      if (isExtraRow(raw, header)) {
+        if (raw.some(v => String(v ?? "").trim())) skippedRows.push(i + 1);
+        continue;
+      }
+      const cells: Cells = {};
+      const parts: string[] = [];
+      keys.forEach((key, c) => {
+        const v = String(raw[c] ?? "").replace(/\s+/g, " ").trim();
+        if (!key || !v) return;
+        if (key === "__address_part") parts.push(v);
+        else if (!cells[key]) cells[key] = v;
+      });
+      // District / thana / area columns with names of their own: added to the address (places are found from it).
+      if (parts.length) {
+        const text = cells.address ?? "";
+        const add = parts.filter(part => !text.toLowerCase().includes(part.toLowerCase()));
+        cells.address = [text, ...add].filter(Boolean).join(", ").slice(0, 200);
+      }
+      rows.push({ rowNumber: i + 1, cells });
+    }
+    // Columns with data that nothing reads (shown in the preview).
+    const ignoredColumns = keys.map((k, c) => (!k && headers[c] && rows.some(r => String(sheet.rows[r.rowNumber - 1]?.[c] ?? "").trim()) ? headers[c] : "")).filter(Boolean);
+    const saved: Record<string, MappedKey | null> = {};
+    headers.forEach((h, i) => {
+      const n = layoutSignature([h]);
+      if (n) saved[n] = keys[i] ?? null;
+    });
+    return { rows, ignoredColumns, skippedRows, layout: { signature: headers.length ? layoutSignature(headers) : "", headerRow, keys: saved } };
+  }
+
   /** JSON rows (API): keys are template headers or column keys. */
   private objectsToRows(kind: ImportKindKey, objects: Record<string, string | number | boolean | null>[]) {
     const headers = [...new Set(objects.flatMap(o => Object.keys(o)))];
@@ -350,11 +474,14 @@ export class ImportJobsService implements OnApplicationBootstrap {
 
     const started = Date.now();
     const fileName = (("fileName" in upload && upload.fileName) || options.fileName || "upload").slice(0, 200);
-    const parsed = await this.withParseSlot(async () => {
+    const parsed = await this.withParseSlot(async (): Promise<{ rows: { rowNumber: number; cells: Cells }[]; ignoredColumns: string[]; skippedRows?: number[]; layout?: unknown }> => {
       if ("buffer" in upload) {
         if (upload.buffer.length > limits.maxBytes)
           throw new AppError("FILE_TOO_LARGE", `Files can be at most ${limits.maxFileMb} MB. Split it into smaller files.`, 413, { maxFileMb: limits.maxFileMb });
-        return this.sheetToRows(options.kind, this.parseFile(upload.buffer, fileName, limits.maxRows, options.kind));
+        const sheet = this.parseFile(upload.buffer, fileName, limits.maxRows, options.kind);
+        // Courier Operations: any merchant's file, matched in the dialog (or automatically).
+        if (scope.forOps) return this.opsSheetRows(options, scope.merchantId, sheet);
+        return this.sheetToRows(options.kind, sheet);
       }
       if (upload.rows.length > limits.maxRows) throw new AppError("TOO_MANY_ROWS", `Send at most ${limits.maxRows.toLocaleString("en-US")} rows per import.`, 413, { maxRows: limits.maxRows });
       return this.objectsToRows(options.kind, upload.rows);
@@ -390,7 +517,14 @@ export class ImportJobsService implements OnApplicationBootstrap {
             validRows: counts.VALID,
             incompleteRows: counts.INCOMPLETE,
             errorRows: counts.ERROR,
-            settings: { ...settings, forOps: scope.forOps, ignoredColumns: parsed.ignoredColumns, services } as unknown as Prisma.InputJsonObject,
+            settings: {
+              ...settings,
+              forOps: scope.forOps,
+              ignoredColumns: parsed.ignoredColumns,
+              services,
+              // Any merchant's file: how it was matched (the next file with these headers is matched the same way) and the lines skipped.
+              ...(parsed.skippedRows ? { layout: parsed.layout, skippedRows: parsed.skippedRows.slice(0, 200), skippedCount: parsed.skippedRows.length } : {}),
+            } as unknown as Prisma.InputJsonObject,
             actor: stored,
             createdById: actor.kind === "user" ? actor.userId : null,
           },
@@ -463,7 +597,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       job.bookingBatchId ? this.prisma.bookingBatch.findUnique({ where: { id: job.bookingBatchId }, select: { id: true, number: true } }) : null,
       job.createdById ? this.prisma.user.findUnique({ where: { id: job.createdById }, select: { name: true } }) : null,
     ]);
-    const settings = job.settings as unknown as ImportSettings & { forOps?: boolean; ignoredColumns?: string[]; services?: ImportServiceOptions };
+    const settings = job.settings as unknown as ImportSettings & { forOps?: boolean; ignoredColumns?: string[]; services?: ImportServiceOptions; skippedRows?: number[]; skippedCount?: number };
     const kind = kindKeyOf(job.kind);
     const toBook = job.validRows + job.incompleteRows;
     // The price of every row that will be (or was) booked: the preview total.
@@ -496,6 +630,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       kindLabel: KIND_LABEL[kind],
       columns: columnsFor(kind).map(c => ({ key: c.key, header: c.header, required: !!settings.templates?.[kind]?.[c.key]?.required })),
       ignoredColumns: settings.ignoredColumns ?? [],
+      // Any merchant's file: lines that weren't orders (titles, blank, totals, notes).
+      skippedLines: { count: settings.skippedCount ?? 0, rows: settings.skippedRows ?? [] },
       /** The import modal's choices (service packages) and the total delivery charge of the rows to book. */
       services: {
         firstMile: services.firstMile ?? null,
@@ -558,7 +694,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
         errors: errors.map(e => ({ ...e, header: headerOf(e.column), text: `Row ${r.rowNumber} · ${headerOf(e.column)}: ${e.message}` })),
         missing: r.missing,
         charge: r.charge == null ? null : Number(r.charge),
-        lines: (r.priceLines as { code: string; label: string; amount: number }[] | null) ?? null,
+        lines: r.priceLines ? displayPriceLines(r.priceLines as { code: string; label: string; amount: number }[], segmentOf(kindKeyOf(job.kind))) : null,
         trackingId: r.trackingId,
         /** The row's product has "Send SMS & email" off: no parcel messages for it, whatever the modal ticks. */
         messagesOff: messagesOff(r.cells),

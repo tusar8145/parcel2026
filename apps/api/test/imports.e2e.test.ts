@@ -756,6 +756,70 @@ describe("imports", () => {
     });
   });
 
+  describe("any merchant's file (Courier Operations)", () => {
+    async function analyze(token: string, fields: Record<string, string>, file: { name: string; data: Buffer }) {
+      const body = multipart(fields, file);
+      const res = await ctx.app.inject({ method: "POST", url: "/api/v1/imports/analyze", payload: body.payload, headers: { ...body.headers, authorization: `Bearer ${token}` } });
+      return { status: res.statusCode, body: JSON.parse(res.body) };
+    }
+    const messy = () =>
+      csv([
+        ["Rahim Fashion House · order sheet"],
+        [],
+        ["SL", "Invoice No", "Customer", "Mobile No.", "Shipping Address", "Collectable Amount", "Delivery charge"],
+        ["1", "INV-1", "Ayesha Rahman", "01712345678", "House 22, Road 7, Gulshan 1, Dhaka North", "1,450", "60"],
+        ["2", "INV-2", "Kamal Hossain", "1812345678", "Flat 3B, Road 2, Gulshan, Dhaka North", "890", "60"],
+        ["", "", "", "", "Total", "2,340", "120"],
+      ]);
+
+    it("finds the header row and the columns, books with a corrected matching, and matches the merchant's next file the same way", async () => {
+      const { m: shop, owner } = await merchant();
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const file = { name: "rahim.csv", data: messy() };
+
+      const guess = await analyze(ops.token, { kind: "ecommerce", merchantId: shop.id }, file);
+      expect(guess.status, JSON.stringify(guess.body)).toBe(200);
+      expect(guess.body).toMatchObject({ headerRow: 3, orders: 2, extraLines: 1, remembered: false });
+      expect(guess.body.columns.map((c: { header: string; key: string | null }) => [c.header, c.key])).toEqual([
+        ["SL", null],
+        ["Invoice No", "order_ref"],
+        ["Customer", "recipient_name"],
+        ["Mobile No.", "recipient_phone"],
+        ["Shipping Address", "address"],
+        ["Collectable Amount", "cod_amount"],
+        ["Delivery charge", null],
+      ]);
+      // Merchants keep the template upload.
+      expect((await analyze(owner.token, { kind: "ecommerce", merchantId: shop.id }, file)).status).toBe(403);
+
+      // Matched automatically: two orders, the totals line skipped.
+      const auto = await upload(ops.token, { kind: "ecommerce", merchantId: shop.id }, file);
+      expect(auto.status, JSON.stringify(auto.body)).toBe(201);
+      expect(auto.body).toMatchObject({ counts: { valid: 2 }, skippedLines: { count: 1, rows: [6] }, ignoredColumns: ["SL", "Delivery charge"] });
+      const first = await ctx.prisma.importRow.findFirstOrThrow({ where: { jobId: auto.body.id, rowNumber: 4 } });
+      expect(first.cells).toMatchObject({ order_ref: "INV-1", recipient_name: "Ayesha Rahman", recipient_phone: "01712345678", cod_amount: "1,450", district: "Dhaka North" });
+
+      // The user's matching: the amount is the product value, not cash to collect.
+      const mapping = JSON.stringify({ headerRow: 3, columns: [null, "order_ref", "recipient_name", "recipient_phone", "address", "declared_value", null] });
+      const fixed = await upload(ops.token, { kind: "ecommerce", merchantId: shop.id, mapping }, file);
+      expect(fixed.status, JSON.stringify(fixed.body)).toBe(201);
+      const row = await ctx.prisma.importRow.findFirstOrThrow({ where: { jobId: fixed.body.id, rowNumber: 4 } });
+      expect(row.cells).toMatchObject({ declared_value: "1,450" });
+      expect((row.cells as Record<string, string>).cod_amount).toBeUndefined();
+
+      // The next file with these headers is matched as last time.
+      const again = await analyze(ops.token, { kind: "ecommerce", merchantId: shop.id }, file);
+      expect(again.body.remembered).toBe(true);
+      expect(again.body.columns.find((c: { header: string }) => c.header === "Collectable Amount")).toMatchObject({ key: "declared_value", by: "saved" });
+
+      // A matching without the phone column, or with a field twice, is refused.
+      const noPhone = await upload(ops.token, { kind: "ecommerce", merchantId: shop.id, mapping: JSON.stringify({ headerRow: 3, columns: [null, "order_ref", "recipient_name", null, "address"] }) }, file);
+      expect(noPhone.body.error).toMatchObject({ code: "COLUMN_MAPPING_INCOMPLETE", message: "Choose the file's Customer phone column: no column is matched to it." });
+      const twice = await upload(ops.token, { kind: "ecommerce", merchantId: shop.id, mapping: JSON.stringify({ headerRow: 3, columns: [null, "order_ref", "recipient_phone", "recipient_phone"] }) }, file);
+      expect(twice.body.error.code).toBe("COLUMN_MAPPING_INVALID");
+    });
+  });
+
   describe("operations and API keys", () => {
     it("operations choose the merchant in the modal (no per-row merchant) and drop-off at a hub: batch, labels and receive desk", async () => {
       const shop = await merchant();

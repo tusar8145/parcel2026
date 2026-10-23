@@ -26,6 +26,24 @@ export const importOptionsSchema = z.object({
     .preprocess(v => (v === "none" ? [] : typeof v === "string" ? (v.trim().startsWith("[") ? JSON.parse(v) : v.split(",").map(x => x.trim()).filter(Boolean)) : v), z.array(z.string().trim().min(1).max(60)).max(40))
     .optional(),
   fileName: z.string().trim().max(200).optional(),
+  /**
+   * Courier Operations, any merchant's file: the columns as matched in the dialog (POST /imports/analyze),
+   * JSON `{ "headerRow": 3, "columns": ["recipient_name", null, "__address_part", …] }` (headerRow 0 = none).
+   * Without it, operations files are matched automatically.
+   */
+  mapping: z
+    .preprocess(
+      v => (typeof v === "string" && v.trim() ? JSON.parse(v) : v),
+      z.object({ headerRow: z.number().int().min(0).max(30), columns: z.array(z.string().max(40).nullable()).max(200) }),
+    )
+    .optional(),
+});
+
+/** POST /imports/analyze: the file's options, and the header row the user chose (1-based; 0 = no header row). */
+export const analyzeOptionsSchema = z.object({
+  kind: importKindSchema,
+  merchantId: z.uuid("merchantId must be a valid id").optional(),
+  headerRow: z.coerce.number().int().min(0).max(30).optional(),
 });
 
 /** JSON uploads (API integrations): rows as objects keyed by template header or column key. */

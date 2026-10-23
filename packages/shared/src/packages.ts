@@ -522,7 +522,7 @@ const ROUTE_FEE: Record<RouteTier, keyof PackagePrices> = { DHAKA_SUBURBAN: "dha
 /**
  * The one price formula (website, merchant forms, imports, API, operations, bulk updates, intake
  * changes, completing details, re-weighing). Pure: the caller resolves the route tier and the
- * package. Order: route · product type · weight · service · last mile · first mile · open box →
+ * package. Order: route · product type (E-commerce: one route line with it) · weight · service · last mile · first mile · open box →
  * delivery charge (never below 0) → COD fee. VAT-inclusive; every line whole taka (COD rounds up).
  */
 export function priceParcel(prices: PackagePrices, input: PriceInput): PriceBreakdown {
@@ -532,9 +532,12 @@ export function priceParcel(prices: PackagePrices, input: PriceInput): PriceBrea
   const add = (code: PriceLineCode, label: string, amount: number) => {
     if (amount !== 0 || code === "route") lines.push({ code, label, amount });
   };
-  add("route", ROUTE_TIER_LABEL[input.tier], whole(prices[ROUTE_FEE[input.tier]]));
+  // E-commerce: the route and what is sent are one line, their sum ("Inside same district + Regular").
+  if (input.segment === "ECOMMERCE")
+    add("route", `${ROUTE_TIER_LABEL[input.tier]} + ${PRODUCT_TYPE_LABEL[s.productType]}`, whole(prices[ROUTE_FEE[input.tier]]) + whole(prices[PRODUCT_FEE[s.productType]]));
+  else add("route", ROUTE_TIER_LABEL[input.tier], whole(prices[ROUTE_FEE[input.tier]]));
   if (!banking) {
-    add("product_type", `What you send: ${PRODUCT_TYPE_LABEL[s.productType]}`, whole(prices[PRODUCT_FEE[s.productType]]));
+    if (input.segment !== "ECOMMERCE") add("product_type", `What you send: ${PRODUCT_TYPE_LABEL[s.productType]}`, whole(prices[PRODUCT_FEE[s.productType]]));
     const extraKg = Math.max(0, Math.ceil(s.weightKg - INCLUDED_WEIGHT_KG - 1e-9));
     add("weight", `Weight (${extraKg} kg over ${INCLUDED_WEIGHT_KG} kg)`, whole(extraKg * prices.extraKg));
   }

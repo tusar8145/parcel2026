@@ -308,7 +308,7 @@
     if ($("dffPickupPanel")) return;
     const upcoming = (F.upcoming || []).filter(r => r.status === "REQUESTED" || r.status === "ASSIGNED");
     const rows = upcoming
-      .map(r => `<tr><td><strong>${esc(r.number)}</strong></td><td>${esc(dateOnly(`${r.date}T00:00:00+06:00`))} · ${esc(windowLabel(r))}</td><td>${esc(r.schedule?.name || "One-off request")}</td><td>${esc([r.street, r.zone].filter(Boolean).join(", "))}</td><td>${r.expectedParcels}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td>${r.status === "REQUESTED" ? `<button type="button" class="button button-sm" data-dff-pickup-cancel="${esc(r.id)}">Cancel</button>` : ""}</td></tr>`)
+      .map(r => `<tr><td><strong>${esc(r.number)}</strong></td><td>${esc(dateOnly(`${r.date}T00:00:00+06:00`))} · ${esc(windowLabel(r))}</td><td>${esc(r.schedule?.name || "One-off request")}</td><td>${esc(DF.addressText(r.street, r.zone))}</td><td>${r.expectedParcels}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td>${r.status === "REQUESTED" ? `<button type="button" class="button button-sm" data-dff-pickup-cancel="${esc(r.id)}">Cancel</button>` : ""}</td></tr>`)
       .join("");
     const panel = `<section class="panel table-panel" id="dffPickupPanel" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">Scheduled pickups</h2><p class="panel-subtitle">${F.schedules?.length ? `${F.schedules.filter(s => s.active).length} recurring pickup(s) active · ` : ""}upcoming visits by operations</p></div></div><div class="table-scroll"><table><thead><tr><th>PICKUP</th><th>WHEN</th><th>SCHEDULE</th><th>ADDRESS</th><th>PARCELS</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="empty-state">${F.upcoming ? "No scheduled pickups. Set up a recurring pickup or request one." : "Loading…"}</td></tr>`}</tbody></table></div></section>`;
     main.querySelector(".page-table-panel")?.insertAdjacentHTML("beforebegin", panel);
@@ -317,7 +317,7 @@
   function openSchedules() {
     const m = S().merchant;
     const list = (F.schedules || [])
-      .map(s => `<tr><td><strong>${esc(s.name)}</strong><div class="customer-phone">${esc([s.street, s.zone, s.district].filter(Boolean).join(", "))}</div></td><td>${s.days.map(d => WEEKDAYS[d]).join(", ")}</td><td>${esc(s.windowStart)}–${esc(s.windowEnd)}</td><td>${s.expectedParcels}</td><td>${pill(s.active ? "Active" : "Paused")}</td><td style="white-space:nowrap"><button type="button" class="button button-sm" data-dff-schedule-toggle="${esc(s.id)}">${s.active ? "Pause" : "Resume"}</button> <button type="button" class="button button-sm" data-dff-schedule-delete="${esc(s.id)}">Remove</button></td></tr>`)
+      .map(s => `<tr><td><strong>${esc(s.name)}</strong><div class="customer-phone">${esc(DF.addressText(s.street, s.zone, s.district))}</div></td><td>${s.days.map(d => WEEKDAYS[d]).join(", ")}</td><td>${esc(s.windowStart)}–${esc(s.windowEnd)}</td><td>${s.expectedParcels}</td><td>${pill(s.active ? "Active" : "Paused")}</td><td style="white-space:nowrap"><button type="button" class="button button-sm" data-dff-schedule-toggle="${esc(s.id)}">${s.active ? "Pause" : "Resume"}</button> <button type="button" class="button button-sm" data-dff-schedule-delete="${esc(s.id)}">Remove</button></td></tr>`)
       .join("");
     const backdrop = dialog(
       "Recurring pickups",
@@ -812,4 +812,7 @@
       install();
       if (S().page === "Overview") void reviewBanner();
     });
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "dffScheduleStreet", district: "dffScheduleDistrict", zone: "dffScheduleZone" });
 })();

@@ -20,6 +20,7 @@ import { LedgerService } from "./ledger.service";
 import { readFinanceConfig, vatSplit } from "./finance-config";
 import { env } from "../../config/env";
 import { returnTrackingId, syncReturnCharges } from "./return-charges";
+import { addressText } from "../../common/address";
 
 const SERVICE_LABEL: Record<string, string> = { REGULAR: "Regular", SAME_DAY: "Same day", EXPRESS: "Express" };
 
@@ -231,7 +232,7 @@ export class InvoicesService {
       ...this.view(invoice),
       lines: invoice.lines,
       seller: invoice.seller ?? (await readFinanceConfig(this.prisma)).seller,
-      buyer: { name: m.name, code: m.code, address: [m.pickupAddress, m.pickupArea, m.pickupDistrict].filter(Boolean).join(", "), phone: m.contactPhone },
+      buyer: { name: m.name, code: m.code, address: addressText(m.pickupAddress, m.pickupArea, m.pickupDistrict), phone: m.contactPhone },
       createdBy: person(invoice.createdById),
       paidBy: person(invoice.paidById),
     };

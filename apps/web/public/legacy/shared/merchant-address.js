@@ -25,10 +25,10 @@
   };
   const norm = v => String(v ?? "").trim().toLowerCase();
 
+  /** The address as typed (district / zone / area are separate fields, not appended): DF.addressText. */
   function placeText(p) {
     if (!p) return "";
-    const area = p.area && p.area !== p.zone ? p.area : "";
-    return [p.street, area, p.zone, p.district].filter(Boolean).join(", ");
+    return window.DF.addressText(p.street, p.area, p.zone, p.district);
   }
   const mapLink = p => (p && p.lat != null && p.lng != null ? `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lng}#map=17/${p.lat}/${p.lng}` : "");
 
@@ -39,7 +39,10 @@
     const other = p => (p?.areaOther ? ` <small style="color:#b45309">(area typed: not in the list)</small>` : "");
     const rows = [];
     if (m.businessCategory || m.websiteUrl) rows.push(row("Business", esc([m.businessCategory, m.websiteUrl].filter(Boolean).join(" · ")) || "—"));
+    // The address as typed; its area / zone / district (which decide the hub) on their own row.
+    const places = p => (p ? esc([p.area && p.area !== p.zone ? p.area : "", p.zone, p.district].filter(Boolean).join(" · ")) : "");
     rows.push(row("Business address", m.business ? `${esc(placeText(m.business))}${other(m.business)}${pin(m.business)}` : `<span style="color:#94a3b8">Not given</span>`));
+    if (m.business && places(m.business)) rows.push(row("Business area", places(m.business)));
     rows.push(
       row(
         "Pickup address",
@@ -48,6 +51,7 @@
           : `${esc(placeText(m.pickup))}${other(m.pickup)}${pin(m.pickup)}${m.addressComplete === false ? ` <small style="color:#b45309">(free text: not matched to the area list yet)</small>` : ""}`,
       ),
     );
+    if (!(m.pickupSameAsBusiness && m.business) && places(m.pickup)) rows.push(row("Pickup area", places(m.pickup)));
     rows.push(row("Pickup contact", esc([m.pickupContactName || m.contactName, phone(m.pickupContactPhone || m.contactPhone)].filter(Boolean).join(" · "))));
     rows.push(row("Pickup time", esc(TIMES[m.pickupTime] || "Not set")));
     rows.push(row("Handover", esc(HANDOVER[m.handover] || "Rider pickup")));
@@ -72,7 +76,7 @@
   function formHtml(m) {
     const prompt =
       m.addressComplete === false
-        ? `<div class="form-field full" id="dfmaPrompt" style="padding:10px 12px;border-radius:9px;background:#fff7ed;color:#9a3412;font-size:13px"><strong>Complete your address.</strong> We have your pickup address as text: “${esc([m.pickupAddress, m.pickupArea, m.pickupDistrict].filter(Boolean).join(", "))}”. Choose the district, thana and area below so pickups reach the right hub.${m.pickupSuggestion ? " We've preselected the closest match; check it." : ""}</div>`
+        ? `<div class="form-field full" id="dfmaPrompt" style="padding:10px 12px;border-radius:9px;background:#fff7ed;color:#9a3412;font-size:13px"><strong>Complete your address.</strong> We have your pickup address as text: “${esc(window.DF.addressText(m.pickupAddress, m.pickupArea, m.pickupDistrict))}”. Choose the district, thana and area below so pickups reach the right hub.${m.pickupSuggestion ? " We've preselected the closest match; check it." : ""}</div>`
         : "";
     const same = m.pickupSameAsBusiness || (!m.business && m.addressComplete === false);
     return `${prompt}${heading("Business address")}${placeHtml("Biz", "Business", m.business || { street: m.pickupAddress })}${heading("Pickup location")}<label class="form-field full" style="display:flex;gap:8px;align-items:center;font-size:13px;flex-direction:row"><input type="checkbox" id="dfmaPickupSame" ${same ? "checked" : ""} style="width:auto"> Pickup from the business address</label>${placeHtml("Pu", "Pickup", m.pickupSameAsBusiness ? null : m.pickup)}${field("dfmaPickupContact", "Pickup contact person", `<input id="dfmaPickupContact" required minlength="2" maxlength="120" value="${esc(m.pickupContactName || m.contactName || "")}">`)}${field("dfmaPickupPhone", "Pickup contact phone", `<input id="dfmaPickupPhone" required value="${esc(String(m.pickupContactPhone || m.contactPhone || "").replace(/^\+880/, ""))}">`)}${field("dfmaPickupTime", "Preferred pickup time", `<select id="dfmaPickupTime" required>${option("", "Choose a time")}${Object.entries(TIMES).map(([v, l]) => option(v, l, m.pickupTime === v)).join("")}</select>`)}${field("dfmaHandover", "How you hand over parcels", `<select id="dfmaHandover">${Object.entries(HANDOVER).map(([v, l]) => option(v, l, (m.handover || "RIDER_PICKUP") === v)).join("")}</select>`)}<div class="form-field full" id="dfmaHub" style="font-size:13px;color:#475569"></div>`;
@@ -239,4 +243,8 @@
   }
 
   window.DFMerchantAddress = { TIMES, HANDOVER, OTHER, placeText, mapLink, summaryHtml, formHtml, wire };
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "dfmaBizStreet", district: "dfmaBizDistrict", zone: "dfmaBizZone", area: "dfmaBizArea" });
+  window.DF?.autoPlace?.({ street: "dfmaPuStreet", district: "dfmaPuDistrict", zone: "dfmaPuZone", area: "dfmaPuArea" });
 })();

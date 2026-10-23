@@ -148,7 +148,8 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await expect(page.locator(".page-table-panel .table-footer > span")).toContainText("Showing 1–1 of 1 orders");
   await row.locator("[data-merchant-history]").click();
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Pickup request submitted");
-  await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Dhanmondi Road 7");
+  // "Deliver to": the address as typed (its area / zone / district are not appended).
+  await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Deliver toHouse 7, Road 2Service");
   await page.click("#closeMerchantHistory");
 
   // ── Shipments and pickup requests show it too ──

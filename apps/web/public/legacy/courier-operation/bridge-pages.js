@@ -415,18 +415,18 @@
       `<p class="field full df-bk-walkin" id="bkDropNote" hidden style="margin:-4px 0 0;color:#64748b;font-size:12.5px">Dropped at the hub: the sender's address is optional. A return comes back to the drop-off hub for the sender to collect.</p>`,
       bkField("bkSenderName", "Sender name", `<input id="bkSenderName" maxlength="120" autocomplete="off" placeholder="Walk-in sender's name">`, { cls: "df-bk-walkin" }),
       bkField("bkSenderPhone", "Sender phone", `<input id="bkSenderPhone">`, { cls: "df-bk-walkin" }),
+      bkField("bkPickupStreet", "Sender full address (pickup and returns)", `<input id="bkPickupStreet" maxlength="200" placeholder="e.g. House 12, Road 5, Dhanmondi, Dhaka">`, { cls: "df-bk-walkin" }),
       bkField("bkPickupDistrict", "Sender district", placeSelect("bkPickupDistrict"), { cls: "df-bk-walkin" }),
       bkField("bkPickupZone", "Sender zone", placeSelect("bkPickupZone"), { cls: "df-bk-walkin" }),
       bkField("bkPickupArea", "Sender area (optional)", placeSelect("bkPickupArea"), { cls: "df-bk-walkin" }),
-      bkField("bkPickupStreet", "Sender address (pickup and returns)", `<input id="bkPickupStreet" maxlength="200" placeholder="House, road, flat">`, { cls: "df-bk-walkin" }),
       bkSection("Recipient"),
       bkField("bkRecipient", "Recipient name", `<input id="bkRecipient" maxlength="120" autocomplete="off" placeholder="Recipient name">`),
       bkField("bkPhone", "Recipient phone", `<input id="bkPhone">`),
       bkSection("Delivery address"),
+      bkField("bkStreet", "Full address", `<input id="bkStreet" maxlength="200" placeholder="e.g. Flat 4B, House 22, Road 7, Block C, Banani, Dhaka">`, { full: true }),
       bkField("bkDistrict", "District", placeSelect("bkDistrict")),
       bkField("bkZone", "Zone", placeSelect("bkZone")),
       bkField("bkArea", "Area (optional)", placeSelect("bkArea")),
-      bkField("bkStreet", "Street address", `<input id="bkStreet" maxlength="200" placeholder="House, road, flat">`, { full: true }),
       bkSection("Parcel"),
       bkField("bkSvcProduct", "Product (optional)", `<select id="bkSvcProduct"><option value="">No product (Regular)</option></select>`),
       bkField("bkWeight", "Weight (kg)", `<input id="bkWeight" type="number" min="0.01" max="50" step="0.1" value="0.5" inputmode="decimal">`, { cls: "df-bk-weight" }),
@@ -650,7 +650,7 @@
     const m = bookingMerchant();
     if (!box) return;
     box.textContent = m
-      ? `Picks up from ${[m.pickupAddress, m.pickupZone && m.pickupArea === m.pickupZone ? "" : m.pickupArea, m.pickupZone, m.pickupDistrict].filter(Boolean).join(", ")} · ${m.pickupContactName || m.contactName} ${m.pickupContactPhone || m.contactPhone || ""}${m.pickupHub ? ` · hub ${m.pickupHub.name}` : ""}`
+      ? `Picks up from ${DF.addressText(m.pickupAddress, m.pickupArea, m.pickupZone, m.pickupDistrict)} · ${m.pickupContactName || m.contactName} ${m.pickupContactPhone || m.contactPhone || ""}${m.pickupHub ? ` · hub ${m.pickupHub.name}` : ""}`
       : "";
   }
 
@@ -781,4 +781,8 @@
   );
 
   // Excel / CSV import: shared/importer.js (one import engine for merchants and operations), wired in bridge-imports.js.
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "bkStreet", district: "bkDistrict", zone: "bkZone", area: "bkArea" });
+  window.DF?.autoPlace?.({ street: "bkPickupStreet", district: "bkPickupDistrict", zone: "bkPickupZone", area: "bkPickupArea" });
 })();

@@ -194,4 +194,7 @@
     Ops.invalidate("merchants", "address-requests");
     if (Ops.page() === PAGE) Ops.rerender();
   });
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "maStreet", district: "maDistrict", zone: "maZone", area: "maArea" });
 })();

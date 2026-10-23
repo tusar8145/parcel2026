@@ -66,7 +66,7 @@
       recipient: p.recipient.name || "Recipient",
       phone: DF.localPhone(p.recipient.phone),
       address: p.delivery.label,
-      street: [p.delivery.street, p.delivery.area].filter(Boolean).join(", "),
+      street: DF.addressText(p.delivery.street, p.delivery.area),
       zone: p.delivery.zone,
       type: [lineOf(p), p.onDemand ? "On-demand" : "", p.openBox ? "Open box allowed" : ""].filter(Boolean).join(" · "),
       time: windowOf(p),

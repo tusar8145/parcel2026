@@ -3,6 +3,7 @@
 import { df, type Catalog } from "./df";
 import { AddressSearch, MapPin, matchOption, type Place } from "./geo";
 import { FieldError, Select, TextInput } from "./form";
+import { usePlaceFromAddress } from "@/shared/usePlaceFromAddress";
 
 export const CATEGORIES = ["Home", "Office", "Other"] as const;
 
@@ -73,7 +74,7 @@ type FormLike = {
  * Category, district → zone (→ area), street, plus address search and a map pin.
  * District/zone/area come from the server catalog; a picked place fills what matches.
  */
-export function AddressFields({ form, names, label, streetLabel, streetPlaceholder = "Street, house / apartment / unit" }: { form: FormLike; names: AddressNames; label: string; streetLabel: string; streetPlaceholder?: string }) {
+export function AddressFields({ form, names, label, streetLabel, streetPlaceholder = "e.g. Flat 4B, House 22, Road 7, Banani, Dhaka" }: { form: FormLike; names: AddressNames; label: string; streetLabel: string; streetPlaceholder?: string }) {
   const v = form.values;
   const zones = zonesOf(v[names.district]);
   const areas = names.area ? areasOf(v[names.zone]) : [];
@@ -99,6 +100,19 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
       return next;
     });
   };
+
+  // The street field holds the full address: its district / zone / area are picked from it as it is typed.
+  usePlaceFromAddress(v[names.street] ?? "", place =>
+    form.setValues((current: Record<string, string>) => {
+      const next = { ...current };
+      if (!place.district || !catalog().districts.includes(place.district)) return current;
+      next[names.district] = place.district;
+      const zone = place.zone && zonesOf(place.district).includes(place.zone) ? place.zone : "";
+      next[names.zone] = zone;
+      if (names.area) next[names.area] = place.area && zone && areasOf(zone).includes(place.area) ? place.area : "";
+      return next;
+    }),
+  );
 
   return (
     <>

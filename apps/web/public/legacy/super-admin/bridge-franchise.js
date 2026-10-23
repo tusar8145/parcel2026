@@ -219,4 +219,7 @@
     },
     true,
   );
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "frAddress", district: "frDistrict", zone: "frZone" });
 })();

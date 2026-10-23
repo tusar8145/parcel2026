@@ -244,8 +244,8 @@
     if (isBulk()) return bulkChooseStep(message);
     const { cfg, limits, config } = ui;
     ui.step = "choose";
-    // The template's columns (COD and open box only when the package offers them).
-    const columns = config.templates[cfg.kind].filter(c => !c.packageOnly || !ui.pkg || ui.pkg.options?.[c.packageOnly]);
+    // The template's columns (COD and open box only when the package offers them; district / zone / area are found from the address).
+    const columns = config.templates[cfg.kind].filter(c => c.inTemplate !== false && (!c.packageOnly || !ui.pkg || ui.pkg.options?.[c.packageOnly]));
     const required = columns.filter(c => c.required).map(c => c.header);
     const options = [];
     if (cfg.forOps) {
@@ -361,6 +361,8 @@
       ui.rows = job.rows;
       ui.filter = "all";
       ui.page = 1;
+      if (!isBulk()) await loadCatalog(); // the district / zone / area dropdowns of the preview
+      if (!ui) return;
       preview();
     } catch (error) {
       if (ui) chooseStep(describe(error));
@@ -377,21 +379,103 @@
     else result();
   }
 
+  // ───────────── preview corrections: the address inline, district / zone / area from the catalog ─────────────
+
+  /** The address columns and their place columns (a changed address picks its places again on the server). */
+  const PLACE_FAMILIES = [
+    { address: "address", district: "district", zone: "zone", area: "area" },
+    { address: "pickup_address", district: "pickup_district", zone: "pickup_zone", area: "pickup_area" },
+  ];
+  const familyOf = key => PLACE_FAMILIES.find(f => Object.values(f).includes(key));
+  /** A checked file not submitted yet: its address and places can be corrected row by row (PATCH /imports/:id/rows/:row). */
+  const editable = () => !isBulk() && ui?.step === "preview" && ui.job?.status === "VALIDATED" && !!ui.catalog;
+  async function loadCatalog() {
+    if (ui && !ui.catalog) ui.catalog = DF.state?.catalog || (await DF.api("/catalog").catch(() => null));
+  }
+
+  /** A correctable cell: an input for an address, a dropdown for a place (the row's district → zones → areas). */
+  function editCell(r, c, value, problem, auto) {
+    const f = familyOf(c.key);
+    const tone = problem ? "border-color:#f3b4ad;background:#fdecea" : auto ? "background:#effaf3" : "";
+    const title = problem ? `${c.header}: ${problem}` : auto ? `${c.header}: picked from the address (you can change it)` : c.header;
+    const attrs = `data-dfi-edit="${esc(c.key)}" aria-label="${esc(`${c.header}, row ${r.rowNumber}`)}" title="${esc(title)}"`;
+    if (c.key === f.address) return `<td data-col="${c.key}"${problem ? ' data-invalid="true"' : ""}><input class="table-search" ${attrs} value="${esc(value)}" style="width:230px;min-width:0;${tone}"></td>`;
+    const k = ui.catalog;
+    const cells = r.cells || {};
+    let list = [];
+    let empty = "Choose…";
+    if (c.key === f.district) list = k.districts;
+    else if (c.key === f.zone) {
+      list = cells[f.district] ? k.zonesByDistrict[cells[f.district]] || [] : [...new Set(Object.values(k.zonesByDistrict).flat())].sort((a, b) => a.localeCompare(b));
+      empty = cells[f.district] ? "Choose a zone" : "Choose a zone (any district)";
+    } else {
+      list = cells[f.zone] ? k.areasByZone[cells[f.zone]] || [] : [];
+      empty = cells[f.zone] ? (list.length ? "Choose an area" : "No areas listed") : "Choose the zone first";
+    }
+    const unknown = value && !list.includes(value);
+    const options = `<option value="">${esc(empty)}</option>${unknown ? `<option value="${esc(value)}" selected>${esc(value)} (not in the list)</option>` : ""}${list.map(o => `<option value="${esc(o)}"${o === value ? " selected" : ""}>${esc(o)}</option>`).join("")}`;
+    return `<td data-col="${c.key}"${problem ? ' data-invalid="true"' : ""}><select class="select-small" ${attrs} style="width:150px;${tone}">${options}</select></td>`;
+  }
+
+  /** A corrected cell: the row is checked and priced again on the server; the table and the counts follow. */
+  async function saveCell(el) {
+    const tr = el.closest("tr[data-row]");
+    const rowNumber = Number(tr?.dataset.row);
+    const r = ui.rows.items.find(x => x.rowNumber === rowNumber);
+    if (!r) return;
+    const key = el.dataset.dfiEdit;
+    const value = el.value.trim();
+    const f = familyOf(key);
+    const cells = { [key]: value || null };
+    let detect = false;
+    if (key === f.address) detect = true;
+    else if (key === f.district) Object.assign(cells, { [f.zone]: null, [f.area]: null });
+    else if (key === f.zone) {
+      // A zone chosen with no (or another) district brings its district; the area starts again.
+      const owner = Object.keys(ui.catalog.zonesByDistrict).find(d => ui.catalog.zonesByDistrict[d].includes(value));
+      if (value && owner && owner !== r.cells?.[f.district]) cells[f.district] = owner;
+      cells[f.area] = null;
+    }
+    // Only the template's columns (a customer file has no pickup area, for example).
+    const known = new Set(ui.job.columns.map(c => c.key));
+    for (const k of Object.keys(cells)) if (!known.has(k)) delete cells[k];
+    const scroll = document.querySelector("#dfImportBody .table-scroll");
+    const at = { top: scroll?.scrollTop || 0, left: scroll?.scrollLeft || 0 };
+    el.disabled = true;
+    try {
+      const res = await DF.api(`/imports/${ui.job.id}/rows/${rowNumber}`, { method: "PATCH", body: { cells, ...(detect ? { detect: true } : {}) } });
+      if (!ui) return;
+      ui.job = { ...ui.job, ...res.job };
+      ui.rows.items = ui.rows.items.map(x => (x.rowNumber === rowNumber ? res.row : x));
+      preview();
+      const again = document.querySelector("#dfImportBody .table-scroll");
+      if (again) Object.assign(again, { scrollTop: at.top, scrollLeft: at.left });
+    } catch (error) {
+      el.disabled = false;
+      toast(describe(error));
+    }
+  }
+
   function rowsTable(filters) {
     if (isBulk()) return bulkRowsTable(filters);
     const { cfg, job, rows } = ui;
     const columns = job.columns;
     const present = new Set(rows.items.flatMap(r => Object.keys(r.cells || {})));
-    const shown = columns.filter(c => present.has(c.key) || c.required || ["recipient_name", "recipient_phone", "address", "district", "zone"].includes(c.key));
+    const canEdit = editable();
+    // The address and its places are always shown (and correctable) when the template has them.
+    const always = ["recipient_name", "recipient_phone", "address", "district", "zone", ...(canEdit ? ["area", "pickup_address", "pickup_district", "pickup_zone"] : [])];
+    const shown = columns.filter(c => present.has(c.key) || c.required || always.includes(c.key));
     const missingCol = { recipientName: "recipient_name", recipientPhone: "recipient_phone", address: "address", district: "district", zone: "zone" };
     const body = rows.items
       .map(r => {
         const [label, key] = rowStatus()[r.status] || [r.status, "info"];
         const bad = new Map((r.errors || []).map(e => [e.column, e.message]));
         const missing = new Set((r.missing || []).map(m => missingCol[m]));
+        const auto = new Set(r.autoFilled || []);
         const cells = shown
           .map(c => {
             const value = r.cells?.[c.key] ?? "";
+            if (canEdit && familyOf(c.key)) return editCell(r, c, value, bad.get(c.key) || (r.status === "INCOMPLETE" && missing.has(c.key) ? "needed before delivery" : ""), auto.has(c.key));
             if (bad.has(c.key))
               return `<td data-col="${c.key}" data-invalid="true" title="${esc(`${c.header}: ${bad.get(c.key)}`)}" style="background:#fdecea;color:#b42318;box-shadow:inset 0 0 0 1px #f3b4ad;font-weight:600">${esc(value || "—")}</td>`;
             if (r.status === "INCOMPLETE" && missing.has(c.key)) return `<td data-col="${c.key}" data-missing="true" title="${esc(`${c.header}: needed before delivery`)}" style="background:#fff7e0;color:#946200">—</td>`;
@@ -460,7 +544,8 @@
     ].join("");
     const notes = [
       job.ignoredColumns?.length ? `Ignored columns (not in the template): ${job.ignoredColumns.join(", ")}.` : "",
-      c.errors ? `Rows with errors are skipped: fix them in your file and upload it again, or download them with the reason for each.` : "",
+      c.errors ? `Rows with errors are skipped: correct the address and places below, or fix them in your file and upload it again (download them with the reason for each).` : "",
+      editable() ? `District, zone and area left out of the file are picked from the address (green). Change any address or place below: the row is checked and priced again.` : "",
     ].filter(Boolean);
     draw(
       `Preview · ${job.fileName || "upload"}`,
@@ -718,6 +803,7 @@
 
   function onChange(event) {
     if (!ui) return;
+    if (event.target.matches?.("[data-dfi-edit]")) return void saveCell(event.target);
     if (event.target.id === "dfiFile") {
       readOptions();
       if (event.target.files?.[0]) return pick(event.target.files[0]);
@@ -1255,4 +1341,7 @@
   }
 
   window.DFImport = { open, history, template, complete, bulk: cfg => open({ ...cfg, mode: "bulk" }), bulkHistory: cfg => history({ ...cfg, mode: "bulk" }) };
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "dfiStreet", district: "dfiDistrict", zone: "dfiZone", area: "dfiArea" });
 })();

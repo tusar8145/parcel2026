@@ -60,3 +60,10 @@ export const templateQuerySchema = z.object({
 });
 
 export const failedRowsQuerySchema = z.object({ format: z.enum(["xlsx", "csv"]).default("xlsx") });
+
+/** A preview edit of one row (PATCH /imports/:id/rows/:rowNumber): cells by column key ("" or null clears one). */
+export const editRowSchema = z.object({
+  cells: z.record(z.string().regex(/^[a-z_]{2,40}$/, "Unknown column"), z.union([z.string().trim().max(500, "Use at most 500 characters"), z.null()])),
+  /** The address changed: pick its district / zone / area again. */
+  detect: z.boolean().optional(),
+});

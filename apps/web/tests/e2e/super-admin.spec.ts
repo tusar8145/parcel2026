@@ -294,8 +294,12 @@ test.describe("super admin", () => {
     await expect(admin.locator("#modalTitle")).toHaveText(`Review ${business}`);
     // The structured addresses with the derived hub and route district (bridge-merchants.js, shared/merchant-address.js).
     const summary = admin.locator("#dfmAddress");
-    await expect(summary).toContainText("House 5, Road 2, Gulshan 2, Gulshan, Dhaka North");
-    await expect(summary).toContainText("Warehouse 4, Sector 7, E2E Lane 9, Uttara, Dhaka North");
+    // The address as typed, its area / zone / district on their own row (never appended to the address).
+    await expect(summary).toContainText("House 5, Road 2");
+    await expect(summary).toContainText("Gulshan 2 · Gulshan · Dhaka North");
+    await expect(summary).toContainText("Warehouse 4, Sector 7");
+    await expect(summary).toContainText("E2E Lane 9 · Uttara · Dhaka North");
+    await expect(summary).not.toContainText("House 5, Road 2, Gulshan");
     await expect(summary).toContainText("area typed");
     await expect(summary).toContainText("E2E Store Keeper");
     await expect(summary).toContainText("Afternoon");

@@ -41,6 +41,12 @@ Setup and run instructions: `docs/development.md`.
   existing records), change it only through `modules/geography` (renames update every reference).
 - Phone numbers: country code fixed (+880); accept 1XXXXXXXXX / 01XXXXXXXXX / +8801… via
   `phoneSchema` (packages/shared); store E.164.
+- Addresses: the street field holds the **full address** as typed and is shown exactly so, everywhere
+  (screens, PDFs, exports): `addressText(street, …places)` (`common/address.ts`; web: `DF.addressText`,
+  `src/shared/addressText.ts`). District / zone / area are kept for operations and shown in their own
+  columns, never appended. Address forms pick them from the typed address via `GET /catalog/place`
+  (panels: `DF.autoPlace({ street, district, zone, area })` with the field ids; React:
+  `usePlaceFromAddress`); the user can still change them.
 - Tests are e2e against a real database (`apps/api/test`, helpers in `test/helpers.ts`).
 
 ## Web conventions (apps/web)

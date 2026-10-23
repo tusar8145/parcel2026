@@ -1,11 +1,21 @@
 import { z } from "zod";
-import { isBdMobile, normalizeBdPhone } from "../phone";
+import { isBdMobile, isMaskedBdMobile, normalizeBdPhone, normalizeMaskedBdPhone } from "../phone";
 
 export const phoneSchema = z
   .string()
   .trim()
   .refine(isBdMobile, "Enter a valid Bangladeshi mobile number, e.g. 01712-345678")
   .transform(normalizeBdPhone);
+
+/**
+ * A parcel recipient's phone: a BD mobile, or one printed masked on the label ("019***545": kept as
+ * written; no SMS is sent to it). Logins, senders and staff keep `phoneSchema`.
+ */
+export const recipientPhoneSchema = z
+  .string()
+  .trim()
+  .refine(v => isBdMobile(v) || isMaskedBdMobile(v), "Enter a valid Bangladeshi mobile number, e.g. 01712-345678")
+  .transform(v => (isBdMobile(v) ? normalizeBdPhone(v) : normalizeMaskedBdPhone(v)));
 
 export const emailSchema = z.string().trim().toLowerCase().pipe(z.email("Enter a valid email address"));
 

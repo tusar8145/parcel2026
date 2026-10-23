@@ -63,7 +63,11 @@ describe("pricing engine (Customer & E-commerce)", () => {
   });
   it("adds the product type charge", () => {
     const p = prices({ typeDocument: 5, typeBooks: 8 });
-    expect(amount(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ productType: "DOCUMENT" }) }), "product_type")).toBe(5);
+    // E-commerce: one route line with what is sent added; Customer: its own line.
+    const doc = priceParcel(p, { ...base, segment: "ECOMMERCE", tier: "SAME_DISTRICT", selection: sel({ productType: "DOCUMENT" }) });
+    expect(doc.lines[0]).toEqual({ code: "route", label: "Inside same district + Document", amount: (amount(priceParcel(p, { ...base, segment: "ECOMMERCE", tier: "SAME_DISTRICT", selection: sel() }), "route") ?? 0) + 5 });
+    expect(amount(doc, "product_type")).toBeUndefined();
+    expect(amount(priceParcel(p, { ...base, segment: "CUSTOMER", tier: "SAME_DISTRICT", selection: sel({ productType: "DOCUMENT" }) }), "product_type")).toBe(5);
     expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ productType: "BOOKS" }) }).totalCharge).toBe(78);
   });
   it("0.5 kg is included; every started kg above costs extra", () => {

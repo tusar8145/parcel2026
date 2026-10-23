@@ -61,6 +61,13 @@
     }
   }
 
+  /**
+   * Scan desk: the date & time chosen for its entries (ISO), sent with every change as
+   * X-Operation-Time; null = now (nothing sent). Set by the page, see DF.setOperationTime.
+   */
+  let operationTime = null;
+  const operationHeader = method => (operationTime && method !== "GET" ? { "x-operation-time": operationTime } : {});
+
   async function rawFetch(path, { method = "GET", body, headers = {}, auth = true } = {}) {
     const response = await fetch(BASE + path, {
       method,
@@ -69,6 +76,7 @@
         "x-df-client": "web",
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
         ...(auth && accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+        ...operationHeader(method),
         ...headers,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -142,7 +150,7 @@
     if ((accessToken && Date.now() > accessExpiresAt) || (!accessToken && state.offlineSession)) await refresh();
     // keepalive: the request outlives the page (e.g. closing something when the tab is closed).
     const send = () =>
-      fetch(BASE + path, { method, credentials: "same-origin", keepalive, headers: { "x-df-client": "web", ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...headers }, body });
+      fetch(BASE + path, { method, credentials: "same-origin", keepalive, headers: { "x-df-client": "web", ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...operationHeader(method), ...headers }, body });
     let response = await send();
     if (response.status === 401) {
       const data = await response.clone().json().catch(() => null);
@@ -716,6 +724,13 @@
   }
 
   const DF = {
+    /** Scan desk operation time: an ISO date or null for now (see operationTime above). */
+    setOperationTime(iso) {
+      operationTime = iso || null;
+    },
+    get operationTime() {
+      return operationTime;
+    },
     api,
     apiRaw,
     download,
@@ -1284,6 +1299,79 @@
     const o = asOptions(options, "Notice");
     return smallDialog({ title: o.title, message: o.message, ok: o.confirm || "OK", alertOnly: true });
   };
+
+  /**
+   * How an address is shown in every panel: the address as typed (the full address). District, zone and
+   * area are for operations and never appended; they stand in only when no address was typed. Same rule
+   * as the API (apps/api/src/common/address.ts), whose `label`s already follow it.
+   */
+  DF.addressText = (street, ...places) => {
+    const typed = String(street ?? "").trim();
+    if (typed) return typed;
+    return [...new Set(places.map(p => String(p ?? "").trim()).filter(Boolean))].join(", ");
+  };
+
+  // ───────────── typed address → district / zone / area (every address form) ─────────────
+
+  /**
+   * DF.autoPlace({ street, district, zone, area }): element ids of one address form. The address field
+   * holds the full address; once it is typed (a pause, or leaving the field) GET /catalog/place finds the
+   * district, zone and area in it and picks them: a select through its own change event (so the form's
+   * dependent lists refill, as when a person picks), a text field by its name. The user can still change
+   * them; editing the address again picks again. Nothing found: the fields are left as they are.
+   * Register once (ids, so forms drawn again later keep working).
+   */
+  const placeForms = new Map();
+  const placeTimers = new Map();
+  DF.autoPlace = group => {
+    if (group?.street) placeForms.set(group.street, group);
+  };
+  const flash = el => {
+    el.style.transition = "box-shadow .25s";
+    el.style.boxShadow = "0 0 0 3px #bfe8cf";
+    el.title = "Picked from the address (you can change it)";
+    setTimeout(() => (el.style.boxShadow = ""), 1400);
+  };
+  /** Sets a select (waiting briefly for its options, which a parent's change may still be filling) or a text field. */
+  async function setPlaceField(el, value) {
+    if (el.tagName === "SELECT") {
+      for (let i = 0; i < 20 && ![...el.options].some(o => o.value === value); i++) await new Promise(r => setTimeout(r, 50));
+      if (![...el.options].some(o => o.value === value)) return false;
+    }
+    if (el.value === value) return true;
+    el.value = value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    flash(el);
+    return true;
+  }
+  async function detectPlace(group, street) {
+    const text = street.value.trim();
+    if (text.length < 4 || street.dataset.dfPlaceRead === text) return;
+    street.dataset.dfPlaceRead = text;
+    let place;
+    try {
+      place = await api(`/catalog/place?address=${encodeURIComponent(text)}`);
+    } catch {
+      return;
+    }
+    if (street.value.trim() !== text || !place) return; // typed on meanwhile: the next pause reads again
+    for (const level of ["district", "zone", "area"]) {
+      const el = group[level] && document.getElementById(group[level]);
+      if (!el || !place[level] || el.disabled) continue;
+      if (!(await setPlaceField(el, place[level]))) break; // not offered here (e.g. inactive): stop at the parent
+    }
+  }
+  const placeEvent = event => {
+    const street = event.target;
+    const group = street?.id && placeForms.get(street.id);
+    if (!group) return;
+    clearTimeout(placeTimers.get(street.id));
+    if (event.type === "input") placeTimers.set(street.id, setTimeout(() => void detectPlace(group, street), 900));
+    else void detectPlace(group, street);
+  };
+  document.addEventListener("input", placeEvent, true);
+  document.addEventListener("focusout", placeEvent, true);
 
   DF.ready = boot().catch(error => {
     console.error("Delivery Fast could not start", error);

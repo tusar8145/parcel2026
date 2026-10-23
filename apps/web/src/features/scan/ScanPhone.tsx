@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import PhotoEditor, { EDITOR_CSS } from "./PhotoEditor";
 
 /**
  * The phone side of "Scan with phone" (Courier Operations › New orders): take or choose photos of
- * parcel labels; each one is compressed here (JPEG, at most 1600 px) and sent through the one-time
- * link (POST /parcel-scans/public/:token/photos). The modal on the computer lists them as they are
+ * parcel labels; each one opens in the editor (crop to the label, turn it upright: PhotoEditor), is
+ * compressed there (JPEG, at most 1600 px) and sent on Submit through the one-time link
+ * (POST /parcel-scans/public/:token/photos). The modal on the computer lists them as they are
  * read. The link stops working when the modal is closed.
  */
 
@@ -19,36 +21,17 @@ interface Session {
 interface Upload {
   key: number;
   preview: string;
-  state: "compressing" | "sending" | "sent" | "failed";
+  state: "sending" | "sent" | "failed";
   number?: number;
   error?: string;
-  file: File;
+  /** The cropped, compressed photo. */
+  photo: Blob;
 }
 
 const API = "/api/v1/parcel-scans/public";
 const MAX_SIDE = 1600;
 const QUALITY = 0.72;
 const POLL_MS = 4000;
-
-/** A photo as a JPEG of at most MAX_SIDE px on its long side (labels stay readable, uploads stay small). */
-async function compress(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => null);
-  const source: CanvasImageSource & { width: number; height: number } =
-    bitmap ??
-    (await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("This photo can't be opened. Take it again with the camera."));
-      img.src = URL.createObjectURL(file);
-    }));
-  const scale = Math.min(1, MAX_SIDE / Math.max(source.width, source.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(source.width * scale);
-  canvas.height = Math.round(source.height * scale);
-  canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
-  bitmap?.close();
-  return new Promise((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error("The photo couldn't be compressed"))), "image/jpeg", QUALITY));
-}
 
 const describe = async (res: Response) => {
   try {
@@ -65,6 +48,8 @@ export default function ScanPhone({ token }: { token: string }) {
   const [expired, setExpired] = useState(false);
   const [problem, setProblem] = useState("");
   const [uploads, setUploads] = useState<Upload[]>([]);
+  /** Photos taken or chosen, waiting for the editor (the first one is open). */
+  const [pending, setPending] = useState<{ file: File; index: number; total: number }[]>([]);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const seq = useRef(0);
   const camera = useRef<HTMLInputElement>(null);
@@ -94,11 +79,9 @@ export default function ScanPhone({ token }: { token: string }) {
     (item: Upload) => {
       queue.current = queue.current.then(async () => {
         try {
-          patch(item.key, { state: "compressing", error: undefined });
-          const blob = await compress(item.file);
-          patch(item.key, { state: "sending" });
+          patch(item.key, { state: "sending", error: undefined });
           const form = new FormData();
-          form.append("photo", blob, `parcel-${item.key}.jpg`);
+          form.append("photo", item.photo, `parcel-${item.key}.jpg`);
           const res = await fetch(`${API}/${encodeURIComponent(token)}/photos`, { method: "POST", body: form });
           if (res.status === 410) {
             setExpired(true);
@@ -116,20 +99,38 @@ export default function ScanPhone({ token }: { token: string }) {
     [token, refresh],
   );
 
+  /** Taken or chosen: each photo opens in the editor, one after another. */
   const choose = (files: FileList | null) => {
-    if (!files?.length) return;
-    const added = [...files]
-      .filter(f => f.type.startsWith("image/") || !f.type)
-      .map((file): Upload => ({ key: ++seq.current, preview: URL.createObjectURL(file), state: "compressing", file }));
-    setUploads(list => [...added.reverse(), ...list]);
-    for (const item of [...added].reverse()) send(item);
+    const picked = [...(files ?? [])].filter(f => f.type.startsWith("image/") || !f.type);
+    if (!picked.length) return;
+    setPending(list => [...list, ...picked.map((file, i) => ({ file, index: i + 1, total: picked.length }))]);
   };
+  /** The editor's Submit: the cropped photo is sent; the next one opens. */
+  const submitted = (photo: Blob) => {
+    const item: Upload = { key: ++seq.current, preview: URL.createObjectURL(photo), state: "sending", photo };
+    setUploads(list => [item, ...list]);
+    setPending(list => list.slice(1));
+    send(item);
+  };
+  const editing = pending[0];
 
   const statusOf = (number?: number) => (number ? session?.scans.find(s => s.number === number)?.status : undefined);
 
   return (
     <main className="scan">
-      <style>{CSS}</style>
+      <style>{CSS + EDITOR_CSS}</style>
+      {editing && !expired ? (
+        <PhotoEditor
+          key={`${editing.file.name}-${editing.file.lastModified}-${editing.index}-${seq.current}`}
+          file={editing.file}
+          index={editing.index}
+          total={editing.total}
+          maxSide={MAX_SIDE}
+          quality={QUALITY}
+          onSubmit={submitted}
+          onSkip={() => setPending(list => list.slice(1))}
+        />
+      ) : null}
       <header>
         <strong>Delivery Fast</strong>
         <span>Scan parcels</span>
@@ -194,9 +195,7 @@ export default function ScanPhone({ token }: { token: string }) {
                     <div>
                       <strong>{u.number ? `Parcel #${u.number}` : "Photo"}</strong>
                       <span className={`state ${u.state}`}>
-                        {u.state === "compressing"
-                          ? "Preparing…"
-                          : u.state === "sending"
+                        {u.state === "sending"
                             ? "Sending…"
                             : u.state === "failed"
                               ? u.error || "Not sent"

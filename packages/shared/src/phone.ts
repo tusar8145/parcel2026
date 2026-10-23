@@ -22,8 +22,30 @@ export function localBdDigits(e164: string): string {
   return e164.replace(/^\+880/, "");
 }
 
-/** +8801712345678 -> 01712-345678 for display. */
+/**
+ * A recipient's mobile printed masked on a label or sheet ("019***545", "01712***678"): a BD mobile
+ * prefix with some digits hidden by "*". Kept as written (no +880 added), shown as is, never messaged.
+ */
+const MASKED_BD_MOBILE = /^(?:\+?880|0)?(1[3-9][\d*]{3,12})$/;
+
+export function isMaskedBdMobile(input: string): boolean {
+  const c = clean(input);
+  return c.includes("*") && MASKED_BD_MOBILE.test(c) && (c.match(/\d/g)?.length ?? 0) >= 4;
+}
+
+/** "+88019***545" / "19***545" → "019***545". Throws on anything that isn't a masked BD mobile. */
+export function normalizeMaskedBdPhone(input: string): string {
+  const match = isMaskedBdMobile(input) ? clean(input).match(MASKED_BD_MOBILE) : null;
+  if (!match) throw new Error(`Not a masked Bangladeshi mobile number: ${input}`);
+  return `0${match[1]}`;
+}
+
+/** A stored phone that is masked (no SMS, no call). */
+export const isMaskedPhone = (phone: string | null | undefined) => !!phone && phone.includes("*");
+
+/** +8801712345678 -> 01712-345678 for display (a masked number as written). */
 export function formatBdPhone(e164: string): string {
+  if (isMaskedPhone(e164)) return e164;
   const local = `0${localBdDigits(e164)}`;
   return `${local.slice(0, 5)}-${local.slice(5)}`;
 }

@@ -128,7 +128,7 @@ describe("imports", () => {
   const allRows = async (token: string, id: string, filter = "all") => (await ctx.api("GET", `/imports/${id}/rows?filter=${filter}&pageSize=200`, { token })).body;
 
   describe("templates", () => {
-    it("E-commerce: real .xlsx with exactly its columns, live dropdowns (dependent IF/INDIRECT lists, products with type, the package's services) and its own instructions", async () => {
+    it("E-commerce: real .xlsx with exactly its columns (no district / zone / area: found from the full address), live dropdowns (products with type, the package's services) and its own instructions", async () => {
       const { owner } = await merchant();
       const t = await template(owner.token, "/imports/templates/ecommerce");
       expect(t.res.headers["content-type"]).toBe(XLSX);
@@ -136,27 +136,22 @@ describe("imports", () => {
       expect(t.workbook).toMatch(/<sheet name="Orders"[^>]*\/>/);
       expect(t.workbook).toMatch(/<sheet name="Instructions"[^>]*\/>/);
       expect(t.workbook).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
-      expect(t.workbook).toContain('<definedName name="L_districts">Lists!$');
-      expect(t.workbook).toMatch(/<definedName name="ZN_1">/);
-      expect(t.workbook).toMatch(/<definedName name="AR_1">/);
+      // No place lists: district / zone / area are found from the full address (imports/import-places.ts).
+      expect(t.workbook).not.toContain('<definedName name="L_districts">');
+      expect(t.workbook).not.toMatch(/<definedName name="ZN_1">/);
       // Exactly the E-commerce columns (the default package has COD and open box); the phone is required.
-      expect(t.header).toEqual(["Customer name", "Customer phone *", "Delivery address", "District", "Zone", "Area", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Service", "Open box", "Order ID", "Delivery instructions"]);
+      expect(t.header).toEqual(["Customer name", "Customer phone *", "Delivery address", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Service", "Open box", "Order ID", "Delivery instructions"]);
       for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
       expect(t.sheet).toContain('<c r="B1" s="1" t="inlineStr"><is><t>Customer phone *</t></is></c>');
       expect(t.sheet).toContain('state="frozen"');
-      // Dropdowns: districts, zones dependent on the district and areas on the zone (IF, never IFERROR), products, services, yes/no.
-      const [d, z] = [letterOf(t.header, "District"), letterOf(t.header, "Zone")];
-      expect(t.sheet).toContain(`sqref="${d}2:${d}5001"><formula1>L_districts</formula1>`);
-      expect(t.sheet).toContain(`IF($${d}2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($${d}2,L_districts,0)))`);
-      expect(t.sheet).toContain(`IF($${z}2=&quot;&quot;,L_areas,INDIRECT(&quot;AR_&quot;&amp;MATCH($${z}2,L_zones,0)))`);
-      expect(t.sheet).not.toContain("IFERROR");
+      // Dropdowns: products, services, yes/no.
+      expect(t.sheet).not.toContain("L_districts");
       expect(t.sheet).toContain("<formula1>L_products</formula1>");
       expect(t.sheet).toContain("<formula1>L_speeds</formula1>");
       expect(t.sheet).toContain("<formula1>L_yesNo</formula1>");
       expect(t.sheet).toMatch(new RegExp(`type="decimal"[^>]*sqref="${letterOf(t.header, "COD amount (৳)")}2:`));
       expect(t.sheet).toMatch(/type="textLength"[^>]*sqref="B2:B5001"/);
       // Live lists: active products only, with their type, Regular → Document → Books in the seeded order.
-      expect(t.listOf("Districts")).toContain("Dhaka Central");
       const products = t.listOf("Products");
       expect(products[0]).toBe("Fashion & Apparel (Regular)");
       expect(products.indexOf("Papers (Document)")).toBeGreaterThan(products.indexOf("Industrial & Business Supplies (Regular)"));
@@ -172,12 +167,13 @@ describe("imports", () => {
       expect(text).toContain("Express is same-day delivery, only inside the same district.");
       expect(text).not.toContain("pickup zone)\n");
       expect(text).toContain("Customer phone | Yes | Bangladeshi mobile number");
+      // The address column asks for the full address; district / zone / area are found from it.
+      expect(text).toContain("Write the FULL address in the address column: house, road, area, thana and district");
+      expect(t.help.find(l => l.startsWith("Delivery address | No |"))).toContain("The full address: house, road, area, thana and district");
+      expect(t.help.find(l => l.startsWith("District |"))).toBeUndefined();
       expect(t.help.find(l => l.startsWith("Service | No | Regular, Express (the services in Shop "))).toBeTruthy();
-      // Examples come from live data (the first active product, a real zone).
+      // Examples come from live data (the first active product).
       expect(t.help.find(l => l.startsWith("Product | No |"))).toContain("| Fashion & Apparel (Regular) |");
-      const catalog = (await ctx.api("GET", "/catalog")).body as { zonesByDistrict: Record<string, string[]> };
-      const example = (column: string) => t.help.find(l => l.startsWith(`${column} | No |`))!.split(" | ")[4];
-      expect(catalog.zonesByDistrict[example("District")]).toContain(example("Zone"));
 
       // An inactive product is not offered.
       await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Fashion & Apparel" } }, data: { active: false } });
@@ -190,7 +186,7 @@ describe("imports", () => {
         const t = await template(bank.owner.token, url);
         expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
         expect(t.workbook).toContain('<sheet name="Consignments"');
-        expect(t.header).toEqual(["Recipient name", "Recipient phone *", "Delivery address", "District", "Zone", "Area", "Product", "Service", "Reference no.", "Delivery instructions"]);
+        expect(t.header).toEqual(["Recipient name", "Recipient phone *", "Delivery address", "Product", "Service", "Reference no.", "Delivery instructions"]);
         for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
         expect(t.sheet).not.toContain("Weight");
         expect(t.sheet).not.toContain("COD");
@@ -219,7 +215,7 @@ describe("imports", () => {
       expect(chosen.listOf("Service")).toEqual(["Regular", "On-demand", "B2B Document", "Trade Service Document", "Corporate Urgent Document"]);
       expect(chosen.help.join("\n")).toContain(`For ${bank.m.name} (${bank.m.code})`);
       expect(chosen.header).not.toContain("Merchant");
-      expect(chosen.sheet).toContain("sqref=\"I2:I10001\""); // operations: 10,000 rows
+      expect(chosen.sheet).toContain("sqref=\"F2:F10001\""); // operations: 10,000 rows
       // Without a merchant: the category's default package (all six services).
       expect((await template(ops.token, "/imports/templates/document")).listOf("Service")).toContain("Express");
       // An e-commerce merchant for the Banking & Financial template is refused.
@@ -245,15 +241,9 @@ describe("imports", () => {
         "Sender name *",
         "Sender phone *",
         "Pickup address *",
-        "Pickup district *",
-        "Pickup zone *",
-        "Pickup area",
         "Recipient name",
         "Recipient phone *",
         "Delivery address",
-        "Delivery district",
-        "Delivery zone",
-        "Delivery area",
         "Product",
         "COD amount (৳)",
         "Product value (৳)",
@@ -262,9 +252,9 @@ describe("imports", () => {
         "Reference no.",
         "Delivery instructions",
       ]);
-      // Pickup zone follows the pickup district; delivery zone the delivery district.
-      expect(t.sheet).toContain("IF($D2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($D2,L_districts,0)))");
-      expect(t.sheet).toContain("IF($J2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($J2,L_districts,0)))");
+      // Pickup and delivery places are found from the two full addresses: no place columns or lists.
+      expect(t.sheet).not.toContain("L_zones");
+      expect(t.help.join("\n")).toContain("(the sender's too, from the pickup address)");
       expect(t.listOf("Service")).toEqual(["Regular", "Express"]);
       expect(t.listOf("Products")[0]).toBe("Fashion & Apparel (Regular)");
       expect(t.help.join("\n")).toContain("Customer parcels booked by operations (walk-in or website customers): no merchant.");
@@ -315,7 +305,7 @@ describe("imports", () => {
         full("ORD-1"), // 2 valid
         ecom({ "Customer name": "Only Name", "Customer phone": "1712345678" }), // 3 incomplete: no address or destination
         full("ORD-3", { "Customer phone": "12345" }), // 4
-        full("ORD-4", { District: "Atlantis" }), // 5
+        full("ORD-4", { District: "Atlantis", Zone: "" }), // 5 (no zone or address to pick the district from)
         full("ORD-5", { Zone: "Gulshan" }), // 6 zone of another district
         full("ORD-6", { "COD amount (৳)": "abc" }), // 7
         full("ORD-7", { "COD amount (৳)": "-5" }), // 8
@@ -616,7 +606,8 @@ describe("imports", () => {
       await ctx.api("POST", `/imports/${after.body.id}/commit`, { token: owner.token });
       expect((await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "CFG-2" } })).speedOption).toBe("EXPRESS"); // Express = same day (serviceLevel SAME_DAY)
       const t = await template(owner.token, "/imports/templates/ecommerce");
-      expect(t.header).toContain("District *");
+      // District isn't a template column (found from the address); the required setting still applies to files that have it or not.
+      expect(t.header).not.toContain("District *");
       expect(t.header).toContain("Customer name");
       expect(t.help.find(l => l.startsWith("Service | No | Regular, Express (the services in Shop ") && l.includes("'s service package) | Express | Regular |"))).toBeTruthy();
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
@@ -649,16 +640,17 @@ describe("imports", () => {
       expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.migrate" } })).toBe(1);
       expect(await service.migrateStored()).toEqual([]);
       expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.migrate" } })).toBe(1);
-      // The kept settings still apply.
+      // The kept settings still apply (district required: a row whose address names no district is refused).
       const { owner } = await merchant();
-      expect((await template(owner.token, "/imports/templates/ecommerce")).header).toContain("District *");
+      const res = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, ecom({ "Order ID": "KEPT-1", "Customer phone": "01812000000", "Delivery address": "Road 1" })]) });
+      expect((await allRows(owner.token, res.body.id)).items[0].errors[0]).toMatchObject({ column: "district", message: "required" });
     });
   });
 
   describe("failed rows", () => {
     it("download as .xlsx in the template format with an Error column (or CSV), ready to fix and upload again", async () => {
       const { owner } = await merchant();
-      const res = await upload(owner.token, { kind: "ecommerce" }, { name: "x.csv", data: csv([ECOM_HEADER, full("OK-1"), full("BAD-1", { "Customer phone": "999", District: "Nowhere" })]) });
+      const res = await upload(owner.token, { kind: "ecommerce" }, { name: "x.csv", data: csv([ECOM_HEADER, full("OK-1"), full("BAD-1", { "Customer phone": "999", District: "Nowhere", Zone: "" })]) });
       await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       const file = await download(owner.token, `/imports/${res.body.id}/failed-rows`);
       expect(file.status).toBe(200);
@@ -671,6 +663,12 @@ describe("imports", () => {
       expect(sheet.rows[1].at(-1)).toBe('Row 3: Customer phone: bangladeshi mobile numbers start with 1 (e.g. 17XXXXXXXX); District: unknown district "Nowhere" (use one from the list)');
       const zip = readZip(file.buffer, { maxBytes: 50_000_000 });
       expect(zip.get("xl/workbook.xml")!.toString()).toContain('<sheet name="Lists"');
+      // A file carrying rows keeps district / zone / area, with the zone dropdown following the district (IF, never IFERROR).
+      const header = sheet.rows[0] as string[];
+      const d = String.fromCharCode(65 + header.indexOf("District"));
+      const data = zip.get("xl/worksheets/sheet1.xml")!.toString();
+      expect(data).toContain(`IF($${d}2=&quot;&quot;,L_zones,INDIRECT(&quot;ZN_&quot;&amp;MATCH($${d}2,L_districts,0)))`);
+      expect(data).not.toContain("IFERROR");
       const asCsv = await download(owner.token, `/imports/${res.body.id}/failed-rows?format=csv`);
       expect(asCsv.headers["content-type"]).toContain("text/csv");
       expect(asCsv.buffer.toString("utf8")).toContain("BAD-1");

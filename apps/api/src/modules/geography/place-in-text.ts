@@ -9,6 +9,8 @@ interface Entry {
   tokens: string[];
   /** zone → its district; area → its zone. */
   parent?: string;
+  /** The name without its "(District)" ending, which several districts' places share ("Kaliganj"). */
+  bare: string;
 }
 export interface Place {
   district?: string;
@@ -144,7 +146,12 @@ function indexOf(places: Places): Entry[] {
   const cached = indexes.get(places);
   if (cached) return cached;
   const entries: Entry[] = [];
-  const add = (name: string, kind: Entry["kind"], parent?: string) => entries.push({ name, kind, parent, tokens: normPlace(name).split(" ").filter(Boolean) });
+  // "Kaliganj (Gazipur)" is also found as plain "Kaliganj" (it then needs its district: see placeIn).
+  const add = (name: string, kind: Entry["kind"], parent?: string) => {
+    const bare = normPlace(name.replace(/\s*\([^)]*\)\s*$/, ""));
+    entries.push({ name, kind, parent, bare, tokens: normPlace(name).split(" ").filter(Boolean) });
+    if (bare && bare !== normPlace(name)) entries.push({ name, kind, parent, bare, tokens: bare.split(" ") });
+  };
   for (const d of places.districts) add(d, "district");
   for (const [d, zones] of Object.entries(places.zonesByDistrict)) for (const z of zones) add(z, "zone", d);
   for (const [z, areas] of Object.entries(places.areasByZone)) for (const a of areas) add(a, "area", z);
@@ -176,7 +183,8 @@ function hits(text: string, places: Places): Hit[] {
         out.push({ entry, cost: 0, at: i });
         break;
       }
-      if (loose && window[0] === name[0]) {
+      // A common address word in the text ("Sadar", "Road") isn't a slip of a place name either.
+      if (loose && window[0] === name[0] && !window.split(" ").some(w => GENERIC.has(w))) {
         const cost = distance(window, name, max);
         if (cost <= max) {
           out.push({ entry, cost, at: i });
@@ -202,17 +210,34 @@ export function placeIn(text: string, places: Places): Place {
   const districtSet = new Set(districts.map(h => h.entry.name));
   const dhaka = /\bdhaka\b/i.test(englishPlaces(text));
   const fits = (district?: string) => !!district && (districtSet.has(district) || (dhaka && district.startsWith("Dhaka")));
-  // Zones: exact before fuzzy, then ones whose district is also named.
+  // Zones: ones whose district is also named first, then exact before fuzzy. A district written
+  // exactly rules out a zone of another district that only nearly matches ("Sadar Road, Gazipur" isn't Savar).
+  const exactDistrict = districts.some(h => h.cost === 0);
   const zones = found
-    .filter(h => h.entry.kind === "zone")
+    .filter(h => h.entry.kind === "zone" && !(exactDistrict && h.cost > 0 && !fits(h.entry.parent)))
     .sort((a, b) => Number(fits(b.entry.parent)) - Number(fits(a.entry.parent)) || better(a, b));
   let zone = zones[0];
-  // An area named on its own (e.g. "Mirpur 10") gives its zone.
-  const areas = found.filter(h => h.entry.kind === "area").sort(better);
+  // Areas, without the words of the district's name ("Gazipur" is also an area of Sreepur, and nearly "Gazipura").
+  const overlaps = (a: Hit, b: Hit) => a.at < b.at + b.entry.tokens.length && b.at < a.at + a.entry.tokens.length;
+  const areas = found.filter(h => h.entry.kind === "area" && !districts.some(d => overlaps(h, d))).sort(better);
+  // An area named on its own (e.g. "Mirpur 10") gives its zone, but only one in the district named on
+  // the label, if one is ("Sadar Road, Gazipur" is not the Sadar Road of Barishal).
   if (!zone) {
-    const area = areas.find(h => h.cost === 0) ?? areas[0];
-    const owner = area && found.length && zones.length === 0 ? indexOf(places).find(e => e.kind === "zone" && e.name === area.entry.parent) : undefined;
-    if (owner) zone = { entry: owner, cost: area.cost, at: area.at };
+    const zoneOf = (h: Hit) => indexOf(places).find(e => e.kind === "zone" && e.name === h.entry.parent);
+    const candidates = areas.filter(h => !districts.length || fits(zoneOf(h)?.parent));
+    const area = candidates.find(h => h.cost === 0) ?? candidates[0];
+    const owner = area ? zoneOf(area) : undefined;
+    if (owner) zone = { entry: owner, cost: area!.cost, at: area!.at };
+  }
+  // A zone name several districts share ("Kaliganj": Gazipur, Lalmonirhat, Satkhira…; "Mirpur": Dhaka and
+  // Kushtia) needs its district named too, or an area only one of them has ("Mirpur 10"): never guessed.
+  if (zone && !fits(zone.entry.parent)) {
+    const namesakes = [...new Set(indexOf(places).filter(e => e.kind === "zone" && e.bare === zone!.entry.bare).map(e => e.name))];
+    if (namesakes.length > 1) {
+      const settledBy = [...new Set(areas.filter(a => namesakes.includes(a.entry.parent!)).map(a => a.entry.parent!))];
+      if (settledBy.length !== 1) return districts[0] ? { district: districts[0].entry.name } : {};
+      zone = { ...zone, entry: indexOf(places).find(e => e.kind === "zone" && e.name === settledBy[0])! };
+    }
   }
   if (zone) {
     const district = zone.entry.parent;

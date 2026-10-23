@@ -1,4 +1,6 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
+import { addressText } from "../../common/address";
 import type { z } from "zod";
 import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
@@ -81,7 +83,7 @@ export class RiderTasksService {
     const stop = (p: ParcelWithRelations) => ({
       key: pickupStopKey(p),
       name: p.merchant?.name ?? p.senderName,
-      address: [p.pickupStreet, p.pickupArea, p.pickupZone].filter(Boolean).join(", "),
+      address: addressText(p.pickupStreet, p.pickupArea, p.pickupZone),
     });
     return {
       pickups: pickups.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p) })),
@@ -349,6 +351,7 @@ export class RiderTasksService {
     await tx.trackingEvent.create({
       data: {
         parcelId: parcel.id,
+        createdAt: operationNow(),
         status: "PICKED_UP",
         title: e.title,
         description: e.description,
@@ -416,7 +419,7 @@ export class RiderTasksService {
         id: r.id,
         number: r.number,
         dispatchedAt: r.dispatchedAt,
-        merchant: { id: r.merchant.id, name: r.merchant.name, address: [r.merchant.pickupAddress, r.merchant.pickupArea].filter(Boolean).join(", "), phone: r.merchant.contactPhone },
+        merchant: { id: r.merchant.id, name: r.merchant.name, address: addressText(r.merchant.pickupAddress, r.merchant.pickupArea), phone: r.merchant.contactPhone },
         parcels: r.parcels,
       })),
     };

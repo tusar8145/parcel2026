@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { NOTIFICATION_SERVICE_OF_EVENT } from "@delivery-fast/shared";
+import { isMaskedPhone, NOTIFICATION_SERVICE_OF_EVENT } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { env } from "../../config/env";
 import { OutboxService } from "./outbox.service";
@@ -97,6 +97,8 @@ export class NotifyService {
       if (optedOut.has(channel)) continue;
       const to = channel === "sms" ? phone : email;
       if (!to) continue;
+      // A number printed masked on a label ("019***545") can't be messaged.
+      if (channel === "sms" && isMaskedPhone(to)) continue;
       const message = this.renderWith(snapshot, input.event, channel, { ...input.vars, name: name ?? input.vars?.name ?? "" });
       if (!message) continue;
       ids.push(

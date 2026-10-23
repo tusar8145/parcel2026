@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePlaceFromAddress } from "@/shared/usePlaceFromAddress";
 import { Field, api, describe, tk, useAction, useToast, type Me } from "./ui";
 
 interface Catalog {
@@ -61,6 +62,15 @@ export default function WalkIn({ me }: { me: Me }) {
     setForm(f => ({ ...f, [k]: value, ...(k === "district" ? { zone: "", area: "" } : k === "zone" ? { area: "" } : {}) }));
     setErrors(x => ({ ...x, [k]: undefined }));
   };
+  // The address field holds the full address: its district / zone / area are picked from it as it is typed.
+  usePlaceFromAddress(form.street, place =>
+    setForm(f => {
+      if (!catalog || !place.district || !catalog.districts.includes(place.district)) return f;
+      const zone = place.zone && (catalog.zonesByDistrict[place.district] ?? []).includes(place.zone) ? place.zone : "";
+      const area = place.area && zone && (catalog.areasByZone[zone] ?? []).includes(place.area) ? place.area : "";
+      return { ...f, district: place.district, zone, area };
+    }),
+  );
   const zones = useMemo(() => (form.district ? (catalog?.zonesByDistrict[form.district] ?? []) : []), [catalog, form.district]);
   const areas = useMemo(() => (form.zone ? (catalog?.areasByZone[form.zone] ?? []) : []), [catalog, form.zone]);
   const speeds = catalog?.customerPackage?.options.speeds ?? ["REGULAR"];
@@ -226,8 +236,8 @@ export default function WalkIn({ me }: { me: Me }) {
                 <option value="OTHER">Other</option>
               </select>
             </Field>
-            <Field label="Street address" htmlFor="wiStreet" error={errors.street} full>
-              <input id="wiStreet" value={form.street} onChange={set("street")} placeholder="House, road, flat" autoComplete="off" />
+            <Field label="Full address" htmlFor="wiStreet" error={errors.street} full>
+              <input id="wiStreet" value={form.street} onChange={set("street")} placeholder="e.g. House 12, Road 5, Dhanmondi, Dhaka" autoComplete="off" />
             </Field>
             <p className="fr-section-title">Parcel</p>
             <Field label="Weight (kg)" htmlFor="wiWeight" error={errors.weightKg}>

@@ -13,6 +13,7 @@ import {
 } from "@delivery-fast/shared";
 import type { Prisma } from "../../generated/prisma/client";
 import { MISSING_LABEL, type MissingField } from "./incomplete";
+import { addressText } from "../../common/address";
 
 export const parcelInclude = {
   pickupRider: { select: { id: true, code: true, user: { select: { name: true, phone: true } } } },
@@ -35,7 +36,6 @@ export const parcelInclude = {
 export type ParcelWithRelations = Prisma.ParcelGetPayload<{ include: typeof parcelInclude }>;
 
 const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number(d));
-const CATEGORY_LABEL = { HOME: "Home", OFFICE: "Office", OTHER: "Other" } as const;
 const riderLabel = (r: ParcelWithRelations["pickupRider"]) => (r ? `${r.code} · ${r.user.name}` : null);
 const joinAddress = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(", ");
 /** "Awaiting drop-off at Gulshan Hub" while a drop-off waits for the sender, else the status label. */
@@ -134,7 +134,8 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
       area: p.pickupArea,
       zone: p.pickupZone,
       district: p.pickupDistrict,
-      label: joinAddress(CATEGORY_LABEL[p.pickupCategory], p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict),
+      // The address as typed (the full address); district / zone / area are the fields above.
+      label: addressText(p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict),
       lat: p.pickupLat,
       lng: p.pickupLng,
     },
@@ -145,7 +146,7 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
       area: p.deliveryArea,
       zone: p.deliveryZone,
       district: p.deliveryDistrict,
-      label: joinAddress(CATEGORY_LABEL[p.deliveryCategory], p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict),
+      label: addressText(p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict),
       lat: p.deliveryLat,
       lng: p.deliveryLng,
     },

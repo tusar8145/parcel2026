@@ -1,4 +1,5 @@
 import { merchantPickupArea } from "../merchants/merchant-address";
+import { addressText } from "../../common/address";
 import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus, parseLastMile } from "@delivery-fast/shared";
@@ -498,7 +499,7 @@ export class OpsService {
             role: p.deliveryRiderId === r.id ? "delivery" : "pickup",
             merchant: p.merchant?.name ?? p.senderName,
             recipient: p.recipientName,
-            destination: joinAddress(p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict),
+            destination: addressText(p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict),
             service: p.merchant
               ? `${lineOf(p.merchant.type) === "documents" ? "Document" : "E-commerce"} · ${SERVICE_LEVEL_LABEL[p.serviceLevel]}`
               : `Customer parcel · ${SERVICE_LEVEL_LABEL[p.serviceLevel]}`,

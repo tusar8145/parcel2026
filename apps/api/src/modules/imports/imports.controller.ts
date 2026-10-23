@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Req, Res } from "@nestjs/common";
 import { ApiBody, ApiConsumes, ApiProduces, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -14,6 +14,7 @@ import { ImportConfigService, importConfigSchema, LIMIT_CEILINGS, type ImportSet
 import { ImportEngineService } from "./import-engine.service";
 import { ImportJobsService } from "./import-jobs.service";
 import {
+  editRowSchema,
   failedRowsQuerySchema,
   importKindSchema,
   importOptionsSchema,
@@ -153,6 +154,26 @@ export class ImportsController {
     return this.jobs.rows(actor, id, query);
   }
 
+  /**
+   * Edits one row of a checked file before it is submitted (the preview's inline address and district /
+   * zone / area): the row is checked and priced again and the file's counts follow. `detect`: the address
+   * changed, so its district / zone / area are picked again from it. Returns { row, job }.
+   */
+  @AllowApiKey()
+  @RequireApiKeyScope("parcels:write")
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Patch(":id/rows/:rowNumber")
+  @ApiZodBody(editRowSchema)
+  editRow(
+    @CurrentActor() actor: Actor,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("rowNumber", ParseIntPipe) rowNumber: number,
+    @ZBody(editRowSchema) body: z.infer<typeof editRowSchema>,
+    @ReqMeta() meta: RequestMeta,
+  ) {
+    return this.jobs.editRow(actor, id, rowNumber, body, meta);
+  }
+
   /** Books the valid and incomplete rows (rows with errors are skipped). Up to 100 rows at once, larger files in the background. */
   @AllowApiKey()
   @RequireApiKeyScope("parcels:write")
@@ -208,6 +229,8 @@ export class ImportsController {
             builtInDefault: c.default ?? null,
             /** Only in the template when the package offers it (COD, open box). */
             packageOnly: c.needs ?? null,
+            /** false: not in the blank template (district / zone / area are found from the full address). */
+            inTemplate: c.inTemplate !== false,
           })),
         ]),
       ),

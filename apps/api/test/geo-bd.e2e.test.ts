@@ -65,14 +65,12 @@ describe("Bangladesh geography and hub network", () => {
     });
     const owner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: m.id }], "Owner");
 
-    // The template's dependent dropdowns cover the whole country (hidden Lists sheet, named ranges).
+    // The blank template has no place columns (district / zone / area are found from the full address).
     const started = Date.now();
     const template = await ctx.app.inject({ method: "GET", url: "/api/v1/imports/templates/ecommerce", headers: { authorization: `Bearer ${owner.token}` } });
     expect(template.statusCode).toBe(200);
     expect(Date.now() - started).toBeLessThan(10_000);
-    const workbook = readZip(template.rawPayload, { maxBytes: 50_000_000 }).get("xl/workbook.xml")!.toString();
-    expect(workbook.match(/<definedName name="ZN_\d+">/g)).toHaveLength(67);
-    expect((workbook.match(/<definedName name="AR_\d+">/g) ?? []).length).toBeGreaterThan(550);
+    expect(readZip(template.rawPayload, { maxBytes: 50_000_000 }).get("xl/workbook.xml")!.toString()).not.toMatch(/<definedName name="ZN_\d+">/);
 
     const header = ["Order ID", "Customer name", "Customer phone", "Delivery address", "District", "Zone", "Service", "Weight (kg)"];
     const row = (ref: string, district: string, zone: string) => [ref, "Nabila Ahmed", "01812000000", "Road 7, Flat 3B", district, zone, "Regular", "1"];
@@ -92,6 +90,15 @@ describe("Bangladesh geography and hub network", () => {
     expect(rows.map(r => r.status)).toEqual(["VALID", "VALID", "ERROR", "VALID"]);
     expect(rows[2].errors[0]).toMatchObject({ column: "district" });
     expect(rows[2].errors[0].message).toContain("choose the district");
+
+    // The rows not created come back with their places, whose dependent dropdowns cover the whole country.
+    const id = JSON.parse(validated.body).id;
+    await ctx.api("POST", `/imports/${id}/commit`, { token: owner.token });
+    const failed = await ctx.app.inject({ method: "GET", url: `/api/v1/imports/${id}/failed-rows`, headers: { authorization: `Bearer ${owner.token}` } });
+    expect(failed.statusCode).toBe(200);
+    const workbook = readZip(failed.rawPayload, { maxBytes: 50_000_000 }).get("xl/workbook.xml")!.toString();
+    expect(workbook.match(/<definedName name="ZN_\d+">/g)).toHaveLength(67);
+    expect((workbook.match(/<definedName name="AR_\d+">/g) ?? []).length).toBeGreaterThan(550);
   });
 
   it("keeps places renamed or deleted in the geography admin out when the seed runs again", async () => {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { df, describe, site, toast } from "./df";
 import { AddressFields, addressBody, catalog, type AddressNames } from "./AddressFields";
 import { Field, FieldError, PhoneInput, Select, TextInput, cooldownFrom, e164, rules, useBusy, useCountdown, useForm, local10 } from "./form";
+import { addressText } from "@/shared/addressText";
 
 const PICKUP: AddressNames = {
   category: "requestPickupCategory",
@@ -407,7 +408,7 @@ export default function BookingView() {
             <select id="requestPickupSaved" defaultValue="" onChange={e => e.target.value && applySaved(pickupSaved.find(a => a.id === e.target.value)!, "PICKUP")}>
               <option value="">Enter a new address</option>
               {pickupSaved.map(a => (
-                <option key={a.id} value={a.id}>{`${CATEGORY_LABEL[a.category]} · ${a.street}, ${a.zone}, ${a.district}`}</option>
+                <option key={a.id} value={a.id}>{`${CATEGORY_LABEL[a.category]} · ${addressText(a.street, a.area, a.zone, a.district)}`}</option>
               ))}
             </select>
           </div>
@@ -418,7 +419,7 @@ export default function BookingView() {
         <Field label="Phone number" required htmlFor="requestPhone" error={form.error("requestPhone")} hint={!isCustomer ? "We'll text a code to this number to confirm the booking." : undefined}>
           <PhoneInput bound={form.bind("requestPhone")} error={form.error("requestPhone")} />
         </Field>
-        <AddressFields form={form} names={PICKUP} label="Pickup" streetLabel="Pickup address" />
+        <AddressFields form={form} names={PICKUP} label="Pickup" streetLabel="Pickup full address" />
         <div className="field full" data-pickup-slots="1">
           <span className="field-label">Pickup time *</span>
           {days === null ? (
@@ -467,7 +468,7 @@ export default function BookingView() {
             <select id="requestReceiverSaved" defaultValue="" onChange={e => e.target.value && applySaved(receiverSaved.find(a => a.id === e.target.value)!, "RECEIVER")}>
               <option value="">Enter a new address</option>
               {receiverSaved.map(a => (
-                <option key={a.id} value={a.id}>{`${a.contactName} · ${a.street}, ${a.zone}, ${a.district}`}</option>
+                <option key={a.id} value={a.id}>{`${a.contactName} · ${addressText(a.street, a.area, a.zone, a.district)}`}</option>
               ))}
             </select>
           </div>
@@ -478,7 +479,7 @@ export default function BookingView() {
         <Field label="Receiver's phone" required htmlFor="requestReceiverPhone" error={form.error("requestReceiverPhone")}>
           <PhoneInput bound={form.bind("requestReceiverPhone")} error={form.error("requestReceiverPhone")} />
         </Field>
-        <AddressFields form={form} names={DELIVERY} label="Delivery" streetLabel="Delivery street, house / apartment / unit" />
+        <AddressFields form={form} names={DELIVERY} label="Delivery" streetLabel="Delivery full address" />
       </div>
 
       <div className={step === 2 ? "route-step active" : "route-step"} data-request-step="2">

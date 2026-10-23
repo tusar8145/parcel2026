@@ -1,5 +1,6 @@
 import { A4, COLOR, fmtDate, fmtDateTime, MM, PdfWriter, taka } from "../pdf/writer";
 import type { Brand } from "../pdf/layout";
+import { addressText } from "../../../common/address";
 
 /** Everything printed on a shipping label. */
 export interface LabelData {
@@ -100,7 +101,7 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   cy += 14;
   pdf.text(l.recipient.phone ?? "Phone pending", ix, cy, { size: 10, bold: true, width: iw, color: l.recipient.phone ? COLOR.ink : COLOR.danger });
   cy += 13;
-  const address = [l.address.street, l.address.area, l.address.zone, l.address.district].filter(Boolean).join(", ") || "Address pending";
+  const address = addressText(l.address.street, l.address.area, l.address.zone, l.address.district) || "Address pending";
   cy += pdf.text(address, ix, cy, { size: 8.5, width: iw, maxLines: 3, color: l.address.street ? COLOR.ink : COLOR.danger });
   cy += 3;
   pdf.line(ix, cy, ix + iw, cy);

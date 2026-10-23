@@ -72,6 +72,46 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect(await scan(s.desk.token, "deliver", { code: waiting })).toMatchObject({ ok: false, outcome: "NOT_WITH_RIDER" });
     expect(await scan(s.desk.token, "deliver", { code: "PP-000000-0000" })).toMatchObject({ ok: false, outcome: "NOT_FOUND" });
   });
+  it("records entries at the operation time chosen on the Scan desk (X-Operation-Time)", async () => {
+    const s = await setup();
+    const id = await atHub(s);
+    const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id } });
+    // Its history so far happened three hours ago.
+    await ctx.prisma.trackingEvent.updateMany({ where: { parcelId: parcel.id }, data: { createdAt: new Date(Date.now() - 3 * 3_600_000) } });
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000);
+    const dated = (when: Date, path: string, body: Record<string, unknown>) =>
+      ctx.api("POST", `/hub-desk/${path}`, { token: s.desk.token, body, headers: { "x-operation-time": when.toISOString() } });
+
+    // Never ahead, at most 30 days back, not before the parcel's last update.
+    expect((await dated(at(-2), "dispatch", { code: id, riderId: s.rider.rider.id })).body.error.code).toBe("OPERATION_TIME_IN_FUTURE");
+    expect((await dated(at(24 * 31), "dispatch", { code: id, riderId: s.rider.rider.id })).body.error.code).toBe("OPERATION_TIME_TOO_OLD");
+    const early = await dated(at(4), "dispatch", { code: id, riderId: s.rider.rider.id });
+    expect(JSON.stringify(early.body)).toContain("before its last update");
+    expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { id: parcel.id } })).status).toBe("AT_HUB");
+
+    const out = at(2);
+    expect((await dated(out, "dispatch", { code: id, riderId: s.rider.rider.id })).body).toMatchObject({ ok: true, outcome: "OUT_FOR_DELIVERY" });
+    const delivered = at(1);
+    expect((await dated(delivered, "deliver", { code: id })).body).toMatchObject({ ok: true, outcome: "DELIVERED" });
+
+    const p = await ctx.prisma.parcel.findUniqueOrThrow({ where: { id: parcel.id }, include: { codCollection: true } });
+    expect(p.deliveredAt).toEqual(delivered);
+    expect(p.codCollection!.collectedAt).toEqual(delivered);
+    const events = await ctx.prisma.trackingEvent.findMany({ where: { parcelId: parcel.id, status: { in: ["OUT_FOR_DELIVERY", "DELIVERED"] } }, orderBy: { createdAt: "asc" } });
+    expect(events.map(e => [e.status, e.createdAt.toISOString()])).toEqual([
+      ["OUT_FOR_DELIVERY", out.toISOString()],
+      ["DELIVERED", delivered.toISOString()],
+    ]);
+    // The audit keeps when it was entered (createdAt) and when it happened.
+    const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: "parcel.desk_delivery", entityId: parcel.id } });
+    expect(audit.data).toMatchObject({ operationAt: delivered.toISOString() });
+    expect(audit.createdAt.getTime()).toBeGreaterThan(delivered.getTime());
+
+    // Merchants can't date their changes.
+    const merchant = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: s.shop.id }], "Shop Owner");
+    const refused = await ctx.api("POST", "/parcels", { token: merchant.token, body: parcelBody(), headers: { "x-operation-time": at(1).toISOString() } });
+    expect(refused.body.error.code).toBe("OPERATION_TIME_NOT_ALLOWED");
+  });
   it("enters pickups, failed deliveries and parcels coming back from riders at the desk", async () => {
     const s = await setup();
     // Pickup entry: booked and given to the pickup rider, the rider brings it to the hub.

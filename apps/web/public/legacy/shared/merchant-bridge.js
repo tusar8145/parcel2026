@@ -2055,4 +2055,7 @@
     /** True while the merchant account isn't active: only the "Account verification" screen is open. */
     locked,
   };
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "deliveryAddress", district: "merchantDistrict", zone: "merchantZone", area: "merchantArea" });
 })();

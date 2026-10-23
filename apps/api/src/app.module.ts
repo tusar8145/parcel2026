@@ -1,5 +1,6 @@
 import { Module, RequestMethod } from "@nestjs/common";
-import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { OperationTimeInterceptor } from "./common/operation-time";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { LoggerModule } from "nestjs-pino";
 import { randomUUID } from "node:crypto";
@@ -124,6 +125,8 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // runs first: rate limit before auth work
     { provide: APP_GUARD, useClass: AuthGuard },
+    // Scan desk entries dated with X-Operation-Time (common/operation-time.ts).
+    { provide: APP_INTERCEPTOR, useClass: OperationTimeInterceptor },
   ],
 })
 export class AppModule {}

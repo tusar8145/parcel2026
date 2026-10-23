@@ -1,6 +1,7 @@
 import type { Catalog } from "../pricing/pricing.service";
 import { COLUMNS, type ColumnKey, type ImportKindKey } from "../imports/columns";
-import { placeIn } from "./scan-geo";
+import { isMaskedBdMobile, normalizeMaskedBdPhone } from "@delivery-fast/shared";
+import { placeIn } from "../geography/place-in-text";
 
 /** Order fields read from a parcel photo, by import column key. */
 export type ScanCells = Partial<Record<ColumnKey, string>>;
@@ -42,8 +43,18 @@ const DIGIT_SLIPS: Record<string, string> = { O: "0", o: "0", D: "0", Q: "0", I:
 
 /** BD mobile numbers on a line (separators between digits dropped, letter slips fixed): local 01XXXXXXXXX form. */
 export function phonesIn(line: string): string[] {
-  const joined = normalizeText(line).replace(/(?<=\d)[\s\-–.()]+(?=\d)/g, "");
+  // Numbers written whole in one word first (a stray digit after one, "+8801912334455 5", isn't part of
+  // it); then the rest of the line with spaces between digits dropped ("+880 1812 345678").
   const out: string[] = [];
+  const rest = normalizeText(line)
+    .split(/\s+/)
+    .map(word => {
+      const found = [...word.replace(/[\-–.()]+(?=\d)/g, "").matchAll(/(?<!\d)(?:\+?88)?0?(1[3-9]\d{8})(?!\d)/g)].map(m => `0${m[1]}`);
+      for (const p of found) if (!out.includes(p)) out.push(p);
+      return found.length ? "" : word;
+    })
+    .join(" ");
+  const joined = rest.replace(/(?<=\d)[\s\-–.()]+(?=\d)/g, "");
   // A run of digits (with a few letter slips inside it) as long as a phone number.
   for (const found of joined.match(/\+?[\dOoDQIl|!iZzSsBbGT]{10,15}/g) ?? []) {
     const run = found.replace(/^[^\d+]+|[^\d]+$/g, "");
@@ -54,13 +65,31 @@ export function phonesIn(line: string): string[] {
   return out;
 }
 
+/** A masked number written on the label ("019***545"): a BD mobile with some digits hidden by "*". */
+const MASKED_IN_TEXT = /(?<![\d*])(?:\+?88)?0?1[3-9][\d*]{3,12}(?![\d*])/g;
+export const maskedPhonesIn = (line: string) =>
+  [...normalizeText(line).replace(/(?<=[\d*])[\s\-–.()]+(?=[\d*])/g, "").matchAll(MASKED_IN_TEXT)].map(m => m[0]).filter(isMaskedBdMobile).map(normalizeMaskedBdPhone);
+
 const stripPhones = (s: string) =>
   normalizeText(s)
     .replace(/(?<=\d)[\s\-–.()]+(?=\d)/g, "")
     .replace(/(?:\+?88)?0?1[3-9]\d{8}/g, "")
+    .replace(MASKED_IN_TEXT, m => (m.includes("*") ? "" : m))
     .replace(PHONE_LABEL, "")
     .replace(/\s{2,}/g, " ")
     .replace(/^[\s,;:\-–]+|[\s,;:\-–]+$/g, "");
+
+/**
+ * A value without the OCR specks around it: lowercase bits of one or two letters and stray symbols at
+ * the ends ("Nusrat Jahan - an" → "Nusrat Jahan", "C. Banani, Dhaka a a" → "C. Banani, Dhaka").
+ */
+export function tidy(text: string): string {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const speck = (w: string) => /^[a-z]{1,2}$/.test(w) || /^[^\p{L}\p{N}]+$/u.test(w);
+  while (words.length > 1 && speck(words[words.length - 1])) words.pop();
+  while (words.length > 1 && /^[^\p{L}\p{N}]+$/u.test(words[0])) words.shift();
+  return words.join(" ").replace(/[\s,;:|\-–]+$/, "");
+}
 
 /** A short line of words that can be a person's or shop's name. */
 const nameLike = (s: string) => {
@@ -146,7 +175,9 @@ export function loneAmount(lines: string[]): string | undefined {
     const amounts = moneyIn(t);
     if (amounts.length !== 1 || phonesIn(t).length) continue;
     const rest = t.replace(/[৳$]|\btk\.?|\btaka\b|\bbdt\b|টাকা|\/-|[\d,.]+/giu, " ").trim().split(/\s+/).filter(Boolean);
-    if (rest.length > 2 || rest.some(w => w.length > 3 || ADDRESS_WORDS.test(w))) continue;
+    // Only a short UPPERCASE word beside it ("LOU 850": a misread COD); lowercase specks ("b 151,450 a",
+    // "in 510)") are OCR noise around a number that may itself be misread.
+    if (rest.length > 1 || rest.some(w => !/^[A-Z]{2,3}$/.test(w))) continue;
     const { value, marked } = amounts[0];
     // A bare year ("2026") is a date, not taka.
     if (!marked && !CURRENCY.test(t) && Number.isInteger(value) && value >= 1990 && value <= 2100) continue;
@@ -169,7 +200,7 @@ export function weightFrom(text: string): string | undefined {
 /**
  * Reads order fields from the text of a parcel label (OCR output, English or Bangla): the phone
  * numbers, the labelled name / address / note, the amount to collect, weight, the order reference and
- * the district / zone / area (scan-geo.ts: Bangla names and small OCR slips too). Lines after "To:" /
+ * the district / zone / area (geography/place-in-text.ts: Bangla names and small OCR slips too). Lines after "To:" /
  * "SHIP TO" belong to the recipient, after "From:" to the sender. Only the columns of the kind's
  * template are returned; anything not found is left out.
  */
@@ -201,7 +232,9 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   const recipientPhones = lines.filter(l => l.section === "recipient").flatMap(l => phonesIn(l.text));
   const otherPhones = lines.filter(l => l.section === "none").flatMap(l => phonesIn(l.text));
   const senderPhones = lines.filter(l => l.section === "sender").flatMap(l => phonesIn(l.text));
-  const recipientPhone = recipientPhones[0] ?? otherPhones.find(p => !senderPhones.includes(p));
+  // No full number: one printed masked ("019***545"), kept as written (no SMS goes to it).
+  const masked = (section: Section) => lines.filter(l => l.section === section).flatMap(l => maskedPhonesIn(l.text))[0];
+  const recipientPhone = recipientPhones[0] ?? otherPhones.find(p => !senderPhones.includes(p)) ?? masked("recipient") ?? masked("none");
   if (recipientPhone) out.recipient_phone = recipientPhone;
   if (senderPhones[0] && senderPhones[0] !== recipientPhone) out.sender_phone = senderPhones[0];
 
@@ -211,7 +244,14 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
     const line = notSender.find(l => re.test(l.text));
     let value = line ? stripPhones(line.text.match(re)![1]) : "";
     // A labelled name ends where the next label starts ("Name Karim Mia Mob 0181…").
-    if (key === "recipient_name") value = value.split(/\b(?:mob|mobile|phone|cell|add|addr|address|cod|bill|price|seller|from)\b/i)[0].trim();
+    if (key === "recipient_name") {
+      value = value.split(/\b(?:mob|mobile|phone|cell|add|addr|address|cod|bill|price|seller|from)\b/i)[0].trim();
+      // A table row read across its columns: a (masked) phone between the names ("Sadia 019***545 Akter").
+      value = value
+        .split(/\s+/)
+        .filter(w => !/[\d*]/.test(w))
+        .join(" ");
+    }
     if (key === "recipient_name" && value && !nameLike(value)) value = "";
     if (line && value) {
       out[key] = value;
@@ -249,9 +289,24 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   // Else the longest address-looking line of the "To" part, then outside the sender part.
   if (!out.address) {
     const looks = (t: string) => t.length >= 8 && !moneyIn(t).some(() => CURRENCY.test(t)) && !/^(?:cod|weight|wt|order|invoice|total|amount|note|product|price)\b/i.test(t) && (ADDRESS_WORDS.test(t) || (t.match(/,/g)?.length ?? 0) >= 2);
-    const pool = (ls: Line[]) => ls.filter(l => !used.has(l) && !l.marker).map(l => stripPhones(l.text)).filter(looks).sort((a, b) => b.length - a.length)[0];
-    const candidate = pool(lines.filter(l => l.section === "recipient")) ?? pool(notSender);
-    if (candidate) out.address = candidate;
+    const pool = (ls: Line[]) => ls.filter(l => !used.has(l) && !l.marker && looks(stripPhones(l.text))).sort((a, b) => stripPhones(b.text).length - stripPhones(a.text).length)[0];
+    const line = pool(lines.filter(l => l.section === "recipient")) ?? pool(notSender);
+    if (line) {
+      // The address may run on to the next line or two ("…, Road 7 Block" / "C. Banani, Dhaka"): lines of
+      // the same part naming a known place or looking like an address, before a phone, amount or label.
+      let address = tidy(stripPhones(line.text));
+      const at = lines.indexOf(line);
+      for (const next of lines.slice(at + 1, at + 3)) {
+        const t = tidy(stripPhones(next.text));
+        if (next.marker || next.section !== line.section || t.length < 3 || /[:：]/.test(next.text) || phonesIn(next.text).length) break;
+        if (moneyIn(next.text).length && CURRENCY.test(normalizeText(next.text))) break;
+        const place = placeIn(t, catalog);
+        if (!place.district && !place.zone && !ADDRESS_WORDS.test(t)) break;
+        // "Road 7 Block" + "C. Banani": a short first word carries on the line before.
+        address = /[,;]$/.test(address) || !/^\S{1,2}[.\s]/.test(t) ? `${address}, ${t}` : `${address} ${t}`;
+      }
+      out.address = address;
+    }
   }
 
   // Sender (customer parcels): "From: Name, phone", or the first name-like line of the "From" part.
@@ -271,8 +326,12 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   // No "Order …" label: a code shaped like one ("CUS-1001", "INV-2045") written on its own.
   else {
     const code = all.match(/(?<![\w-])([A-Z]{2,6}-\d{3,10})(?![\w-])/);
-    if (code && !/^(?:road|house|block|sector|flat)$/i.test(code[1].split("-")[0])) out.order_ref = code[1];
+    // Not an address part, and not a merchant code ("MR-1109", printed on Delivery Fast labels).
+    if (code && !/^(?:road|house|block|sector|flat|mr)$/i.test(code[1].split("-")[0])) out.order_ref = code[1];
   }
+
+  // Names, address and note without OCR specks at their ends ("Nusrat Jahan - an").
+  for (const key of ["recipient_name", "sender_name", "address", "instructions"] as const) if (out[key]) out[key] = tidy(out[key]!);
 
   // District / zone / area: from the address first, else anywhere outside the sender part.
   const fromAddress = placeIn(out.address ?? "", catalog);

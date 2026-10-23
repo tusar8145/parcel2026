@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { addressText } from "../../common/address";
 import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@delivery-fast/shared";
@@ -65,7 +66,6 @@ const MISSING_LABEL_SHORT: Record<string, string> = { recipientName: "Recipient 
 
 /** "2026-10-16 14:05" in Dhaka time. */
 const dhaka = (d: Date | null | undefined) => (d ? new Date(d.getTime() + 6 * 3600_000).toISOString().slice(0, 16).replace("T", " ") : "");
-const joinAddress = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(", ");
 const kindOf = (job: Pick<BulkUpdateJob, "kind">): BulkKind => (isKind(job.kind) ? job.kind : "all");
 const actionOf = (job: Pick<BulkUpdateJob, "action">): BulkActionId | null => (job.action && isActionId(job.action) ? job.action : null);
 /** Columns of a bulk update from before action templates (multi-action file with an Action column), for its preview. */
@@ -398,10 +398,10 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
         tracking_id: p.trackingId,
         cn: p.cnStock?.cn ?? "",
         merchant: p.merchant ? `${p.merchant.code} · ${p.merchant.name}` : `Website · ${p.senderName}`,
-        sender: `${p.senderName} · ${joinAddress(p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict)}`,
+        sender: `${p.senderName} · ${addressText(p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict)}`,
         recipient_name: p.recipientName ?? "",
         recipient_phone: p.recipientPhone ?? "",
-        recipient_address: joinAddress(p.deliveryStreet, p.deliveryArea),
+        recipient_address: addressText(p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict),
         district: p.deliveryDistrict ?? "",
         zone: p.deliveryZone ?? "",
         intake: INTAKE_LABEL[p.intake],

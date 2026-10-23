@@ -143,7 +143,7 @@
       const run = await DF.api(`/returns/runs/${id}`);
       Ops.form({
         title: `${run.number} · ${run.merchant.name}`,
-        description: `${RUN_STATUS[run.status] || run.status} · ${run.parcelCount} parcel(s) · return charges ${Ops.money(run.returnCharges)} · ${run.merchant.pickupAddress}, ${run.merchant.pickupArea}`,
+        description: `${RUN_STATUS[run.status] || run.status} · ${run.parcelCount} parcel(s) · return charges ${Ops.money(run.returnCharges)} · ${DF.addressText(run.merchant.pickupAddress, run.merchant.pickupArea)}`,
         submit: "Close",
         wide: true,
         fields: [
@@ -231,7 +231,7 @@
     const rows = (R.pickups || [])
       .map(r => {
         const open = r.status === "REQUESTED" || r.status === "ASSIGNED";
-        return `<tr><td><strong>${esc(r.number)}</strong><div style="color:#8a94a3;font-size:12px">${esc(r.schedule?.name || "One-off request")}</div></td><td>${esc(r.merchant.name || "")}<div style="color:#8a94a3;font-size:12px">${esc(r.merchant.code || "")}</div></td><td>${esc(time(r.windowStart))} – ${esc(time(r.windowEnd))}</td><td>${esc([r.street, r.area, r.zone, r.district].filter(Boolean).join(", "))}<div style="color:#8a94a3;font-size:12px">${esc(r.contactName)} · ${esc(r.contactPhone)}${r.note ? ` · ${esc(r.note)}` : ""}</div></td><td>${r.expectedParcels}</td><td>${open ? `<select data-pu-rider="${esc(r.id)}" aria-label="Rider">${riderOptions(r.riderId || "")}</select>` : esc(riderName(r.riderId))}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td style="white-space:nowrap">${open ? `<button class="button button-sm button-primary" data-pu-complete="${esc(r.id)}">Collected</button> <button class="button button-sm" data-pu-missed="${esc(r.id)}">Missed</button>` : ""}</td></tr>`;
+        return `<tr><td><strong>${esc(r.number)}</strong><div style="color:#8a94a3;font-size:12px">${esc(r.schedule?.name || "One-off request")}</div></td><td>${esc(r.merchant.name || "")}<div style="color:#8a94a3;font-size:12px">${esc(r.merchant.code || "")}</div></td><td>${esc(time(r.windowStart))} – ${esc(time(r.windowEnd))}</td><td>${esc(DF.addressText(r.street, r.area, r.zone, r.district))}<div style="color:#8a94a3;font-size:12px">${esc(r.contactName)} · ${esc(r.contactPhone)}${r.note ? ` · ${esc(r.note)}` : ""}</div></td><td>${r.expectedParcels}</td><td>${open ? `<select data-pu-rider="${esc(r.id)}" aria-label="Rider">${riderOptions(r.riderId || "")}</select>` : esc(riderName(r.riderId))}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td style="white-space:nowrap">${open ? `<button class="button button-sm button-primary" data-pu-complete="${esc(r.id)}">Collected</button> <button class="button button-sm" data-pu-missed="${esc(r.id)}">Missed</button>` : ""}</td></tr>`;
       })
       .join("");
     const count = s => (R.pickups || []).filter(r => r.status === s).length;

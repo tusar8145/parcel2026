@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { INTAKE_CHANGEABLE_STATUSES, PARCEL_INTAKES, PARCEL_STATUS_LABEL, quoteParcel, rateCardConfigSchema, type ParcelStatus, type ServiceLevel } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -171,9 +172,9 @@ export class IntakeChangeService {
       const { count } = await tx.parcel.updateMany({ where: { id: parcel.id, version: parcel.version }, data: { ...data, version: { increment: 1 } } });
       if (!count) throw new AppError("PARCEL_CHANGED", "This parcel was just updated by someone else. Refresh and try again.", HttpStatus.CONFLICT);
       const actorUserId = actor.kind === "user" ? actor.userId : null;
-      await tx.trackingEvent.create({ data: { parcelId: parcel.id, status, title, description, location, metadata, actorUserId, actorLabel: actorLabel(actor) } });
+      await tx.trackingEvent.create({ data: { parcelId: parcel.id, createdAt: operationNow(), status, title, description, location, metadata, actorUserId, actorLabel: actorLabel(actor) } });
       if (input.note)
-        await tx.trackingEvent.create({ data: { parcelId: parcel.id, status, title: "Note", description: input.note, visibility: "INTERNAL", actorUserId, actorLabel: actorLabel(actor) } });
+        await tx.trackingEvent.create({ data: { parcelId: parcel.id, createdAt: operationNow(), status, title: "Note", description: input.note, visibility: "INTERNAL", actorUserId, actorLabel: actorLabel(actor) } });
     }
     const updated = await tx.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
     // The released rider and the previous drop-off hub must see it leave their lists too.

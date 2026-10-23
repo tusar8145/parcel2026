@@ -159,7 +159,10 @@ test.describe.serial("spreadsheet imports", () => {
     const parts = unzip(template.buffer);
     expect(parts.get("xl/workbook.xml")).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
     expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Customer phone *");
-    expect(parts.get("xl/worksheets/sheet1.xml")).toContain("<formula1>L_districts</formula1>");
+    // No district / zone / area columns: they are found from the full address (the Instructions say so).
+    expect(parts.get("xl/worksheets/sheet1.xml")).not.toContain("L_districts");
+    expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Delivery address");
+    expect(parts.get("xl/worksheets/sheet2.xml")).toContain("Write the FULL address in the address column");
     // Exactly the E-commerce columns: no Merchant, Parcel type or Packaging; products with their type.
     for (const gone of [">Merchant<", "Parcel type", "Packaging", "Receiver relationship", "Address type"]) expect(parts.get("xl/worksheets/sheet1.xml")).not.toContain(gone);
     expect(parts.get("xl/worksheets/sheet3.xml")).toContain("Fashion &amp; Apparel (Regular)");
@@ -171,7 +174,7 @@ test.describe.serial("spreadsheet imports", () => {
       ...Array.from({ length: 55 }, (_, i) => `IMP-${tag}-${i},Valid ${i},0181${String(3000000 + i)},House ${i},Dhaka Central,Dhanmondi,Regular,1,500,${i === 1 ? QUIET_PRODUCT : "Fashion & Apparel"}`),
       ...Array.from({ length: 3 }, (_, i) => `INC-${tag}-${i},${i ? `Needs Info ${i}` : ""},0171${String(4000000 + i)},,,,,,,`),
       `BAD-${tag}-1,Bad Phone,12345,House 1,Dhaka Central,Dhanmondi,Regular,1,0,Fashion & Apparel`,
-      `BAD-${tag}-2,Bad District,01812000000,House 2,Atlantis,Dhanmondi,Regular,1,0,Fashion & Apparel`,
+      `BAD-${tag}-2,Bad District,01812000000,House 2,Atlantis,Nowhere,Regular,1,0,Fashion & Apparel`,
     ];
     await page.click("#merchantBulkImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 5,000 rows and 10 MB per file");
@@ -413,7 +416,8 @@ test.describe.serial("spreadsheet imports", () => {
     await opsDialog(page);
     await expect(page.locator("#dfImportSubtitle")).toContainText("Customer parcel template");
     await expect(page.locator("#dfiMerchant")).toHaveCount(0);
-    await expect(page.locator("#dfiLimits")).toContainText("Sender name, Sender phone, Pickup address, Pickup district, Pickup zone, Recipient phone");
+    // The pickup district / zone are found from the pickup address: not template columns.
+    await expect(page.locator("#dfiLimits")).toContainText("Sender name, Sender phone, Pickup address, Recipient phone");
     const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
     expect(template.name).toBe("delivery-fast-customer-parcels-template.xlsx");
     expect(unzip(template.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>Sender phone *</t>");

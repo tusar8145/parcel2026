@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PARCEL_INTAKES, PARCEL_STATUSES, parseParcelStatus } from "../parcel-status";
 import { SERVICE_LEVELS } from "../pricing";
 import { serviceSelectionSchema } from "../packages";
-import { phoneSchema } from "./auth";
+import { phoneSchema, recipientPhoneSchema } from "./auth";
 
 export const ADDRESS_CATEGORIES = ["HOME", "OFFICE", "OTHER"] as const;
 export const PARCEL_TYPES = ["PARCEL", "DOCUMENT", "FRAGILE", "ECOMMERCE"] as const;
@@ -73,7 +73,7 @@ export const quoteRequestSchema = z.object({
 export const createParcelSchema = z.object({
   sender: z.object({ name: text(120), phone: phoneSchema }),
   pickup: addressPartsSchema,
-  recipient: z.object({ name: text(120), phone: phoneSchema }),
+  recipient: z.object({ name: text(120), phone: recipientPhoneSchema }),
   delivery: addressPartsSchema,
   type: z.enum(PARCEL_TYPES).default("PARCEL"),
   /** DOCUMENT parcels: the document type (e.g. "B2B Document"), priced by the rate card's documentTypeRates. */

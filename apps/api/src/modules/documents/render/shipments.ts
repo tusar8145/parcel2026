@@ -1,4 +1,5 @@
 import { compactHeader, footers, header, keyValues, MARGIN, pill, signatures, table, totals, type Brand, type DocMeta } from "../pdf/layout";
+import { addressText } from "../../../common/address";
 import { A4, COLOR, fmtAmount, fmtDate, fmtDateTime, MM, PdfWriter, taka } from "../pdf/writer";
 import type { LabelData } from "./labels";
 
@@ -77,7 +78,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
     [
       s.recipient.name ?? "Recipient pending",
       s.recipient.phone ?? "Phone pending",
-      [s.address.street, s.address.area, s.address.zone, s.address.district].filter(Boolean).join(", ") || "Address pending",
+      addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending",
       s.destHub ? `Destination hub: ${s.destHub.name}` : "",
     ],
     x + half + 16,
@@ -165,7 +166,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   const a = pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, cy, { size: fs, bold: true, width: half, maxLines: 2 });
   const b = pdf.text(`${s.recipient.name ?? "Recipient pending"} · ${s.recipient.phone ?? "phone pending"}`, ix + half + 6, cy, { size: fs, bold: true, width: half, maxLines: 2 });
   cy += Math.max(a, b);
-  cy += pdf.text([s.address.street, s.address.area, s.address.zone, s.address.district].filter(Boolean).join(", ") || "Address pending", ix + half + 6, cy, { size: fs - 0.5, width: half, maxLines: dense ? 2 : 3, color: COLOR.muted });
+  cy += pdf.text(addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending", ix + half + 6, cy, { size: fs - 0.5, width: half, maxLines: dense ? 2 : 3, color: COLOR.muted });
   cy += 4;
   const grid: [string, string][] = [
     ["Service", s.service],
@@ -230,7 +231,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
     ["Booked", fmtDateTime(s.bookedAt)],
     ["From", `${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`],
     ["To", `${s.recipient.name ?? "Recipient pending"}, ${s.recipient.phone ?? "phone pending"}`],
-    ["Address", [s.address.street, s.address.area, s.address.zone, s.address.district].filter(Boolean).join(", ") || "Address pending"],
+    ["Address", addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending"],
     ["Service", `${s.service} · ${s.deliveryMode}`],
     ["Weight", `${s.weightKg} kg`],
     ...(s.orderRef ? ([["Order ref", s.orderRef]] as [string, string][]) : []),

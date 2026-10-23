@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
+import { operationNow } from "../../common/operation-time";
 import type { Actor } from "../../common/auth/actor";
 import { forbidden, notFound } from "../../common/errors";
 import { pageArgs, toPage } from "../../common/pagination";
@@ -48,6 +49,8 @@ export class ScansService {
         source: input.source ?? "KEYBOARD",
         ok: input.ok ?? true,
         message: input.message?.slice(0, 300) ?? null,
+        // A Scan desk entry dated earlier counts at that time (common/operation-time.ts).
+        createdAt: operationNow(),
       },
     });
   }

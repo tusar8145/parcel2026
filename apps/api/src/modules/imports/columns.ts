@@ -77,6 +77,12 @@ export interface ColumnDef {
   width: number;
   /** Only in the template when the package offers it (still read when present, then checked against the package). */
   needs?: PackageNeed;
+  /**
+   * false: not a column of the blank template (district / zone / area are found from the full address,
+   * import-places.ts), but still read when a file has it, and kept in files carrying rows (Scan with phone,
+   * rows not created).
+   */
+  inTemplate?: boolean;
 }
 
 /** What a package must offer for a column to be in its template (see packageOptions in packages/shared). */
@@ -123,8 +129,8 @@ const pickupAddress = c({
   key: "pickup_address",
   header: "Pickup address",
   aliases: ["pickup_address", "pickup_street", "sender_address", "from_address"],
-  description: "Where the rider collects the parcel: house, road, building and landmark.",
-  example: "House 5, Road 2",
+  description: "The full pickup address: house, road, area, thana and district (e.g. House 5, Road 2, Gulshan 1, Dhaka). The pickup district and zone are found from it.",
+  example: "House 5, Road 2, Gulshan 1, Dhaka",
   required: true,
   configurable: false,
   maxLength: 200,
@@ -132,6 +138,7 @@ const pickupAddress = c({
 });
 const pickupDistrict = c({
   key: "pickup_district",
+  inTemplate: false,
   header: "Pickup district",
   aliases: ["pickup_district", "sender_district", "from_district", "pickup_city"],
   description: "District the parcel is collected from (from the coverage list). The price depends on the pickup and delivery districts.",
@@ -144,6 +151,7 @@ const pickupDistrict = c({
 });
 const pickupZone = c({
   key: "pickup_zone",
+  inTemplate: false,
   header: "Pickup zone",
   aliases: ["pickup_zone", "pickup_thana", "sender_zone", "from_zone"],
   description: "Zone of the pickup district (the dropdown follows the pickup district).",
@@ -157,6 +165,7 @@ const pickupZone = c({
 });
 const pickupArea = c({
   key: "pickup_area",
+  inTemplate: false,
   header: "Pickup area",
   aliases: ["pickup_area", "pickup_landmark", "sender_area"],
   description: "Area or landmark inside the pickup zone (optional, free text; the list has suggestions).",
@@ -189,8 +198,8 @@ const address = (header: string) =>
     key: "address",
     header,
     aliases: ["address", "street", "delivery_address", "full_address", "street_address", "recipient_address"],
-    description: "House, road, building and landmark. Leave empty if unknown: the parcel is created as \"Needs info\" and held before delivery until it is completed.",
-    example: "House 12, Road 4",
+    description: "The full address: house, road, area, thana and district (e.g. Flat 4B, House 22, Road 7, Banani, Dhaka). District, zone and area are found from it, so write the area and district names in it. Leave empty if unknown: the parcel is created as \"Needs info\" and held before delivery until it is completed.",
+    example: "Flat 4B, House 22, Road 7, Banani, Dhaka",
     required: false,
     maxLength: 200,
     width: 32,
@@ -199,6 +208,7 @@ const district = (header: string) =>
   c({
     key: "district",
     header,
+    inTemplate: false,
     aliases: ["district", "city", "delivery_district", "recipient_district"],
     description: "Destination district from the coverage list. Leave empty if unknown: the parcel is created as \"Needs info\" and priced to the default destination until it is completed.",
     example: "Dhaka Central",
@@ -211,6 +221,7 @@ const zone = (header: string) =>
   c({
     key: "zone",
     header,
+    inTemplate: false,
     aliases: ["zone", "thana", "delivery_zone", "area_zone", "recipient_zone"],
     description: "Destination zone of that district (the dropdown follows the district). A zone alone also works when only one district has it.",
     example: "Dhanmondi",
@@ -224,6 +235,7 @@ const area = (header: string) =>
   c({
     key: "area",
     header,
+    inTemplate: false,
     aliases: ["area", "landmark", "locality", "delivery_area"],
     description: "Area or landmark inside the zone (optional, free text; the list has suggestions and follows the zone).",
     example: "Dhanmondi Road 7",

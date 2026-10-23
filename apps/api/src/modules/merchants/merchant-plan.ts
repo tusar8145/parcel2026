@@ -182,12 +182,18 @@ export function priceSections(segment: PackageSegment, services: readonly string
     amount: Math.round(p[({ DHAKA_SUBURBAN: "dhakaSuburban", SAME_DISTRICT: "sameDistrict", DIFFERENT_DISTRICT: "differentDistrict" } as const)[t]]),
     example: TIER_EXAMPLE[t],
   }));
+  // E-commerce: each route shown with what is sent added (one title, the sum), the way an order is priced.
+  if (segment === "ECOMMERCE")
+    for (const r of routes)
+      Object.assign(r, {
+        types: (["REGULAR", "DOCUMENT", "BOOKS"] as const).map(t => ({ type: t, label: `${r.label} + ${PRODUCT_TYPE_LABEL[t]}`, amount: r.amount + Math.round(p[({ REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" } as const)[t]]) })),
+      });
 
   const extras: PriceRow[] = [];
   if (!banking) {
     extras.push({ label: "Weight", value: `${tk(p.extraKg)} per extra kg`, note: `${INCLUDED_WEIGHT_KG} kg is included; each started kg above it is charged.` });
     const types = (["REGULAR", "DOCUMENT", "BOOKS"] as const).map(t => [t, p[({ REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" } as const)[t]]] as const);
-    if (types.some(([, v]) => v > 0)) for (const [t, v] of types) extras.push({ label: `What you send: ${PRODUCT_TYPE_LABEL[t]}`, value: fee(v) });
+    if (segment !== "ECOMMERCE" && types.some(([, v]) => v > 0)) for (const [t, v] of types) extras.push({ label: `What you send: ${PRODUCT_TYPE_LABEL[t]}`, value: fee(v) });
   }
   const speedFee: Partial<Record<SpeedOption, number>> = { REGULAR: p.regularFee, EXPRESS: p.expressFee, ON_DEMAND: p.onDemandFee, B2B: p.b2bRate, TRADE: p.tradeRate, URGENT: p.urgentRate };
   for (const o of packageOptions(segment, services).speeds)

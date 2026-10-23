@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
 import type { z } from "zod";
 import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
 import { TERMINAL_STATUSES, type assignRiderSchema, type cancelParcelSchema, type listParcelsQuerySchema, type updateStatusSchema } from "@delivery-fast/shared";
@@ -648,7 +649,7 @@ export class ParcelsService {
         }
         if (to === "AT_HUB") Object.assign(data, { deliveryRiderId: null, deliveryOtpEncrypted: null });
       }
-      if (to === "PICKED_UP") data.pickedUpAt = new Date();
+      if (to === "PICKED_UP") data.pickedUpAt = operationNow();
       if (to === "OUT_FOR_DELIVERY") {
         if (!parcel.deliveryRiderId && !parcel.pickupRiderId) throw new AppError("RIDER_REQUIRED", "Assign a delivery rider first", 422);
         data.deliveryRiderId = parcel.deliveryRiderId ?? parcel.pickupRiderId;
@@ -659,7 +660,7 @@ export class ParcelsService {
       // Returns scheduled directly (not via a return run) still carry the reason and RTO charge.
       if (to === "RETURN_SCHEDULED") {
         if (parcel.returnCharge == null) data.returnCharge = returnChargeFor(parcel);
-        if (!parcel.returnRequestedAt) Object.assign(data, { returnRequestedAt: new Date(), returnRequestedBy: actorLabel(actor), returnReason: parcel.returnReason ?? input.note ?? null });
+        if (!parcel.returnRequestedAt) Object.assign(data, { returnRequestedAt: operationNow(), returnRequestedBy: actorLabel(actor), returnReason: parcel.returnReason ?? input.note ?? null });
       }
       await this.workflow.transition(
         tx,
@@ -707,6 +708,7 @@ export class ParcelsService {
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,
+          createdAt: operationNow(),
           status: parcel.status,
           title: "Details updated",
           description: `Operations updated the ${changed.join(", ")}.${input.note ? ` ${input.note}` : ""}`,
@@ -725,6 +727,7 @@ export class ParcelsService {
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,
+          createdAt: operationNow(),
           status: parcel.status,
           title: "Note",
           description: input.note,

@@ -324,6 +324,16 @@ scanner, typing; `DF.scanner.feedback` per scan; scans are processed in order). 
 
 ## Spreadsheet imports (modules/imports, web: public/legacy/shared/importer.js)
 One engine for both merchant panels, merchant API keys (`parcels:write`) and Courier Operations.
+- Blank templates have no district / zone / area columns (2026-10-23, `ColumnDef.inTemplate: false`): the
+  address column asks for the full address and the places are found from it. Files carrying rows (Scan with
+  phone workbook, rows not created) keep them; older files that have them are still read.
+- Places from the address (2026-10-23): on validate, `fillPlaces` (`imports/import-places.ts`) picks a
+  row's district / zone / area (and the sender's, customer files) from its address where the file left
+  them empty or wrote a name the catalog lacks (e.g. "Dhaka"); a valid district in the file is kept, and a
+  zone name several districts share is never guessed (`geography/place-in-text.ts`). Picked columns are
+  listed in `cells.__auto` → `autoFilled` on the rows (shown green). Before submitting, the preview edits
+  rows inline: `PATCH /imports/:id/rows/:rowNumber { cells, detect? }` (VALIDATED files only) re-checks and
+  re-prices the row and updates the file's counts; `detect` (a changed address) picks its places again.
 - Three bulk-create templates (2026-10-18), API kinds `customer` (Customer parcel: walk-in / website
   customers booked by operations, no merchant), `ecommerce` and `document` (Banking & Financial; the
   kind name is kept, `banking` is accepted as an alias). `ImportJob.kind` is `CUSTOMER | ECOMMERCE |
@@ -430,7 +440,8 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   `POST /parcel-scans/sessions` returns `{ url, qrSvg }`. The link (`/scan/<token>`, token stored only as
   a SHA-256) works while the modal is open: the modal calls `…/keepalive` every minute (link valid 3 minutes
   past the last call, 12 hours at most) and `DELETE /parcel-scans/sessions/:id` on close or page exit.
-- The phone page compresses each photo to JPEG (≤ 1600 px) and posts it to the public
+- The phone page opens each photo in an editor first (`src/features/scan/PhotoEditor.tsx`: crop frame,
+  rotate left / right, Skip, Submit); on Submit it compresses the cropped photo to JPEG (≤ 1600 px) and posts it to the public
   `POST /parcel-scans/public/:token/photos` (410 `SCAN_LINK_EXPIRED` once closed). Photos are kept with
   `StorageService`; the `parcel-scans` pg-boss job reads them with tesseract (English + Bangla, on this
   server, language data from the `@tesseract.js-data/*` packages copied next to `FILE_STORAGE_DIR`) and
@@ -441,7 +452,7 @@ One engine for both merchant panels, merchant API keys (`parcels:write`) and Cou
   poorly, straightens it by the text lines' tilt and enlarges / cleans it (`scan-image.ts`, sharp), and
   reads side-by-side sender | receiver blocks one after the other. `scan-parser.ts` handles ৳ read as
   "$"/"$5" (the amount that equals price + charge wins), "Tk 2,300/-", grams, letter slips in phones;
-  `scan-geo.ts` matches places with Bangla names (prisma/data/bd-geo.json + Dhaka city list) and OCR slips.
+  `geography/place-in-text.ts` matches places with Bangla names (prisma/data/bd-geo.json + Dhaka city list) and OCR slips.
   Optional local AI (`scan-ai.ts`, Ollama `SCAN_AI_URL`): a vision model (default qwen2.5vl:3b) reads the photo
   itself (`mergeVision` checks each value's form), a text model reads the OCR text (`mergeAi` keeps only
   values the label supports). Tests: `test/scan-reading.test.ts` (real OCR on test/fixtures/scan).

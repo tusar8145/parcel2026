@@ -83,3 +83,37 @@ describe("tables read word by word (sparse OCR of a real photo: labels lost, val
     expect(parseLabel("To: Karim\n01712345678\nHouse 12\n2026", "ecommerce", { districts: [], zonesByDistrict: {}, areasByZone: {} }).cod_amount).toBeUndefined();
   });
 });
+
+describe("a Delivery Fast sticker photographed with the phone (real OCR text)", () => {
+  it("name without OCR specks, the address over two lines, the phone beside a stray digit, no guessed COD", () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/catalog.json"), "utf8"));
+    const [first, sparse] = fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/label-df-sticker.txt"), "utf8").split("— read word by word —");
+    const cells = parseLabel(first, "ecommerce", catalog);
+    expect(cells).toMatchObject({ recipient_name: "Nusrat Jahan", recipient_phone: "01912334455", address: "Flat 4B, House 22, Road 7 Block C. Banani, Dhaka", district: "Dhaka North", zone: "Banani" });
+    // "b 151,450 a" (৳1,450 misread): not taken as the amount; the merchant code is not an order number.
+    expect(cells.cod_amount).toBeUndefined();
+    expect(parseLabel(sparse, "ecommerce", catalog).order_ref).toBeUndefined();
+  });
+});
+
+describe("a table photographed with the phone, its phone printed masked (real OCR text)", () => {
+  it("finds the name in the row read across its columns", () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/catalog.json"), "utf8"));
+    const [first, sparse] = fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/label-masked-table.txt"), "utf8").split("— read word by word —");
+    const cells = { ...parseLabel(sparse, "ecommerce", catalog), ...parseLabel(first, "ecommerce", catalog) };
+    expect(cells).toMatchObject({ recipient_name: "Sadia Akter", recipient_phone: "019***545", address: "House 125, Niketon, Block A, Gulshan, Dhaka", order_ref: "CUS-1004", district: "Dhaka North", zone: "Gulshan" });
+  });
+
+  it("a clearer photo of the same sheet: the name, and the masked phone kept as written", () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/catalog.json"), "utf8"));
+    const [first, sparse] = fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/label-masked-table-2.txt"), "utf8").split("— read word by word —");
+    const cells = { ...parseLabel(sparse, "ecommerce", catalog), ...parseLabel(first, "ecommerce", catalog) };
+    expect(cells).toMatchObject({ recipient_name: "Sadia Akter", recipient_phone: "019***545", address: "House 125, Niketon, Block A, Gulshan, Dhaka", order_ref: "CUS-1004" });
+  });
+});

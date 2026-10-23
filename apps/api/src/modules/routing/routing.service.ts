@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { addressText } from "../../common/address";
 import type { z } from "zod";
 import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -161,7 +162,7 @@ export class RoutingService {
         lat: pin.lat,
         lng: pin.lng,
         approximate,
-        label: pickup ? `Pickup · ${p.senderName} · ${joinAddress(p.pickupStreet, p.pickupArea, p.pickupZone)}` : `${p.recipientName} · ${joinAddress(p.deliveryStreet, p.deliveryArea, p.deliveryZone)}`,
+        label: pickup ? `Pickup · ${p.senderName} · ${addressText(p.pickupStreet, p.pickupArea, p.pickupZone)}` : `${p.recipientName} · ${addressText(p.deliveryStreet, p.deliveryArea, p.deliveryZone)}`,
       });
     }
 

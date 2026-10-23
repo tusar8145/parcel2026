@@ -71,6 +71,7 @@ export default function Sidebar() {
         </div>{" "}
         <div className="nav-group" data-nav-group="queue">
           <NavItem nav="New orders" icon="box" label="New orders" count />
+          <NavItem nav="All parcels" icon="search" label="All parcels" />
           <NavItem nav="Work queue" icon="check" label="Work queue" />
           <NavItem nav="Scan desk" icon="box" label="Scan desk" />
         </div>{" "}
@@ -89,7 +90,6 @@ export default function Sidebar() {
         </div>{" "}
         <div className="nav-group" data-nav-group="find">
           <div className="nav-label">{"Find & report"}</div>
-          <NavItem nav="All parcels" icon="search" label="All parcels" />
           <NavItem nav="Reports" icon="chart" label="Reports" />
         </div>{" "}
         <div className="nav-group" data-nav-group="manage">

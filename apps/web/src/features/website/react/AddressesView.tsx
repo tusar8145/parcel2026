@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { df, describe, site, toast } from "./df";
 import { AddressFields, addressBody, type AddressNames } from "./AddressFields";
 import { FieldError, PhoneInput, Select, TextInput, e164, rules, useBusy, useForm, local10 } from "./form";
+import { addressText } from "@/shared/addressText";
 
 interface Address {
   id: string;
@@ -95,7 +96,7 @@ export default function AddressesView() {
                 {a.isDefault ? <span style={{ marginLeft: 8, fontSize: 12, color: "var(--green)" }}>{"Default"}</span> : null}
               </strong>
               <p>{`${a.contactName} · +880 ${local10(a.phone)}`}</p>
-              <p>{[a.street, a.area, a.zone, a.district].filter(Boolean).join(", ")}</p>
+              <p>{addressText(a.street, a.area, a.zone, a.district)}</p>
               {a.lat !== null && a.lng !== null ? <p style={{ fontSize: 12 }}>{"📍 Map pin saved"}</p> : null}
               <p style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                 <button type="button" className="button button-quiet" onClick={() => setEditing(a)}>
@@ -205,7 +206,7 @@ function AddressForm({ address, onDone }: { address: Address | null; onDone: (sa
         <PhoneInput bound={form.bind("addressPhone")} error={form.error("addressPhone")} />
         <FieldError id="addressPhone" message={form.error("addressPhone")} />
       </div>
-      <AddressFields form={form} names={NAMES} label="Address" streetLabel="Street, house / apartment / unit" />
+      <AddressFields form={form} names={NAMES} label="Address" streetLabel="Full address" />
       <div className="field full">
         <label className="checkline">
           <input type="checkbox" checked={form.values.addressDefault === "1"} onChange={e => form.set("addressDefault", e.target.checked ? "1" : "")} />

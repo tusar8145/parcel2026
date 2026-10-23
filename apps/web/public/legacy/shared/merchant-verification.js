@@ -219,7 +219,7 @@ body.df-merchant-locked .main{margin-left:0!important}
   function profileCard() {
     const m = state.merchant;
     const A = window.DFMerchantAddress;
-    const place = p => (p ? (A?.placeText ? A.placeText(p) : [p.street, p.area, p.zone, p.district].filter(Boolean).join(", ")) : "");
+    const place = p => (p ? (A?.placeText ? A.placeText(p) : DF.addressText(p.street, p.area, p.zone, p.district)) : "");
     const banking = m.type === "BANKING_FINANCIAL";
     const rows = [
       [banking ? "Institution name" : "Business name", m.name],

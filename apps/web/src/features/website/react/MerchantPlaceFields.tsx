@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AddressSearch, MapPin, matchOption, type Place } from "./geo";
 import { areasOf, catalog, placeInCatalog, zonesOf } from "./AddressFields";
 import { FieldError, Select, TextInput } from "./form";
+import { usePlaceFromAddress } from "@/shared/usePlaceFromAddress";
 
 /** The area select's "Other" choice: the merchant types the area name instead. */
 export const OTHER_AREA = "__other__";
@@ -98,6 +99,16 @@ export function MerchantPlaceFields({ form, names: n, label }: { form: FormLike;
       return next;
     });
 
+  // The street field holds the full address: its district / thana / area are picked from it as it is typed.
+  usePlaceFromAddress(v[n.street] ?? "", place =>
+    form.setValues((current: Record<string, string>) => {
+      if (!place.district || !catalog().districts.includes(place.district)) return current;
+      const zone = place.zone && zonesOf(place.district).includes(place.zone) ? place.zone : "";
+      const area = place.area && zone && areasOf(zone).includes(place.area) ? place.area : "";
+      return { ...current, [n.district]: place.district, [n.zone]: zone, [n.area]: area, [n.otherArea]: "" };
+    }),
+  );
+
   return (
     <>
       <div className="field">
@@ -141,8 +152,8 @@ export function MerchantPlaceFields({ form, names: n, label }: { form: FormLike;
         <FieldError id={n.otherArea} message={form.error(n.otherArea)} />
       </div>
       <div className="field full">
-        <label htmlFor={n.street}>{"Street address (house, road, flat) *"}</label>
-        <TextInput bound={form.bind(n.street)} error={form.error(n.street)} placeholder="House 12, Road 7, Flat 3B" autoComplete="street-address" />
+        <label htmlFor={n.street}>{"Full address *"}</label>
+        <TextInput bound={form.bind(n.street)} error={form.error(n.street)} placeholder="e.g. House 12, Road 7, Flat 3B, Banani, Dhaka" autoComplete="street-address" />
         <FieldError id={n.street} message={form.error(n.street)} />
       </div>
       <div className="field full df-map-pin">

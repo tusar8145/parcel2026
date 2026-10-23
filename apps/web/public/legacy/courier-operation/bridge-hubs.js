@@ -290,4 +290,7 @@
   };
   DF.events.on("network.updated", refreshed);
   DF.events.on("catalog.updated", refreshed);
+
+  // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).
+  window.DF?.autoPlace?.({ street: "hubAddress", district: "hubDistrict", zone: "hubZone" });
 })();

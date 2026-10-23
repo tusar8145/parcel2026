@@ -354,6 +354,7 @@
   const svg = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
   const ICONS = {
     plus: svg('<use href="#i-plus"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     upload: svg('<path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>'),
     sheet: svg('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16M10 4v16"/>'),
     print: svg('<path d="M7 9V4h10v5"/><path d="M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2"/><path d="M7 14h10v6H7z"/>'),
@@ -363,11 +364,12 @@
   const withIcon = (el, name) => el && !el.querySelector(":scope > svg") && el.insertAdjacentHTML("afterbegin", ICONS[name]);
 
   /**
-   * New orders heading, no "More actions": New order · Import Excel · Scan with phone · Bulk update Excel · Print… ·
+   * New orders and All parcels headings, no "More actions": New order · Import Excel · Scan with phone (New
+   * orders only) · Bulk update Excel · Print… ·
    * Export · CN stock, each with an icon. The Excel template and both histories are in the import and
    * bulk-update dialogs; labels print from Print… (Shipment labels).
    */
-  function newOrdersButtons() {
+  function newOrdersButtons({ scan = true } = {}) {
     const actions = headingActions();
     if (!actions) return;
     if (!$("dfIconActionsCss"))
@@ -378,7 +380,8 @@
     actions.classList.add("df-icon-actions");
     printMenu();
     for (const id of ["printGeneratedCNs", "courierTemplate", "courierImportHistory", "courierBulkHistory"]) $(id)?.remove();
-    const bulk = $("stageBulkUpdate");
+    // The page's bulk update: its stage preset, or the page's own button (All parcels).
+    const bulk = $("stageBulkUpdate") || $("courierBulkUpdate");
     if (bulk) bulk.textContent = "Bulk update Excel";
     const format = $("courierPrintFormat");
     let print = format?.closest(".df-print-select");
@@ -391,7 +394,7 @@
       format.style.paddingLeft = "28px";
     }
     // Scan with phone (bridge-scan.js; its button carries its own camera icon).
-    if (!$("scanWithPhone") && Ops.scanButton) actions.insertAdjacentHTML("beforeend", Ops.scanButton());
+    if (scan && !$("scanWithPhone") && Ops.scanButton) actions.insertAdjacentHTML("beforeend", Ops.scanButton());
     const order = [
       [q('[data-action^="new"], a.button', actions), "plus"],
       [$("courierImport"), "upload"],
@@ -548,12 +551,76 @@
     qa("#mainContent [data-exception]").forEach(b => (b.textContent = "Resolve"));
   }
 
+  /**
+   * Scan desk: one date & time for every tab's entries, now by default. A chosen time is sent with
+   * each entry (DF.setOperationTime → X-Operation-Time) and recorded as when it happened; up to
+   * 30 days back, never ahead. It stays while you move between the tabs; other views use now.
+   */
+  const OP_TIME_DAYS = 30;
+  const opTime = { value: null };
+  const localInput = date => {
+    const d = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+    return d.toISOString().slice(0, 16);
+  };
+  const opTimeText = date => date.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  function operationTimeBar(on) {
+    DF.setOperationTime(on && opTime.value ? opTime.value.toISOString() : null);
+    const old = $("opTimeBar");
+    if (!on) return void old?.remove();
+    const heading = q("#mainContent .page-heading");
+    if (!heading) return;
+    let bar = old;
+    if (!bar || !heading.contains(bar)) {
+      old?.remove();
+      heading.insertAdjacentHTML(
+        "beforeend",
+        `<div class="heading-actions" id="opTimeBar" style="flex-wrap:wrap;justify-content:flex-end">
+          <label for="opTimeInput" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#586577"><span style="display:inline-flex;width:14px;height:14px">${ICONS.clock}</span>Operation time</label>
+          <input type="datetime-local" id="opTimeInput" class="select-small" style="min-width:190px" aria-describedby="opTimeNote">
+          <button type="button" class="button button-sm" id="opTimeNow">Now</button>
+          <small id="opTimeNote" style="flex-basis:100%;text-align:right;font-size:12px"></small>
+        </div>`,
+      );
+      bar = $("opTimeBar");
+      const input = $("opTimeInput");
+      input.addEventListener("change", () => {
+        const picked = input.value ? new Date(input.value) : null;
+        const now = Date.now();
+        if (!picked || Number.isNaN(picked.getTime()) || Math.abs(picked.getTime() - now) < 60_000) opTime.value = null;
+        else if (picked.getTime() > now) {
+          opTime.value = null;
+          DF.toast?.("The operation time can't be in the future; using now.");
+        } else if (picked.getTime() < now - OP_TIME_DAYS * 86_400_000) {
+          opTime.value = null;
+          DF.toast?.(`The operation time can be at most ${OP_TIME_DAYS} days back; using now.`);
+        } else opTime.value = picked;
+        operationTimeBar(true);
+      });
+      $("opTimeNow").addEventListener("click", () => {
+        opTime.value = null;
+        operationTimeBar(true);
+      });
+    }
+    const input = $("opTimeInput");
+    const now = new Date();
+    input.max = localInput(now);
+    input.min = localInput(new Date(now.getTime() - OP_TIME_DAYS * 86_400_000));
+    if (document.activeElement !== input) input.value = localInput(opTime.value || now);
+    const note = $("opTimeNote");
+    $("opTimeNow").hidden = !opTime.value;
+    input.style.borderColor = opTime.value ? "#b87913" : "";
+    note.style.color = opTime.value ? "#b87913" : "#8b96a4";
+    note.textContent = opTime.value ? `Entries on every tab are recorded at ${opTimeText(opTime.value)}.` : "Entries are recorded at the current time.";
+  }
+  // While "now" is shown, keep the picker on the current minute.
+  setInterval(() => !opTime.value && $("opTimeBar") && operationTimeBar(true), 30_000);
+
   function decorate() {
     const label = $("breadcrumbLabel");
     const view = state.view;
     if (label) label.textContent = view || $("breadcrumbPage").textContent;
     qa("#navigation [data-nav]").forEach(b => b.classList.toggle("active", b.dataset.nav === view));
-    if (!view) return void updateCounts();
+    if (!view) return void (operationTimeBar(false), updateCounts());
     const v = VIEWS[view];
     const tab = tabOf();
     // Heading: the menu's name for the view.
@@ -564,6 +631,7 @@
       if (sub && v.subtitle) sub.textContent = v.subtitle;
     }
     tabsBar(view);
+    operationTimeBar(view === "Scan desk");
     if (view === "Today") {
       todayCards();
       todayLayout();
@@ -585,6 +653,7 @@
     if (view === "All parcels") Ops.lists.main(`all-${tab.id}`, { params: () => ({ ...tab.list }), merchants: tab.merchants, empty: "No parcels match." });
     stageBulkButton(view, tab);
     if (view === "New orders") newOrdersButtons();
+    else if (view === "All parcels") newOrdersButtons({ scan: false });
     else if (v.shipmentPage) groupShipmentButtons();
     consistentLabels();
     applyMenu();

@@ -25,6 +25,7 @@ import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, t
 import { PackagesService } from "../packages/packages.service";
 import { FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
+import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
 import type { importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
 import { readXlsx, type SheetData } from "./xlsx/xlsx-reader";
 
@@ -360,7 +361,10 @@ export class ImportJobsService implements OnApplicationBootstrap {
     });
     if (!parsed.rows.length) throw new AppError("EMPTY_FILE", "The file has no orders below the header row.", 422);
     const ctx = await this.engine.context({ kind: options.kind, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
-    const results = await this.engine.validate(ctx, parsed.rows);
+    // District / zone / area picked from each row's address where the file left them out (or misspelt them).
+    const columns = new Set(ctx.columns.map(c => c.key));
+    const rows = parsed.rows.map(r => ({ ...r, cells: fillPlaces(r.cells, ctx.catalog, columns) }));
+    const results = await this.engine.validate(ctx, rows);
     const parsedMs = Date.now() - started;
 
     const counts = { VALID: 0, INCOMPLETE: 0, ERROR: 0 };
@@ -519,6 +523,18 @@ export class ImportJobsService implements OnApplicationBootstrap {
       this.prisma.importRow.count({ where }),
       this.prisma.importRow.findMany({ where, orderBy: { rowNumber: "asc" }, skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
     ]);
+    return {
+      filter: query.filter,
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+      pages: Math.max(1, Math.ceil(total / query.pageSize)),
+      items: await this.rowItems(job, rows),
+    };
+  }
+
+  /** Rows as the preview shows them (errors with their column header, price lines, messages switch, places picked from the address). */
+  private async rowItems(job: ImportJob, rows: ImportRow[]) {
     const headerOf = this.headerOf(job);
     // Products whose "Send SMS & email" switch is off: those rows are booked with no messages (the commit re-reads them).
     const silent = await this.prisma.parcelProduct.findMany({
@@ -530,35 +546,98 @@ export class ImportJobsService implements OnApplicationBootstrap {
       const product = productNameOfCell(String((cells as Record<string, unknown> | null)?.product_type ?? ""));
       return !!product && silentNames.has(product);
     };
-    return {
-      filter: query.filter,
-      page: query.page,
-      pageSize: query.pageSize,
-      total,
-      pages: Math.max(1, Math.ceil(total / query.pageSize)),
-      items: rows.map(r => {
-        const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
-        return {
-          rowNumber: r.rowNumber,
-          status: r.status,
-          cells: r.cells,
-          errors: errors.map(e => ({ ...e, header: headerOf(e.column), text: `Row ${r.rowNumber} · ${headerOf(e.column)}: ${e.message}` })),
-          missing: r.missing,
-          charge: r.charge == null ? null : Number(r.charge),
-          lines: (r.priceLines as { code: string; label: string; amount: number }[] | null) ?? null,
-          trackingId: r.trackingId,
-          /** The row's product has "Send SMS & email" off: no parcel messages for it, whatever the modal ticks. */
-          messagesOff: messagesOff(r.cells),
-          messagesNote: messagesOff(r.cells) ? "This product doesn't send messages" : null,
-        };
-      }),
-    };
+    return rows.map(r => {
+      const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
+      const { __auto: _auto, ...cells } = (r.cells ?? {}) as Cells;
+      return {
+        rowNumber: r.rowNumber,
+        status: r.status,
+        cells,
+        /** Place columns picked from the address (not written in the file). */
+        autoFilled: [...autoKeys(r.cells as Cells)],
+        errors: errors.map(e => ({ ...e, header: headerOf(e.column), text: `Row ${r.rowNumber} · ${headerOf(e.column)}: ${e.message}` })),
+        missing: r.missing,
+        charge: r.charge == null ? null : Number(r.charge),
+        lines: (r.priceLines as { code: string; label: string; amount: number }[] | null) ?? null,
+        trackingId: r.trackingId,
+        /** The row's product has "Send SMS & email" off: no parcel messages for it, whatever the modal ticks. */
+        messagesOff: messagesOff(r.cells),
+        messagesNote: messagesOff(r.cells) ? "This product doesn't send messages" : null,
+      };
+    });
   }
 
   async rows(actor: Actor, id: string, query: z.infer<typeof rowsQuerySchema>) {
     const job = await this.load(actor, id);
     if (job.rowsPurgedAt) throw new AppError("ROWS_PURGED", "The rows of this import are no longer kept", HttpStatus.GONE);
     return this.rowsPage(job, query);
+  }
+
+  /**
+   * Edits a row of a checked file before it is submitted (the preview's inline address and district /
+   * zone / area dropdowns): the row is checked and priced again with the file's settings, and the file's
+   * counts follow. `detect`: the address changed, so its district / zone / area are picked again from it.
+   */
+  async editRow(actor: Actor, id: string, rowNumber: number, input: { cells: Record<string, string | null>; detect?: boolean }, meta: RequestMeta) {
+    const job = await this.load(actor, id);
+    this.scopeFor(actor, job.merchantId ?? undefined);
+    if (job.status !== "VALIDATED") throw new AppError("NOT_EDITABLE", "Only a checked file that is not submitted yet can be changed", HttpStatus.CONFLICT);
+    const row = await this.prisma.importRow.findUnique({ where: { jobId_rowNumber: { jobId: job.id, rowNumber } } });
+    if (!row) throw notFound("Row");
+    const kind = kindKeyOf(job.kind);
+    const known = new Set<string>(COLUMNS[kind].map(c => c.key));
+    const unknown = Object.keys(input.cells).filter(k => !known.has(k));
+    if (unknown.length) throw new AppError("VALIDATION_FAILED", `Not a column of the ${KIND_LABEL[kind]} template: ${unknown.join(", ")}`, 422);
+    let cells: Cells = { ...(row.cells as Cells) };
+    const auto = autoKeys(cells);
+    for (const [key, value] of Object.entries(input.cells) as [ColumnKey, string | null][]) {
+      const v = (value ?? "").trim();
+      if (v) cells[key] = v;
+      else delete cells[key];
+      auto.delete(key); // typed or chosen by the user now
+    }
+    // A new address: its places are picked again (the ones the user chooses in the same edit stay).
+    if (input.detect)
+      for (const key of Object.keys(input.cells)) {
+        const family = placesOfAddress(key);
+        if (!family) continue;
+        for (const k of [family.district, family.zone, family.area]) if (!(k in input.cells)) delete cells[k];
+      }
+    if (auto.size) cells.__auto = [...auto].join(",");
+    else delete cells.__auto;
+    const live = await this.config.settings();
+    const stored = job.settings as unknown as ImportSettings & { services?: ImportServiceOptions };
+    const ctx = await this.engine.context({
+      kind,
+      settings: { ...live, templates: { ...live.templates, ...(stored.templates ?? {}) }, defaultDestination: stored.defaultDestination ?? live.defaultDestination },
+      merchantId: job.merchantId,
+      dropOffHubId: job.dropOffHubId,
+      services: stored.services,
+    });
+    if (input.detect) cells = fillPlaces(cells, ctx.catalog, new Set(ctx.columns.map(c => c.key)));
+    const [result] = await this.engine.validate(ctx, [{ rowNumber, cells }], { inFileDuplicates: false });
+    const updated = await this.prisma.$transaction(async tx => {
+      const saved = await tx.importRow.update({
+        where: { id: row.id },
+        data: {
+          status: result.status,
+          cells: result.cells as Prisma.InputJsonObject,
+          errors: result.errors.length ? (result.errors as unknown as Prisma.InputJsonArray) : Prisma.DbNull,
+          missing: result.missing,
+          merchantId: result.merchantId,
+          dedupeKey: result.dedupeKey,
+          charge: result.charge,
+          priceLines: result.lines ? (result.lines as unknown as Prisma.InputJsonArray) : Prisma.DbNull,
+        },
+      });
+      const counts = await tx.importRow.groupBy({ by: ["status"], where: { jobId: job.id }, _count: { _all: true } });
+      const count = (status: ImportRowStatus) => counts.find(c => c.status === status)?._count._all ?? 0;
+      const fresh = await tx.importJob.update({ where: { id: job.id }, data: { validRows: count("VALID"), incompleteRows: count("INCOMPLETE"), errorRows: count("ERROR") } });
+      await this.audit.record(actor, { action: "import.row_edit", entityType: "import", entityId: job.id, data: { number: job.number, row: rowNumber, columns: Object.keys(input.cells), detect: !!input.detect, status: result.status } }, meta, tx);
+      return { saved, fresh };
+    });
+    const [item] = await this.rowItems(updated.fresh, [updated.saved]);
+    return { row: item, job: await this.view(updated.fresh) };
   }
 
   async list(actor: Actor, query: z.infer<typeof listImportsQuerySchema>) {

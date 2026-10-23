@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { Prisma } from "../../generated/prisma/client";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -131,7 +132,7 @@ export class CollectionsService implements OnApplicationBootstrap {
           method = input.proof!.method;
           fileId = (await this.storage.saveDataUrl(input.proof!.image, `${parcel.trackingId}-collection-${method.toLowerCase()}`, actor.userId, tx)).id;
         }
-        const now = new Date();
+        const now = operationNow();
         await this.workflow.transition(
           tx,
           parcel,

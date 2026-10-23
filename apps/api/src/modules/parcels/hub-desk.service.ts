@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { FAILURE_REASONS, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
@@ -148,7 +149,7 @@ export class HubDeskService {
         async tx => {
           const current = await this.parcels.loadForUpdate(actor, parcel.trackingId, tx);
           const file = input.photo ? await this.storage.saveDataUrl(input.photo, `${parcel.trackingId}-slip`, userId, tx) : null;
-          const now = new Date();
+          const now = operationNow();
           // Recorded for the rider who delivered it (the lifecycle's rider step), entered by the hub desk.
           await this.workflow.transition(
             tx,
@@ -166,7 +167,7 @@ export class HubDeskService {
             after,
           );
           await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: "SIGNATURE", receivedBy, fileId: file?.id, note: input.note ?? "Signed delivery slip handed in at the hub", capturedAt: now } });
-          await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, outcome: "DELIVERED", note: input.note ?? "Entered at the hub desk from the signed slip" } });
+          await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, createdAt: now, outcome: "DELIVERED", note: input.note ?? "Entered at the hub desk from the signed slip" } });
           if (cod > 0) {
             await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: rider.id, amount: cod, collectedAt: now } });
             await this.ledger.record(tx, { type: "COD_COLLECTED", amount: parcel.codAmount, reference: parcel.trackingId, riderId: rider.id, merchantId: parcel.merchantId, occurredAt: now });
@@ -235,7 +236,7 @@ export class HubDeskService {
               {
                 to: "AT_HUB",
                 actorRole: "rider",
-                data: { pickedUpAt: new Date(), currentHubId: hub.id, deliveryRiderId: null },
+                data: { pickedUpAt: operationNow(), currentHubId: hub.id, deliveryRiderId: null },
                 description: `${label} collected the parcel and handed it to ${hub.name}.`,
                 location: hub.name,
                 metadata: { hubId: hub.id, deskEntry: true },
@@ -280,7 +281,7 @@ export class HubDeskService {
         async tx => {
           const current = await this.parcels.loadForUpdate(actor, parcel.trackingId, tx);
           // The rider's failed attempt, entered by the hub desk (re-attempt fees as usual).
-          await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, outcome: "FAILED", reason: input.reason, nextAction: input.nextAction, note: input.note } });
+          await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, createdAt: operationNow(), outcome: "FAILED", reason: input.reason, nextAction: input.nextAction, note: input.note } });
           await this.workflow.chargeReattempt(tx, current, actor, meta);
           if (hub)
             await this.workflow.transition(
@@ -468,7 +469,7 @@ export class HubDeskService {
           if (run?.riderId) await recordFranchiseReturn(tx, this.ledger, { riderId: run.riderId, parcel: returned });
           // The run's last parcel: the run is completed.
           if (run && run.status !== "COMPLETED" && run.status !== "CANCELLED" && !(await tx.parcel.count({ where: { returnRunId: run.id, status: "RETURN_SCHEDULED" } }))) {
-            await tx.returnRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+            await tx.returnRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: operationNow() } });
             runDone = true;
           }
           await this.audit.record(actor, { action: "parcel.desk_return", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, returnRun: run?.number ?? null, receivedBy: input.receivedBy ?? null, runCompleted: runDone } }, meta, tx);

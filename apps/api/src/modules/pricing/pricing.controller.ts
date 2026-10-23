@@ -2,7 +2,7 @@ import { HttpStatus, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUID
 import type { FastifyReply } from "fastify";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
-import type { z } from "zod";
+import { z } from "zod";
 import { quoteRequestSchema, SERVICE_LEVEL_LABEL } from "@delivery-fast/shared";
 import { CurrentActor, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
@@ -11,6 +11,10 @@ import { catalogSchema, createRateCardSchema, listRateCardsQuerySchema, merchant
 import type { SubmitResult } from "../approvals/approvals.service";
 import { AppError } from "../../common/errors";
 import { legacyCardOf, PackagesService, quoteResponse } from "../packages/packages.service";
+import { placeIn } from "../geography/place-in-text";
+
+/** GET /catalog/place: the typed address (at most 500 characters). */
+const placeQuerySchema = z.object({ address: z.string().trim().max(500, "Use at most 500 characters").default("") });
 import { quoteRequestOf } from "../packages/packages.controller";
 
 /** Rate cards and merchant tariffs are retired (service packages v2): prices are set per package. */
@@ -30,6 +34,19 @@ export class PricingController {
 
   /** Service packages (global module; property injection keeps the constructor stable). */
   @Inject(PackagesService) private readonly packages!: PackagesService;
+
+  /**
+   * The district, zone and area named in a typed address (every address form fills its dropdowns from
+   * it; the user can still change them): catalog names found in the text, Bangla names and small
+   * spelling slips forgiven, a zone bringing its district. Empty when nothing matches.
+   */
+  @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Get("catalog/place")
+  @ApiZodQuery(placeQuerySchema)
+  async place(@ZQuery(placeQuerySchema) query: z.infer<typeof placeQuerySchema>) {
+    return placeIn(query.address, await this.pricing.catalog());
+  }
 
   /** Everything the public booking form needs: places, options and the customer rate card. */
   @Public()

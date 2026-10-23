@@ -1,0 +1,23 @@
+Sale 4 — CUS-1004
+(Name
+|
+| Sadia Akter
+019***545
+. [Product | Bank Documents
+| |OrderCode | Not provided
+| [Address | House 125, Niketon, Block A, Gulshan, Dhaka
+3 REDD. [0
+
+— read word by word —
+Sale 4 — CUS-1004
+[Name | Sadia Akter
+019***545
+| Bank Documents
+Not provided
+i | Address House 125, Niketon, Block A, Gulshan, Dhaka
+[3 [%0
+Sale 4 CUS-1004
+Name Sadia 019***545 Akter
+Bank Documents
+Not House srovided 125 Niketon Block A Gulshan Dhaka
+(v0

@@ -4,7 +4,9 @@ import { createHash } from "node:crypto";
 import {
   bdPhoneProblem,
   isBanking,
+  isMaskedBdMobile,
   normalizeBdPhone,
+  normalizeMaskedBdPhone,
   packageOptions,
   parseSpeedOption,
   PRODUCT_TYPE_LABEL,
@@ -34,8 +36,11 @@ import type { PackageView } from "../packages/package-resolver";
 import { columnsFor, KIND_LABEL, segmentOf, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
 import type { ImportSettings } from "./import-config.service";
 
-/** `__scan`: the Scan ID of a "Scan with phone" row (parcel-scans); the booked parcel keeps its photo. */
-export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan", string>>;
+/**
+ * `__scan`: the Scan ID of a "Scan with phone" row (parcel-scans); the booked parcel keeps its photo.
+ * `__auto`: place columns picked from the address (import-places.ts), comma-separated.
+ */
+export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto", string>>;
 export interface CellError {
   column: string;
   message: string;
@@ -380,6 +385,8 @@ export class ImportEngineService {
     const phone = (key: ColumnKey) => {
       const v = value(key);
       if (!v) return undefined;
+      // A recipient's number printed masked ("019***545"): kept as written, never messaged.
+      if (key === "recipient_phone" && isMaskedBdMobile(v)) return normalizeMaskedBdPhone(v);
       const problem = bdPhoneProblem(v);
       if (problem) err(key, `${problem.charAt(0).toLowerCase()}${problem.slice(1)}`);
       return problem ? undefined : normalizeBdPhone(v);

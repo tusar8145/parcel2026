@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -232,12 +233,13 @@ export class ReturnsService {
       const by = actorLabel(actor);
       const { count } = await tx.parcel.updateMany({
         where: { id: parcel.id, version: parcel.version },
-        data: { returnReason: input.reason, returnRequestedAt: new Date(), returnRequestedBy: by, version: { increment: 1 } },
+        data: { returnReason: input.reason, returnRequestedAt: operationNow(), returnRequestedBy: by, version: { increment: 1 } },
       });
       if (!count) throw conflict("PARCEL_CHANGED", "This parcel was just updated by someone else. Refresh and try again.");
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,
+          createdAt: operationNow(),
           status: parcel.status,
           title: "Return requested",
           description: `Return to sender requested: ${input.reason}`,
@@ -246,7 +248,7 @@ export class ReturnsService {
           actorLabel: by,
         },
       });
-      after.webhooks.push(...(await this.webhooks.emit(tx, parcel.merchantId, "shipment.return_requested", { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, reason: input.reason, at: new Date().toISOString() })));
+      after.webhooks.push(...(await this.webhooks.emit(tx, parcel.merchantId, "shipment.return_requested", { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, reason: input.reason, at: operationNow().toISOString() })));
       await this.audit.record(actor, { action: "parcel.return_request", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, reason: input.reason } }, meta, tx);
       const fresh = await tx.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
       after.realtime.push({ ...parcelEvent(fresh), staffPermission: "parcel:read:any" });
@@ -263,11 +265,12 @@ export class ReturnsService {
       const parcel = await this.ownParcel(tx, actor, trackingId);
       if (parcel.status !== "RETURNED") throw conflict("NOT_RETURNED", "Only returned parcels can be confirmed as received");
       if (parcel.returnReceivedAt) return parcel;
-      const now = new Date();
+      const now = operationNow();
       await tx.parcel.update({ where: { id: parcel.id }, data: { returnReceivedAt: now, version: { increment: 1 } } });
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,
+          createdAt: operationNow(),
           status: "RETURNED",
           title: "Return received",
           description: "The sender confirmed they received the returned parcel.",
@@ -405,6 +408,7 @@ export class ReturnsService {
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,
+          createdAt: operationNow(),
           status: "RETURN_SCHEDULED",
           title: `Added to return run ${run.number}`,
           description: `The parcel will be returned to the sender (${reasonText}).`,
@@ -427,7 +431,7 @@ export class ReturnsService {
         data: {
           returnRunId: run.id,
           returnReason: reasonText,
-          returnRequestedAt: parcel.returnRequestedAt ?? new Date(),
+          returnRequestedAt: parcel.returnRequestedAt ?? operationNow(),
           returnRequestedBy: parcel.returnRequestedBy ?? actorLabel(actor),
           returnCharge: parcel.returnCharge ?? returnChargeFor(parcel),
           deliveryRiderId: null,
@@ -448,7 +452,7 @@ export class ReturnsService {
       const riderId = input.riderId ?? run.riderId;
       if (!riderId) throw new AppError("RIDER_REQUIRED", "Choose the rider taking the parcels back", HttpStatus.UNPROCESSABLE_ENTITY);
       await this.rider(tx, riderId, actor);
-      await tx.returnRun.update({ where: { id }, data: { status: "OUT_FOR_RETURN", riderId, dispatchedAt: new Date() } });
+      await tx.returnRun.update({ where: { id }, data: { status: "OUT_FOR_RETURN", riderId, dispatchedAt: operationNow() } });
       await this.audit.record(actor, { action: "return_run.dispatch", entityType: "return_run", entityId: id, data: { riderId } }, meta, tx);
     });
     const run = await this.run(actor, id);
@@ -486,7 +490,7 @@ export class ReturnsService {
           // A franchise rider took it back: the rider's return pay and the franchise's return commission.
           if (run.riderId) await recordFranchiseReturn(tx, this.ledger, { riderId: run.riderId, parcel: returned });
         }
-        await tx.returnRun.update({ where: { id }, data: { status: "COMPLETED", completedAt: new Date(), note: input.note ?? run.note } });
+        await tx.returnRun.update({ where: { id }, data: { status: "COMPLETED", completedAt: operationNow(), note: input.note ?? run.note } });
         await this.audit.record(actor, { action: "return_run.complete", entityType: "return_run", entityId: id, data: { notReturned: [...notReturned] } }, meta, tx);
       },
       { timeout: 30_000 },

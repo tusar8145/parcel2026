@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { env } from "../../config/env";
 import type { Catalog } from "../pricing/pricing.service";
 import { COLUMNS, type ColumnKey, type ImportKindKey } from "../imports/columns";
-import { placeIn, normPlace, englishPlaces } from "./scan-geo";
+import { placeIn, normPlace, englishPlaces } from "../geography/place-in-text";
 import { moneyIn, normalizeText, phonesIn, weightFrom, type ScanCells } from "./scan-parser";
 
 type Places = Pick<Catalog, "districts" | "zonesByDistrict" | "areasByZone">;

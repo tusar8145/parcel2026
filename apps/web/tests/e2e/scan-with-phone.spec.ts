@@ -68,6 +68,28 @@ test("a label photographed on the phone becomes an order row, is submitted throu
   await mobile.goto(new URL(link).pathname);
   await expect(mobile.locator(".meta")).toContainText(`E-commerce · ${shop.name} · 0 sent`);
   await mobile.locator('input[type="file"][multiple]').setInputFiles({ name: "label.png", mimeType: "image/png", buffer: LABEL });
+  // The editor: turn the photo and crop it before it is sent.
+  const editor = mobile.locator(".editor");
+  await expect(editor).toBeVisible();
+  const canvas = editor.locator("canvas");
+  await expect(canvas).toHaveAttribute("width", /\d+/);
+  const size = async () => canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
+  const [w, h] = await size();
+  await editor.getByRole("button", { name: "Rotate right" }).click();
+  await expect.poll(size).toEqual([h, w]);
+  await editor.getByRole("button", { name: "Rotate left" }).click();
+  await expect.poll(size).toEqual([w, h]);
+  const crop = editor.locator("[data-crop]");
+  const handle = (await editor.locator('[data-handle="se"]').boundingBox())!;
+  await mobile.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await mobile.mouse.down();
+  await mobile.mouse.move(handle.x - 40, handle.y - 30, { steps: 4 });
+  await mobile.mouse.up();
+  await expect(crop).not.toHaveAttribute("style", /width: 100%/);
+  await editor.getByRole("button", { name: "Reset" }).click();
+  await expect(crop).toHaveAttribute("style", /width: 100%/);
+  await editor.locator("[data-submit]").click();
+  await expect(editor).toHaveCount(0);
   await expect(mobile.locator(".list li").first()).toContainText("Parcel #1");
   await expect(mobile.locator(".list .state.sent")).toContainText("Sent", { timeout: 20_000 });
 

@@ -159,7 +159,7 @@
 
   function heroMarkup(d) {
     const parcelOn = d.messages.parcel.filter(m => m.included && (m.channels.sms.on || m.channels.email.on)).length;
-    const from = Math.min(...d.prices.routes.map(r => r.amount));
+    const from = Math.min(...d.prices.routes.flatMap(r => (r.types ? r.types.map(t => t.amount) : [r.amount])));
     const scheduled = d.scheduled[0];
     const status = d.merchant.status !== "ACTIVE" ? `<div class="dfp-notice info">Your account is still being reviewed. This is the plan you'll book with once it's approved.</div>` : "";
     return `<div class="dfp-hero">
@@ -258,7 +258,14 @@
 
   function pricingMarkup(d) {
     const p = d.prices;
-    const routes = p.routes.map(r => `<div class="dfp-route" data-dfp-tier="${esc(r.tier)}"><small>${esc(r.label)}</small><strong>${tk(r.amount)}</strong><p>${esc(r.example)}</p></div>`).join("");
+    // E-commerce: route + what is sent, one title per pair with the sum.
+    const routes = p.routes
+      .map(r =>
+        r.types
+          ? r.types.map(t => `<div class="dfp-route" data-dfp-tier="${esc(r.tier)}" data-dfp-type="${esc(t.type)}"><small>${esc(t.label)}</small><strong>${tk(t.amount)}</strong><p>${esc(r.example)}</p></div>`).join("")
+          : `<div class="dfp-route" data-dfp-tier="${esc(r.tier)}"><small>${esc(r.label)}</small><strong>${tk(r.amount)}</strong><p>${esc(r.example)}</p></div>`,
+      )
+      .join("");
     const rows = list => `<div class="dfp-rows">${list.map(r => `<div class="dfp-row"><div>${esc(r.label)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</div><b>${esc(r.value)}</b></div>`).join("")}</div>`;
     const examples = d.examples
       .map(

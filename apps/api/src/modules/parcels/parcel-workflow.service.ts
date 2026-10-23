@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { chosenOperationTime, operationNow } from "../../common/operation-time";
 import { canTransition, packagePricesSchema, PARCEL_STATUS_LABEL, reattemptFeeFor, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -23,6 +24,7 @@ import { franchiseOfHub, recordFranchiseCommission } from "../franchise/franchis
 
 /** "23 Oct" in Dhaka time (collection deadlines). */
 const dhakaDate = (d: Date) => d.toLocaleDateString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short" });
+const dhakaDateTime = (d: Date) => d.toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
 
 /** Default customer-facing text for each status. */
 const EVENT_TEXT: Record<ParcelStatus, { title: string; description: string; location?: string }> = {
@@ -160,6 +162,18 @@ export class ParcelWorkflowService {
       if (!parcel.dropOffHubId || hubId !== parcel.dropOffHubId) throw await this.wrongDropOffHub(db, parcel);
     }
 
+    // A Scan desk entry dated earlier can't go before the parcel's last update (its timeline stays in order).
+    const chosen = chosenOperationTime();
+    if (chosen) {
+      const last = await db.trackingEvent.findFirst({ where: { parcelId: parcel.id }, orderBy: { createdAt: "desc" }, select: { createdAt: true, title: true } });
+      if (last && chosen < last.createdAt)
+        throw new AppError(
+          "OPERATION_TIME_BEFORE_LAST_UPDATE",
+          `${parcel.trackingId}: the operation time is before its last update ("${last.title}", ${dhakaDateTime(last.createdAt)}). Choose a later date & time.`,
+          HttpStatus.CONFLICT,
+          { lastUpdateAt: last.createdAt.toISOString() },
+        );
+    }
     const { count } = await db.parcel.updateMany({
       where: { id: parcel.id, version: parcel.version },
       data: { ...(input.data as Prisma.ParcelUncheckedUpdateManyInput), status: input.to, version: { increment: 1 } },
@@ -172,6 +186,7 @@ export class ParcelWorkflowService {
     await db.trackingEvent.create({
       data: {
         parcelId: parcel.id,
+        createdAt: operationNow(),
         status: input.to,
         title: input.title ?? text.title,
         description: input.description ?? text.description,
@@ -183,7 +198,7 @@ export class ParcelWorkflowService {
     });
     if (input.internalNote) {
       await db.trackingEvent.create({
-        data: { parcelId: parcel.id, status: input.to, title: "Note", description: input.internalNote, visibility: "INTERNAL", actorUserId, actorLabel: label },
+        data: { parcelId: parcel.id, createdAt: operationNow(), status: input.to, title: "Note", description: input.internalNote, visibility: "INTERNAL", actorUserId, actorLabel: label },
       });
     }
 
@@ -213,7 +228,7 @@ export class ParcelWorkflowService {
   async readyForCollection(db: Db, parcel: Parcel, after: AfterCommit): Promise<Parcel> {
     const hub = await db.hub.findUniqueOrThrow({ where: { id: parcel.collectHubId! }, select: { id: true, name: true, address: true } });
     const settings = await this.packageSettings.settings(db);
-    const now = new Date();
+    const now = operationNow();
     const code = randomDigits(6);
     const dueAt = new Date(now.getTime() + settings.collectHoldDays * 86_400_000);
     const ready = await this.transition(
@@ -259,6 +274,7 @@ export class ParcelWorkflowService {
     await db.trackingEvent.create({
       data: {
         parcelId: parcel.id,
+        createdAt: operationNow(),
         status: parcel.status,
         title: "Re-attempt fee",
         description: `Delivery attempt ${failed} failed; the package includes ${prices.freeReattempts} free re-attempt${prices.freeReattempts === 1 ? "" : "s"}, so ৳${fee} is added to the delivery charge.`,
@@ -346,7 +362,7 @@ export class ParcelWorkflowService {
       );
     }
     if (parcel.merchantId) {
-      const data = { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, from, status: to, statusLabel: PARCEL_STATUS_LABEL[to], at: new Date().toISOString() };
+      const data = { trackingId: parcel.trackingId, merchantOrderRef: parcel.merchantOrderRef, from, status: to, statusLabel: PARCEL_STATUS_LABEL[to], at: operationNow().toISOString() };
       after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, "shipment.status_updated", data)));
       const specific = WEBHOOK_FOR[to];
       if (specific) after.webhooks.push(...(await this.webhooks.emit(db, parcel.merchantId, specific, data)));
@@ -390,7 +406,7 @@ export class ParcelWorkflowService {
     meta: Partial<RequestMeta> | undefined,
     after: AfterCommit,
   ) {
-    const now = new Date();
+    const now = operationNow();
     // The journey starts at the drop-off hub (the origin it was priced from).
     const origin = (parcel.pricingSnapshot as { origin?: { district?: string; zone?: string } } | null)?.origin;
     const targets = await slaTargets(db, {

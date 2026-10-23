@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { addressText } from "../../common/address";
 import type { Readable } from "node:stream";
 import type { z } from "zod";
 import { LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
@@ -493,7 +494,7 @@ export class DocumentsService {
           trackingId: p.trackingId,
           name: pickup ? `${p.senderName}${p.merchant ? ` (${p.merchant.name})` : ""}` : p.recipientName,
           phone: pickup ? p.senderPhone : p.recipientPhone,
-          address: (pickup ? [p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict] : [p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict]).filter(Boolean).join(", ") || "Address pending",
+          address: (pickup ? addressText(p.pickupStreet, p.pickupArea, p.pickupZone, p.pickupDistrict) : addressText(p.deliveryStreet, p.deliveryArea, p.deliveryZone, p.deliveryDistrict)) || "Address pending",
           zone: pickup ? p.pickupZone : p.deliveryZone,
           codAmount: pickup ? 0 : num(p.codAmount),
           status: PARCEL_STATUS_LABEL[p.status as ParcelStatus] ?? p.status,
@@ -540,7 +541,7 @@ export class DocumentsService {
     const doc = {
       number: r.number,
       status: r.status.replace(/_/g, " "),
-      merchant: { code: r.merchant.code, name: r.merchant.name, address: [r.merchant.pickupAddress, r.merchant.pickupArea, r.merchant.pickupDistrict].filter(Boolean).join(", "), phone: r.merchant.contactPhone },
+      merchant: { code: r.merchant.code, name: r.merchant.name, address: addressText(r.merchant.pickupAddress, r.merchant.pickupArea, r.merchant.pickupDistrict), phone: r.merchant.contactPhone },
       rider: rider ? `${rider.code} · ${rider.user.name}${rider.user.phone ? ` · ${rider.user.phone}` : ""}` : null,
       hub: hub ? `${hub.code} · ${hub.name}` : null,
       note: r.note,

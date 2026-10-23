@@ -148,7 +148,8 @@
     if (!form || $("dffCatalogPick")) return;
     const active = (F.products || []).filter(p => p.active);
     if (!active.length) return;
-    const grid = form.querySelector(".form-grid") || form;
+    // Parcel section's slot (merchant-bridge.js layoutOrderForm), else the top of the form.
+    const grid = $("dfoCatalogSlot") || form.querySelector(".form-grid") || form;
     grid.insertAdjacentHTML(
       "afterbegin",
       `<div class="form-field full"><label for="dffCatalogPick">From your catalogue (optional)</label><select id="dffCatalogPick">${option("", "Choose a product to prefill…")}${active.map(p => option(p.id, `${p.name} · ${p.sku}${p.price ? ` · ${taka(p.price)}` : ""}`)).join("")}</select></div>`,
@@ -186,10 +187,11 @@
     const form = $("orderForm");
     const m = S().merchant;
     if (!form || !m || $("dffPickupWindow")) return;
-    // Beside the service choices (first mile), before the price.
-    const anchor = $("merchantPriceHint");
+    // In the Service section (merchant-bridge.js layoutOrderForm), else before the price.
+    const slot = $("dfoPickupSlot");
+    const anchor = slot || $("merchantPriceHint");
     if (!anchor) return;
-    anchor.insertAdjacentHTML("beforebegin", `<div class="form-field"><label for="dffPickupWindow">Pickup time</label><select id="dffPickupWindow">${option("", "Any time today or next working day")}</select><small>Operations confirm the exact time.</small></div>`);
+    anchor.insertAdjacentHTML(slot ? "beforeend" : "beforebegin", `<div class="form-field"><label for="dffPickupWindow">Pickup time</label><select id="dffPickupWindow">${option("", "Any time today or next working day")}</select><small>Operations confirm the exact time.</small></div>`);
     try {
       const data = await DF.api(`/pickup-slots?district=${encodeURIComponent(m.pickupDistrict)}`);
       F.slots = data.days || [];

@@ -1059,8 +1059,15 @@
   document.head.insertAdjacentHTML(
     "beforeend",
     `<style id="dfOrderFormStyles">
-      #orderModal .modal{max-width:min(640px,100%);max-height:calc(100vh - 32px);overflow-y:auto;box-sizing:border-box}
+      #orderModal .modal{max-width:min(680px,100%);max-height:calc(100vh - 32px);overflow-y:auto;box-sizing:border-box}
       #orderModal .form-grid,#orderModal .order-extra-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      #orderModal #orderExtraFields.df-ord-laid{display:contents}
+      #orderModal [hidden]{display:none!important}
+      #orderModal .df-ord-section{grid-column:1/-1;margin:4px 0 -4px;padding-top:10px;border-top:1px solid var(--line);color:#8792a2;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+      #orderModal .df-ord-section:first-child{margin-top:0;padding-top:0;border-top:0}
+      #orderModal .df-ord-slot{display:contents}
+      #orderModal .df-req>label::after{content:" *";color:#c2410c;font-weight:700}
+      #orderModal #merchantPriceHint{grid-column:1/-1}
       #orderModal .form-field{min-width:0}
       #orderModal .form-field>select,#orderModal .form-field>input:not([type=checkbox]),#orderModal .df-phone{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
       #orderModal .df-phone input{min-width:0}
@@ -1068,6 +1075,87 @@
       @media(max-width:560px){#orderModal.modal-backdrop{padding:10px}#orderModal .modal{padding:16px}#orderModal .form-grid,#orderModal .order-extra-grid{grid-template-columns:minmax(0,1fr)}}
     </style>`,
   );
+
+  /**
+   * The order form laid out like Courier Operations › New order (courier-operation/bridge-pages.js):
+   * Service (first / last mile, Service, COD, open box, messages, pickup time) → Recipient → Delivery
+   * address (the full address first: district / zone / area are picked from it, DF.autoPlace) → Parcel
+   * (catalogue, product, weight, value, reference, contents, pre-printed CN) → price. Fields keep their
+   * ids; the merchant-only ones (catalogue, pickup time, value, address category) sit in their section.
+   * Runs once per page, when the fields exist; merchant-features.js fills the slots later.
+   */
+  function layoutOrderForm() {
+    const grid = document.querySelector("#orderForm .form-grid");
+    const extra = $("orderExtraFields");
+    if (!grid || !extra || extra.dataset.laid) return;
+    const doc = !!S.cfg.document;
+    const field = id => $(id)?.closest(".form-field") || null;
+    const section = title => Object.assign(document.createElement("div"), { className: "form-field full df-ord-section", textContent: title });
+    const slot = id => Object.assign(document.createElement("div"), { className: "df-ord-slot", id });
+    const make = html => {
+      const box = document.createElement("div");
+      box.innerHTML = html.trim();
+      return box.firstElementChild;
+    };
+    // New fields the API takes from merchants too: what is inside, and a pre-printed label (CN stock).
+    const contents = make(`<div class="form-field"><label for="merchantContents">${doc ? "Item description (optional)" : "Contents (optional)"}</label><input id="merchantContents" maxlength="120"></div>`);
+    const cn = make(`<div class="form-field"><label for="merchantCn">Pre-printed CN (optional)</label><input id="merchantCn" maxlength="24" autocomplete="off" placeholder="Label from your CN stock"></div>`);
+    // The full address is typed first; district / zone / area follow it.
+    const street = $("deliveryAddress");
+    if (street) {
+      street.placeholder = doc ? "e.g. Level 5, Tower 2, Road 11, Gulshan 2, Dhaka" : "e.g. Flat 4B, House 22, Road 7, Block C, Banani, Dhaka";
+      const label = street.closest(".form-field")?.querySelector("label");
+      if (label) label.textContent = "Full address";
+    }
+    const order = [
+      section("Service"),
+      $("dfOrderServices"),
+      slot("dfoPickupSlot"),
+      section("Recipient"),
+      field("customerName"),
+      field("customerPhone"),
+      section("Delivery address"),
+      field("deliveryAddress"),
+      field("merchantDistrict"),
+      field("merchantZone"),
+      field("merchantArea"),
+      field("merchantAddressType"),
+      section("Parcel"),
+      slot("dfoCatalogSlot"),
+      field("merchantProduct"),
+      field("merchantWeight"),
+      field("orderAmount"),
+      field("merchantReferenceNo"),
+      contents,
+      cn,
+      $("merchantPriceHint"),
+    ].filter(Boolean);
+    // A catalogue picker or pickup time added before the layout goes into its slot.
+    const early = { dfoCatalogSlot: field("dffCatalogPick"), dfoPickupSlot: field("dffPickupWindow") };
+    extra.replaceChildren(...order);
+    for (const [id, el] of Object.entries(early)) if (el) $(id)?.append(el);
+    $("deliveryAddress")?.closest(".form-field")?.classList.add("full");
+    extra.classList.add("df-ord-laid");
+    extra.dataset.laid = "1";
+    grid.prepend(extra);
+    DF.scanner?.attach?.($("merchantCn"), { title: "Scan the CN label" });
+  }
+
+  /** The * on fields required now (same rules as the operations form). */
+  function markRequired() {
+    const svc = S.pkg ? window.DFOrderServices?.read(S.pkg, "merchantSvc") : {};
+    const required = {
+      customerName: true,
+      customerPhone: true,
+      deliveryAddress: true,
+      merchantDistrict: true,
+      merchantZone: true,
+      merchantWeight: true,
+      merchantSvcDropHub: svc?.firstMile === "HUB_DROP",
+      merchantSvcCodAmount: !!$("merchantSvcCod")?.checked,
+    };
+    for (const [id, on] of Object.entries(required)) $(id)?.closest(".form-field")?.classList.toggle("df-req", !!on);
+  }
 
   /** Inline errors (DF.validate) and the +880 phone field; set up once, when the fields exist. */
   function wireOrderForm(form) {
@@ -1079,6 +1167,7 @@
       merchantZone: v => (v ? "" : "Choose the delivery zone"),
       deliveryAddress: v => (v.trim() ? "" : "Enter the street address"),
       orderAmount: v => (!v || Number(v) >= 0 ? "" : "Enter a value of ৳0 or more"),
+      merchantCn: v => (!v.trim() || /^[A-Za-z]{2,4}-\d{6}-[0-9A-Za-z]{4,8}$/.test(v.trim()) ? "" : "Enter the consignment number printed on the label"),
     };
     if ($("merchantWeight")) rules.merchantWeight = v => (!String(v).trim() ? "Enter the weight" : !(Number(v) >= 0.01) ? "At least 0.01 kg" : Number(v) > 50 ? "At most 50 kg" : "");
     const own = DF.validate(form, rules);
@@ -1095,6 +1184,7 @@
 
   function prepareOrderForm() {
     const form = $("orderForm");
+    layoutOrderForm();
     if (form) wireOrderForm(form);
     if (!S.merchant || !S.catalog) return;
     const district = $("merchantDistrict");
@@ -1135,6 +1225,7 @@
       product.dataset.pkg = S.pkg.package.versionId;
     }
     services.sync("merchantSvc");
+    markRequired();
     void updateQuote();
   }
 
@@ -1160,6 +1251,8 @@
       // Cash on delivery: the separate COD amount, only when the package offers COD and it is ticked.
       codAmount: doc ? 0 : codAmount || 0,
       merchantOrderRef: $("merchantReferenceNo")?.value.trim() || undefined,
+      contents: $("merchantContents")?.value.trim() || undefined,
+      cn: $("merchantCn")?.value.trim().toUpperCase() || undefined,
       // Pickup time window chosen in the form (merchant-features.js), when offered.
       pickupWindow: window.DFMerchantFeatures?.pickupWindow?.() || undefined,
       saveAddresses: false,
@@ -1917,7 +2010,10 @@
     }
     if (t.id === "merchantDistrict") cascadeZones();
     if (t.id === "merchantZone") cascadeAreas();
-    if (t.closest?.("#dfOrderServices") || t.id === "merchantProduct") window.DFOrderServices?.sync("merchantSvc");
+    if (t.closest?.("#dfOrderServices") || t.id === "merchantProduct") {
+      window.DFOrderServices?.sync("merchantSvc");
+      markRequired();
+    }
     if (t.closest?.("#orderForm")) updateQuote();
     if (t.id === "chartPeriod") {
       S.period = { "Last 7 days": "7d", "Last 30 days": "30d", "This year": "year" }[t.value] || "7d";

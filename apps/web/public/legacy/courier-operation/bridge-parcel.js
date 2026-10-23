@@ -61,8 +61,13 @@
 
   // ───────────── next action ─────────────
 
-  /** The hub that serves a parcel's delivery zone, when the console knows it (zones, else hubs). */
+  /**
+   * The hub that delivers a parcel: the API's `deliveryHub` (GET /parcels for staff: the collection hub,
+   * else its delivery zone's serving hub; null = none). Parcels loaded without it: the zones this page
+   * has, else the hubs' own zones.
+   */
   function servingHub(p) {
+    if (p && "deliveryHub" in p) return p.deliveryHub;
     const zone = p.delivery?.zone;
     const district = p.delivery?.district;
     if (!zone) return null;

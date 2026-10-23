@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { deliveryHubsOf } from "./delivery-hub";
 import { operationNow } from "../../common/operation-time";
 import type { z } from "zod";
 import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
@@ -435,7 +436,11 @@ export class ParcelsService {
       orderBy: { id: "desc" },
     });
     const hasMore = rows.length > query.limit;
-    const items = (hasMore ? rows.slice(0, query.limit) : rows).map(p => parcelView(p, { internal: isStaff(actor) }));
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    const staff = isStaff(actor);
+    // Staff: the hub that delivers each parcel (its next step: transfer or assign a rider here).
+    const hubs = staff ? await deliveryHubsOf(this.prisma, page) : null;
+    const items = page.map(p => ({ ...parcelView(p, { internal: staff }), ...(hubs ? { deliveryHub: hubs.get(p.id) ?? null } : {}) }));
     return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
@@ -443,7 +448,12 @@ export class ParcelsService {
   async detail(actor: Actor, trackingId: string) {
     const parcel = await this.prisma.parcel.findFirst({ where: { AND: [{ trackingId: trackingId.toUpperCase() }, this.scope(actor)] }, include: parcelInclude });
     if (!parcel) throw notFound("Parcel");
-    const view = { ...parcelView(parcel, { internal: isStaff(actor) }), liveDelivery: await this.liveDelivery(parcel) };
+    const staff = isStaff(actor);
+    const view = {
+      ...parcelView(parcel, { internal: staff }),
+      ...(staff ? { deliveryHub: (await deliveryHubsOf(this.prisma, [parcel])).get(parcel.id) ?? null } : {}),
+      liveDelivery: await this.liveDelivery(parcel),
+    };
     const isAssignedRider = actor.kind === "user" && !!actor.riderId && parcel.deliveryRiderId === actor.riderId;
     return isAssignedRider ? { ...view, deliveryCodeSent: Boolean(parcel.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;
   }

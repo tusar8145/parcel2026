@@ -141,7 +141,7 @@ test("operations New order: product priced like the booking, no old fields, Bank
   await expect(ops.locator("#bkSvcCod")).not.toBeChecked();
   await expect(ops.locator("#bkSvcCodAmount")).toBeHidden();
   const price = ops.locator("#bkPrice [data-price-breakdown]");
-  await expect(price).toContainText("What you send: Document", { timeout: 15_000 });
+  await expect(price).toContainText("+ Document", { timeout: 15_000 }); // E-commerce: route + what is sent, one line
   await ops.waitForTimeout(500); // the last debounced quote
   const shown = await taka(price.locator("[data-price-total]"));
   await ops.click("#modalSubmit");
@@ -156,6 +156,7 @@ test("operations New order: product priced like the booking, no old fields, Bank
   expect(Number(booked.weightKg)).toBe(7.5);
 
   // ── Banking & Financial: no weight, no COD; its own product list ──
+  await ops.click("#parcelDrawerClose"); // the drawer covers the page's toolbar
   await opsNav(ops, "banking");
   await ops.click('[data-action="newDocument"]');
   await expect(ops.locator("#modalTitle")).toHaveText("Create Banking & Financial order");
@@ -276,7 +277,7 @@ test("e-commerce merchant order form: product priced like the booking, COD apart
   await expect(form.locator(".df-field-error", { hasText: "Enter the cash to collect" })).toBeVisible();
   await page.fill("#merchantSvcCodAmount", "900");
   const price = page.locator("#merchantPriceHint [data-price-breakdown]");
-  await expect(price).toContainText("What you send: Document", { timeout: 15_000 });
+  await expect(price).toContainText("+ Document", { timeout: 15_000 }); // E-commerce: route + what is sent, one line
   await expect(price).toContainText("COD fee");
   await page.waitForTimeout(500);
   const shown = await taka(price.locator("[data-price-total]"));

@@ -38,13 +38,13 @@ export default function Sidebar() {
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-orders" />
             </svg>
-            Document requests<span className="nav-count">24</span>
+            Delivery requests<span className="nav-count">24</span>
           </button>{" "}
           <button className="nav-item" data-page="Shipments">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-truck" />
             </svg>
-            Document tracking<span className="nav-count">18</span>
+            Delivery tracking<span className="nav-count">18</span>
           </button>{" "}
           <button className="nav-item" data-page="Pickup requests">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
@@ -62,7 +62,7 @@ export default function Sidebar() {
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-tag" />
             </svg>
-            Document catalogue
+            Product catalogue
           </button>{" "}
         </div>{" "}
         <div className="nav-group">

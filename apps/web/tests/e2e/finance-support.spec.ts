@@ -53,15 +53,26 @@ test("finance staff see approvals, invoices, disputes, reconciliation, ledger an
   await page.context().close();
 });
 
-test("operations without finance rights don't get the finance tools; support agents get SLA and canned responses", async ({ browser }) => {
+test("operations managers work COD & settlement and generate bills (not finance settings); support agents get SLA and canned responses", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, await fx.staff("OPS_MANAGER"), errors);
   await opsNav(ops, "cod");
   await expect(ops.locator("#mainContent")).toBeVisible();
-  await expect(ops.locator("#finSettlements")).toHaveCount(0);
-  // Their tabs aren't offered either.
-  await expect(ops.locator('#mainContent [data-nav-tab="Settlements & payouts"]')).toBeHidden();
+  for (const tab of ["Cash from riders", "Franchise", "Settlements & payouts", "Invoices & accounts"])
+    await expect(ops.locator(`#mainContent [data-nav-tab="${tab}"]`)).toBeVisible();
+  await opsNav(ops, "codSettlements");
+  await expect(ops.locator("#riderPayoutsPanel")).toBeVisible();
+  await expect(ops.locator("#finSettlements")).toBeVisible();
+  await opsNav(ops, "codAccounts");
+  await expect(ops.locator("#finInvoices")).toBeVisible();
+  // VAT & BIN settings stay with finance and super admins.
+  await expect(ops.locator("#finLedger [data-fin-config]")).toHaveCount(0);
+  // Generate bill: merchant, delivery dates, then the deliveries to tick.
+  await ops.click("#finInvoices [data-fin-invoice-new]");
+  await expect(ops.locator("#finBillPick")).toContainText("Choose the merchant first.");
+  await expect(ops.locator("#of_from")).toBeVisible();
+  await expect(ops.locator("#of_to")).toBeVisible();
   await ops.context().close();
 
   const agent = await signedIn(browser, await fx.staff("SUPPORT_AGENT"), errors);

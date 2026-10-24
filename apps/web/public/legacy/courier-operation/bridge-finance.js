@@ -54,6 +54,34 @@
     }
   };
 
+  // ───────────── look: separated sections, clear headings, consistent status pills and row buttons ─────────────
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfMoneyStyles">
+      #mainContent[data-sec-part] > section.panel{margin:0 0 18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+      #mainContent[data-sec-part] > .metrics{margin-bottom:18px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+      #mainContent[data-sec-part] .table-panel > .panel-heading{border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+      #mainContent[data-sec-part] .table-panel .panel-title{font-size:14.5px;font-weight:650;color:#1d2939}
+      #mainContent[data-sec-part] .table-panel .panel-subtitle{margin-top:3px;max-width:760px;line-height:1.45}
+      #mainContent[data-sec-part] .panel-heading .heading-actions,#mainContent[data-sec-part] .panel-heading > .button{flex:none}
+      #mainContent[data-sec-part] tbody tr:hover td{background:#fafbff}
+      #mainContent[data-sec-part] td .button + .button{margin-left:5px}
+      #mainContent[data-sec-part] td.empty-state{padding:28px 16px;color:#8792a2;font-size:13px}
+      /* The short note at the top of a tab: an info box, not another table. */
+      #mainContent[data-sec-part] #secGuide{background:var(--blue-soft,#edf2ff);border:1px solid #d8e2ff;border-left:4px solid var(--blue,#3766e8);box-shadow:none}
+      #mainContent[data-sec-part] #secGuide .panel-title{color:#2f55c9}
+      #mainContent[data-sec-part] #secGuide .panel-subtitle{color:#475467}
+      /* Forms inside a table panel keep the panel's padding. */
+      #finReconForm{padding:14px 16px!important;margin:0;border-bottom:1px solid var(--line);background:#fafbfd}
+      /* Status labels used by some sections (rider payouts) with the same colours as the rest. */
+      .status-pending{background:var(--amber-soft,#fff5df);color:var(--amber,#b87913)}
+      .status-transit{background:var(--blue-soft,#edf2ff);color:var(--blue,#3766e8)}
+      .status-delivered{background:var(--green-soft,#e8f7f0);color:var(--green,#16845b)}
+      .status-failed{background:var(--red-soft,#fff0ef);color:var(--red,#c34d4d)}
+      @media(max-width:720px){#mainContent[data-sec-part] > section.panel{margin-bottom:14px}.df-tabs{display:flex}}
+    </style>`,
+  );
+
   Ops.enhance["COD & finance"] = () => {
     const riders = cashRiders() || [];
     const recent = handovers()?.items || [];
@@ -77,6 +105,8 @@
         ["Received today", Ops.money(receivedToday.reduce((n, h) => n + h.amount, 0)), "chart", `${receivedToday.length} handover${receivedToday.length === 1 ? "" : "s"}`, "at hubs"],
       ]);
       registerText("Cash received from riders · newest first", `Showing ${recent.length} recent handovers`);
+      // Hub staff: the register is the cash their hub received (the section keeps its tab: bridge-section-tabs.js).
+      setText(q("#mainContent .table-panel .panel-heading .panel-title"), "Cash received at hubs");
     } else {
       setMetrics([["COD & finance", "—", "wallet", "restricted", "finance, hub and operations staff"]]);
       registerText("COD and finance figures are available to finance, hub and operations staff.", "No records for your role");
@@ -112,6 +142,8 @@
           .join("")}</tbody></table></div></section>`,
       );
     }
+    // Cash handover requests and rider payouts (bridge-rider-pay.js, loaded before this file).
+    Ops.riderPayPanels?.();
   };
 
   Ops.modals.codReceive = async riderId => {
@@ -212,18 +244,39 @@
       panel(
         "finSettlements",
         "Settlement approvals",
-        "Drafts need a second finance user to approve; automatic drafts can be approved by anyone in finance. A shortfall is carried to the next settlement, never paid negative.",
+        // The approval rule is a super admin setting (Platform settings › Finance approvals).
+        (Ops.lazy("finance-config", () => DF.api("/finance/config"), 60000)?.settlementApproval === "DOUBLE"
+          ? "Double approval: someone other than the person who drafted it approves (automatic drafts: anyone in finance)."
+          : "Single approval: any finance user approves, the one who drafted it too.") + " A shortfall is carried to the next settlement, never paid negative.",
         table(
           ["BATCH", "MERCHANT", "COD", "CHARGES", "ADJUSTMENTS", "NET PAYABLE", "CARRIED FORWARD", "STATUS", ""],
           open.map(
             s =>
-              `<tr><td><strong>${esc(s.number)}</strong>${s.autoDrafted ? `<span class="subcell">automatic</span>` : ""}</td><td>${esc(s.merchant.name)}</td><td>${Ops.money(s.codTotal)}</td><td>${Ops.money(s.chargesTotal)}</td><td>${Ops.money(s.adjustmentsTotal)}</td><td><strong>${Ops.money(s.netPayable)}</strong></td><td>${s.carriedForward ? Ops.money(s.carriedForward) : "—"}</td><td>${pill(s.status)}</td><td style="white-space:nowrap">${btn("View", `data-fin-settlement-view="${s.id}"`)} ${
+              `<tr><td><strong>${esc(s.number)}</strong>${s.autoDrafted ? `<span class="subcell">automatic</span>` : ""}</td><td>${esc(s.merchant.name)}</td><td>${Ops.money(s.codTotal)}</td><td>${Ops.money(s.chargesTotal)}</td><td>${Ops.money(s.adjustmentsTotal)}</td><td><strong>${Ops.money(s.netPayable)}</strong></td><td>${s.carriedForward ? Ops.money(s.carriedForward) : "—"}</td><td>${pill(s.status)}</td><td style="white-space:nowrap">${btn("View", `data-fin-settlement-view="${s.id}"`)} ${s.paymentProof ? `${btn("Receipt", `data-fin-receipt-view="${s.id}"`)} ` : ""}${
                 s.status === "DRAFT" ? `${btn("Approve", `data-fin-settlement-approve="${s.id}" data-number="${esc(s.number)}" data-merchant-name="${esc(s.merchant.name)}" data-net="${s.netPayable}"`)} ${btn("Discard", `data-fin-settlement-delete="${s.id}" data-number="${esc(s.number)}"`)}` : btn("Mark paid", `data-fin-settlement-pay="${s.id}" data-net="${s.netPayable}" data-number="${esc(s.number)}" data-merchant-name="${esc(s.merchant.name)}"`)
               }</td></tr>`,
           ),
           "No settlements waiting for approval or payment.",
         ),
         btn("Draft settlement", "data-fin-settlement-new"),
+      ),
+    );
+
+    // Paid settlements: the payouts done, with their statement PDF (the merchant sees the same) and receipt photo.
+    const paid = (Ops.cache.settlements?.value?.items || []).filter(s => s.status === "PAID");
+    html.push(
+      panel(
+        "finSettlementsPaid",
+        "Paid settlements",
+        "Payouts already made to merchants (newest first). The statement PDF and receipt photo are in the merchant's Payments too.",
+        table(
+          ["BATCH", "MERCHANT", "PARCELS", "NET PAID", "PAID ON", "REFERENCE", ""],
+          paid.map(
+            s =>
+              `<tr><td><strong>${esc(s.number)}</strong>${s.autoDrafted ? `<span class="subcell">automatic</span>` : ""}</td><td>${esc(s.merchant.name)}</td><td>${s.collectionCount}</td><td><strong>${Ops.money(s.netPayable)}</strong>${s.carriedForward ? `<span class="subcell">${Ops.money(s.carriedForward)} carried forward</span>` : ""}</td><td>${esc(s.paidAt ? Ops.when(s.paidAt) : "—")}</td><td>${esc(s.reference || "—")}</td><td style="white-space:nowrap">${btn("Statement (PDF)", `data-fin-settlement-view="${s.id}"`)}${s.paymentProof ? ` ${btn("Receipt", `data-fin-receipt-view="${s.id}"`)}` : ""}</td></tr>`,
+          ),
+          "No settlements paid yet.",
+        ),
       ),
     );
 
@@ -244,7 +297,7 @@
           ),
           errorText("fin-invoices", "No invoices yet."),
         ),
-        btn("Issue invoice", "data-fin-invoice-new"),
+        btn("Generate bill", "data-fin-invoice-new"),
       ),
     );
 
@@ -312,7 +365,7 @@
           (tb?.accounts || []).map(a => `<tr><td>${esc(a.code)}</td><td>${esc(a.name)}</td><td>${esc(a.type.toLowerCase())}</td><td>${Ops.money(a.debit)}</td><td>${Ops.money(a.credit)}</td><td><strong>${Ops.money(a.balance)}</strong></td></tr>`),
           "No postings this month.",
         ),
-        `${btn("VAT & BIN settings", "data-fin-config")} ${prevClosed ? `<span class="status status-good">${esc(prev)} closed</span>` : btn(`Close ${prev}`, `data-fin-close="${prev}"`)}`,
+        `${Ops.can("financeSettings") ? btn("VAT & BIN settings", "data-fin-config") : ""} ${prevClosed ? `<span class="status status-good">${esc(prev)} closed</span>` : btn(`Close ${prev}`, `data-fin-close="${prev}"`)}`,
       ),
     );
 
@@ -385,21 +438,282 @@
   const printInvoice = id => Ops.printPdf(`/documents/finance-invoice/${id}`, { title: "Preparing the tax invoice…" });
 
   /** COD settlement statement as a PDF in a new tab. */
+  // ───────────── Draft a settlement › parcels to settle ─────────────
+  // GET /settlements/eligible?merchantId: the merchant's COD cash at hubs not yet settled; every parcel ticked to
+  // start, "Select all", and the totals of the ticked ones (open adjustments apply to every settlement).
+  const pick = { merchantId: "", items: null, adjustments: [], adjustmentsTotal: 0, chosen: new Set(), error: "", loading: false };
+  function paintPick() {
+    const box = document.getElementById("finPick");
+    if (!box) return;
+    box.dataset.painted = "1";
+    if (!pick.merchantId) return void (box.innerHTML = `<p class="panel-subtitle" style="margin:0">Choose the merchant first.</p>`);
+    if (pick.loading) return void (box.innerHTML = `<p class="panel-subtitle" style="margin:0">Loading the merchant's parcels…</p>`);
+    if (pick.error) return void (box.innerHTML = `<p role="alert" style="margin:0;color:#b42318">${esc(pick.error)}</p>`);
+    const items = pick.items || [];
+    if (!items.length)
+      return void (box.innerHTML = `<p class="panel-subtitle" style="margin:0">No parcels with COD cash at hubs waiting to be settled${pick.adjustments.length ? ` · ${pick.adjustments.length} open adjustment(s) of ${Ops.money(pick.adjustmentsTotal)} can still be settled` : ""}.</p>`);
+    const chosen = items.filter(i => pick.chosen.has(i.id));
+    const cod = chosen.reduce((t, i) => t + i.codAmount, 0);
+    const charges = chosen.reduce((t, i) => t + i.charge, 0);
+    const net = cod - charges - pick.adjustmentsTotal;
+    const all = chosen.length === items.length;
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:13px"><input type="checkbox" data-fin-pick-all ${all ? "checked" : ""}> Select all (${items.length})</label>
+        <span style="font-size:13px;color:#475467">${chosen.length} of ${items.length} chosen</span></div>
+      <div class="table-scroll" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:9px"><table><thead><tr><th></th><th>PARCEL</th><th>DELIVERED</th><th>HUB</th><th style="text-align:right">COD</th><th style="text-align:right">CHARGE</th><th style="text-align:right">NET</th></tr></thead><tbody>${items
+        .map(
+          i =>
+            `<tr><td><input type="checkbox" data-fin-pick="${esc(i.id)}" ${pick.chosen.has(i.id) ? "checked" : ""} aria-label="Settle ${esc(i.trackingId)}"></td><td><strong>${esc(i.trackingId)}</strong>${i.orderRef || i.recipient ? `<span class="subcell">${esc([i.orderRef, i.recipient].filter(Boolean).join(" · "))}</span>` : ""}</td><td>${esc(i.deliveredAt ? Ops.when(i.deliveredAt) : "—")}</td><td>${esc(i.hub || "—")}</td><td style="text-align:right">${Ops.money(i.codAmount)}</td><td style="text-align:right">${Ops.money(i.charge)}</td><td style="text-align:right">${Ops.money(i.net)}</td></tr>`,
+        )
+        .join("")}</tbody></table></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px;font-size:13px">
+        <div><small style="color:#8792a2;display:block">COD collected</small><strong>${Ops.money(cod)}</strong></div>
+        <div><small style="color:#8792a2;display:block">Delivery charges</small><strong>−${Ops.money(charges)}</strong></div>
+        <div><small style="color:#8792a2;display:block">Adjustments${pick.adjustments.length ? ` (${pick.adjustments.length})` : ""}</small><strong>${pick.adjustmentsTotal ? `−${Ops.money(pick.adjustmentsTotal)}` : "—"}</strong></div>
+        <div><small style="color:#8792a2;display:block">Net payable</small><strong style="color:${net < 0 ? "#b42318" : "#0f7a3d"}">${Ops.money(Math.max(0, net))}${net < 0 ? ` (${Ops.money(-net)} carried forward)` : ""}</strong></div>
+      </div>`;
+  }
+  async function loadPick(merchantId) {
+    Object.assign(pick, { merchantId, items: null, adjustments: [], adjustmentsTotal: 0, chosen: new Set(), error: "", loading: !!merchantId });
+    paintPick();
+    if (!merchantId) return;
+    try {
+      const r = await DF.api(`/settlements/eligible?merchantId=${encodeURIComponent(merchantId)}`);
+      if (pick.merchantId !== merchantId) return;
+      Object.assign(pick, { items: r.items, adjustments: r.adjustments, adjustmentsTotal: r.adjustmentsTotal, chosen: new Set(r.items.map(i => i.id)), loading: false });
+    } catch (error) {
+      Object.assign(pick, { error: DF.describe(error), loading: false });
+    }
+    paintPick();
+  }
+  // Typing in the merchant search picks one with an "input" event.
+  document.addEventListener("input", event => {
+    const t = event.target;
+    if (t instanceof HTMLSelectElement && t.id === "of_merchantId" && document.getElementById("finPick") && t.value !== pick.merchantId) void loadPick(t.value);
+  });
+  new MutationObserver(() => {
+    const box = document.getElementById("finPick");
+    if (box && !box.dataset.painted) paintPick();
+  }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("change", event => {
+    const t = event.target;
+    if (!(t instanceof HTMLElement)) return;
+    if (t.id === "of_merchantId" && document.getElementById("finPick")) return void (t.value !== pick.merchantId && loadPick(t.value));
+    if (t.matches("[data-fin-pick-all]")) {
+      pick.chosen = t.checked ? new Set((pick.items || []).map(i => i.id)) : new Set();
+      return paintPick();
+    }
+    if (t.matches("[data-fin-pick]")) {
+      if (t.checked) pick.chosen.add(t.dataset.finPick);
+      else pick.chosen.delete(t.dataset.finPick);
+      paintPick();
+    }
+  });
+
+  // ───────────── Generate bill › deliveries to bill ─────────────
+  // GET /invoices/billable: the merchant's delivered prepaid parcels in the dates not on a bill yet; every one ticked
+  // to start, "Select all", and the total of the ticked ones (open return charges are added to every bill).
+  const bill = { merchantId: "", from: "", to: "", items: null, returns: [], returnsTotal: 0, chosen: new Set(), error: "", loading: false };
+  function paintBill() {
+    const box = document.getElementById("finBillPick");
+    if (!box) return;
+    box.dataset.painted = "1";
+    const note = text => void (box.innerHTML = `<p class="panel-subtitle" style="margin:0">${text}</p>`);
+    if (!bill.merchantId) return note("Choose the merchant first.");
+    if (!ISO_DAY.test(bill.from) || !ISO_DAY.test(bill.to) || bill.to < bill.from) return note("Choose the delivery dates.");
+    if (bill.loading) return note("Loading the merchant's deliveries…");
+    if (bill.error) return void (box.innerHTML = `<p role="alert" style="margin:0;color:#b42318">${esc(bill.error)}</p>`);
+    const items = bill.items || [];
+    if (!items.length) return note(`No delivered prepaid parcels waiting to be billed between ${esc(dateShort(dhakaStart(bill.from)))} and ${esc(dateShort(dhakaStart(bill.to)))}.`);
+    const chosen = items.filter(i => bill.chosen.has(i.trackingId));
+    const charges = chosen.reduce((t, i) => t + i.charge, 0);
+    const all = chosen.length === items.length;
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:13px"><input type="checkbox" data-fin-bill-all ${all ? "checked" : ""}> Select all (${items.length})</label>
+        <span style="font-size:13px;color:#475467">${chosen.length} of ${items.length} chosen</span></div>
+      <div class="table-scroll" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:9px"><table><thead><tr><th></th><th>PARCEL</th><th>DELIVERED</th><th>DESTINATION</th><th>SERVICE</th><th style="text-align:right">CHARGE</th></tr></thead><tbody>${items
+        .map(
+          i =>
+            `<tr><td><input type="checkbox" data-fin-bill="${esc(i.trackingId)}" ${bill.chosen.has(i.trackingId) ? "checked" : ""} aria-label="Bill ${esc(i.trackingId)}"></td><td><strong>${esc(i.trackingId)}</strong>${i.orderRef || i.recipient || i.product ? `<span class="subcell">${esc([i.orderRef, i.recipient, i.product].filter(Boolean).join(" · "))}</span>` : ""}</td><td>${esc(i.deliveredAt ? Ops.when(i.deliveredAt) : "—")}</td><td>${esc(i.destination)}</td><td>${esc(i.service)}</td><td style="text-align:right">${Ops.money(i.charge)}</td></tr>`,
+        )
+        .join("")}</tbody></table></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px;font-size:13px">
+        <div><small style="color:#8792a2;display:block">Delivery charges</small><strong>${Ops.money(charges)}</strong></div>
+        <div><small style="color:#8792a2;display:block">Return charges${bill.returns.length ? ` (${bill.returns.length})` : ""}</small><strong>${bill.returnsTotal ? Ops.money(bill.returnsTotal) : "—"}</strong></div>
+        <div><small style="color:#8792a2;display:block">Bill total (VAT included)</small><strong style="color:#0f7a3d">${Ops.money(charges + bill.returnsTotal)}</strong></div>
+      </div>`;
+  }
+  async function loadBill() {
+    const key = `${bill.merchantId}|${bill.from}|${bill.to}`;
+    Object.assign(bill, { items: null, returns: [], returnsTotal: 0, chosen: new Set(), error: "", loading: false });
+    if (!bill.merchantId || !ISO_DAY.test(bill.from) || !ISO_DAY.test(bill.to) || bill.to < bill.from) return paintBill();
+    bill.loading = true;
+    paintBill();
+    try {
+      const end = new Date(Date.parse(dhakaStart(bill.to)) + 86400000).toISOString();
+      const r = await DF.api(`/invoices/billable?merchantId=${encodeURIComponent(bill.merchantId)}&periodStart=${encodeURIComponent(dhakaStart(bill.from))}&periodEnd=${encodeURIComponent(end)}`);
+      if (`${bill.merchantId}|${bill.from}|${bill.to}` !== key) return;
+      Object.assign(bill, { items: r.items, returns: r.returnCharges, returnsTotal: r.returnChargesTotal, chosen: new Set(r.items.map(i => i.trackingId)), loading: false });
+    } catch (error) {
+      Object.assign(bill, { error: DF.describe(error), loading: false });
+    }
+    paintBill();
+  }
+  new MutationObserver(() => {
+    const box = document.getElementById("finBillPick");
+    if (box && !box.dataset.painted) paintBill();
+  }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("change", event => {
+    const t = event.target;
+    if (!(t instanceof HTMLElement) || !document.getElementById("finBillPick")) return;
+    if (t.id === "of_merchantId" || t.id === "of_from" || t.id === "of_to") {
+      bill[{ of_merchantId: "merchantId", of_from: "from", of_to: "to" }[t.id]] = t.value;
+      return void loadBill();
+    }
+    if (t.matches("[data-fin-bill-all]")) {
+      bill.chosen = t.checked ? new Set((bill.items || []).map(i => i.trackingId)) : new Set();
+      return paintBill();
+    }
+    if (t.matches("[data-fin-bill]")) {
+      if (t.checked) bill.chosen.add(t.dataset.finBill);
+      else bill.chosen.delete(t.dataset.finBill);
+      paintBill();
+    }
+  });
+
+  // ───────────── Mark paid › Payment receipt (photo) ─────────────
+  // Upload from this computer, or "Use phone": a one-photo link (POST /photo-links, QR) that the phone
+  // opens, takes the photo and taps Done; it arrives here (photo_link.done / polling) and the link is used up.
+  const receipt = { title: "", fileId: null, dataUrl: null, link: null, timer: null, error: "" };
+  function resetReceipt(title) {
+    closeReceiptLink();
+    Object.assign(receipt, { title, fileId: null, dataUrl: null, error: "" });
+  }
+  function closeReceiptLink() {
+    clearInterval(receipt.timer);
+    receipt.timer = null;
+    if (receipt.link) DF.api(`/photo-links/${encodeURIComponent(receipt.link.id)}`, { method: "DELETE" }).catch(() => undefined);
+    receipt.link = null;
+  }
+  function paintReceipt() {
+    const box = document.getElementById("finReceipt");
+    if (!box) return;
+    box.dataset.painted = "1";
+    if (receipt.dataUrl)
+      box.innerHTML = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img src="${receipt.dataUrl}" alt="Payment receipt" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="status status-good">Receipt attached</span><button type="button" class="button button-sm" data-fin-receipt="remove">Remove</button></div>`;
+    else if (receipt.link)
+      box.innerHTML = `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div style="width:150px;height:150px">${receipt.link.qrSvg}</div><div style="display:grid;gap:6px;max-width:300px;font-size:13px"><strong>Scan with the phone</strong><span style="color:#647184">Take the photo of the receipt and tap Done. It appears here; the link then stops working.</span><input class="table-search" readonly value="${esc(receipt.link.url)}" aria-label="Phone link"><button type="button" class="button button-sm" data-fin-receipt="cancel">Cancel</button></div></div>`;
+    else
+      box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="button button-sm" data-fin-receipt="upload">Upload photo</button><button type="button" class="button button-sm" data-fin-receipt="phone">Use phone</button><input type="file" id="finReceiptFile" accept="image/*" hidden></div><small style="display:block;margin-top:4px;color:#7b8594">Optional: a photo of the bank slip or bKash screen. The merchant sees it with the payment.</small>`;
+    const svg = box.querySelector("svg");
+    if (svg) svg.setAttribute("style", "width:100%;height:100%");
+    if (receipt.error) box.insertAdjacentHTML("beforeend", `<p role="alert" style="margin:6px 0 0;color:#b42318;font-size:13px">${esc(receipt.error)}</p>`);
+  }
+  // The form draws its fields itself: fill the box whenever it appears.
+  new MutationObserver(() => {
+    const box = document.getElementById("finReceipt");
+    if (box && !box.dataset.painted) paintReceipt();
+  }).observe(document.body, { childList: true, subtree: true });
+  const shrinkPhoto = file =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(img.src);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => reject(new Error("That file isn't a photo."));
+      img.src = URL.createObjectURL(file);
+    });
+  async function checkReceiptLink() {
+    if (!receipt.link) return;
+    // The dialog was closed: the phone's link stops working.
+    if (!document.getElementById("finReceipt")) return closeReceiptLink();
+    try {
+      const r = await DF.api(`/photo-links/${encodeURIComponent(receipt.link.id)}`);
+      if (r.status !== "done" || !receipt.link) return;
+      clearInterval(receipt.timer);
+      Object.assign(receipt, { fileId: r.fileId, dataUrl: r.dataUrl, link: null, timer: null, error: "" });
+      paintReceipt();
+    } catch (error) {
+      if (error?.status === 404) {
+        clearInterval(receipt.timer);
+        Object.assign(receipt, { link: null, timer: null, error: "The phone link expired. Try again." });
+        paintReceipt();
+      }
+    }
+  }
+  DF.events.on("photo_link.done", e => receipt.link && e.linkId === receipt.link.id && void checkReceiptLink());
+  document.addEventListener("click", async event => {
+    const el = event.target instanceof Element ? event.target.closest("[data-fin-receipt]") : null;
+    if (!el) return;
+    event.preventDefault();
+    const action = el.dataset.finReceipt;
+    receipt.error = "";
+    if (action === "upload") return void document.getElementById("finReceiptFile")?.click();
+    if (action === "remove") Object.assign(receipt, { fileId: null, dataUrl: null });
+    if (action === "cancel") closeReceiptLink();
+    if (action === "phone") {
+      try {
+        receipt.link = await DF.api("/photo-links", { method: "POST", body: { title: receipt.title } });
+        clearInterval(receipt.timer);
+        receipt.timer = setInterval(() => void checkReceiptLink(), 3000);
+      } catch (error) {
+        receipt.error = DF.describe(error);
+      }
+    }
+    paintReceipt();
+  });
+  document.addEventListener("change", async event => {
+    if (event.target?.id !== "finReceiptFile" || !event.target.files?.[0]) return;
+    try {
+      Object.assign(receipt, { fileId: null, dataUrl: await shrinkPhoto(event.target.files[0]), error: "" });
+    } catch (error) {
+      receipt.error = error.message;
+    }
+    paintReceipt();
+  });
+
+  // A paid settlement's receipt photo, in a new tab.
+  document.addEventListener("click", event => {
+    const el = event.target instanceof Element ? event.target.closest("[data-fin-receipt-view]") : null;
+    if (!el) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const tab = window.open("", "_blank");
+    DF.apiRaw(`/settlements/${encodeURIComponent(el.dataset.finReceiptView)}/payment-proof`)
+      .then(r => r.blob())
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        if (tab) tab.location.href = url;
+        else window.open(url, "_blank");
+      })
+      .catch(error => (tab?.close(), showToast(DF.describe(error))));
+  }, true);
+
   const viewSettlement = id => Ops.printPdf(`/documents/settlement/${id}`, { title: "Preparing the settlement statement…" });
 
   const actions = {
     "fin-settlement-new": async () => {
       const field = await merchantField("Merchant");
       if (!field) return;
+      Object.assign(pick, { merchantId: "", items: null, adjustments: [], adjustmentsTotal: 0, chosen: new Set(), error: "", loading: false });
       Ops.form({
         title: "Draft a settlement",
-        description: "Collects the merchant's delivered, unsettled COD less charges. Another finance user approves it.",
+        description: "Choose the merchant, then the parcels to settle: their COD cash at hubs less delivery charges, and the merchant's open adjustments.",
         submit: "Draft settlement",
-        fields: [field],
+        wide: true,
+        fields: [field, { id: "parcels", label: "Parcels to settle", type: "static", html: `<div id="finPick"></div>`, full: true }],
         onSubmit: async v => {
-          const s = await DF.api("/settlements", { method: "POST", body: { merchantId: v.merchantId } });
+          if (pick.items?.length && !pick.chosen.size) throw new Error("Choose at least one parcel to settle.");
+          const body = { merchantId: v.merchantId, ...(pick.items?.length ? { collectionIds: [...pick.chosen] } : {}) };
+          const s = await DF.api("/settlements", { method: "POST", body });
           done(null);
-          return `${s.number} drafted: net ${Ops.money(s.netPayable)}. Another finance user must approve it.`;
+          return `${s.number} drafted: ${s.collectionCount} parcel${s.collectionCount === 1 ? "" : "s"}, net ${Ops.money(s.netPayable)}. Approve it to pay it out.`;
         },
       });
     },
@@ -417,6 +731,7 @@
       const { number, merchantName } = b.dataset;
       const net = Number(b.dataset.net);
       const id = b.dataset.finSettlementPay;
+      resetReceipt(`Payment receipt · ${number}`);
       Ops.form({
         title: `Mark ${number} paid`,
         description: net > 0 ? `Record the ${Ops.money(net)} payout to ${merchantName}. The merchant is notified.` : `Nothing is payable to ${merchantName}; closing it carries the balance forward.`,
@@ -425,14 +740,17 @@
           ? [
               { id: "via", label: "Paid by", type: "select", options: [{ value: "", label: "The merchant's payout account" }, { value: "BANK", label: "Bank transfer" }, { value: "BKASH", label: "bKash" }] },
               { id: "reference", label: "Bank / bKash transaction reference", required: true, maxLength: 120, placeholder: "e.g. TRX9F82K1" },
+              // The receipt photo (optional): from the computer, or taken with a phone (QR link, used once).
+              { id: "receipt", label: "Payment receipt (photo)", type: "static", html: `<div id="finReceipt"></div>`, full: true },
             ]
           : [{ id: "info", label: "Payout", type: "static", value: "৳0 — no transfer is needed." }],
         validate: { reference: REF },
-        review: net > 0 ? v => [["Settlement", number], ["Merchant", merchantName], ["Amount", Ops.money(net)], ["Paid by", v.via ? (v.via === "BANK" ? "Bank transfer" : "bKash") : "Payout account"], ["Reference", v.reference]] : null,
+        review: net > 0 ? v => [["Settlement", number], ["Merchant", merchantName], ["Amount", Ops.money(net)], ["Paid by", v.via ? (v.via === "BANK" ? "Bank transfer" : "bKash") : "Payout account"], ["Reference", v.reference], ["Receipt photo", receipt.dataUrl ? "Attached (the merchant sees it)" : "None"]] : null,
         confirm: "Confirm payout",
         onSubmit: async v => {
-          const body = net > 0 ? { reference: v.reference, ...(v.via ? { via: v.via } : {}) } : {};
+          const body = net > 0 ? { reference: v.reference, ...(v.via ? { via: v.via } : {}), ...(receipt.fileId ? { proofFileId: receipt.fileId } : receipt.dataUrl ? { proofImage: receipt.dataUrl } : {}) } : {};
           const s = await DF.api(`/settlements/${id}/pay`, { method: "POST", body });
+          closeReceiptLink();
           done(null);
           return net > 0 ? `${s.number} paid; the merchant was notified.` : `${s.number} closed with no payout; ${Ops.money(s.carriedForward)} carried forward.`;
         },
@@ -441,23 +759,31 @@
     "fin-invoice-new": async () => {
       const field = await merchantField("Merchant");
       if (!field) return;
+      const today = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+      Object.assign(bill, { merchantId: "", from: `${thisPeriod()}-01`, to: today, items: null, returns: [], returnsTotal: 0, chosen: new Set(), error: "", loading: false });
       Ops.form({
-        title: "Issue a tax invoice",
-        description: "Invoices the merchant's delivered parcels in the period, with VAT. Days are Dhaka calendar days.",
-        submit: "Review invoice",
-        fields: [field, { id: "from", label: "Period start", type: "date", value: `${thisPeriod(-1)}-01`, required: true }, { id: "to", label: "Period end (inclusive)", type: "date", value: new Date(Date.parse(`${thisPeriod()}-01T00:00:00Z`) - 86400000).toISOString().slice(0, 10), required: true }],
+        title: "Generate bill",
+        description: "Choose the merchant and the delivery dates, then tick the deliveries to bill. The bill (tax invoice, VAT included) is a PDF the merchant sees in their panel too. Days are Dhaka calendar days.",
+        submit: "Generate bill",
+        wide: true,
+        fields: [
+          field,
+          { id: "from", label: "Delivered from", type: "date", value: bill.from, required: true },
+          { id: "to", label: "Delivered to (inclusive)", type: "date", value: bill.to, required: true },
+          { id: "deliveries", label: "Deliveries to bill", type: "static", html: `<div id="finBillPick"></div>`, full: true },
+        ],
         validate: {
           from: v => (ISO_DAY.test(v) ? "" : "Choose a date"),
           to: (v, all) => (!ISO_DAY.test(v) ? "Choose a date" : all.from && v < all.from ? "The end can't be before the start" : ""),
         },
-        review: v => [["Merchant", merchantLabel(field, v.merchantId)], ["Period", `${dateShort(dhakaStart(v.from))} – ${dateShort(dhakaStart(v.to))}`]],
-        reviewNote: "The invoice number is issued and posted to the ledger when you confirm.",
-        confirm: "Issue invoice",
         onSubmit: async v => {
+          if (!bill.items?.length) throw new Error("There are no deliveries to bill for this merchant and these dates.");
+          if (!bill.chosen.size) throw new Error("Tick at least one delivery to bill.");
           const end = new Date(Date.parse(dhakaStart(v.to)) + 86400000).toISOString();
-          const i = await DF.api("/invoices", { method: "POST", body: { merchantId: v.merchantId, periodStart: dhakaStart(v.from), periodEnd: end } });
+          const i = await DF.api("/invoices", { method: "POST", body: { merchantId: v.merchantId, periodStart: dhakaStart(v.from), periodEnd: end, trackingIds: [...bill.chosen] } });
           done(null);
-          return `${i.number} issued: ${Ops.money(i.total)} incl. VAT ${Ops.money(i.vatAmount)}.`;
+          printInvoice(i.id);
+          return `${i.number} generated: ${Ops.money(i.total)} incl. VAT ${Ops.money(i.vatAmount)}. The merchant sees it in their panel.`;
         },
       });
     },

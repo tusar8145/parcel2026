@@ -14,6 +14,7 @@ import { NotificationSettingsService } from "../notifications/notification-setti
 import { readFinanceConfig, vatSplit } from "../finance/finance-config";
 import { financeMerchantScope } from "../finance/finance.scope";
 import { InvoicesService } from "../finance/invoices.service";
+import { invoicedParcels } from "../finance/invoiced";
 import { SettlementsService } from "../finance/settlements.service";
 import { LinehaulService } from "../linehaul/linehaul.service";
 import { CnStockService } from "../cn-stock/cn-stock.service";
@@ -105,6 +106,14 @@ function parseCsv(text: string): string[][] {
  * same permissions and scope as the data it prints, and every generation is audited
  * (`document.generate`).
  */
+/** The merchant's payout account (Merchant.payoutAccount JSON) as the settlement PDF's "Pay to", or null. */
+function payToOf(raw: unknown): { method: string; accountName: string; accountNumber: string; bankName?: string; branch?: string; routingNumber?: string } | null {
+  const a = raw as { method?: unknown; accountName?: unknown; accountNumber?: unknown; bankName?: unknown; branch?: unknown; routingNumber?: unknown } | null;
+  if (!a || typeof a.method !== "string" || typeof a.accountNumber !== "string") return null;
+  const str = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
+  return { method: a.method, accountName: str(a.accountName) ?? "—", accountNumber: a.accountNumber, bankName: str(a.bankName), branch: str(a.branch), routingNumber: str(a.routingNumber) };
+}
+
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger("Documents");
@@ -292,9 +301,7 @@ export class DocumentsService {
   private async toShipments(rows: ParcelRow[], vatRate: number): Promise<ShipmentDoc[]> {
     const labels = await this.toLabels(rows);
     const merchantIds = [...new Set(rows.map(p => p.merchantId).filter((x): x is string => !!x))];
-    const invoices = merchantIds.length
-      ? await this.prisma.invoice.findMany({ where: { merchantId: { in: merchantIds }, status: { not: "VOID" } }, select: { merchantId: true, number: true, status: true, periodStart: true, periodEnd: true } })
-      : [];
+    const invoiced = await invoicedParcels(this.prisma, merchantIds);
     return rows.map((p, i) => {
       const l = labels[i];
       const snap = p.pricingSnapshot as { segment?: string; lines?: { code: string; label: string; amount: number }[] } | null;
@@ -313,7 +320,7 @@ export class DocumentsService {
       const line: ShipmentDoc["line"] = !p.merchantId ? "customer" : l.isDocument ? "document" : "ecommerce";
       const cod = num(p.codAmount) > 0;
       const delivered = p.status === "DELIVERED";
-      const billed = !cod && p.deliveredAt ? invoices.find(inv => inv.merchantId === p.merchantId && inv.periodStart <= p.deliveredAt! && p.deliveredAt! < inv.periodEnd) : undefined;
+      const billed = !cod && p.deliveredAt ? invoiced.get(p.trackingId) : undefined;
       const payment = cod
         ? delivered
           ? "COD collected from recipient"
@@ -611,6 +618,8 @@ export class DocumentsService {
       createdAt: (v.createdAt as Date) ?? new Date(),
       paidAt: (v.paidAt as Date | null) ?? null,
       reference: (v.reference as string | null) ?? null,
+      payTo: payToOf(v.payoutAccount),
+      paymentProof: !!v.paymentProof,
       lines: s.lines.map(l => ({ trackingId: l.trackingId, deliveredAt: l.deliveredAt, codAmount: num(l.codAmount), charge: num(l.charge), net: num(l.net) })),
       adjustments: s.adjustments.map(a => ({ kind: a.kind, description: a.description, amount: num(a.amount) })),
       codTotal: num(v.codTotal),
@@ -634,7 +643,7 @@ export class DocumentsService {
     const merchant = await this.prisma.merchant.findUnique({ where: { id: merchants[0] }, select: { id: true, name: true, code: true, type: true } });
     if (!merchant) throw notFound("Merchant");
     const range = query.from || query.to ? dhakaDateRange(query.from ?? "2000-01-01", query.to ?? dhakaToday()) : null;
-    const [parcels, invoices] = await Promise.all([
+    const [parcels, invoiced] = await Promise.all([
       this.prisma.parcel.findMany({
         where: {
           merchantId: merchant.id,
@@ -646,9 +655,9 @@ export class DocumentsService {
         orderBy: { deliveredAt: "asc" },
         take: MAX_LIST_ROWS,
       }),
-      this.prisma.invoice.findMany({ where: { merchantId: merchant.id, status: { not: "VOID" } }, select: { periodStart: true, periodEnd: true } }),
+      invoicedParcels(this.prisma, [merchant.id]),
     ]);
-    const open = parcels.filter(p => p.deliveredAt && !invoices.some(i => i.periodStart <= p.deliveredAt! && p.deliveredAt! < i.periodEnd));
+    const open = parcels.filter(p => p.deliveredAt && !invoiced.has(p.trackingId));
     if (!open.length) throw new AppError("NOTHING_TO_PRINT", "No delivered prepaid parcels are waiting to be invoiced", 422);
     const brand = await this.brand();
     await this.record(actor, "merchant_statement", { merchant: merchant.code, from: query.from ?? null, to: query.to ?? null, parcels: open.length }, meta, merchant.id, "merchant");

@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { uploadType } from "../../common/file-types";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -21,7 +22,6 @@ import { APPLICATION_CATEGORIES, type Attachment, type createTicketSchema, type 
 
 const ASSIGNABLE_ROLES: Role[] = ["SUPPORT_AGENT", "OPS_MANAGER", "SUPER_ADMIN"];
 const APPLICATION_CATEGORY_SET = new Set<string>(APPLICATION_CATEGORIES);
-const EXTENSIONS: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "application/pdf": ".pdf" };
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   OPEN: "Open",
@@ -399,8 +399,8 @@ export class SupportService {
 
   private async saveAttachments(actor: UserActor, number: string, messageId: string, attachments: Attachment[], db: Db) {
     for (const [i, a] of attachments.entries()) {
-      const ext = EXTENSIONS[a.dataUrl.slice(5, a.dataUrl.indexOf(";"))] ?? "";
-      await this.storage.saveDataUrl(a.dataUrl, a.filename ?? `${number}-${i + 1}${ext}`, actor.userId, db, messageId);
+      const ext = uploadType(a.filename, a.dataUrl.slice(5, a.dataUrl.indexOf(";")), "documents")?.ext ?? "";
+      await this.storage.saveDataUrl(a.dataUrl, a.filename ?? `${number}-${i + 1}${ext}`, actor.userId, db, messageId, "documents");
     }
   }
 }

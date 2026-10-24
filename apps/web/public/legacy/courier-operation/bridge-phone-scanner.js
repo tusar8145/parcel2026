@@ -6,7 +6,7 @@
  *      app/(scan)). The link belongs to this tab only: another tab or browser connects its own phone.
  *   2. Each code the phone reads arrives here (phone_scanner.scan on GET /events, this tab's link id)
  *      and goes into the open page's scan box as a camera read (DF.scanner.deliver, shared/scanner.js):
- *      Scan desk tabs, Work queue, Transfers, CN stock, Collect from hub… The page's result (✓ / ✗ and
+ *      Scan desk tabs, Parcel queue, Transfers, CN stock, Collect from hub… The page's result (✓ / ✗ and
  *      its message) goes back to the phone, which beeps and shows it.
  *   3. The link stays alive while this tab is open (every minute; kept across a reload) and
  *      Disconnect ends it at once. With no scan box open, the code is offered as "Open parcel".
@@ -182,7 +182,7 @@
     body.innerHTML = `<div style="display:grid;gap:12px;justify-items:center;text-align:center">
       <div id="phoneScannerQr" style="width:220px;height:220px">${link.qrSvg}</div>
       ${status}
-      <p style="margin:0;font-size:13px;color:#586577;line-height:1.5">Scan this QR code with the phone's camera, or open the link on the phone. Codes the phone reads go into the scan box of the page open here (Scan desk, Work queue, Transfers…), and the phone beeps with the result.</p>
+      <p style="margin:0;font-size:13px;color:#586577;line-height:1.5">Scan this QR code with the phone's camera, or open the link on the phone. Codes the phone reads go into the scan box of the page open here (Scan desk, Parcel queue, Transfers…), and the phone beeps with the result.</p>
       <div style="display:flex;gap:6px;width:100%"><input class="table-search" id="phoneScannerUrl" readonly value="${esc(link.url)}" style="flex:1;min-width:0" aria-label="Phone link"><button type="button" class="button button-sm" data-psd="copy">Copy</button></div>
       <small style="color:#8b96a4">The link works only for this tab, while it is open. Another tab or computer connects its own phone.</small>
     </div>`;

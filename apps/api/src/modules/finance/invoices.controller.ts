@@ -4,7 +4,7 @@ import { ApiTags } from "@nestjs/swagger";
 import { CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
-import { createInvoiceSchema, listInvoicesQuerySchema, markInvoicePaidSchema, voidInvoiceSchema } from "./finance.schemas";
+import { billableQuerySchema, createInvoiceSchema, listInvoicesQuerySchema, markInvoicePaidSchema, voidInvoiceSchema } from "./finance.schemas";
 import { InvoicesService } from "./invoices.service";
 
 @ApiTags("finance")
@@ -18,6 +18,14 @@ export class InvoicesController {
   @ApiZodBody(createInvoiceSchema)
   create(@CurrentUser() actor: UserActor, @ZBody(createInvoiceSchema) body: z.infer<typeof createInvoiceSchema>, @ReqMeta() meta: RequestMeta) {
     return this.invoices.create(actor, body, meta);
+  }
+
+  /** Generate bill dialog: the merchant's delivered prepaid parcels in the period not on an invoice yet, and open return charges. */
+  @RequirePermissions("finance:manage")
+  @Get("billable")
+  @ApiZodQuery(billableQuerySchema)
+  billable(@ZQuery(billableQuerySchema) query: z.infer<typeof billableQuerySchema>) {
+    return this.invoices.billable(query);
   }
 
   /** Merchant owners see their own merchants' invoices. */

@@ -12,7 +12,7 @@ import { SupportService } from "./support.service";
 export class SupportController {
   constructor(private readonly support: SupportService) {}
 
-  /** Open a ticket, optionally about one of your parcels, with up to 3 attachments (350 KB each). */
+  /** Open a ticket, optionally about one of your parcels, with up to 5 attachments (5 MB each). */
   @RequirePermissions("support:create")
   @Post()
   @ApiZodBody(createTicketSchema)

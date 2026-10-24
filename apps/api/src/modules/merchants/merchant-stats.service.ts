@@ -10,6 +10,7 @@ import { quoteRequestOf } from "../packages/packages.controller";
 import { MerchantsService } from "./merchants.service";
 import type { merchantStatsQuerySchema } from "./merchants.schemas";
 import { fillSeries, periodBuckets, periodView, resolvePeriod, type Period } from "../../common/period";
+import { invoicedParcels } from "../finance/invoiced";
 
 /** Bangladesh has no daylight saving time: local time is always UTC+6. */
 const DHAKA_OFFSET_MS = 6 * 3600_000;
@@ -273,7 +274,7 @@ export class MerchantStatsService {
   private async money(merchantId: string, now: number) {
     const { year, month } = dhakaParts(now);
     const quarterStart = new Date(dhakaMonth(year, month - (month % 3)));
-    const [cod, [ready], settlements, lastPaid, outstanding, overdue, paidThisQuarter, billedPeriods] = await Promise.all([
+    const [cod, [ready], settlements, lastPaid, outstanding, overdue, paidThisQuarter, billedParcels] = await Promise.all([
       this.prisma.codCollection.groupBy({ by: ["state"], where: { parcel: { merchantId } }, _sum: { amount: true }, _count: { _all: true } }),
       this.prisma.$queryRaw<{ n: number; cod: number; charges: number }[]>`
         SELECT count(*)::int AS n, coalesce(sum(c.amount), 0)::float8 AS cod, coalesce(sum(p."totalCharge"), 0)::float8 AS charges
@@ -284,15 +285,15 @@ export class MerchantStatsService {
       this.prisma.invoice.aggregate({ where: { merchantId, status: "ISSUED" }, _sum: { subtotal: true }, _count: { _all: true }, _min: { dueAt: true } }),
       this.prisma.invoice.count({ where: { merchantId, status: "ISSUED", dueAt: { lt: new Date(now) } } }),
       this.prisma.invoice.aggregate({ where: { merchantId, status: "PAID", paidAt: { gte: quarterStart } }, _sum: { subtotal: true }, _count: { _all: true } }),
-      this.prisma.invoice.findMany({ where: { merchantId, status: { in: ["ISSUED", "PAID"] } }, select: { periodStart: true, periodEnd: true } }),
+      invoicedParcels(this.prisma, [merchantId]),
     ]);
-    // Delivered prepaid parcels (no COD to deduct from) outside every issued invoice's period.
+    // Delivered prepaid parcels (no COD to deduct from) not on an issued or paid invoice.
     const unbilled = await this.prisma.parcel.aggregate({
       where: {
         merchantId,
         status: "DELIVERED",
         codCollection: { is: null },
-        NOT: billedPeriods.map(p => ({ deliveredAt: { gte: p.periodStart, lt: p.periodEnd } })),
+        ...(billedParcels.size ? { trackingId: { notIn: [...billedParcels.keys()] } } : {}),
       },
       _sum: { totalCharge: true },
       _count: { _all: true },

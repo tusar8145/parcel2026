@@ -176,6 +176,9 @@ describe("merchant addresses", () => {
     expect(bad.status).toBe(422);
     expect(bad.body.error.details[0].path).toBe("pickup.zone");
 
+    // Operations managers get it in their bell (Courier Operations › Merchants).
+    const bell = await ctx.prisma.userNotification.findFirstOrThrow({ where: { userId: ops.user.id, type: "staff.merchant_address_request" } });
+    expect(bell.title).toBe("Address change to approve: Address Test Shop");
     // Operations see it; a rejection needs a reason.
     const queue = await ctx.api("GET", "/merchant-address-requests", { token: ops.token });
     expect(queue.body.items).toEqual([expect.objectContaining({ status: "PENDING", merchant: expect.objectContaining({ id, name: "Address Test Shop" }), proposedHub: expect.objectContaining({ name: "Banani Hub" }) })]);

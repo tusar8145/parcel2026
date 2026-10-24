@@ -24,8 +24,10 @@
   // packages/shared/src/roles.ts: support:manage and support:create.
   const STAFF_ROLES = ["SUPER_ADMIN", "OPS_MANAGER", "SUPPORT_AGENT"];
   const REQUESTER_ROLES = ["CUSTOMER", "MERCHANT_OWNER", "MERCHANT_STAFF", "RIDER", "HUB_OPERATOR", ...STAFF_ROLES];
-  const maxAttachmentBytes = 350 * 1024;
-  const maxAttachments = 3;
+  const maxAttachmentBytes = 5 * 1024 * 1024;
+  // What support attachments may be (the API checks each file's content matches its extension).
+  const attachmentExtensions = ["png", "jpg", "jpeg", "webp", "gif", "heic", "heif", "pdf", "doc", "docx", "xls", "xlsx", "csv", "ppt", "pptx", "txt"];
+  const maxAttachments = 5;
   const POLL_MS = 15000;
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -284,7 +286,7 @@
         <label>Priority<select name="priority"><option>Normal</option><option ${prefilled.priority === "High" ? "selected" : ""}>High</option><option>Low</option></select></label>
         <label class="st-span">Tracking or reference number <span class="st-optional">(optional)</span><input name="relatedRef" maxlength="40" value="${escapeHtml(prefilled.relatedRef || "")}" placeholder="e.g. PP-28491"></label>
         <label class="st-span">Message<textarea name="message" required maxlength="3000" rows="4" placeholder="Tell us what happened and how we can help"></textarea></label>
-        <label class="st-span">Attachments <span class="st-optional">(optional)</span><input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple data-file-drop data-file-hint="Images (PNG, JPEG, WebP) or PDF · up to 3 files, 350 KB each"></label>
+        <label class="st-span">Attachments <span class="st-optional">(optional)</span><input name="attachments" type="file" accept="image/*,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt" multiple data-file-drop data-file-hint="Photos, PDF, Word, Excel, PowerPoint, CSV or text · up to 5 files, 5 MB each"></label>
       </div>
       <div class="st-actions"><span class="st-note">Courier operations replies in this conversation.</span><button class="button button-primary" type="submit">Create support ticket</button></div>
     </form>`;
@@ -327,7 +329,7 @@
       ${csatMarkup(ticket)}
       ${locked ? `<div class="st-locked">This ticket is closed. Operations can reopen it by changing the status.</div>` : `<form class="st-reply" data-support-reply="${escapeHtml(ticket.id)}">
         <label class="st-sr-only" for="supportReply">Write a reply</label><textarea id="supportReply" name="message" required maxlength="3000" rows="3" placeholder="Write a reply to this conversation"></textarea>
-        <div class="st-reply-file"><input name="attachments" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple aria-label="Attach files" data-file-button="Attach files" data-file-hint="Images or PDF · up to 3 files, 350 KB each"></div>
+        <div class="st-reply-file"><input name="attachments" type="file" accept="image/*,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt" multiple aria-label="Attach files" data-file-button="Attach files" data-file-hint="Photos, PDF, Office, CSV or text · up to 5 files, 5 MB each"></div>
         <div class="st-reply-bottom">${cannedPicker()}${internalToggle}<button class="button button-primary" type="submit">Send reply</button></div>
       </form>`}`;
   }
@@ -427,8 +429,9 @@
   }
 
   function readFile(file) {
-    if (file.size > maxAttachmentBytes) throw new Error(`${file.name} is larger than 350 KB.`);
-    if (!["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(file.type)) throw new Error(`${file.name} must be a PNG, JPEG, WebP, or PDF file.`);
+    if (file.size > maxAttachmentBytes) throw new Error(`${file.name} is larger than 5 MB.`);
+    const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+    if (!attachmentExtensions.includes(ext)) throw new Error(`${file.name}: attach photos (JPG, PNG, WebP, GIF, HEIC), PDF, Word, Excel, PowerPoint, CSV or text files.`);
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve({ filename: file.name.slice(0, 120), dataUrl: reader.result });

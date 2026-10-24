@@ -70,7 +70,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   MERCHANT_STAFF: ["parcel:create", "parcel:read:own", "parcel:cancel:own", "support:create"],
   RIDER: ["parcel:rider-update", "cod:collect", "support:create"],
   HUB_OPERATOR: [...OPS_BASE, "cod:receive"],
-  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read", "user:login-as", "merchant:address"],
+  OPS_MANAGER: [...OPS_BASE, "cod:receive", "hub:manage", "rider:manage", "support:manage", "user:read", "audit:read", "user:login-as", "merchant:address", "finance:read", "finance:manage"],
   FINANCE: ["parcel:read:any", "merchant:read:any", "finance:read", "finance:manage", "cod:receive", "audit:read"],
   SUPPORT_AGENT: ["parcel:read:any", "merchant:read:any", "rider:read", "support:create", "support:manage", "user:read"],
   SUPER_ADMIN: [...PERMISSIONS],

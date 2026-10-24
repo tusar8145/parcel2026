@@ -153,7 +153,10 @@ describe("finance: ledger, carry-forward, schedules, reconciliation, disputes, V
 
     // Access: merchants never see the company ledger.
     expect((await ctx.api("GET", "/finance/ledger/trial-balance", { token: s.owner.token })).status).toBe(403);
-    expect((await ctx.api("GET", "/finance/ledger/accounts", { token: s.ops.token })).status).toBe(403);
+    // Operations managers work COD & settlement › Invoices & accounts; hub staff don't.
+    expect((await ctx.api("GET", "/finance/ledger/accounts", { token: s.ops.token })).status).toBe(200);
+    const hubStaff = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: (await hub(ctx, "HUB-L")).id }], "Hub Staff");
+    expect((await ctx.api("GET", "/finance/ledger/accounts", { token: hubStaff.token })).status).toBe(403);
     const other = await merchant("Other");
     expect((await ctx.api("GET", `/finance/merchants/${other.id}/statement`, { token: s.owner.token })).status).toBe(404);
   });

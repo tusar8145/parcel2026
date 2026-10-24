@@ -150,8 +150,8 @@ sudo a2enmod proxy proxy_http headers rewrite ssl
     ProxyPass        / http://127.0.0.1:3000/
     ProxyPassReverse / http://127.0.0.1:3000/
 
-    # Uploads (Excel imports, delivery slip photos): 25 MB
-    LimitRequestBody 26214400
+    # Uploads: support tickets carry up to 5 files of 5 MB (~33 MB as JSON); Excel imports, photos: 40 MB
+    LimitRequestBody 41943040
 </VirtualHost>
 ```
 

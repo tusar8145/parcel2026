@@ -53,9 +53,8 @@
     return `<section class="panel table-panel" id="riderPayoutsPanel"><div class="panel-heading"><div><h2 class="panel-title">Rider payouts</h2><p class="panel-subtitle">Riders' earnings ledger · prepared, approved by someone else, then paid by finance</p></div><button class="button button-sm" data-payout-run>Prepare payouts</button></div><div class="table-scroll"><table><thead><tr><th>PAYOUT</th><th>RIDER</th><th>PERIOD</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
   }
 
-  const baseEnhance = Ops.enhance[PAGE];
-  Ops.enhance[PAGE] = page => {
-    baseEnhance?.(page);
+  // Called by the COD page (bridge-finance.js draws the page, then these two sections).
+  Ops.riderPayPanels = () => {
     $("handoverRequestsPanel")?.remove();
     $("riderPayoutsPanel")?.remove();
     if (Ops.can("receiveCash")) {
@@ -231,8 +230,32 @@
     true,
   );
 
+  // Menu › COD & settlement: riders' cash handover requests waiting to be received (amber; none = hidden).
+  // Hub managers see their hub's, operations managers all (GET /cod/handover-requests is scoped).
+  async function paintNavCount() {
+    const badge = document.querySelector('#navigation [data-stage-count="COD & settlement"]');
+    if (!badge) return;
+    if (!Ops.can("receiveCash")) return void (badge.hidden = true);
+    let n = 0;
+    try {
+      const list = await DF.api("/cod/handover-requests");
+      n = (Array.isArray(list) ? list : list.items || []).length;
+    } catch {
+      return;
+    }
+    badge.textContent = Ops.num(n);
+    badge.hidden = !n;
+    badge.style.background = "#fff5df";
+    badge.style.color = "#b87913";
+    badge.title = `${n} cash handover request${n === 1 ? "" : "s"} from riders to receive`;
+  }
+  let navTries = 0;
+  const navWhenReady = () => (Ops.me ? void paintNavCount() : ++navTries < 60 && setTimeout(navWhenReady, 500));
+  navWhenReady();
+
   DF.live(["cod.handover_request", "rider.payout"], async () => {
     Ops.invalidate("handover-requests", "rider-payouts", "cod-riders");
     if (Ops.page() === PAGE) Ops.rerender();
+    void paintNavCount();
   });
 })();

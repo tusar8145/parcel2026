@@ -356,7 +356,7 @@ describe("imports", () => {
       // Nothing booked by the dry run.
       expect(await ctx.prisma.parcel.count({ where: { merchantId: m.id } })).toBe(1);
 
-      // Banking & Financial: never COD; Banking products; the package's services; old columns are ignored.
+      // Banking & Financial: never COD; any product name (unlisted ones priced as Regular); the package's services; old columns are ignored.
       const bank = await merchant("BANKING_FINANCIAL");
       const doc = await upload(bank.owner.token, { kind: "document" }, {
         name: "docs.csv",
@@ -367,18 +367,17 @@ describe("imports", () => {
           ["LOAN-3", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "", "", ""],
           ["LOAN-4", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "Cheque book", "", ""],
           ["LOAN-5", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "", "Same day", "", ""],
-          ["LOAN-6", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Fashion & Apparel", "", "", ""],
+          ["LOAN-6", "Mahir", "01819123205", "Office 8", "Dhaka South", "Motijheel", "Debit card renewal kit", "", "", ""],
         ]),
       });
       expect(doc.status, JSON.stringify(doc.body)).toBe(201);
       expect(doc.body.ignoredColumns).toEqual(["Receiver relationship"]);
       const docRows = (await allRows(bank.owner.token, doc.body.id)).items;
-      expect(docRows.map((r: { status: string }) => r.status)).toEqual(["VALID", "ERROR", "VALID", "ERROR", "ERROR", "ERROR"]);
+      expect(docRows.map((r: { status: string }) => r.status)).toEqual(["VALID", "ERROR", "VALID", "ERROR", "ERROR", "VALID"]);
       expect(docRows[1].errors[0]).toMatchObject({ column: "cod_amount", message: "Banking & Financial parcels can't be cash on delivery", header: "COD amount" });
       expect(docRows[0].lines.map((l: { code: string }) => l.code)).toEqual(["route"]); // B2B Document costs nothing extra by default
       expect(docRows[3].errors[0].message).toBe('"Cheque book" is not an option (Regular, Express, On-demand, B2B Document, Trade Service Document, Corporate Urgent Document)');
       expect(docRows[4].errors[0].message).toBe('"Same day" is not a service option: choose one from the list (Regular, Express, On-demand, B2B Document, Trade Service Document, Corporate Urgent Document)');
-      expect(docRows[5].errors[0]).toMatchObject({ column: "product_type", message: '"Fashion & Apparel" is not an option (choose a product of the Banking & Financial list)' });
       // The wrong template for the merchant's category is refused.
       const wrong = await upload(bank.owner.token, { kind: "ecommerce" }, { name: "x.csv", data: csv([ECOM_HEADER, full("A")]) });
       expect(wrong.body.error).toMatchObject({ code: "WRONG_TEMPLATE", message: `${bank.m.name} is a Banking & Financial merchant: use the Banking & Financial template` });
@@ -388,7 +387,7 @@ describe("imports", () => {
   });
 
   describe("creating", () => {
-    it("E-commerce takes any product name: a listed product prices by its type, any other is booked as written and priced as Regular", async () => {
+    it("E-commerce and Banking & Financial take any product name: a listed product prices by its type, any other is booked as written and priced as Regular", async () => {
       const { m, owner } = await merchant();
       const res = await upload(owner.token, { kind: "ecommerce" }, {
         name: "products.csv",
@@ -407,10 +406,19 @@ describe("imports", () => {
       // The same row with a listed Regular product costs the same as the free name.
       expect(Number(parcels[0].totalCharge)).toBe(Number(parcels[2].totalCharge));
 
-      // Banking & Financial keeps its list.
-      const { owner: bank } = await merchant("BANKING_FINANCIAL");
-      const doc = await upload(bank.token, { kind: "document" }, { name: "docs.csv", data: csv([["Recipient name", "Recipient phone", "Delivery address", "District", "Zone", "Product"], ["Mahir", "01712345678", "House 1, Road 2, Dhanmondi", "Dhaka Central", "Dhanmondi", "Spaceships"]]) });
-      expect(doc.body.counts).toMatchObject({ errors: 1 });
+      // Banking & Financial too: an unlisted name is booked as written and priced as Regular (like an empty Product).
+      const { m: bm, owner: bank } = await merchant("BANKING_FINANCIAL");
+      const docHeader = ["Reference no.", "Recipient name", "Recipient phone", "Delivery address", "District", "Zone", "Product"];
+      const docRow = (ref: string, product: string) => [ref, "Mahir", "01712345678", "House 1, Road 2, Dhanmondi", "Dhaka Central", "Dhanmondi", product];
+      const doc = await upload(bank.token, { kind: "document" }, { name: "docs.csv", data: csv([docHeader, docRow("BANK-1", "Debit card renewal kit"), docRow("BANK-2", "")]) });
+      expect(doc.body.counts).toMatchObject({ valid: 2, errors: 0 });
+      expect((await ctx.api("POST", `/imports/${doc.body.id}/commit`, { token: bank.token })).body).toMatchObject({ status: "COMPLETED", result: { created: 2 } });
+      const docs = await ctx.prisma.parcel.findMany({ where: { merchantId: bm.id }, orderBy: { merchantOrderRef: "asc" } });
+      expect(docs.map(p => [p.merchantOrderRef, p.productName, p.productType, p.productId === null])).toEqual([
+        ["BANK-1", "Debit card renewal kit", "REGULAR", true],
+        ["BANK-2", null, "REGULAR", true],
+      ]);
+      expect(Number(docs[0].totalCharge)).toBe(Number(docs[1].totalCharge));
     });
 
     it("books valid and incomplete rows (incomplete ones priced with defaults), skips errors and keeps a history", async () => {

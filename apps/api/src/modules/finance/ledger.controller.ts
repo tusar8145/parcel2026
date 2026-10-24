@@ -8,7 +8,7 @@ import { forbidden, notFound } from "../../common/errors";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { Prisma } from "../../generated/prisma/client";
-import { financeMerchantScope, isFinanceStaff } from "./finance.scope";
+import { canChangeFinanceSettings, financeMerchantScope, isFinanceStaff } from "./finance.scope";
 import { FINANCE_CONFIG_KEY, financeConfigSchema, readFinanceConfig, updateFinanceConfigSchema } from "./finance-config";
 import { LedgerReportsService } from "./ledger-reports.service";
 import { SYSTEM_ACCOUNTS } from "./ledger.service";
@@ -55,6 +55,10 @@ export class LedgerController {
   @Put("config")
   @ApiZodBody(updateFinanceConfigSchema)
   async updateConfig(@CurrentUser() actor: UserActor, @ZBody(updateFinanceConfigSchema) body: z.infer<typeof updateFinanceConfigSchema>, @ReqMeta() meta: RequestMeta) {
+    // How settlements are approved is a control over money: super admins decide it, not finance users.
+    if (body.settlementApproval !== undefined && !actor.roles.some(r => r.role === "SUPER_ADMIN"))
+      throw forbidden("Only a super admin can change how settlements are approved");
+    if (!canChangeFinanceSettings(actor)) throw forbidden("Only finance users and super admins can change finance settings");
     const current = await readFinanceConfig(this.prisma);
     const next = financeConfigSchema.parse({ ...current, ...body, seller: { ...current.seller, ...(body.seller ?? {}) } });
     await this.prisma.$transaction(async tx => {

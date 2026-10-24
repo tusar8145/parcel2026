@@ -177,7 +177,7 @@
 
   Ops.pages[PAGE] = {
     render: () =>
-      `${STYLE}<div class="page-heading"><div><p class="eyebrow">Network operations · next steps</p><h1>Work queue</h1><p class="subtitle">Every parcel's next step, worked out by the system. Open a step, choose a group, then scan parcels to do it.</p></div><div class="heading-actions" id="wqActions"></div></div><div class="wq-layout"><section class="panel wq-steps" id="wqSteps" aria-label="Next steps"></section><div id="wqDetail"></div></div>`,
+      `${STYLE}<div class="page-heading"><div><p class="eyebrow">Network operations · next steps</p><h1>Parcel queue</h1><p class="subtitle">Every parcel's next step, worked out by the system. Open a step, choose a group, then scan parcels to do it.</p></div><div class="heading-actions" id="wqActions"></div></div><div class="wq-layout"><section class="panel wq-steps" id="wqSteps" aria-label="Next steps"></section><div id="wqDetail"></div></div>`,
   };
   Ops.enhance[PAGE] = () => {
     paint();
@@ -338,6 +338,28 @@
     scan(code, "KEYBOARD");
   });
 
+  // Menu › Work queue: how many parcels wait in all its steps (your hub; the network for operations managers).
+  let navTimer = null;
+  async function paintNavCount() {
+    const badge = document.querySelector('#navigation [data-stage-count="Work queue"]');
+    if (!badge || !Ops.me) return;
+    try {
+      const overview = await DF.api("/work-queue");
+      const total = (overview.tasks || []).reduce((n, t) => n + (t.count || 0), 0);
+      badge.textContent = Ops.num(total);
+      badge.title = `${total} parcel${total === 1 ? "" : "s"} waiting in the Parcel queue`;
+    } catch {
+      // No access or offline: leave it as it is.
+    }
+  }
+  const navCountSoon = () => {
+    clearTimeout(navTimer);
+    navTimer = setTimeout(() => void paintNavCount(), 3000);
+  };
+  let navTries = 0;
+  const navWhenReady = () => (Ops.me ? void paintNavCount() : ++navTries < 60 && setTimeout(navWhenReady, 500));
+  navWhenReady();
+
   // Live: parcel changes anywhere move the counts.
-  DF.live?.(["parcel.updated", "parcel.created", "linehaul.updated", "return_run.updated"], () => refresh(), { debounceMs: 1500 });
+  DF.live?.(["parcel.updated", "parcel.created", "linehaul.updated", "return_run.updated"], () => (refresh(), navCountSoon()), { debounceMs: 1500 });
 })();

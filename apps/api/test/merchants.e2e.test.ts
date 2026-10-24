@@ -230,6 +230,11 @@ describe("merchants", () => {
       expect(badWallet.body.error.details[0].path).toBe("payoutAccount.accountNumber");
       const noBank = await ctx.api("PATCH", "/merchants/me", { token: owner.token, body: { payoutAccount: { method: "BANK", accountNumber: "12345678", accountName: "X Y" } } });
       expect(noBank.body.error.details.map((d: { path: string }) => d.path)).toContain("payoutAccount.bankName");
+      // An optional 9-digit routing number (spaces and dashes ignored).
+      const routed = await ctx.api("PATCH", "/merchants/me", { token: owner.token, body: { payoutAccount: { method: "BANK", accountNumber: "123456789012", accountName: "Shop Ltd", bankName: "City Bank", routingNumber: "225 261-725" } } });
+      expect(routed.body.payoutAccount).toMatchObject({ routingNumber: "225261725" });
+      const badRouting = await ctx.api("PATCH", "/merchants/me", { token: owner.token, body: { payoutAccount: { method: "BANK", accountNumber: "123456789012", accountName: "Shop Ltd", bankName: "City Bank", routingNumber: "1234" } } });
+      expect(badRouting.body.error.details.map((d: { path: string }) => d.path)).toContain("payoutAccount.routingNumber");
       expect((await ctx.api("PATCH", "/merchants/me", { token: owner.token, body: { payoutAccount: { method: "PAYPAL" } } })).status).toBe(422);
       expect((await ctx.api("PATCH", "/merchants/me", { token: owner.token, body: {} })).status).toBe(422);
 

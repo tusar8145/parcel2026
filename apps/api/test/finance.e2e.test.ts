@@ -1,6 +1,9 @@
 import { decrypt } from "../src/common/crypto";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
+// 1x1 PNG: a receipt photo.
+const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
 describe("finance: COD custody, settlements and invoices", () => {
   let ctx: TestContext;
   beforeAll(async () => {
@@ -199,6 +202,11 @@ describe("finance: COD custody, settlements and invoices", () => {
       const payEarly = await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin2.token, body: { reference: "BKASH-TX-1" } });
       expect(payEarly.body.error.code).toBe("SETTLEMENT_NOT_APPROVED");
 
+      // Double approval (maker-checker) is a super admin setting; finance users can't change it.
+      expect((await ctx.api("GET", "/finance/config", { token: s.fin1.token })).body.settlementApproval).toBe("SINGLE");
+      expect((await ctx.api("PUT", "/finance/config", { token: s.fin1.token, body: { settlementApproval: "DOUBLE" } })).status).toBe(403);
+      const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Super Admin");
+      expect((await ctx.api("PUT", "/finance/config", { token: admin.token, body: { settlementApproval: "DOUBLE" } })).body.settlementApproval).toBe("DOUBLE");
       const self = await ctx.api("POST", `/settlements/${draft.body.id}/approve`, { token: s.fin1.token });
       expect(self.status).toBe(403);
       expect(self.body.error.code).toBe("SAME_USER_APPROVAL");
@@ -208,9 +216,24 @@ describe("finance: COD custody, settlements and invoices", () => {
       expect(approved.body).toMatchObject({ status: "APPROVED", approvedBy: { id: s.fin2.user.id } });
       expect((await ctx.api("DELETE", `/settlements/${draft.body.id}`, { token: s.fin1.token })).body.error.code).toBe("SETTLEMENT_NOT_DRAFT");
 
-      const paid = await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin1.token, body: { reference: "BKASH-TX-1" } });
+      // A receipt photo taken with a phone (one-photo link): another user's photo can't be attached.
+      const link = await ctx.api("POST", "/photo-links", { token: s.fin1.token, body: { title: "Payment receipt" } });
+      const token = String(link.body.url).split("/photo/")[1];
+      expect((await ctx.api("GET", `/photo-links/public/${token}`)).body).toEqual({ title: "Payment receipt" });
+      expect((await ctx.api("POST", `/photo-links/public/${token}/photo`, { body: { image: PNG } })).status).toBe(201);
+      // Used once.
+      expect((await ctx.api("POST", `/photo-links/public/${token}/photo`, { body: { image: PNG } })).status).toBe(410);
+      const sent = await ctx.api("GET", `/photo-links/${link.body.id}`, { token: s.fin1.token });
+      expect(sent.body).toMatchObject({ status: "done", dataUrl: expect.stringMatching(/^data:image\/png;base64,/) });
+      expect((await ctx.api("GET", `/photo-links/${link.body.id}`, { token: s.fin2.token })).status).toBe(404);
+      expect((await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin2.token, body: { reference: "BKASH-TX-1", proofFileId: sent.body.fileId } })).body.error.code).toBe("PROOF_NOT_FOUND");
+
+      const paid = await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin1.token, body: { reference: "BKASH-TX-1", proofFileId: sent.body.fileId } });
       expect(paid.status).toBe(200);
-      expect(paid.body).toMatchObject({ status: "PAID", reference: "BKASH-TX-1" });
+      expect(paid.body).toMatchObject({ status: "PAID", reference: "BKASH-TX-1", paymentProof: true });
+      // The merchant sees the receipt photo of the payment to them.
+      const photo = await ctx.api("GET", `/settlements/${draft.body.id}/payment-proof`, { token: s.owner.token, headers: { accept: "application/json" } });
+      expect(photo.body).toMatchObject({ mimeType: "image/png", dataUrl: expect.stringMatching(/^data:image\/png;base64,/) });
       expect(paid.body.paidAt).toBeTruthy();
       expect(paid.body.lines.every((l: { state: string }) => l.state === "SETTLED")).toBe(true);
       const sms = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "finance.settlement_paid" } });
@@ -220,6 +243,36 @@ describe("finance: COD custody, settlements and invoices", () => {
       expect((await ctx.api("POST", `/settlements/${draft.body.id}/pay`, { token: s.fin1.token, body: { reference: "BKASH-TX-2" } })).status).toBe(409);
       const actions = (await ctx.prisma.auditLog.findMany({ where: { entityId: draft.body.id }, orderBy: { createdAt: "asc" } })).map(a => a.action);
       expect(actions).toEqual(["settlement.create", "settlement.approve", "settlement.pay"]);
+    });
+
+    it("single approval (the default): the finance user who drafted a settlement may approve it", async () => {
+      const s = await setup();
+      await cashAtHub(s, [400]);
+      const draft = await ctx.api("POST", "/settlements", { token: s.fin1.token, body: { merchantId: s.m.id } });
+      const approved = await ctx.api("POST", `/settlements/${draft.body.id}/approve`, { token: s.fin1.token });
+      expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+      expect(approved.body).toMatchObject({ status: "APPROVED", approvedBy: { id: s.fin1.user.id } });
+    });
+
+    it("drafts a settlement of the parcels chosen in the dialog; the rest wait for the next one", async () => {
+      const s = await setup();
+      await cashAtHub(s, [400, 600]);
+      const eligible = await ctx.api("GET", `/settlements/eligible?merchantId=${s.m.id}`, { token: s.fin1.token });
+      expect(eligible.status, JSON.stringify(eligible.body)).toBe(200);
+      expect(eligible.body.items).toHaveLength(2);
+      expect(eligible.body.items.map((i: { codAmount: number }) => i.codAmount).sort()).toEqual([400, 600]);
+      const pickOne = eligible.body.items.find((i: { codAmount: number }) => i.codAmount === 400);
+      expect(pickOne).toMatchObject({ trackingId: expect.stringMatching(/^PP-/), net: 400 - pickOne.charge });
+
+      const draft = await ctx.api("POST", "/settlements", { token: s.fin1.token, body: { merchantId: s.m.id, collectionIds: [pickOne.id] } });
+      expect(draft.status, JSON.stringify(draft.body)).toBe(201);
+      expect(draft.body).toMatchObject({ collectionCount: 1, codTotal: 400 });
+      // The other parcel still waits; a chosen parcel that is already settled is refused.
+      expect((await ctx.api("GET", `/settlements/eligible?merchantId=${s.m.id}`, { token: s.fin1.token })).body.items).toHaveLength(1);
+      const again = await ctx.api("POST", "/settlements", { token: s.fin1.token, body: { merchantId: s.m.id, collectionIds: [pickOne.id] } });
+      expect(again.body.error.code).toBe("COLLECTIONS_CHANGED");
+      // Merchants can't list them.
+      expect((await ctx.api("GET", `/settlements/eligible?merchantId=${s.m.id}`, { token: s.owner.token })).status).toBe(403);
     });
 
     it("scopes settlements to the merchant owner", async () => {
@@ -235,7 +288,7 @@ describe("finance: COD custody, settlements and invoices", () => {
       expect((await ctx.api("GET", `/settlements/${draft.body.id}`, { token: stranger.token })).status).toBe(404);
       expect((await ctx.api("GET", `/settlements?merchantId=${s.m.id}&status=DRAFT`, { token: s.fin2.token })).body.items).toHaveLength(1);
       expect((await ctx.api("POST", "/settlements", { token: s.owner.token, body: { merchantId: s.m.id } })).status).toBe(403);
-      expect((await ctx.api("POST", `/settlements/${draft.body.id}/approve`, { token: s.ops.token })).status).toBe(403);
+      expect((await ctx.api("POST", `/settlements/${draft.body.id}/approve`, { token: s.hubOp.token })).status).toBe(403);
       expect((await ctx.api("GET", "/settlements", { token: s.hubOp.token })).status).toBe(403);
       expect((await ctx.api("POST", "/settlements", { token: s.fin1.token, body: { merchantId: "019a0000-0000-7000-8000-000000000000" } })).status).toBe(404);
     });
@@ -280,6 +333,49 @@ describe("finance: COD custody, settlements and invoices", () => {
   });
 
   describe("invoices", () => {
+    it("bills chosen deliveries in a date range (operations managers too); the rest stays billable; the merchant sees it", async () => {
+      const s = await setup();
+      const start = hourAgo();
+      const a = await deliver(s, 0);
+      const b = await deliver(s, 0);
+      const c = await deliver(s, 0);
+      await deliver(s, 900); // COD: never on a bill
+      // The period may run to the end of today: the deliveries are chosen.
+      const range = { merchantId: s.m.id, periodStart: start, periodEnd: new Date(Date.now() + 86_400_000).toISOString() };
+      const qs = new URLSearchParams(range).toString();
+
+      const billable = await ctx.api("GET", `/invoices/billable?${qs}`, { token: s.ops.token });
+      expect(billable.status, JSON.stringify(billable.body)).toBe(200);
+      expect(billable.body.items.map((i: { trackingId: string }) => i.trackingId)).toEqual([a.trackingId, b.trackingId, c.trackingId]);
+      expect(billable.body.items[0]).toMatchObject({ charge: a.charge, service: expect.any(String), destination: expect.stringContaining("Dhanmondi") });
+      expect((await ctx.api("GET", `/invoices/billable?${qs}`, { token: s.owner.token })).status).toBe(403);
+
+      // An operations manager generates the bill for two of the three.
+      const inv = await ctx.api("POST", "/invoices", { token: s.ops.token, body: { ...range, trackingIds: [a.trackingId, c.trackingId] } });
+      expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+      expect(inv.body).toMatchObject({ subtotal: a.charge + c.charge, lineCount: 2, trackingIds: [a.trackingId, c.trackingId] });
+      expect((await ctx.api("GET", `/invoices/billable?${qs}`, { token: s.ops.token })).body.items.map((i: { trackingId: string }) => i.trackingId)).toEqual([b.trackingId]);
+
+      // A delivery already on a bill (or not billable) is refused; nothing is half-billed.
+      const twice = await ctx.api("POST", "/invoices", { token: s.fin1.token, body: { ...range, trackingIds: [a.trackingId, b.trackingId] } });
+      expect(twice.status).toBe(409);
+      expect(twice.body.error).toMatchObject({ code: "DELIVERIES_NOT_BILLABLE", details: { trackingIds: [a.trackingId] } });
+      // The rest of the same dates goes on another bill.
+      const rest = await ctx.api("POST", "/invoices", { token: s.fin1.token, body: { ...range, trackingIds: [b.trackingId] } });
+      expect(rest.status, JSON.stringify(rest.body)).toBe(201);
+      expect(rest.body.trackingIds).toEqual([b.trackingId]);
+
+      // The merchant sees both bills and their PDFs.
+      expect((await ctx.api("GET", "/invoices", { token: s.owner.token })).body.items.map((i: { number: string }) => i.number).sort()).toEqual([inv.body.number, rest.body.number].sort());
+      const pdf = await ctx.api("GET", `/documents/finance-invoice/${inv.body.id}`, { token: s.owner.token });
+      expect(pdf.status).toBe(200);
+      expect(pdf.headers["content-type"]).toBe("application/pdf");
+
+      // Operations managers work the money pages, but finance settings stay with finance and super admins.
+      expect((await ctx.api("PUT", "/finance/config", { token: s.ops.token, body: { invoiceTermDays: 20 } })).status).toBe(403);
+      expect((await ctx.api("PUT", "/finance/config", { token: s.fin1.token, body: { invoiceTermDays: 20 } })).status).toBe(200);
+    });
+
 
     it("bills delivered non-COD parcels for a closed period", async () => {
       const s = await setup();
@@ -299,9 +395,10 @@ describe("finance: COD custody, settlements and invoices", () => {
       ]);
       expect(new Date(inv.body.dueAt).getTime() - new Date(inv.body.issuedAt).getTime()).toBe(15 * 86_400_000);
 
-      const overlap = await ctx.api("POST", "/invoices", { token: s.fin1.token, body: { merchantId: s.m.id, periodStart: hourAgo(), periodEnd: new Date().toISOString() } });
-      expect(overlap.status).toBe(409);
-      expect(overlap.body.error).toMatchObject({ code: "INVOICE_PERIOD_OVERLAP", details: { invoiceId: inv.body.id } });
+      // Billed deliveries are never billed again: the same period has nothing left.
+      const again = await ctx.api("POST", "/invoices", { token: s.fin1.token, body: { merchantId: s.m.id, periodStart: hourAgo(), periodEnd: new Date().toISOString() } });
+      expect(again.status).toBe(422);
+      expect(again.body.error.code).toBe("NOTHING_TO_INVOICE");
 
       const empty = await ctx.api("POST", "/invoices", { token: s.fin1.token, body: { merchantId: s.m.id, periodStart: "2025-01-01", periodEnd: "2025-02-01" } });
       expect(empty.body.error.code).toBe("NOTHING_TO_INVOICE");
@@ -331,7 +428,8 @@ describe("finance: COD custody, settlements and invoices", () => {
 
       const runs = await Promise.all([1, 2, 3].map(() => ctx.api("POST", "/invoices", { token: s.fin1.token, body })));
       expect(runs.filter(r => r.status === 201)).toHaveLength(1);
-      expect(runs.filter(r => r.status === 409)).toHaveLength(2);
+      // The runs queue on the merchant: the later ones find every delivery billed.
+      expect(runs.filter(r => r.status === 422 && r.body.error.code === "NOTHING_TO_INVOICE")).toHaveLength(2);
       const inv = runs.find(r => r.status === 201)!.body;
 
       const voided = await ctx.api("POST", `/invoices/${inv.id}/void`, { token: s.fin1.token, body: { reason: "Wrong period" } });

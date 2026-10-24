@@ -1,5 +1,7 @@
 import { merchantPickupArea } from "../merchants/merchant-address";
-import { HttpStatus, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { InboxService } from "../notifications/inbox.service";
+import { notifyNewWork } from "../notifications/new-work";
+import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { z } from "zod";
 import { phoneSchema } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
@@ -166,6 +168,9 @@ export class PickupsService implements OnApplicationBootstrap {
     private readonly webhooks: WebhooksService,
     private readonly merchants: MerchantsService,
   ) {}
+
+  /** Courier Operations' bell (property injection keeps the constructor stable). */
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   onApplicationBootstrap() {
     if (!runsJobs()) return;
@@ -338,6 +343,14 @@ export class PickupsService implements OnApplicationBootstrap {
         include: requestInclude,
       });
       hooks.push(...(await this.webhooks.emit(tx, m.id, "pickup.scheduled", this.hookData(r))));
+      // Courier Operations' bell: operations managers and the merchant's hub.
+      await notifyNewWork(this.inbox, tx, {
+        hubId: m.pickupHubId,
+        type: "staff.pickup_request",
+        title: `Pickup requested by ${m.name}`,
+        body: `${r.number} · ${input.date} ${input.windowStart}–${input.windowEnd}${input.expectedParcels ? ` · about ${input.expectedParcels} parcel${input.expectedParcels === 1 ? "" : "s"}` : ""} · ${[r.area || r.zone, r.district].filter(Boolean).join(", ")}`,
+        target: { page: "pickup", tab: "scheduled-pickups" },
+      });
       await this.audit.record(actor, { action: "pickup_request.create", entityType: "pickup_request", entityId: r.id, data: { number: r.number, date: input.date } }, meta, tx);
       return r;
     });

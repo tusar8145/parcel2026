@@ -18,9 +18,9 @@
   const fail = error => toast(DF.describe(error));
   const pill = text => statusPill(text); // eslint-disable-line no-undef -- page script global
   const dhakaToday = () => new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
-  const time = iso => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const time = iso => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Dhaka" });
 
-  const R = { requested: null, returned: null, runs: null, run: null, pickups: null, date: dhakaToday(), loading: false };
+  const R = { requested: null, returned: null, runs: null, run: null, pickups: null, date: "upcoming", loading: false };
   const RUN_STATUS = { PLANNED: "Planned", OUT_FOR_RETURN: "Out for return", COMPLETED: "Completed", CANCELLED: "Cancelled" };
   const PICKUP_STATUS = { REQUESTED: "Requested", ASSIGNED: "Rider assigned", COMPLETED: "Collected", CANCELLED: "Cancelled", MISSED: "Missed" };
 
@@ -221,9 +221,13 @@
 
   // ───────────── scheduled pickups ─────────────
 
+  // "upcoming" (the default): today and the next 30 days, so requests merchants make for later days show at once.
+  const plusDays = n => new Date(Date.parse(`${dhakaToday()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const dayLabel = d => (d === dhakaToday() ? "Today" : d === plusDays(1) ? "Tomorrow" : new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }));
   async function loadPickups() {
-    const [page] = await Promise.all([DF.api(`/pickup-requests?date=${R.date}&limit=200`), riders()]);
-    R.pickups = page.items;
+    const range = R.date === "upcoming" ? `from=${dhakaToday()}&to=${plusDays(30)}` : `date=${R.date}`;
+    const [page] = await Promise.all([DF.api(`/pickup-requests?${range}&limit=200`), riders()]);
+    R.pickups = page.items.sort((a, b) => Date.parse(a.windowStart) - Date.parse(b.windowStart));
   }
 
   function pickupsPage() {
@@ -231,13 +235,13 @@
     const rows = (R.pickups || [])
       .map(r => {
         const open = r.status === "REQUESTED" || r.status === "ASSIGNED";
-        return `<tr><td><strong>${esc(r.number)}</strong><div style="color:#8a94a3;font-size:12px">${esc(r.schedule?.name || "One-off request")}</div></td><td>${esc(r.merchant.name || "")}<div style="color:#8a94a3;font-size:12px">${esc(r.merchant.code || "")}</div></td><td>${esc(time(r.windowStart))} – ${esc(time(r.windowEnd))}</td><td>${esc(DF.addressText(r.street, r.area, r.zone, r.district))}<div style="color:#8a94a3;font-size:12px">${esc(r.contactName)} · ${esc(r.contactPhone)}${r.note ? ` · ${esc(r.note)}` : ""}</div></td><td>${r.expectedParcels}</td><td>${open ? `<select data-pu-rider="${esc(r.id)}" aria-label="Rider">${riderOptions(r.riderId || "")}</select>` : esc(riderName(r.riderId))}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td style="white-space:nowrap">${open ? `<button class="button button-sm button-primary" data-pu-complete="${esc(r.id)}">Collected</button> <button class="button button-sm" data-pu-missed="${esc(r.id)}">Missed</button>` : ""}</td></tr>`;
+        return `<tr><td><strong>${esc(r.number)}</strong><div style="color:#8a94a3;font-size:12px">${esc(r.schedule?.name || "One-off request")}</div></td><td>${esc(r.merchant.name || "")}<div style="color:#8a94a3;font-size:12px">${esc(r.merchant.code || "")}</div></td><td>${R.date === "upcoming" ? `<strong>${esc(dayLabel(r.date))}</strong><div style="color:#8a94a3;font-size:12px">` : ""}${esc(time(r.windowStart))} – ${esc(time(r.windowEnd))}${R.date === "upcoming" ? "</div>" : ""}</td><td>${esc(DF.addressText(r.street, r.area, r.zone, r.district))}<div style="color:#8a94a3;font-size:12px">${esc(r.contactName)} · ${esc(r.contactPhone)}${r.note ? ` · ${esc(r.note)}` : ""}</div></td><td>${r.expectedParcels}</td><td>${open ? `<select data-pu-rider="${esc(r.id)}" aria-label="Rider">${riderOptions(r.riderId || "")}</select>` : esc(riderName(r.riderId))}</td><td>${pill(PICKUP_STATUS[r.status] || r.status)}</td><td style="white-space:nowrap">${open ? `<button class="button button-sm button-primary" data-pu-complete="${esc(r.id)}">Collected</button> <button class="button button-sm" data-pu-missed="${esc(r.id)}">Missed</button>` : ""}</td></tr>`;
       })
       .join("");
     const count = s => (R.pickups || []).filter(r => r.status === s).length;
-    return `<div class="page-heading"><div><p class="eyebrow">Network operations</p><h1>Scheduled pickups</h1><p class="subtitle">Merchant pickup visits from recurring schedules and one-off requests. Assign a rider before the window starts.</p></div><div class="heading-actions"><select id="puDate" class="select-small" aria-label="Day">${days.map(d => `<option value="${d}"${d === R.date ? " selected" : ""}>${d === dhakaToday() ? "Today" : d}</option>`).join("")}</select><button class="button" data-pu-generate>Generate from schedules</button></div></div>
-      <div class="metrics">${[["Requested", count("REQUESTED")], ["Rider assigned", count("ASSIGNED")], ["Collected", count("COMPLETED")]].map(([l, v]) => `<div class="metric"><div class="metric-top"><span>${l}</span></div><strong>${v}</strong><div class="metric-foot"><span>${esc(R.date)}</span></div></div>`).join("")}</div>
-      <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>PICKUP</th><th>MERCHANT</th><th>WINDOW</th><th>ADDRESS</th><th>PARCELS</th><th>RIDER</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty-state">${R.pickups ? "No pickups scheduled for this day." : "Loading…"}</td></tr>`}</tbody></table></div></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">Network operations</p><h1>Scheduled pickups</h1><p class="subtitle">Merchant pickup visits from recurring schedules and one-off requests. Assign a rider before the window starts.</p></div><div class="heading-actions"><select id="puDate" class="select-small" aria-label="Day"><option value="upcoming"${R.date === "upcoming" ? " selected" : ""}>Today & upcoming</option>${days.map(d => `<option value="${d}"${d === R.date ? " selected" : ""}>${esc(dayLabel(d))}</option>`).join("")}</select><button class="button" data-pu-generate>Generate from schedules</button></div></div>
+      <div class="metrics">${[["Requested", count("REQUESTED")], ["Rider assigned", count("ASSIGNED")], ["Collected", count("COMPLETED")]].map(([l, v]) => `<div class="metric"><div class="metric-top"><span>${l}</span></div><strong>${v}</strong><div class="metric-foot"><span>${esc(R.date === "upcoming" ? "Today & upcoming" : dayLabel(R.date))}</span></div></div>`).join("")}</div>
+      <section class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>PICKUP</th><th>MERCHANT</th><th>WINDOW</th><th>ADDRESS</th><th>PARCELS</th><th>RIDER</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty-state">${R.pickups ? (R.date === "upcoming" ? "No pickups scheduled from today on." : "No pickups scheduled for this day.") : "Loading…"}</td></tr>`}</tbody></table></div></section>`;
   }
 
   async function pickupAction(id, path, body, success) {
@@ -304,7 +308,7 @@
       }
       if (hit("[data-pu-generate]")) {
         stop(event);
-        return void DF.api("/pickup-requests/generate", { method: "POST", body: { date: R.date } })
+        return void DF.api("/pickup-requests/generate", { method: "POST", body: R.date === "upcoming" ? {} : { date: R.date } })
           .then(async result => {
             await reloadPickups();
             toast(`${result.created} pickup(s) created from recurring schedules.`);

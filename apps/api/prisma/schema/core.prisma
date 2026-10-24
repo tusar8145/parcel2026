@@ -822,6 +822,9 @@ model MerchantSettlement {
   approvedById     String?              @db.Uuid
   paidAt           DateTime?
   reference        String? // bank / bKash transaction reference
+  /// Photo of the payment receipt (bank slip / bKash screen), taken when it was paid; the merchant sees it too.
+  paymentProofFileId String?            @db.Uuid
+  paymentProof     StoredFile?          @relation("SettlementPaymentProof", fields: [paymentProofFileId], references: [id], onDelete: SetNull)
   createdAt        DateTime             @default(now())
   /// Maker (null with autoDrafted = drafted by the settlement schedule).
   createdById      String?              @db.Uuid
@@ -1009,6 +1012,7 @@ model StoredFile {
   kycDocuments         RiderKycDocument[]
   merchantKycDocuments MerchantKycDocument[]
   parcelScans          ParcelScan[]
+  settlementProofs     MerchantSettlement[]  @relation("SettlementPaymentProof")
 
   @@map("stored_files")
 }

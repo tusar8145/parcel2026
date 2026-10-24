@@ -218,7 +218,7 @@
   // ───────────── reports ─────────────
 
   const REPORTS = () => [
-    { kind: "orders", title: doc() ? "Document requests" : "Orders", owner: false },
+    { kind: "orders", title: doc() ? "Delivery requests" : "Orders", owner: false },
     { kind: "delivery-performance", title: "Delivery performance by district", owner: false },
     { kind: "returns", title: "Returns (RTO)", owner: false },
     { kind: "cod-reconciliation", title: "COD reconciliation", owner: true, hide: doc() },

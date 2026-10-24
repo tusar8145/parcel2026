@@ -267,7 +267,8 @@ export class WorkQueueService {
       return { ...r, toHubId, fromHubId, receiveHubId: this.receiveHub(task, r), group: this.groupOf(task, r, hubs, fromHubId, toHubId) };
     });
     if (task.refine === "localDelivery") rows = rows.filter(r => r.toHubId && r.toHubId === r.currentHubId);
-    if (task.key === "transfer-receive" && hubIds) rows = rows.filter(r => (r.toHubId && hubIds.includes(r.toHubId)) || (r.fromHubId && hubIds.includes(r.fromHubId)));
+    // Only the destination hub receives a transfer: the sending hub follows it in Transfers › On the road.
+    if (task.key === "transfer-receive" && hubIds) rows = rows.filter(r => !!r.toHubId && hubIds.includes(r.toHubId));
     return { rows, truncated };
   }
 

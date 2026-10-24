@@ -57,7 +57,7 @@ const visibleMenu = (page: Page) => page.locator("#navigation [data-nav]:visible
 test("each role sees its own menu", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const all = ["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Reports", "Riders", "Merchants", "CN stock", "Settings"];
+  const all = ["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "Reports", "Riders", "Merchants", "CN stock", "Settings"];
 
   const ops = await signedIn(browser, OPS, errors);
   await expect.poll(() => visibleMenu(ops)).toEqual(all);
@@ -65,7 +65,7 @@ test("each role sees its own menu", async ({ browser }) => {
 
   // Hub managers: the work queue, the journey, All parcels, Riders (they read riders) and the COD page where they receive riders' cash.
   const hub = await signedIn(browser, HUB, errors);
-  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "All parcels", "Riders"]);
+  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "Riders"]);
   await hub.context().close();
 
   // Finance: COD & settlement first, and it opens there.

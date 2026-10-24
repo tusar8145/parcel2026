@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 import { AppModule } from "./app.module";
 import { env } from "./config/env";
 
+const SUPPORT_BODY_LIMIT = 40 * 1024 * 1024;
+
 /** Builds the configured app (used by main.ts and the e2e tests). */
 export async function createApp(options: { logger?: boolean } = {}) {
   const config = env();
@@ -26,6 +28,14 @@ export async function createApp(options: { logger?: boolean } = {}) {
     { bufferLogs: true, logger: options.logger === false ? false : undefined },
   );
   if (options.logger !== false) app.useLogger(app.get(Logger));
+  // Support tickets and replies carry up to 5 attachments of 5 MB as base64 data URLs (~33 MB of JSON);
+  // every other route keeps the 5 MB request limit.
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook("onRoute", route => {
+      if (route.url.startsWith("/api/v1/support/tickets")) route.bodyLimit = SUPPORT_BODY_LIMIT;
+    });
   app.setGlobalPrefix("api/v1");
   app.enableShutdownHooks();
   await app.register(fastifyHelmet, { contentSecurityPolicy: false }); // JSON API; Swagger UI needs inline scripts

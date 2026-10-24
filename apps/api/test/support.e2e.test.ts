@@ -79,6 +79,19 @@ describe("support tickets", () => {
     expect(ticket.merchant).toMatchObject({ id: merchant.id, name: "Shop BD" });
   });
 
+  it("caps each account's uploads at 2 GB a year; staff are exempt", async () => {
+    const { customer } = await setup();
+    // Already 2,147,000,000 bytes this year: a 1 MB file doesn't fit.
+    await ctx.prisma.storedFile.create({ data: { storageKey: `quota-test/${Date.now()}.png`, filename: "old.png", mimeType: "image/png", sizeBytes: 2_147_000_000, sha256: "x", uploadedById: customer.user.id } });
+    const full = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [pngOfSize(1024 * 1024)] }) });
+    expect(full.status).toBe(413);
+    expect(full.body.error).toMatchObject({ code: "UPLOAD_QUOTA_EXCEEDED", message: expect.stringContaining("yearly upload allowance") });
+    // Staff upload without a yearly allowance.
+    const agent = await userWithRoles(ctx, [{ role: "SUPPORT_AGENT" }], "Agent");
+    await ctx.prisma.storedFile.create({ data: { storageKey: `quota-test/${Date.now()}-s.png`, filename: "old.png", mimeType: "image/png", sizeBytes: 2_147_000_000, sha256: "x", uploadedById: agent.user.id } });
+    expect((await ctx.api("POST", "/support/tickets", { token: agent.token, body: ticketBody({ attachments: [pngOfSize(1024 * 1024)] }) })).status).toBe(201);
+  });
+
   it("validates input", async () => {
     const { customer, other } = await setup();
     const bad = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ category: "Billing", subject: "x", priority: "URGENT", message: "" }) });
@@ -86,14 +99,20 @@ describe("support tickets", () => {
     expect(bad.body.error.code).toBe("VALIDATION_FAILED");
     expect(bad.body.error.details.map((d: { path: string }) => d.path).sort()).toEqual(["category", "message", "priority", "subject"]);
 
-    const tooMany = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [PNG, PNG, PNG, PNG] }) });
-    expect(tooMany.body.error.details[0]).toMatchObject({ path: "attachments", message: "Attach up to 3 files" });
-    const tooBig = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [pngOfSize(350 * 1024 + 1)] }) });
+    const tooMany = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [PNG, PNG, PNG, PNG, PNG, PNG] }) });
+    expect(tooMany.body.error.details[0]).toMatchObject({ path: "attachments", message: "Attach up to 5 files" });
+    const tooBig = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [pngOfSize(5 * 1024 * 1024 + 1)] }) });
     expect(tooBig.status).toBe(422);
-    expect(JSON.stringify(tooBig.body.error.details)).toContain("350 KB");
-    expect((await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [pngOfSize(350 * 1024)] }) })).status).toBe(201);
-    const gif = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: ["data:image/gif;base64,R0lGODlh"] }) });
-    expect(JSON.stringify(gif.body.error.details)).toContain("PNG, JPEG, WebP or PDF");
+    expect(JSON.stringify(tooBig.body.error.details)).toContain("5 MB");
+    // Five files of up to 5 MB fit in one request (the support routes take larger bodies).
+    const big = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [pngOfSize(4 * 1024 * 1024), pngOfSize(4 * 1024 * 1024), PNG, PNG, PNG] }) });
+    expect(big.status, JSON.stringify(big.body).slice(0, 300)).toBe(201);
+    // Pages, scripts and other files a browser could run are refused, whatever they're called.
+    const html = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [{ filename: "page.html", dataUrl: "data:text/html;base64,PGgxPg==" }] }) });
+    expect(html.status).toBe(422);
+    expect(JSON.stringify(html.body.error.details)).toContain("Word, Excel");
+    const exe = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [{ filename: "setup.exe", dataUrl: "data:application/octet-stream;base64,TVo=" }] }) });
+    expect(exe.status).toBe(422);
     const fake = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [`data:image/png;base64,${Buffer.from("MZ not a png").toString("base64")}`] }) });
     expect(fake.status).toBe(415);
     expect(fake.body.error.code).toBe("UNSUPPORTED_FILE");
@@ -275,6 +294,44 @@ describe("support tickets", () => {
     expect((await ctx.api("GET", `/files/${fileId}`, { token: other.token })).status).toBe(404);
     expect((await ctx.api("GET", `/files/${fileId}`)).status).toBe(401);
     expect((await ctx.api("GET", "/files/0190d7a4-0000-7000-8000-000000000000", { token: customer.token })).status).toBe(404);
+  });
+
+  it("takes photos, office files, CSV and text, typed by extension and checked by content", async () => {
+    const { customer } = await setup();
+    const b64 = (s: string | Buffer) => Buffer.from(s).toString("base64");
+    const zip = Buffer.concat([Buffer.from("504b0304", "hex"), Buffer.alloc(40)]);
+    const ole = Buffer.concat([Buffer.from("d0cf11e0a1b11ae1", "hex"), Buffer.alloc(40)]);
+    const t = await open(customer.token, {
+      attachments: [
+        // Windows reports CSV as an Excel type, and some browsers send no type at all.
+        { filename: "orders.csv", dataUrl: `data:application/vnd.ms-excel;base64,${b64("tracking,cod\nDF1,500\n")}` },
+        { filename: "sheet.xlsx", dataUrl: `data:;base64,${b64(zip)}` },
+        { filename: "letter.docx", dataUrl: `data:application/octet-stream;base64,${b64(zip)}` },
+        { filename: "old.xls", dataUrl: `data:application/vnd.ms-excel;base64,${b64(ole)}` },
+        { filename: "photo.gif", dataUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" },
+      ],
+    });
+    const files = t.messages[0].attachments as { id: string; filename: string; mimeType: string }[];
+    expect(files.map(f => f.mimeType)).toEqual([
+      "text/csv",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "image/gif",
+    ]);
+    // Office files and CSV download; photos open in the browser.
+    const csv = await ctx.api("GET", `/files/${files[0].id}`, { token: customer.token, headers: { accept: "*/*" } });
+    expect(csv.headers["content-type"]).toMatch(/^text\/csv/);
+    expect(csv.headers["content-disposition"]).toBe('attachment; filename="orders.csv"');
+    const gif = await ctx.api("GET", `/files/${files[4].id}`, { token: customer.token, headers: { accept: "*/*" } });
+    expect(gif.headers["content-disposition"]).toMatch(/^inline;/);
+
+    // A file whose content doesn't match its extension is refused.
+    const fake = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [{ filename: "report.xlsx", dataUrl: `data:;base64,${b64("MZ not a spreadsheet")}` }] }) });
+    expect(fake.status).toBe(415);
+    expect(fake.body.error.code).toBe("UNSUPPORTED_FILE");
+    const binaryCsv = await ctx.api("POST", "/support/tickets", { token: customer.token, body: ticketBody({ attachments: [{ filename: "x.csv", dataUrl: `data:text/csv;base64,${b64(Buffer.from([0x4d, 0x5a, 0, 0]))}` }] }) });
+    expect(binaryCsv.status).toBe(415);
   });
 
   it("serves a file as JSON with a data URL when asked for application/json", async () => {

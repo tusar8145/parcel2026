@@ -35,12 +35,24 @@ export const listHandoversQuerySchema = pageQuerySchema.extend({
   ...rangeQuery,
 });
 
-export const createSettlementSchema = z.object({ merchantId: z.uuid() });
+export const createSettlementSchema = z.object({
+  merchantId: z.uuid(),
+  /** The COD collections to settle (GET /settlements/eligible); default every one waiting. */
+  collectionIds: z.array(z.uuid()).min(1, "Choose at least one parcel").max(5000).optional(),
+});
+export const eligibleQuerySchema = z.object({ merchantId: z.uuid() });
 
 /** reference: the bank / bKash transaction id (required unless the settlement pays ৳0). via: payout channel (default: the merchant payout account). */
 export const paySettlementSchema = z.object({
   reference: z.string().trim().min(3).max(120).optional(),
   via: z.enum(["BANK", "BKASH"]).optional(),
+  /** Photo of the payment receipt: a file sent from a phone (POST /photo-links, the payer's own upload), or a photo from the computer. */
+  proofFileId: z.uuid().optional(),
+  proofImage: z
+    .string()
+    .regex(/^data:image\/(jpeg|png|webp);base64,/, "Attach a JPEG, PNG or WebP photo")
+    .max(7_500_000, "The photo is too large (max ~5 MB)")
+    .optional(),
 });
 
 export const listSettlementsQuerySchema = pageQuerySchema.extend({
@@ -50,6 +62,15 @@ export const listSettlementsQuerySchema = pageQuerySchema.extend({
 });
 
 export const createInvoiceSchema = z
+  .object({
+    merchantId: z.uuid(),
+    periodStart: instantSchema,
+    periodEnd: instantSchema,
+    /** The deliveries to bill (GET /invoices/billable); default every unbilled one in the period, which must have ended. */
+    trackingIds: z.array(z.string().trim().min(3).max(40)).min(1, "Choose at least one delivery").max(5000).optional(),
+  })
+  .refine(v => v.periodEnd > v.periodStart, { message: "periodEnd must be after periodStart", path: ["periodEnd"] });
+export const billableQuerySchema = z
   .object({ merchantId: z.uuid(), periodStart: instantSchema, periodEnd: instantSchema })
   .refine(v => v.periodEnd > v.periodStart, { message: "periodEnd must be after periodStart", path: ["periodEnd"] });
 

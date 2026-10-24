@@ -123,6 +123,10 @@ export interface SettlementDoc {
   createdAt: Date;
   paidAt: Date | null;
   reference: string | null;
+  /** Where the payout goes: the merchant's payout account (Settings), or null when none is on file. */
+  payTo?: { method: string; accountName: string; accountNumber: string; bankName?: string; branch?: string; routingNumber?: string } | null;
+  /** A photo of the payment receipt was attached when it was paid. */
+  paymentProof?: boolean;
   lines: { trackingId: string; deliveredAt: Date | null; codAmount: number; charge: number; net: number }[];
   adjustments: { kind: string; description: string; amount: number }[];
   codTotal: number;
@@ -156,6 +160,31 @@ export function drawSettlement(pdf: PdfWriter, brand: Brand, s: SettlementDoc, m
     y,
     w,
     4,
+  );
+  // Pay to: the merchant's payout account and the amount (what finance transfers).
+  y = ensureSpace(pdf, y + 6, 90, newPage);
+  pdf.text("Pay to", x, y, { size: 10, bold: true });
+  const METHOD: Record<string, string> = { BKASH: "bKash", NAGAD: "Nagad", BANK: "Bank transfer" };
+  const p = s.payTo;
+  y = keyValues(
+    pdf,
+    p
+      ? [
+          ["Method", METHOD[p.method] ?? p.method],
+          ["Account name", p.accountName],
+          [p.method === "BANK" ? "Account number" : "Wallet number", p.accountNumber],
+          ...(p.method === "BANK" ? ([["Bank", p.bankName ?? "—"], ["Branch", p.branch ?? "—"], ["Routing number", p.routingNumber ?? "—"]] as [string, string][]) : []),
+          ["Amount to pay", `৳ ${fmtAmount(Math.max(0, s.netPayable))}`],
+          ["Receipt photo", s.paymentProof ? "Attached" : s.paidAt ? "Not attached" : "—"],
+        ]
+      : [
+          ["Payout account", "None on file: ask the merchant to add one in Settings › Payout account"],
+          ["Amount to pay", `৳ ${fmtAmount(Math.max(0, s.netPayable))}`],
+        ],
+    x,
+    y + 15,
+    w,
+    p?.method === "BANK" ? 4 : 3,
   );
   y = table(pdf, {
     y,

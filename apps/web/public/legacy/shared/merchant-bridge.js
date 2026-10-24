@@ -180,7 +180,7 @@
   function billedInvoice(p) {
     if (!p.deliveredAt || p.cod) return null;
     const t = new Date(p.deliveredAt).getTime();
-    return S.invoices.find(i => i.status !== "VOID" && new Date(i.periodStart).getTime() <= t && t < new Date(i.periodEnd).getTime()) || null;
+    return S.invoices.find(i => i.status !== "VOID" && (i.trackingIds ? i.trackingIds.includes(p.trackingId) : new Date(i.periodStart).getTime() <= t && t < new Date(i.periodEnd).getTime())) || null;
   }
 
   function toOrder(p) {
@@ -270,25 +270,65 @@
       : rows.map(g => [g.name, phone(g.phone), String(g.count), taka(g.value), when(g.last), "Active"]);
   }
 
+  /** Payments › quick filter: "all" | "payout" | "cod" | "invoice". */
+  const PAY_KINDS = [
+    ["all", "All"],
+    ["payout", "Payouts"],
+    ["cod", "Cash on delivery"],
+    ["invoice", "Invoices"],
+  ];
   function paymentRows() {
+    const kind = S.payKind || "all";
     const rows = [];
     if (!S.cfg.document) {
       for (const p of S.parcels) {
         if (!p.cod) continue;
         const settlement = p.cod.state === "SETTLED" ? "Settled" : "Pending settlement";
-        rows.push({ at: p.cod.collectedAt, row: [settlement, p.trackingId, "Cash on delivery", when(p.cod.collectedAt), taka(p.cod.amount), COD_STATE[p.cod.state] || p.cod.state] });
+        rows.push({ kind: "cod", at: p.cod.collectedAt, row: [settlement, p.trackingId, "Cash on delivery", when(p.cod.collectedAt), taka(p.cod.amount), COD_STATE[p.cod.state] || p.cod.state] });
       }
       for (const s of S.settlements)
-        rows.push({ at: s.paidAt || s.createdAt, row: [s.number, `${s.collectionCount} order${s.collectionCount === 1 ? "" : "s"}`, "Merchant payout", when(s.paidAt || s.createdAt), taka(s.netPayable), SETTLEMENT_STATUS[s.status] || s.status] });
+        rows.push({ kind: "payout", at: s.paidAt || s.createdAt, row: [s.number, `${s.collectionCount} order${s.collectionCount === 1 ? "" : "s"}`, "Merchant payout", when(s.paidAt || s.createdAt), taka(s.netPayable), SETTLEMENT_STATUS[s.status] || s.status] });
     }
     for (const i of S.invoices) {
       const status = i.status === "PAID" ? "Paid" : i.status === "VOID" ? "Void (cancelled)" : i.overdue ? "Overdue" : "Pending payment";
       rows.push({
+        kind: "invoice",
         at: i.paidAt || i.issuedAt,
         row: [i.status === "PAID" ? "Invoice payment" : "Invoice issued", i.number, S.cfg.document ? "Corporate account billing" : "Delivery invoice", when(i.paidAt || i.issuedAt), taka(i.subtotal), status],
       });
     }
-    return rows.sort((a, b) => (a.at < b.at ? 1 : -1)).map(r => r.row);
+    return rows
+      .filter(r => kind === "all" || r.kind === kind)
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .map(r => r.row);
+  }
+
+  /**
+   * Payments page: the summary cards fill the row, a real quick filter (All · Payouts · Cash on delivery ·
+   * Invoices) instead of the placeholder Filter button, and (e-commerce) where payouts are paid.
+   */
+  function decoratePayments() {
+    const main = $("mainContent");
+    const metrics = main.querySelector(".metrics");
+    if (metrics) metrics.style.gridTemplateColumns = "repeat(auto-fit,minmax(220px,1fr))";
+    const placeholder = main.querySelector(".page-table-panel .table-tools button[data-toast]");
+    const kinds = S.cfg.document ? PAY_KINDS.filter(([k]) => k !== "payout" && k !== "cod") : PAY_KINDS;
+    if (placeholder && kinds.length > 2)
+      placeholder.outerHTML = `<div class="df-pay-kinds" role="group" aria-label="Show">${kinds
+        .map(([k, label]) => `<button type="button" class="button button-sm${(S.payKind || "all") === k ? " button-primary" : ""}" data-df-pay-kind="${k}" aria-pressed="${(S.payKind || "all") === k}">${esc(label)}</button>`)
+        .join("")}</div>`;
+    else placeholder?.remove();
+    // Where COD payouts go (e-commerce owners): the payout account, changed from here too.
+    if (!S.cfg.document && isOwner() && metrics && !$("dfPaidTo")) {
+      const a = S.merchant?.payoutAccount;
+      const text = a
+        ? `<strong>${esc(PAYOUT_LABEL[a.method] || a.method)} · ••••${esc(String(a.accountNumber).slice(-4))}</strong><span>${esc(a.accountName)}${a.bankName ? ` · ${esc(a.bankName)}` : ""}${a.routingNumber ? ` · routing ${esc(a.routingNumber)}` : ""}</span>`
+        : `<strong>No payout account yet</strong><span>Add one so finance can pay your COD to you.</span>`;
+      metrics.insertAdjacentHTML(
+        "afterend",
+        `<section class="panel df-paid-to${a ? "" : " df-paid-to-missing"}" id="dfPaidTo"><div class="df-paid-to-icon" aria-hidden="true">৳</div><div class="df-paid-to-copy"><small>You're paid to</small>${text}</div><button type="button" class="button${a ? "" : " button-primary"}" data-df-payout-edit>${a ? "Change" : "Add payout account"}</button></section>`,
+      );
+    }
   }
 
   function settingsRows() {
@@ -596,7 +636,7 @@
     if (body && live && !body.children.length) {
       const columns = main.querySelectorAll(".page-table-panel thead th").length || 6;
       const message = {
-        Orders: S.cfg.document ? "No document requests yet. Create one with “New document request”." : "No orders yet. Create your first order or import a batch.",
+        Orders: S.cfg.document ? "No delivery requests yet. Create one with “New delivery request”." : "No orders yet. Create your first order or import a batch.",
         Shipments: "No shipments yet.",
         "Pickup requests": "No pickup requests yet. Every order you create is collected from your pickup address.",
         Customers: S.cfg.document ? "No recipients yet." : "No customers yet.",
@@ -607,6 +647,15 @@
     if (page === "Orders") {
       addCancelButtons();
       markIncomplete();
+    }
+    if (page === "Payments") {
+      markReceipts();
+      decoratePayments();
+    }
+    // Billing (Banking & Financial): the summary cards fill the row.
+    if (page === "Billing") {
+      const metrics = main.querySelector(".metrics");
+      if (metrics) metrics.style.gridTemplateColumns = "repeat(auto-fit,minmax(220px,1fr))";
     }
     if (live) {
       S.pageNo = 1;
@@ -636,7 +685,7 @@
     for (const row of rows) row.style.display = "";
     visible.forEach((row, i) => (row.style.display = i >= start && i < start + PAGE_SIZE ? "" : "none"));
     const label = footer.querySelector(":scope > span");
-    const noun = { Orders: S.cfg.document ? "document requests" : "orders", "Pickup requests": "pickup requests" }[S.page] || S.page.toLowerCase();
+    const noun = { Orders: S.cfg.document ? "delivery requests" : "orders", "Pickup requests": "pickup requests" }[S.page] || S.page.toLowerCase();
     if (label) label.textContent = visible.length ? `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, visible.length)} of ${visible.length.toLocaleString("en-BD")} ${noun}` : `No matching ${noun}`;
     const nav = footer.querySelector(".pagination");
     if (!nav) return;
@@ -719,7 +768,7 @@
       }
     });
     const recentBody = main.querySelector(".content-grid .table-panel tbody");
-    if (recentBody && !recent.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No document requests yet." : "No orders yet."}</td></tr>`;
+    if (recentBody && !recent.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No delivery requests yet." : "No orders yet."}</td></tr>`;
     const activity = main.querySelector(".activity-list");
     if (activity) activity.innerHTML = activityItems();
   }
@@ -796,7 +845,7 @@
       }
     });
     const recentBody = main.querySelector(".content-grid .table-panel tbody");
-    if (recentBody && !recentBody.children.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No document requests yet." : "No orders yet."}</td></tr>`;
+    if (recentBody && !recentBody.children.length) recentBody.innerHTML = `<tr><td colspan="6" class="empty-state">${S.cfg.document ? "No delivery requests yet." : "No orders yet."}</td></tr>`;
     const activity = main.querySelector(".activity-list");
     if (activity) activity.innerHTML = activityItems();
   }
@@ -1364,6 +1413,83 @@
     return window.DFPrint.labels(ids, format);
   }
 
+  document.addEventListener(
+    "click",
+    event => {
+      const el = event.target instanceof Element ? event.target.closest("[data-df-pay-kind], [data-df-payout-edit]") : null;
+      if (!el) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (el.matches("[data-df-payout-edit]")) return void openPayout();
+      S.payKind = el.dataset.dfPayKind;
+      pageData.Payments.rows = paymentRows();
+      renderPage("Payments");
+    },
+    true,
+  );
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfPaymentsStyles">
+      .df-pay-kinds{display:inline-flex;gap:3px;padding:3px;border-radius:9px;background:#eef1f5}
+      .df-pay-kinds .button{border:0;background:transparent;color:#556274;box-shadow:none}
+      .df-pay-kinds .button.button-primary{background:#fff;color:#2f55c9;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+      .df-paid-to{display:flex;align-items:center;gap:14px;margin:0 0 15px}
+      .df-paid-to-icon{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--green-soft,#e8f7f0);color:var(--green,#16845b);font-size:20px;font-weight:700}
+      .df-paid-to-missing .df-paid-to-icon{background:var(--amber-soft,#fff5df);color:var(--amber,#b87913)}
+      .df-paid-to-copy{flex:1;display:grid;gap:2px;min-width:0}
+      .df-paid-to-copy small{color:#8792a2;font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+      .df-paid-to-copy strong{font-size:15px}
+      .df-paid-to-copy span{color:#667085;font-size:13px}
+      @media(max-width:560px){.df-paid-to{flex-wrap:wrap}.df-paid-to .button{width:100%}}
+    </style>`,
+  );
+
+  /** Payments: a paid payout with a receipt photo (taken by finance when paying) gets "Receipt photo". */
+  function markReceipts() {
+    // Paid payouts: the settlement statement (PDF: parcels, COD, charges, net, where it was paid) and the receipt photo.
+    const byNumber = new Map(S.settlements.filter(s => s.status === "PAID").map(s => [s.number, s]));
+    for (const row of document.querySelectorAll("#tableBody tr")) {
+      const s = byNumber.get(row.cells[0]?.textContent?.trim());
+      if (!s || row.querySelector("[data-df-statement]")) continue;
+      row.cells[0].insertAdjacentHTML(
+        "beforeend",
+        `<span style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="button button-sm" data-df-statement="${esc(s.id)}" title="The settlement statement: parcels, COD, delivery charges and the amount paid">Statement (PDF)</button>${
+          s.paymentProof ? `<button type="button" class="button button-sm" data-df-receipt="${esc(s.id)}" title="Photo of the bank / bKash payment receipt">Receipt photo</button>` : ""
+        }</span>`,
+      );
+    }
+  }
+  document.addEventListener(
+    "click",
+    event => {
+      const el = event.target instanceof Element ? event.target.closest("[data-df-statement]") : null;
+      if (!el) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.DFPrint?.open(`/documents/settlement/${encodeURIComponent(el.dataset.dfStatement)}`, { title: "Preparing the settlement statement…" });
+    },
+    true,
+  );
+  document.addEventListener(
+    "click",
+    event => {
+      const el = event.target instanceof Element ? event.target.closest("[data-df-receipt]") : null;
+      if (!el) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const tab = window.open("", "_blank");
+      DF.apiRaw(`/settlements/${encodeURIComponent(el.dataset.dfReceipt)}/payment-proof`)
+        .then(r => r.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          if (tab) tab.location.href = url;
+          else window.open(url, "_blank");
+        })
+        .catch(error => (tab?.close(), showToast(DF.describe(error))));
+    },
+    true,
+  );
+
   /** Orders page: a "Needs info" badge, a Complete button, the status filter option and the import history button. */
   function markIncomplete() {
     for (const row of document.querySelectorAll("#tableBody tr[data-merchant-record-id]")) {
@@ -1597,7 +1723,7 @@
     dialog(
       "Payout account",
       "Where your COD settlements are paid. We text your contact phone whenever it changes.",
-      `<form id="dfPayoutForm"><div class="form-grid" style="margin-top:12px"><div class="form-field"><label for="dfPayoutMethod">Method</label><select id="dfPayoutMethod">${Object.entries(PAYOUT_LABEL).map(([v, l]) => option(v, l, p.method === v)).join("")}</select></div>${field("dfPayoutNumber", "Account / wallet number", p.accountNumber, "required")}${field("dfPayoutName", "Account name", p.accountName, "required minlength=2")}<div class="form-field" data-df-bank>${`<label for="dfPayoutBank">Bank name</label><input id="dfPayoutBank" value="${esc(p.bankName || "")}">`}</div><div class="form-field" data-df-bank><label for="dfPayoutBranch">Branch (optional)</label><input id="dfPayoutBranch" value="${esc(p.branch || "")}"></div></div><div class="modal-actions">${S.merchant.payoutAccount ? '<button type="button" class="button" data-df-remove-payout>Remove</button>' : ""}<button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save payout account</button></div></form>`,
+      `<form id="dfPayoutForm"><div class="form-grid" style="margin-top:12px"><div class="form-field"><label for="dfPayoutMethod">Method</label><select id="dfPayoutMethod">${Object.entries(PAYOUT_LABEL).map(([v, l]) => option(v, l, p.method === v)).join("")}</select></div>${field("dfPayoutNumber", "Account / wallet number", p.accountNumber, "required")}${field("dfPayoutName", "Account name", p.accountName, "required minlength=2")}<div class="form-field" data-df-bank>${`<label for="dfPayoutBank">Bank name</label><input id="dfPayoutBank" value="${esc(p.bankName || "")}">`}</div><div class="form-field" data-df-bank><label for="dfPayoutBranch">Branch (optional)</label><input id="dfPayoutBranch" value="${esc(p.branch || "")}"></div><div class="form-field" data-df-bank><label for="dfPayoutRouting">Routing number (optional)</label><input id="dfPayoutRouting" inputmode="numeric" maxlength="11" placeholder="9 digits, e.g. 225261725" value="${esc(p.routingNumber || "")}"></div></div><div class="modal-actions">${S.merchant.payoutAccount ? '<button type="button" class="button" data-df-remove-payout>Remove</button>' : ""}<button type="button" class="button" data-df-close>Cancel</button><button type="submit" class="button button-primary">Save payout account</button></div></form>`,
     );
     const sync = () => document.querySelectorAll("[data-df-bank]").forEach(el => (el.hidden = $("dfPayoutMethod").value !== "BANK"));
     $("dfPayoutMethod").addEventListener("change", sync);
@@ -1689,7 +1815,7 @@
     }
     if (form.id === "dfPayoutForm") {
       const method = $("dfPayoutMethod").value;
-      const payoutAccount = { method, accountNumber: $("dfPayoutNumber").value.trim(), accountName: $("dfPayoutName").value.trim(), ...(method === "BANK" ? { bankName: $("dfPayoutBank").value.trim(), branch: $("dfPayoutBranch").value.trim() || undefined } : {}) };
+      const payoutAccount = { method, accountNumber: $("dfPayoutNumber").value.trim(), accountName: $("dfPayoutName").value.trim(), ...(method === "BANK" ? { bankName: $("dfPayoutBank").value.trim(), branch: $("dfPayoutBranch").value.trim() || undefined, routingNumber: $("dfPayoutRouting").value.trim() || undefined } : {}) };
       return done(() => DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { payoutAccount } }), "Payout account saved. We've texted your contact phone about the change.");
     }
     if (form.id === "dfMemberForm") {

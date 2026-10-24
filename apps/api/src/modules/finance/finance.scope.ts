@@ -28,7 +28,10 @@ export function scopedHubIds(actor: Actor, requested?: string): string[] | undef
 }
 
 /** Company finance staff, as opposed to merchant owners who also hold finance:read. */
-export const isFinanceStaff = (actor: Actor) => actor.kind === "user" && actor.roles.some(r => r.role === "FINANCE" || r.role === "SUPER_ADMIN");
+/** Staff who work every merchant's money (Courier Operations › COD & settlement): finance, operations managers, super admins. */
+export const isFinanceStaff = (actor: Actor) => actor.kind === "user" && actor.roles.some(r => r.role === "FINANCE" || r.role === "OPS_MANAGER" || r.role === "SUPER_ADMIN");
+/** Finance settings (VAT, seller identity, terms) are changed by finance and super admins only. */
+export const canChangeFinanceSettings = (actor: Actor) => actor.kind === "user" && actor.roles.some(r => r.role === "FINANCE" || r.role === "SUPER_ADMIN");
 
 /** Merchants whose finances this (non-staff) actor may read: merchants they own. */
 export const ownedMerchantIds = (actor: Actor) =>

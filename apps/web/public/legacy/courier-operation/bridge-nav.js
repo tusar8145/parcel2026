@@ -44,7 +44,11 @@
     "beforeend",
     `<style id="dfNavStyles">
 #navigation [hidden]{display:none!important}
-.df-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 13px}
+.df-tabs{display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5;max-width:100%}
+.df-tabs .button{border:0;background:transparent;color:#556274;padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:none}
+.df-tabs .button:hover{background:#e3e7ee;color:#1d2939}
+.df-tabs .button.button-primary{background:#fff;color:#2f55c9;box-shadow:0 1px 2px rgba(16,24,40,.08),0 1px 3px rgba(16,24,40,.06)}
+.df-tabs .button:focus-visible{outline:2px solid #3766e8;outline-offset:1px}
 .df-stage-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:11px;margin-bottom:13px}
 .df-stage-grid .metric{cursor:pointer;min-height:92px}
 .df-stage-grid .metric:hover,.df-stage-grid .metric:focus-visible{border-color:#b8c8ff;outline:none}
@@ -167,7 +171,8 @@
       ],
     },
     // Each parcel's next step, counted and grouped, done by scanning (bridge-workqueue.js).
-    "Work queue": { keepTitle: true, tabs: [{ id: "Work queue", page: "Work queue" }] },
+    // Shown as "Parcel queue" (the key, link and permissions keep "Work queue").
+    "Work queue": { keepTitle: true, label: "Parcel queue", tabs: [{ id: "Work queue", page: "Work queue" }] },
     Riders: {
       keepTitle: true,
       tabs: [
@@ -627,7 +632,7 @@
   function decorate() {
     const label = $("breadcrumbLabel");
     const view = state.view;
-    if (label) label.textContent = view || $("breadcrumbPage").textContent;
+    if (label) label.textContent = (view && VIEWS[view]?.label) || view || $("breadcrumbPage").textContent;
     qa("#navigation [data-nav]").forEach(b => b.classList.toggle("active", b.dataset.nav === view));
     if (!view) return void (operationTimeBar(false), updateCounts());
     const v = VIEWS[view];

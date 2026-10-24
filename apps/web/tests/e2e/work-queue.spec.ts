@@ -69,7 +69,7 @@ test("work queue: groups, Excel and scan-to-do from booking to out for delivery"
   await expect(page).toHaveURL(/\/courier-operation/);
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.click('#navigation [data-nav="Work queue"]');
-  await expect(page.locator("#mainContent h1")).toHaveText("Work queue");
+  await expect(page.locator("#mainContent h1")).toHaveText("Parcel queue");
   await expect(page).toHaveURL(/page=work-queue/);
   await expect(page.locator('.wq-step[data-wq-task="pickup-assign"] .wq-count')).not.toHaveText("0");
   await expect(page.locator("#wqMissing")).toContainText("Missing delivery details");

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageQuerySchema } from "../../common/pagination";
+import { KIND_LABEL, uploadType, type UploadKinds } from "../../common/file-types";
 
 /** Categories requesters choose when they open a ticket. */
 export const TICKET_CATEGORIES = ["Delivery issue", "Pickup or collection", "COD / payment", "Account / API", "Rider or safety", "Other"] as const;
@@ -9,9 +10,8 @@ const ALL_CATEGORIES = [...TICKET_CATEGORIES, ...APPLICATION_CATEGORIES] as cons
 export const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "WAITING_FOR_REQUESTER", "RESOLVED", "CLOSED"] as const;
 export const TICKET_PRIORITIES = ["LOW", "NORMAL", "HIGH", "URGENT"] as const;
 
-export const MAX_ATTACHMENTS = 3;
-export const MAX_ATTACHMENT_BYTES = 350 * 1024;
-const ATTACHMENT_TYPES = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+export const MAX_ATTACHMENTS = 5;
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 /** "In progress", "in-progress" and "IN_PROGRESS" all mean the same thing. */
 export const enumLoose = <const T extends readonly [string, ...string[]]>(values: T, label: string) =>
@@ -25,19 +25,38 @@ export const prioritySchema = enumLoose(TICKET_PRIORITIES, "Priority");
 
 const decodedSize = (base64: string) => Math.floor((base64.length * 3) / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0);
 
-const dataUrlSchema = z
-  .string()
-  .regex(/^data:[\w/+.-]+;base64,[A-Za-z0-9+/]+=*$/, "Attachments must be base64 data URLs (data:<type>;base64,…)")
-  .refine(v => ATTACHMENT_TYPES.includes(v.slice(5, v.indexOf(";"))), "Attachments must be PNG, JPEG, WebP or PDF files")
-  .refine(v => decodedSize(v.slice(v.indexOf(",") + 1)) <= MAX_ATTACHMENT_BYTES, "Each attachment must be 350 KB or smaller");
+/** Base64 data URLs, at most `maxBytes` each (the declared type may be empty: browsers don't know every type). */
+const dataUrlSchema = (maxBytes: number, label: string) =>
+  z
+    .string()
+    .regex(/^data:[\w/+.-]*;base64,[A-Za-z0-9+/]+=*$/, "Attachments must be base64 data URLs (data:<type>;base64,…)")
+    .refine(v => decodedSize(v.slice(v.indexOf(",") + 1)) <= maxBytes, `Each attachment must be ${label} or smaller`);
 
-/** A bare data URL, or { filename, dataUrl } to keep the original name. */
-const attachmentSchema = z.preprocess(
-  v => (typeof v === "string" ? { dataUrl: v } : v),
-  z.object({ filename: z.string().trim().min(1).max(120).optional(), dataUrl: dataUrlSchema }),
-);
+/**
+ * A bare data URL, or { filename, dataUrl } to keep the original name; at most `max` files of `maxBytes`.
+ * "images": PNG / JPEG / WebP / PDF by declared type; "documents": also office files, CSV and text, by the file
+ * name's extension (StorageService checks the content matches).
+ */
+const attachmentList = (max: number, maxBytes: number, label: string, kind: UploadKinds) =>
+  z
+    .array(
+      z.preprocess(
+        v => (typeof v === "string" ? { dataUrl: v } : v),
+        z
+          .object({ filename: z.string().trim().min(1).max(120).optional(), dataUrl: dataUrlSchema(maxBytes, label) })
+          .refine(a => uploadType(kind === "images" ? undefined : a.filename, a.dataUrl.slice(5, a.dataUrl.indexOf(";")), kind), {
+            message: `Attachments must be ${KIND_LABEL[kind]}`,
+            path: ["dataUrl"],
+          }),
+      ),
+    )
+    .max(max, `Attach up to ${max} files`)
+    .default([]);
 
-export const attachmentsSchema = z.array(attachmentSchema).max(MAX_ATTACHMENTS, `Attach up to ${MAX_ATTACHMENTS} files`).default([]);
+/** Support tickets and replies: up to 5 files of 5 MB. */
+export const attachmentsSchema = attachmentList(MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, "5 MB", "documents");
+/** Finance disputes: up to 3 files of 350 KB (their requests keep the 5 MB limit). */
+export const evidenceSchema = attachmentList(3, 350 * 1024, "350 KB", "images");
 
 const messageBody = z.string().trim().min(1, "Write a message").max(3000, "Messages can be up to 3000 characters");
 
@@ -77,4 +96,4 @@ export const listTicketsQuerySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(120).optional(),
 });
 
-export type Attachment = z.infer<typeof attachmentSchema>;
+export type Attachment = z.infer<typeof attachmentsSchema>[number];

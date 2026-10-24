@@ -47,7 +47,7 @@
     const renderDashboard = () => `
       <div class="page-heading">
         <div><p class="eyebrow">Wednesday, October 14, 2026</p><h1>Good morning, Farhana <span style="font-size:20px">☀️</span></h1><p class="subtitle">Your banking & financial deliveries, proof of delivery, and billing at a glance.</p></div>
-        <div class="heading-actions"><button class="button date-button" data-toast="Date range: October 14, 2026">${icon("calendar")} Today, Oct 14 <span style="color:#a0a9b5">⌄</span></button><button class="button" data-page-link="Billing">Billing</button><button class="button button-primary" id="createOrder">${icon("plus")} New document request</button></div>
+        <div class="heading-actions"><button class="button date-button" data-toast="Date range: October 14, 2026">${icon("calendar")} Today, Oct 14 <span style="color:#a0a9b5">⌄</span></button><button class="button" data-page-link="Billing">Billing</button><button class="button button-primary" id="createOrder">${icon("plus")} New delivery request</button></div>
       </div>
       <div class="metrics">
         ${metricCard("Documents this month","842","orders","across all branches","↑ 12.8%")}
@@ -78,7 +78,7 @@
       </div>
       <div class="content-grid">
         <section class="panel table-panel">
-          <div class="panel-heading"><div><h2 class="panel-title">Recent document requests</h2><p class="panel-subtitle">Latest branch consignments and delivery updates</p></div><button class="button button-sm" data-page-link="Orders">View all requests</button></div>
+          <div class="panel-heading"><div><h2 class="panel-title">Recent delivery requests</h2><p class="panel-subtitle">Latest branch consignments and delivery updates</p></div><button class="button button-sm" data-page-link="Orders">View all requests</button></div>
           <div class="table-scroll"><table><thead><tr><th>CONSIGNMENT</th><th>RECIPIENT</th><th>DOCUMENT TYPE</th><th>DELIVERY FEE</th><th>STATUS</th><th></th></tr></thead><tbody>${sampleOrders.slice(0,4).map(order=>`<tr><td class="order-id">${order.id}</td><td><div class="customer-cell"><span class="customer-mini">${order.initials}</span><span class="customer-name">${order.name}</span></div></td><td>${order.documentType}</td><td>${order.amount}</td><td>${statusPill(order.status)}</td><td><button class="row-menu" aria-label="More actions">···</button></td></tr>`).join("")}</tbody></table></div>
         </section>
         <section class="panel">
@@ -98,7 +98,7 @@
     const renderListPage = (page) => {
       const data = pageData[page];
       const stats = data.stats ? `<div class="metrics">${data.stats.map((item,i)=>metricCard(item[0],item[1],["chart","box","truck"][i],"updated just now","")).join("")}</div>` : "";
-      return `<div class="page-heading"><div><p class="eyebrow">Banking & Financial workspace</p><h1>${page==="Orders"?"Document requests":page==="Shipments"?"Document tracking":page==="Customers"?"Recipients & branches":page==="Products"?"Document catalogue":page}</h1><p class="subtitle">${data.description}</p></div><div class="heading-actions">${page==="Orders" ? `<button class="button button-primary" id="createOrder">${icon("plus")} New document request</button>` : `<button class="button" id="exportButton">${icon("download")} Export</button>`}</div></div>
+      return `<div class="page-heading"><div><p class="eyebrow">Banking & Financial workspace</p><h1>${page==="Orders"?"Delivery requests":page==="Shipments"?"Delivery tracking":page==="Customers"?"Recipients & branches":page==="Products"?"Product catalogue":page}</h1><p class="subtitle">${data.description}</p></div><div class="heading-actions">${page==="Orders" ? `<button class="button button-primary" id="createOrder">${icon("plus")} New delivery request</button>` : `<button class="button" id="exportButton">${icon("download")} Export</button>`}</div></div>
         ${stats}<section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">${page} list</h2><p class="panel-subtitle">Sample records · refreshed just now</p></div><div class="table-tools"><input class="table-search" id="tableSearch" placeholder="Search ${page.toLowerCase()}..." aria-label="Search ${page}">${["Orders","Shipments"].includes(page)?"":`<button class="button button-sm" data-toast="Filters are ready in the full product.">Filter</button>`}</div></div>
         <div class="table-scroll"><table><thead><tr>${data.columns.map(column=>`<th>${column.toUpperCase()}</th>`).join("")}</tr></thead><tbody id="tableBody">${data.rows.map(row=>makeRow(row,page)).join("")}</tbody></table></div><div class="table-footer"><span>Showing ${data.rows.length} sample records</span><div class="pagination"><button class="page-btn">‹</button><button class="page-btn current">1</button><button class="page-btn">2</button><button class="page-btn">3</button><button class="page-btn">›</button></div></div></section>`;
     };

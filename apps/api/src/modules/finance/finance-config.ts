@@ -27,6 +27,11 @@ export const financeConfigSchema = z.object({
     .default({ name: "Delivery Fast Ltd.", bin: "", address: "" }),
   /** Days after issue an invoice is due. */
   invoiceTermDays: z.number().int().min(0).max(120).default(15),
+  /**
+   * Merchant settlement approval (super admin): SINGLE = any finance user may approve, the one who drafted
+   * it too; DOUBLE = someone other than the person who drafted it (maker-checker).
+   */
+  settlementApproval: z.enum(["SINGLE", "DOUBLE"]).default("SINGLE"),
 });
 
 export type FinanceConfig = z.infer<typeof financeConfigSchema>;
@@ -45,6 +50,8 @@ export const updateFinanceConfigSchema = z.object({
     })
     .optional(),
   invoiceTermDays: z.number().int().min(0).max(120).optional(),
+  /** Super admins only. */
+  settlementApproval: z.enum(["SINGLE", "DOUBLE"]).optional(),
 });
 
 export async function readFinanceConfig(db: Db): Promise<FinanceConfig> {

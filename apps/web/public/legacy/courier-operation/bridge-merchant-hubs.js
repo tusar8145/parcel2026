@@ -190,9 +190,34 @@
     state.hub = event.target.value;
     Ops.rerender(true);
   });
+  // Menu › Merchants: how many address changes wait for approval (an amber badge; none = hidden).
+  async function paintBadge() {
+    const item = document.querySelector('#navigation [data-nav="Merchants"]');
+    if (!item || !can()) return;
+    let n = 0;
+    try {
+      n = (await DF.api("/merchant-address-requests")).items?.length || 0;
+    } catch {
+      return;
+    }
+    let badge = document.getElementById("navAddressCount");
+    if (!badge) {
+      item.insertAdjacentHTML("beforeend", `<span class="nav-count" id="navAddressCount" style="background:#fff5df;color:#b87913" title="Address changes to approve"></span>`);
+      badge = document.getElementById("navAddressCount");
+    }
+    badge.textContent = String(n);
+    badge.hidden = !n;
+    badge.setAttribute("aria-label", `${n} address change${n === 1 ? "" : "s"} to approve`);
+  }
+  // After the panel knows who is signed in (Ops.me, from /ops/overview).
+  let tries = 0;
+  const whenReady = () => (Ops.me ? void paintBadge() : ++tries < 60 && setTimeout(whenReady, 500));
+  whenReady();
+
   DF.live?.(["merchant.address_request", "merchant.updated"], () => {
     Ops.invalidate("merchants", "address-requests");
     if (Ops.page() === PAGE) Ops.rerender();
+    void paintBadge();
   });
 
   // The address holds the full address: its district / zone / area are picked from it (shared/api.js DF.autoPlace).

@@ -80,7 +80,9 @@ describe("work queue", () => {
     expect(await parcel(id)).toMatchObject({ status: "IN_TRANSIT", currentHubId: s.dhanmondi.id });
 
     // On the way: both ends see it on the same route; Dhanmondi receives it.
-    expect(await groups(s.gulOp.token, "transfer-receive")).toEqual([expect.objectContaining({ label: "Test Hub HUB-GUL → Test Hub HUB-DHN", count: 1 })]);
+    // Only the destination hub has it to receive; the sending hub doesn't.
+    expect(await groups(s.gulOp.token, "transfer-receive")).toEqual([]);
+    expect(await groups(s.dhnOp.token, "transfer-receive")).toEqual([expect.objectContaining({ label: "Test Hub HUB-GUL → Test Hub HUB-DHN", count: 1 })]);
     expect(await counts(s.dhnOp.token)).toMatchObject({ "transfer-receive": 1 });
     expect(await scan(s.ops.token, "transfer-receive", { code: id, hubId: s.gulshan.id })).toMatchObject({ ok: false, outcome: "WRONG_HUB", message: `${id} is going to Test Hub HUB-DHN, not Test Hub HUB-GUL.` });
     expect(await scan(s.dhnOp.token, "transfer-receive", { code: id })).toMatchObject({ ok: true, outcome: "DONE" });

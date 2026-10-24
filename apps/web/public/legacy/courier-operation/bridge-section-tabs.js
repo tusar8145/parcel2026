@@ -45,10 +45,12 @@
         "Rider cash on hand": "cash",
         "Cash handover requests": "cash",
         "COD & finance register": "cash",
+        "Cash received at hubs": "cash",
         "Recent cash handovers": "cash",
         "Franchise deposits": "franchise",
         "Franchise commission invoices": "franchise",
         "Settlement approvals": "settlements",
+        "Paid settlements": "settlements",
         "Automatic settlement schedule": "settlements",
         "Rider payouts": "settlements",
         "Delivery-charge invoices · VAT": "accounts",
@@ -58,7 +60,7 @@
       },
       buttons: {},
       // The action first: the riders' cash to receive, then what was received.
-      order: ["Cash handover requests", "Rider cash on hand", "COD & finance register"],
+      order: ["Cash handover requests", "Rider cash on hand", "COD & finance register", "Cash received at hubs"],
       guide: {
         cash: `<h2 class="panel-title">Cash from riders</h2><p class="panel-subtitle">Riders hand the cash they collected to the hub. Count it and press Receive cash on the rider; the handover appears under the register below.</p></div></div>`,
       },

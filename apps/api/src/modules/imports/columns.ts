@@ -248,14 +248,14 @@ const area = (header: string) =>
 
 // ───────────── parcel ─────────────
 
-/** `free`: any product name is accepted (E-commerce): a listed product prices by its type, any other name is booked as written and priced as Regular. */
+/** `free`: any product name is accepted (E-commerce, Banking & Financial): a listed product prices by its type, any other name is booked as written and priced as Regular. */
 const product = (list: string, free = false) =>
   c({
     key: "product_type",
     header: "Product",
     aliases: ["product", "product_type", "product_name", "category", "product_category", "item", "item_name", "items"],
     description: free
-      ? `Any product name (optional). A product from your ${list} list prices the parcel by its type (Regular, Document or Books); any other name is booked as written and priced as Regular. Empty = Regular.`
+      ? `Any product name (optional). A product from your ${list} list prices the parcel by its type (Regular, Document or Books); any other name is booked as written and priced as Regular. ${list === "Banking & Financial" ? "Empty = no product." : "Empty = Regular."}`
       : `Product from the ${list} list (optional), shown with its type. ${list === "Banking & Financial" ? "Empty = no product." : "The type (Regular, Document or Books) prices the parcel; empty = Regular."}`,
     example: "",
     required: false,
@@ -365,7 +365,7 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
     district("District"),
     zone("Zone"),
     area("Area"),
-    product("Banking & Financial"),
+    product("Banking & Financial", true),
     service("The service from the package (one choice). Empty = Regular."),
     orderRef("Reference no.", "LOAN-2026-00481"),
     instructions,

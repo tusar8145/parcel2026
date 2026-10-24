@@ -9,7 +9,8 @@ import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { Prisma, type Invoice, type InvoiceStatus } from "../../generated/prisma/client";
 import type { Db } from "../../common/prisma.service";
-import type { createInvoiceSchema, listInvoicesQuerySchema, markInvoicePaidSchema, voidInvoiceSchema } from "./finance.schemas";
+import type { billableQuerySchema, createInvoiceSchema, listInvoicesQuerySchema, markInvoicePaidSchema, voidInvoiceSchema } from "./finance.schemas";
+import { deliveryTrackingIds, invoicedParcels } from "./invoiced";
 import { financeMerchantScope, money, sum } from "./finance.scope";
 import { lockMerchant } from "./settlements.service";
 import { WebhooksService } from "../notifications/webhooks.service";
@@ -40,14 +41,46 @@ export class InvoicesService {
   @Inject(OutboxService) private readonly outbox!: OutboxService;
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
 
+  /** Generate bill dialog: delivered prepaid parcels in [periodStart, periodEnd) not billed yet, and the open return charges a bill adds. */
+  async billable(query: z.infer<typeof billableQuerySchema>) {
+    await syncReturnCharges(this.prisma, query.merchantId);
+    const [parcels, billed, returns] = await Promise.all([
+      this.prisma.parcel.findMany({
+        where: { merchantId: query.merchantId, status: "DELIVERED", deliveredAt: { gte: query.periodStart, lt: query.periodEnd }, codCollection: { is: null } },
+        select: { trackingId: true, merchantOrderRef: true, recipientName: true, deliveredAt: true, totalCharge: true, serviceLevel: true, deliveryZone: true, deliveryDistrict: true, productName: true },
+        orderBy: { deliveredAt: "asc" },
+        take: 5000,
+      }),
+      invoicedParcels(this.prisma, [query.merchantId]),
+      this.prisma.merchantAdjustment.findMany({ where: { merchantId: query.merchantId, kind: "RETURN_CHARGE", settlementId: null, invoiceId: null, createdAt: { lt: query.periodEnd } }, orderBy: { createdAt: "asc" } }),
+    ]);
+    return {
+      items: parcels
+        .filter(p => !billed.has(p.trackingId))
+        .map(p => ({
+          trackingId: p.trackingId,
+          orderRef: p.merchantOrderRef,
+          recipient: p.recipientName,
+          product: p.productName,
+          deliveredAt: p.deliveredAt,
+          destination: `${p.deliveryZone}, ${p.deliveryDistrict}`,
+          service: SERVICE_LABEL[p.serviceLevel] ?? p.serviceLevel,
+          charge: money(p.totalCharge),
+        })),
+      returnCharges: returns.map(r => ({ trackingId: returnTrackingId(r.reference), amount: money(r.amount), createdAt: r.createdAt })),
+      returnChargesTotal: money(sum(returns.map(r => r.amount))),
+    };
+  }
+
   /**
-   * Bills delivery charges for parcels delivered in [periodStart, periodEnd). Parcels with a
-   * COD collection are left out: their charge is deducted from the merchant's COD settlement.
-   * Also bills return (RTO) charges booked before periodEnd that no settlement or invoice has
-   * billed yet, one line each with VAT (see return-charges.ts).
+   * Bills delivery charges for parcels delivered in [periodStart, periodEnd): the chosen ones (trackingIds), else
+   * every one in the period, which must then have ended. Parcels with a COD collection are left out (their charge
+   * is deducted from the merchant's COD settlement), and so are parcels already on an issued or paid invoice.
+   * Also bills return (RTO) charges booked before periodEnd that no settlement or invoice has billed yet, one
+   * line each with VAT (see return-charges.ts).
    */
   async create(actor: UserActor, input: z.infer<typeof createInvoiceSchema>, meta: RequestMeta) {
-    if (input.periodEnd.getTime() > Date.now()) throw new AppError("PERIOD_NOT_ENDED", "Invoice periods must have ended", HttpStatus.UNPROCESSABLE_ENTITY);
+    if (!input.trackingIds && input.periodEnd.getTime() > Date.now()) throw new AppError("PERIOD_NOT_ENDED", "Invoice periods must have ended", HttpStatus.UNPROCESSABLE_ENTITY);
     const webhookIds: string[] = [];
     const outboxIds: string[] = [];
     const id = await this.prisma.$transaction(
@@ -55,16 +88,27 @@ export class InvoicesService {
         await lockMerchant(tx, input.merchantId);
         const merchant = await tx.merchant.findUniqueOrThrow({ where: { id: input.merchantId }, select: { contactName: true, contactPhone: true, contactEmail: true, type: true } });
         const cfg = await readFinanceConfig(tx);
-        const overlap = await tx.invoice.findFirst({
-          where: { merchantId: input.merchantId, status: { in: ["ISSUED", "PAID"] }, periodStart: { lt: input.periodEnd }, periodEnd: { gt: input.periodStart } },
-        });
-        if (overlap) throw new AppError("INVOICE_PERIOD_OVERLAP", `Invoice ${overlap.number} already covers part of this period`, HttpStatus.CONFLICT, { invoiceId: overlap.id, number: overlap.number });
-
-        const parcels = await tx.parcel.findMany({
-          where: { merchantId: input.merchantId, status: "DELIVERED", deliveredAt: { gte: input.periodStart, lt: input.periodEnd }, codCollection: { is: null } },
-          select: { trackingId: true, totalCharge: true, serviceLevel: true, deliveryZone: true, deliveryDistrict: true },
-          orderBy: { deliveredAt: "asc" },
-        });
+        // Deliveries already on an issued or paid invoice are never billed twice (the merchant lock serialises bills).
+        const billed = await invoicedParcels(tx, [input.merchantId]);
+        const chosen = input.trackingIds ? new Set(input.trackingIds.map(t => t.toUpperCase())) : null;
+        const parcels = (
+          await tx.parcel.findMany({
+            where: {
+              merchantId: input.merchantId,
+              status: "DELIVERED",
+              deliveredAt: { gte: input.periodStart, lt: input.periodEnd },
+              codCollection: { is: null },
+              ...(chosen ? { trackingId: { in: [...chosen] } } : {}),
+            },
+            select: { trackingId: true, totalCharge: true, serviceLevel: true, deliveryZone: true, deliveryDistrict: true },
+            orderBy: { deliveredAt: "asc" },
+          })
+        ).filter(p => !billed.has(p.trackingId));
+        if (chosen && parcels.length !== chosen.size) {
+          const ok = new Set(parcels.map(p => p.trackingId));
+          const not = [...chosen].filter(t => !ok.has(t));
+          throw new AppError("DELIVERIES_NOT_BILLABLE", `${not.slice(0, 5).join(", ")}${not.length > 5 ? ` and ${not.length - 5} more` : ""} can't be billed: already on a bill, not delivered in this period, or cash on delivery. Open Generate bill again.`, HttpStatus.CONFLICT, { trackingIds: not });
+        }
         // Return (RTO) charges booked before the period end and not yet billed by a settlement or invoice.
         await syncReturnCharges(tx, input.merchantId);
         const returns = await tx.merchantAdjustment.findMany({
@@ -116,7 +160,7 @@ export class InvoicesService {
             action: "invoice.create",
             entityType: "invoice",
             entityId: invoice.id,
-            data: { number: invoice.number, merchantId: input.merchantId, lines: parcels.length, returnCharges: returns.length, subtotal: subtotal.toFixed(2), vat: vatAmount.toFixed(2), periodStart: input.periodStart.toISOString(), periodEnd: input.periodEnd.toISOString() },
+            data: { number: invoice.number, merchantId: input.merchantId, lines: parcels.length, chosen: !!chosen, returnCharges: returns.length, subtotal: subtotal.toFixed(2), vat: vatAmount.toFixed(2), periodStart: input.periodStart.toISOString(), periodEnd: input.periodEnd.toISOString() },
           },
           meta,
           tx,
@@ -163,6 +207,7 @@ export class InvoicesService {
     );
     await this.invoiceWebhooks.flush(webhookIds);
     await this.outbox.flush(outboxIds);
+    this.realtime.publish({ type: "invoice.updated", id, merchantId: input.merchantId, staffPermission: "finance:read" });
     return this.detail(actor, id);
   }
 
@@ -284,6 +329,8 @@ export class InvoicesService {
       taxableValue: money(total.minus(i.vatAmount)),
       total: money(total),
       lineCount: Array.isArray(i.lines) ? i.lines.length : 0,
+      /** The deliveries the invoice bills (not its return charges). */
+      trackingIds: deliveryTrackingIds(i.lines),
       issuedAt: i.issuedAt,
       dueAt: i.dueAt,
       paidAt: i.paidAt,

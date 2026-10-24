@@ -20,6 +20,7 @@ import { readFinanceConfig, vatSplit } from "./finance-config";
 import { LedgerService, credit, debit, type LedgerVia } from "./ledger.service";
 import { syncReturnCharges } from "./return-charges";
 import { periodView, resolvePeriod, type PeriodQuery } from "../../common/period";
+import { StorageService } from "../../common/storage.service";
 
 const settlementInclude = {
   merchant: { select: { id: true, code: true, name: true } },
@@ -59,32 +60,71 @@ export class SettlementsService {
   /** cod.settled webhooks (property injection keeps the constructor stable for parallel edits). */
   @Inject(WebhooksService) private readonly settlementWebhooks!: WebhooksService;
   @Inject(LedgerService) private readonly ledger!: LedgerService;
+  @Inject(StorageService) private readonly storage!: StorageService;
   @Inject(NotifyService) private readonly notify!: NotifyService;
   @Inject(InboxService) private readonly inbox!: InboxService;
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
 
   /** Drafts a payout of every unsettled COD collection at hubs for the merchant. */
-  async create(actor: UserActor, merchantId: string, meta: RequestMeta) {
-    const id = await this.draft(actor, merchantId, meta);
+  async create(actor: UserActor, merchantId: string, meta: RequestMeta, collectionIds?: string[]) {
+    const id = await this.draft(actor, merchantId, meta, { collectionIds });
     return this.detail(actor, id);
+  }
+
+  /**
+   * Draft settlement dialog: the merchant's COD collections at hubs not yet settled (each parcel's COD,
+   * delivery charge and net), and the open adjustments every settlement applies.
+   */
+  async eligible(merchantId: string) {
+    await syncReturnCharges(this.prisma, merchantId);
+    const [collections, adjustments] = await Promise.all([
+      this.prisma.codCollection.findMany({
+        where: { state: "AT_HUB", settlementId: null, parcel: { merchantId } },
+        include: { parcel: { select: { trackingId: true, totalCharge: true, deliveredAt: true, merchantOrderRef: true, recipientName: true } } },
+        orderBy: { collectedAt: "asc" },
+        take: 5000,
+      }),
+      this.prisma.merchantAdjustment.findMany({ where: { merchantId, settlementId: null, invoiceId: null }, orderBy: { createdAt: "asc" } }),
+    ]);
+    const hubIds = [...new Set(collections.map(c => c.hubId).filter((x): x is string => !!x))];
+    const hubs = new Map((hubIds.length ? await this.prisma.hub.findMany({ where: { id: { in: hubIds } }, select: { id: true, name: true } }) : []).map(h => [h.id, h.name]));
+    return {
+      items: collections.map(c => ({
+        id: c.id,
+        trackingId: c.parcel.trackingId,
+        orderRef: c.parcel.merchantOrderRef,
+        recipient: c.parcel.recipientName,
+        deliveredAt: c.parcel.deliveredAt,
+        collectedAt: c.collectedAt,
+        hub: c.hubId ? (hubs.get(c.hubId) ?? null) : null,
+        codAmount: money(c.amount),
+        charge: money(c.parcel.totalCharge),
+        net: money(c.amount.minus(c.parcel.totalCharge)),
+      })),
+      adjustments: adjustments.map(a => ({ id: a.id, kind: a.kind, description: a.description, amount: money(a.amount) })),
+      adjustmentsTotal: money(sum(adjustments.map(a => a.amount))),
+    };
   }
 
   /**
    * Drafts the settlement inside its own transaction. `actor` "system" = the settlement
    * schedule (autoDrafted; any finance user may then approve it).
    */
-  async draft(actor: UserActor | "system", merchantId: string, meta: Partial<RequestMeta> = {}, opts: { minimumAmount?: Prisma.Decimal } = {}) {
+  async draft(actor: UserActor | "system", merchantId: string, meta: Partial<RequestMeta> = {}, opts: { minimumAmount?: Prisma.Decimal; collectionIds?: string[] } = {}) {
     const id = await this.prisma.$transaction(
       async tx => {
         await lockMerchant(tx, merchantId);
         await syncReturnCharges(tx, merchantId);
         const [collections, adjustments] = await Promise.all([
           tx.codCollection.findMany({
-            where: { state: "AT_HUB", settlementId: null, parcel: { merchantId } },
+            // The parcels chosen in the dialog, else every one waiting.
+            where: { state: "AT_HUB", settlementId: null, parcel: { merchantId }, ...(opts.collectionIds ? { id: { in: opts.collectionIds } } : {}) },
             include: { parcel: { select: { totalCharge: true } } },
           }),
           tx.merchantAdjustment.findMany({ where: { merchantId, settlementId: null, invoiceId: null } }),
         ]);
+        if (opts.collectionIds && collections.length !== new Set(opts.collectionIds).size)
+          throw conflict("COLLECTIONS_CHANGED", "Some of the chosen parcels were settled or changed meanwhile. Open Draft settlement again.");
         if (!collections.length && !adjustments.some(a => a.amount.lt(0)))
           throw new AppError("NOTHING_TO_SETTLE", "This merchant has no COD cash at hubs waiting to be settled", HttpStatus.UNPROCESSABLE_ENTITY);
 
@@ -128,6 +168,7 @@ export class SettlementsService {
               number: settlement.number,
               merchantId,
               collections: ids.length,
+              chosen: !!opts.collectionIds,
               adjustments: adjustments.length,
               codTotal: codTotal.toFixed(2),
               chargesTotal: chargesTotal.toFixed(2),
@@ -163,7 +204,9 @@ export class SettlementsService {
       if (settlement.status !== "DRAFT") throw conflict("SETTLEMENT_NOT_DRAFT", "Only draft settlements can be approved");
       const maker = await this.makerId(tx, settlement);
       if (!maker && !settlement.autoDrafted) throw conflict("SETTLEMENT_MAKER_UNKNOWN", "Can't tell who drafted this settlement; recreate it");
-      if (maker === actor.userId) throw new AppError("SAME_USER_APPROVAL", "Someone other than the person who drafted it must approve this settlement", HttpStatus.FORBIDDEN);
+      // Double approval (super admin › Platform settings): someone other than the person who drafted it.
+      const { settlementApproval } = await readFinanceConfig(tx);
+      if (settlementApproval === "DOUBLE" && maker === actor.userId) throw new AppError("SAME_USER_APPROVAL", "Someone other than the person who drafted it must approve this settlement", HttpStatus.FORBIDDEN);
 
       const updated = await tx.merchantSettlement.updateMany({ where: { id, status: "DRAFT" }, data: { status: "APPROVED", approvedById: actor.userId } });
       if (updated.count !== 1) throw conflict("SETTLEMENT_NOT_DRAFT", "Only draft settlements can be approved");
@@ -189,8 +232,17 @@ export class SettlementsService {
         // KYC policy (super admin): COD payouts may need verified business documents.
         if (paysMoney) await assertKycAllowed(tx, settlement.merchant, "codPayouts");
 
+        // The payment receipt photo (optional): sent from a phone by the payer, or attached on the computer.
+        let paymentProofFileId: string | null = null;
+        if (input.proofFileId) {
+          const file = await tx.storedFile.findUnique({ where: { id: input.proofFileId }, select: { id: true, uploadedById: true } });
+          if (!file || file.uploadedById !== actor.userId) throw new AppError("PROOF_NOT_FOUND", "The receipt photo wasn't found. Take it again.", HttpStatus.UNPROCESSABLE_ENTITY);
+          paymentProofFileId = file.id;
+        } else if (input.proofImage) {
+          paymentProofFileId = (await this.storage.saveDataUrl(input.proofImage, `receipt-${settlement.number}`, actor.userId, tx)).id;
+        }
         const paidAt = new Date();
-        const updated = await tx.merchantSettlement.updateMany({ where: { id, status: "APPROVED" }, data: { status: "PAID", paidAt, reference, paidById: actor.userId } });
+        const updated = await tx.merchantSettlement.updateMany({ where: { id, status: "APPROVED" }, data: { status: "PAID", paidAt, reference, paidById: actor.userId, paymentProofFileId } });
         if (updated.count !== 1) throw conflict("SETTLEMENT_NOT_APPROVED", "Only approved settlements can be paid");
         const settled = await tx.codCollection.updateMany({ where: { settlementId: id, state: "AT_HUB" }, data: { state: "SETTLED" } });
         if (settled.count !== settlement._count.collections) throw conflict("SETTLEMENT_CONFLICT", "This settlement's collections changed; review it before paying");
@@ -459,7 +511,16 @@ export class SettlementsService {
       paidById: s.paidById,
       paidAt: s.paidAt,
       reference: s.reference,
+      /** A photo of the payment receipt was attached (GET /settlements/:id/payment-proof). */
+      paymentProof: !!s.paymentProofFileId,
       createdAt: s.createdAt,
     };
+  }
+
+  /** The payment receipt photo: finance staff, and the merchant it was paid to. */
+  async paymentProof(actor: Actor, id: string) {
+    const s = await this.prisma.merchantSettlement.findFirst({ where: { AND: [{ id }, this.scope(actor)] }, include: { paymentProof: true } });
+    if (!s?.paymentProof) throw notFound("Payment receipt");
+    return { file: s.paymentProof, data: await this.storage.read(s.paymentProof.storageKey) };
   }
 }

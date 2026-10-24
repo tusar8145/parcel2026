@@ -28,6 +28,17 @@
   const pickupTask = id => DF.rider.tasks.pickups.find(p => p.trackingId === id);
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const money = n => `৳ ${Number(n || 0).toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
+
+  // The original stylesheet lost its section-title rule (a broken line swallowed it and the subtitle rule after it):
+  // every panel's title showed as a large default heading. Restored here, with the money panels' spacing.
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfRiderPanelStyles">
+      .panel-title{margin:0;font-size:15px;font-weight:650;color:#182230}
+      .panel-subtitle{margin:5px 0 0;color:#96a0ad;font-size:13px;font-weight:400}
+      #dfPayPanels{margin-top:0!important}
+    </style>`,
+  );
   const setText = (el, text) => el && (el.textContent = text);
   const longDate = () => new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const when = iso => (iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");

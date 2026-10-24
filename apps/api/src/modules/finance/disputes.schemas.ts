@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { pageQuerySchema } from "../../common/pagination";
-import { attachmentsSchema, enumLoose } from "../support/support.schemas";
+import { evidenceSchema, enumLoose } from "../support/support.schemas";
 import { moneySchema } from "./finance.schemas";
 
 export const DISPUTE_KINDS = ["DAMAGED", "LOST", "OVERCHARGE", "WEIGHT_DISCREPANCY", "OTHER"] as const;
@@ -20,7 +20,7 @@ export const createDisputeSchema = z
     /** Weight discrepancy: the measured weight. */
     actualWeightKg: weightSchema.optional(),
     /** Photos, receipts, weighing slips (PNG/JPEG/WebP/PDF, up to 3 × 350 KB). */
-    evidence: attachmentsSchema,
+    evidence: evidenceSchema,
   })
   .refine(v => v.kind !== "WEIGHT_DISCREPANCY" || v.actualWeightKg !== undefined, { message: "Enter the measured weight", path: ["actualWeightKg"] })
   .refine(v => v.kind === "WEIGHT_DISCREPANCY" || v.kind === "OTHER" || v.claimedAmount !== undefined, { message: "Enter the amount you are claiming", path: ["claimedAmount"] });
@@ -37,7 +37,7 @@ export const disputeNoteSchema = z.object({
   body: z.string().trim().min(1, "Write a message").max(3000),
   /** Staff only: not shown to the person who raised it. */
   internal: z.boolean().default(false),
-  evidence: attachmentsSchema,
+  evidence: evidenceSchema,
 });
 
 export const approveDisputeSchema = z.object({

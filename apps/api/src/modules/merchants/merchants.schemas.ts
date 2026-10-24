@@ -75,6 +75,13 @@ export const payoutAccountSchema = z.discriminatedUnion(
       accountName: text(2, 120),
       bankName: z.string("Enter the bank name").trim().min(2, "Enter the bank name").max(120),
       branch: text(2, 120).optional(),
+      /** Bangladesh Bank routing number of the branch (9 digits), optional. */
+      routingNumber: z
+        .string()
+        .trim()
+        .transform(v => v.replace(/[\s-]/g, ""))
+        .pipe(z.string().regex(/^\d{9}$/, "Routing numbers have 9 digits"))
+        .optional(),
     }),
   ],
   "Choose a payout method: BKASH, NAGAD or BANK",

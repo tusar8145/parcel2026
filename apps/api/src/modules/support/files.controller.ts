@@ -5,6 +5,7 @@ import { AllowApiKey, CurrentActor } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { FilesService } from "./files.service";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
+import { opensInline } from "../../common/file-types";
 
 @ApiTags("files")
 @Controller("files")
@@ -22,7 +23,7 @@ export class FilesController {
   @RequireApiKeyScope("parcels:read")
   @ApiBearerAuth()
   @Get(":id")
-  @ApiProduces("image/png", "image/jpeg", "image/webp", "application/pdf", "application/json")
+  @ApiProduces("image/*", "application/pdf", "application/octet-stream", "application/json")
   @ApiOkResponse({ description: "The file content, or JSON with a data URL when Accept is application/json" })
   @ApiNotFoundResponse({ description: "No such file, or you can't access it" })
   async download(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @Headers("accept") accept: string | undefined, @Res() reply: FastifyReply) {
@@ -42,7 +43,8 @@ export class FilesController {
       .status(200)
       .header("content-type", file.mimeType)
       .header("content-length", data.length)
-      .header("content-disposition", `inline; filename="${filename}"`)
+      // Photos and PDFs open in the browser; office files, CSV and text download.
+      .header("content-disposition", `${opensInline(file.mimeType) ? "inline" : "attachment"}; filename="${filename}"`)
       .send(data);
   }
 }

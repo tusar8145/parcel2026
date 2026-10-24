@@ -1,4 +1,6 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { InboxService } from "../notifications/inbox.service";
+import { notifyNewWork } from "../notifications/new-work";
 import { deliveryHubsOf } from "./delivery-hub";
 import { operationNow } from "../../common/operation-time";
 import type { z } from "zod";
@@ -99,6 +101,7 @@ export class ParcelsService {
   @Inject(NotifyService) private readonly notifications!: NotifyService;
   /** Service packages: defaults, enforcement and prices (global module). */
   @Inject(PackagesService) private readonly packages!: PackagesService;
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   /** Parcels this actor may see. */
   scope(actor: Actor): Prisma.ParcelWhereInput {
@@ -317,6 +320,17 @@ export class ParcelsService {
         tx,
       );
       if (cn) await linkCn(tx, cn.stockId, created.id);
+      // Courier Operations' bell: a merchant booked an order (operations managers, and the hub it starts at).
+      if (ctx.merchantId && (ctx.channel === "MERCHANT_PORTAL" || ctx.channel === "MERCHANT_API") && !opts.import) {
+        const merchant = await tx.merchant.findUnique({ where: { id: ctx.merchantId }, select: { name: true, pickupHubId: true } });
+        await notifyNewWork(this.inbox, tx, {
+          hubId: dropOff?.hub.id ?? merchant?.pickupHubId,
+          type: "staff.merchant_order",
+          title: `New order from ${merchant?.name ?? "a merchant"}`,
+          body: `${trackingId} · ${dropOff ? `drop-off at ${dropOff.hub.name}` : "rider pickup"} · to ${[dest.zone, dest.district].filter(Boolean).join(", ")}`,
+          target: { page: "new-orders" },
+        });
+      }
       if (inTransaction) await inTransaction(tx, created);
       after.realtime.push(parcelEvent(created, "parcel.created"));
       return created;

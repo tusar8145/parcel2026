@@ -308,7 +308,7 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   await expect(page).toHaveURL(/\/banking-merchant$/);
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
 
-  // ── New document request ──
+  // ── New delivery request ──
   await nav(page, "Orders");
   const recipient = `E2E Receiver ${unique()}`;
   const reference = `E2E-${unique()}`;

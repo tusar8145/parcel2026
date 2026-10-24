@@ -1,4 +1,6 @@
-import { HttpStatus, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { notifyNewWork } from "../notifications/new-work";
+import { InboxService } from "../notifications/inbox.service";
 import { createHash } from "node:crypto";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
@@ -95,6 +97,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
     private readonly outbox: OutboxService,
     private readonly packages: PackagesService,
   ) {}
+
+  /** Courier Operations' bell (property injection keeps the constructor stable). */
+  @Inject(InboxService) private readonly inbox!: InboxService;
 
   // ───────────── background worker ─────────────
 
@@ -968,6 +973,17 @@ export class ImportJobsService implements OnApplicationBootstrap {
         job = await tx.importJob.update({ where: { id }, data: { status: "COMPLETED", completedAt: new Date(), createdCount: created, createdIncomplete, failedCount: failed } });
         if (job.bookingBatchId) await tx.bookingBatch.update({ where: { id: job.bookingBatchId }, data: { bookedCount: created, failedCount: job.totalRows - created } });
         await this.audit.record("system", { action: "import.complete", entityType: "import", entityId: id, data: { number: job.number, created, createdIncomplete, notCreated: job.totalRows - created } }, meta, tx);
+        // Courier Operations' bell: a merchant imported orders (one notice per file; operations managers and its hub).
+        if (job.source !== "OPERATIONS" && job.merchantId && created > 0) {
+          const merchant = await tx.merchant.findUnique({ where: { id: job.merchantId }, select: { name: true, pickupHubId: true } });
+          await notifyNewWork(this.inbox, tx, {
+            hubId: job.dropOffHubId ?? merchant?.pickupHubId,
+            type: "staff.merchant_import",
+            title: `${merchant?.name ?? "A merchant"} imported ${created} order${created === 1 ? "" : "s"}`,
+            body: `${job.number}${job.fileName ? ` · ${job.fileName}` : ""}${createdIncomplete ? ` · ${createdIncomplete} need info` : ""}${job.intake === "DROP_OFF" ? " · drop-off" : ""}`,
+            target: { page: "new-orders" },
+          });
+        }
         return job.createdById
           ? this.notify.notify(tx, {
               event: "import.completed",

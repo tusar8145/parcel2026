@@ -484,6 +484,19 @@ export class MerchantsService {
       },
     });
     await this.audit.record(actor, { action: "merchant.address_requested", entityType: "merchant", entityId: current.id, data: { requestId: request.id, changes, previousHubId: request.previousHubId, proposedHubId: request.proposedHubId } }, meta, tx);
+    // The bell of those who approve it (Courier Operations › Merchants › Address changes to approve).
+    const moved = request.proposedHubId !== request.previousHubId;
+    await this.inbox.toStaff(
+      tx,
+      { roles: ["OPS_MANAGER"] },
+      {
+        type: "staff.merchant_address_request",
+        title: `Address change to approve: ${current.name}`,
+        body: `${current.code} · ${this.addressSnapshot(proposed).pickup}${moved ? " · the serving hub changes" : ""}`,
+        target: { page: "merchants" },
+        panel: "/courier-operation",
+      },
+    );
     return request;
   }
 

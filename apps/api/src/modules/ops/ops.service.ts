@@ -14,7 +14,7 @@ import { addDays, dhakaDateRange, dhakaDayStart, dhakaMonthStart, opsHubScope } 
 import { PricingService } from "../pricing/pricing.service";
 import { PackagesService } from "../packages/packages.service";
 import { zoneForArea } from "../parcels/places";
-import { cashHubScope, isFinanceStaff } from "../finance/finance.scope";
+import { canChangeFinanceSettings, cashHubScope, isFinanceStaff } from "../finance/finance.scope";
 import type { opsBookingSchema, riderReportQuerySchema, transfersQuerySchema } from "./ops.schemas";
 import { NEEDS_PICKUP_RIDER } from "./ops-common";
 import { periodView, resolvePeriod, type PeriodQuery } from "../../common/period";
@@ -285,6 +285,8 @@ export class OpsService {
         receiveCash: can("cod:receive"),
         financeStaff: can("finance:read") && isFinanceStaff(actor),
         manageFinance: can("finance:manage"),
+        /** Finance settings (VAT, seller on invoices, terms): finance users and super admins. */
+        financeSettings: can("finance:manage") && canChangeFinanceSettings(actor),
         manageConfig: can("config:manage"),
         /** Change merchant addresses and approve merchants' own address changes (the merchant's hub follows). */
         merchantAddress: can("merchant:address"),

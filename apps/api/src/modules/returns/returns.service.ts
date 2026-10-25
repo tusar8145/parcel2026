@@ -484,9 +484,6 @@ export class ReturnsService {
             continue;
           }
           const returned = await this.workflow.transition(tx, parcel, { to: "RETURNED", actorRole: "ops", data: { deliveredAt: null }, metadata: { returnRunId: id } }, actor, meta, after);
-          const charge = returned.returnCharge == null ? 0 : Number(returned.returnCharge);
-          if (charge > 0)
-            await this.ledger.record(tx, { type: "DELIVERY_CHARGE_EARNED", amount: charge, reference: `${returned.trackingId}:return`, merchantId: returned.merchantId, hubId: run.hubId, memo: "Return charge" });
           // A franchise rider took it back: the rider's return pay and the franchise's return commission.
           if (run.riderId) await recordFranchiseReturn(tx, this.ledger, { riderId: run.riderId, parcel: returned });
         }

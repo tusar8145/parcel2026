@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { hubCashPlacement } from "../money/cash-placement";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { Prisma } from "../../generated/prisma/client";
@@ -12,7 +13,6 @@ import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { runsJobs } from "../../config/env";
 import { NotifyService } from "../notifications/notify.service";
-import { LedgerService, credit, debit } from "../finance/ledger.service";
 import { PackagesService } from "../packages/packages.service";
 import { ParcelsService } from "./parcels.service";
 import { ParcelWorkflowService, type AfterCommit } from "./parcel-workflow.service";
@@ -69,7 +69,6 @@ export class CollectionsService implements OnApplicationBootstrap {
   ) {}
 
   @Inject(NotifyService) private readonly notify!: NotifyService;
-  @Inject(LedgerService) private readonly ledger!: LedgerService;
   @Inject(PackagesService) private readonly packages!: PackagesService;
 
   onApplicationBootstrap() {
@@ -155,19 +154,8 @@ export class CollectionsService implements OnApplicationBootstrap {
         );
         await tx.deliveryProof.create({ data: { parcelId: parcel.id, method, receivedBy: input.receivedBy, fileId, otpVerified: method === "COLLECTION_CODE", note: input.note, capturedAt: now } });
         if (cod > 0) {
-          // Paid at the counter: straight into the hub's cash (no rider hand-over), settled to the merchant as usual.
-          await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: null, hubId: hub.id, collectedById: actor.userId, amount: cod, state: "AT_HUB", collectedAt: now } });
-          await this.ledger.post(tx, {
-            eventType: "COD_COLLECTED",
-            reference: parcel.trackingId,
-            memo: `COD paid at ${hub.name} (collect from hub)`,
-            occurredAt: now,
-            merchantId: parcel.merchantId,
-            hubId: hub.id,
-            idempotencyKey: `COD_COLLECTED:${parcel.trackingId}`,
-            createdById: actor.userId,
-            lines: [debit("CASH_AT_HUBS", cod, { hubId: hub.id }), credit("MERCHANT_PAYABLES", cod, { merchantId: parcel.merchantId })],
-          });
+          // Paid at the counter: straight into the hub's cash (no rider slip); the hub sends it on to the central hub.
+          await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: null, hubId: hub.id, collectedById: actor.userId, amount: cod, collectedAt: now, ...(await hubCashPlacement(tx, hub.id, now)) } });
         }
         await this.audit.record(actor, { action: "parcel.collect", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, hubId: hub.id, method, codCollected: cod } }, meta, tx);
       },

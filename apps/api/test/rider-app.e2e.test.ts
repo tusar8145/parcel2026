@@ -210,7 +210,8 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       const early = await ctx.api("POST", `/rider-payouts/${payout.id}/pay`, { token: finance.token, body: { paymentMethod: "BKASH", paymentReference: "TXN-1" } });
       expect(early.body.error.code).toBe("PAYOUT_NOT_APPROVED");
       expect((await ctx.api("POST", `/rider-payouts/${payout.id}/approve`, { token: finance.token })).body.status).toBe("APPROVED");
-      expect((await ctx.api("POST", `/rider-payouts/${payout.id}/pay`, { token: s.ops.token, body: { paymentMethod: "BKASH", paymentReference: "TXN-1" } })).status).toBe(403);
+      const hubStaff = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: s.h.id }], "Hub Staff");
+      expect((await ctx.api("POST", `/rider-payouts/${payout.id}/pay`, { token: hubStaff.token, body: { paymentMethod: "BKASH", paymentReference: "TXN-1" } })).status).toBe(403);
       const ledger = vi.spyOn(ctx.app.get(LedgerService), "record");
       const paid = await ctx.api("POST", `/rider-payouts/${payout.id}/pay`, { token: finance.token, body: { paymentMethod: "BKASH", paymentReference: "TXN-77" } });
       expect(paid.body).toMatchObject({ status: "PAID", paymentMethod: "BKASH", paymentReference: "TXN-77" });
@@ -270,8 +271,8 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       expect(parcel.returnOrders).toHaveLength(1);
       expect(parcel.returnOrders[0]).toMatchObject({ status: "RETURN_SCHEDULED", returnOfId: parcel.id });
       // The rider hands over ৳400, not ৳1,500.
-      const request = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
-      expect(request.body).toMatchObject({ amount: 400, collections: 1 });
+      const slip = await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token });
+      expect(slip.body).toMatchObject({ expected: 400, parcels: 1 });
 
       // The hub assigns the return order to the rider: the rider sees it (planned) and returns it by scanning.
       const back = parcel.returnOrders[0].trackingId;
@@ -291,62 +292,38 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
     });
   });
 
-  describe("cash handover requests", () => {
-    it("lets a rider ask a hub to receive their cash, and hub staff complete it", async () => {
+  describe("My cash: the handover slip", () => {
+    it("makes one slip of all the cash held, keeps it up to date, cancels it; the hub receives it", async () => {
       const s = await setup();
-      const none = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
-      expect(none.body.error.code).toBe("NO_CASH_TO_HAND_OVER");
-
-      const trackingId = await outForDelivery(s, { codAmount: 1500 });
-      await ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, {
-        token: s.rider.token,
-        body: { outcome: "DELIVERED", receivedBy: "Nabila", proof: { method: "SIGNATURE", image: PNG }, codCollected: 1500 },
-      });
-
-      const headers = { "idempotency-key": "handover-request-01" };
-      const request = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id, note: "At the counter" }, headers });
-      expect(request.status, JSON.stringify(request.body)).toBe(201);
-      expect(request.body).toMatchObject({ amount: 1500, collections: 1, status: "PENDING", hub: { id: s.h.id } });
-      const replay = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id, note: "At the counter" }, headers });
-      expect(replay.body.id).toBe(request.body.id);
-      const twice = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
-      expect(twice.body.error.code).toBe("HANDOVER_ALREADY_REQUESTED");
-
-      // Hub staff of that hub see it; another hub's operator doesn't.
+      expect((await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body.error.code).toBe("NO_CASH_TO_HAND_OVER");
+      const deliver = async (cod: number) => {
+        const id = await outForDelivery(s, { codAmount: cod });
+        await ctx.api("POST", `/rider/parcels/${id}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "N", proof: { method: "SIGNATURE", image: PNG }, codCollected: cod } });
+      };
+      await deliver(1500);
+      const first = (await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body;
+      expect(first).toMatchObject({ status: "OPEN", expected: 1500, parcels: 1 });
+      // More cash since: the slip is out of date until it's made again (same number).
+      await deliver(700);
+      expect((await ctx.api("GET", "/rider/my-cash", { token: s.rider.token })).body).toMatchObject({ total: 2200, slipOutdated: true });
+      const updated = (await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body;
+      expect(updated).toMatchObject({ number: first.number, expected: 2200, parcels: 2 });
+      // Cancel, then a new slip gets a new number.
+      expect((await ctx.api("POST", "/rider/my-cash/slip/cancel", { token: s.rider.token })).body.slip).toBeNull();
+      const again = (await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body;
+      expect(again.number).not.toBe(first.number);
+      // The rider's hub lists it; another hub's list doesn't (it can still receive it if the rider comes there).
       const cashier = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: s.h.id }], "Cashier");
       const otherHub = await hub(ctx, "HUB-T9");
       const stranger = await userWithRoles(ctx, [{ role: "HUB_OPERATOR", hubId: otherHub.id }]);
-      expect((await ctx.api("GET", "/cod/handover-requests", { token: cashier.token })).body).toHaveLength(1);
-      expect((await ctx.api("GET", "/cod/handover-requests", { token: stranger.token })).body).toHaveLength(0);
-
-      const handover = await ctx.api("POST", "/cod/handovers", {
-        token: cashier.token,
-        body: { riderId: s.rider.rider.id, hubId: s.h.id, collectionIds: request.body.collectionIds, amountReceived: 1500 },
-      });
-      expect(handover.status, JSON.stringify(handover.body)).toBe(201);
-      const done = await ctx.api("POST", `/cod/handover-requests/${request.body.id}/complete`, { token: cashier.token, body: { handoverId: handover.body.id } });
-      expect(done.body).toMatchObject({ status: "COMPLETED", handoverId: handover.body.id });
-
-      const mine = await ctx.api("GET", "/rider/handover-requests", { token: s.rider.token });
-      expect(mine.body[0]).toMatchObject({ status: "COMPLETED" });
-      expect((await ctx.api("GET", "/cod/handover-requests", { token: cashier.token })).body).toHaveLength(0);
-    });
-
-    it("completes a request automatically when its cash was received without linking, and lets the rider cancel", async () => {
-      const s = await setup();
-      const deliver = async () => {
-        const id = await outForDelivery(s, { codAmount: 700 });
-        await ctx.api("POST", `/rider/parcels/${id}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "N", proof: { method: "SIGNATURE", image: PNG }, codCollected: 700 } });
-      };
-      await deliver();
-      const first = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
-      const cancelled = await ctx.api("POST", `/rider/handover-requests/${first.body.id}/cancel`, { token: s.rider.token });
-      expect(cancelled.body.status).toBe("CANCELLED");
-
-      const second = await ctx.api("POST", "/rider/handover-requests", { token: s.rider.token, body: { hubId: s.h.id } });
-      await ctx.api("POST", "/cod/handovers", { token: s.ops.token, body: { riderId: s.rider.rider.id, hubId: s.h.id, collectionIds: second.body.collectionIds, amountReceived: 700 } });
-      const mine = await ctx.api("GET", "/rider/handover-requests", { token: s.rider.token });
-      expect(mine.body.find((r: { id: string }) => r.id === second.body.id)).toMatchObject({ status: "COMPLETED" });
+      expect((await ctx.api("GET", "/cash/slips?status=OPEN", { token: stranger.token })).body.items).toHaveLength(0);
+      expect((await ctx.api("GET", "/cash/slips?status=OPEN", { token: cashier.token })).body.items).toHaveLength(1);
+      // A rider can't receive cash.
+      expect((await ctx.api("POST", `/cash/slips/${again.id}/receive`, { token: s.rider.token, body: { received: 2200 } })).status).toBe(403);
+      expect((await ctx.api("POST", `/cash/slips/${again.id}/receive`, { token: cashier.token, body: { received: 2200 } })).body).toMatchObject({ status: "RECEIVED", short: 0 });
+      expect((await ctx.api("GET", "/rider/my-cash", { token: s.rider.token })).body).toMatchObject({ total: 0, slip: null });
+      // Only riders have My cash.
+      expect((await ctx.api("GET", "/rider/my-cash", { token: cashier.token })).status).toBe(403);
     });
   });
 

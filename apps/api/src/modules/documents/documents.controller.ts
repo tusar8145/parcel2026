@@ -1,3 +1,4 @@
+import { dateRangeQuerySchema } from "../money/money.schemas";
 import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Res } from "@nestjs/common";
 import { ApiProduces, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
@@ -9,7 +10,7 @@ import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { DocumentsService, type PdfFile } from "./documents.service";
 import { hubReconciliationQuerySchema } from "../hub-reconciliation/hub-reconciliation.service";
-import { cnSheetQuerySchema, invoicesQuerySchema, labelsQuerySchema, parcelListQuerySchema, runSheetQuerySchema, slaReportQuerySchema, statementQuerySchema } from "./documents.schemas";
+import { cnSheetQuerySchema, invoicesQuerySchema, labelsQuerySchema, parcelListQuerySchema, runSheetQuerySchema, slaReportQuerySchema } from "./documents.schemas";
 
 const PDF = "application/pdf";
 
@@ -154,29 +155,47 @@ export class DocumentsController {
     return send(reply, await this.documents.returnRun(actor, id, meta));
   }
 
-  /** Tax invoice (Mushak-6.3-style draft) with VAT breakdown, BIN and payment status. Merchants: their own. */
-  @RequirePermissions("finance:read")
-  @Get("finance-invoice/:id")
+  /** Accounts › settlement (ST-). Staff, and the account's merchant owner / customer. */
+  @Get("payout/:id")
   @ApiProduces(PDF)
-  async financeInvoice(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
-    return send(reply, await this.documents.financeInvoice(actor, id, meta));
+  async payout(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    return send(reply, await this.documents.payout(actor, id, meta));
   }
 
-  /** COD settlement statement. Merchants: their own. */
-  @RequirePermissions("finance:read")
-  @Get("settlement/:id")
+  /** Accounts › a Financial merchant's bill (INV-). Staff, and the merchant's owner. */
+  @Get("bill/:id")
   @ApiProduces(PDF)
-  async settlement(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
-    return send(reply, await this.documents.settlement(actor, id, meta));
+  async bill(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    return send(reply, await this.documents.bill(actor, id, meta));
   }
 
-  /** Merchant owners: delivered prepaid parcels not yet on a tax invoice (pro-forma statement). */
-  @RequirePermissions("finance:read")
-  @Get("statement")
+  /** Accounts › an account's statement for a date range (YYYY-MM-DD, Dhaka). Staff, and the account's owner. */
+  @Get("account-statement/:id")
   @ApiProduces(PDF)
-  @ApiZodQuery(statementQuerySchema)
-  async statement(@CurrentActor() actor: Actor, @ZQuery(statementQuerySchema) query: z.infer<typeof statementQuerySchema>, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
-    return send(reply, await this.documents.statement(actor, query, meta));
+  @ApiZodQuery(dateRangeQuerySchema)
+  async accountStatement(
+    @CurrentActor() actor: Actor,
+    @Param("id", ParseUUIDPipe) id: string,
+    @ZQuery(dateRangeQuerySchema) query: z.infer<typeof dateRangeQuerySchema>,
+    @ReqMeta() meta: RequestMeta,
+    @Res() reply: FastifyReply,
+  ) {
+    return send(reply, await this.documents.accountStatement(actor, id, query, meta));
+  }
+
+  /** A rider's cash handover slip (HS-) with its barcode: the rider's own, hub staff's hubs'. */
+  @Get("cash-slip/:key")
+  @ApiProduces(PDF)
+  async cashSlip(@CurrentActor() actor: Actor, @Param("key") key: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    return send(reply, await this.documents.cashSlip(actor, key, meta));
+  }
+
+  /** A hub's cash transfer to the central hub (HT-). */
+  @RequirePermissions("cod:receive")
+  @Get("hub-transfer/:key")
+  @ApiProduces(PDF)
+  async hubTransfer(@CurrentActor() actor: Actor, @Param("key") key: string, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    return send(reply, await this.documents.hubTransfer(actor, key, meta));
   }
 
   /** A stored report run (Reports page) as a table. */

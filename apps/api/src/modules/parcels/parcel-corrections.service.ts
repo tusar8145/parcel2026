@@ -44,12 +44,13 @@ export class ParcelCorrectionsService {
     private readonly realtime: RealtimeService,
   ) {}
 
-  /** Billed already: its cash is in a settlement, or it is on an invoice that isn't void. */
+  /** Settled or billed already (Accounts): one of its lines is in a settlement or on a bill that isn't cancelled / void. */
   private async billed(db: Db, parcel: Parcel) {
-    const settled = await db.codCollection.findFirst({ where: { parcelId: parcel.id, settlementId: { not: null } }, select: { id: true } });
-    if (settled) return true;
-    const invoiced = await db.invoice.findFirst({ where: { merchantId: parcel.merchantId ?? undefined, status: { not: "VOID" }, lines: { array_contains: [{ trackingId: parcel.trackingId }] } }, select: { id: true } });
-    return !!invoiced;
+    const line = await db.accountEntry.findFirst({
+      where: { parcelId: parcel.id, OR: [{ payout: { status: { not: "CANCELLED" } } }, { bill: { status: { not: "VOID" } } }] },
+      select: { id: true },
+    });
+    return !!line;
   }
 
   async changeProductType(actor: Actor, trackingId: string, input: z.infer<typeof productTypeChangeSchema>, meta: RequestMeta) {
@@ -75,6 +76,8 @@ export class ParcelCorrectionsService {
           version: { increment: 1 },
         },
       });
+      // Delivered and not settled / billed yet: its open delivery-charge line follows the new price (Accounts).
+      await tx.accountEntry.updateMany({ where: { parcelId: parcel.id, type: "DELIVERY_CHARGE", payoutId: null, billId: null }, data: { amount: -totalCharge } });
       await tx.trackingEvent.create({
         data: {
           parcelId: parcel.id,

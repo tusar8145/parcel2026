@@ -125,12 +125,18 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
     empty: "No charges",
   });
   y += 6;
+  // VAT lines only while VAT is on (finance settings); otherwise the charge is simply the charge.
+  const vat = brand.vatRate > 0;
   y = totals(
     pdf,
     [
-      { label: "Taxable value", value: fmtAmount(s.taxable) },
-      { label: `VAT ${brand.vatRate}% (included)`, value: fmtAmount(s.vat) },
-      { label: "Delivery charge incl. VAT", value: `৳ ${fmtAmount(s.total)}`, strong: true },
+      ...(vat
+        ? [
+            { label: "Taxable value", value: fmtAmount(s.taxable) },
+            { label: `VAT ${brand.vatRate}% (included)`, value: fmtAmount(s.vat) },
+            { label: "Delivery charge incl. VAT", value: `৳ ${fmtAmount(s.total)}`, strong: true },
+          ]
+        : [{ label: "Delivery charge", value: `৳ ${fmtAmount(s.total)}`, strong: true }]),
       { label: "COD to collect", value: `৳ ${fmtAmount(s.codAmount)}` },
     ],
     y,
@@ -138,7 +144,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   y += 10;
   pill(pdf, s.payment, x, y, cod ? COLOR.ink : COLOR.ok);
   pdf.text(s.deliveryCharge, x, y + 20, { size: 8, color: COLOR.muted, width: w * 0.6 });
-  pdf.text(brand.bin ? `Seller BIN ${brand.bin}. Prices include VAT at ${brand.vatRate}%.` : `Prices include VAT at ${brand.vatRate}%.`, x, y + 32, { size: 7.5, color: COLOR.faint, width: w * 0.6 });
+  if (vat) pdf.text(brand.bin ? `Seller BIN ${brand.bin}. Prices include VAT at ${brand.vatRate}%.` : `Prices include VAT at ${brand.vatRate}%.`, x, y + 32, { size: 7.5, color: COLOR.faint, width: w * 0.6 });
   if (s.instructions) pdf.text(`Instructions: ${s.instructions}`, x, y + 44, { size: 8, width: w * 0.6, maxLines: 3 });
   signatures(pdf, ["Received by (recipient name & signature)", "Delivered by (rider)"], Math.min(Math.max(y + 70, 0), pdf.height - 120));
 }
@@ -173,7 +179,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
     ["Weight", `${s.weightKg} kg`],
     ["COD", s.codAmount > 0 ? taka(s.codAmount) : "Prepaid"],
     ["Charge", taka(s.total)],
-    ...(dense ? [] : ([["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] as [string, string][])),
+    ...(dense ? [] : ((brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] : [["Status", s.statusLabel]]) as [string, string][])),
   ];
   const cols = dense ? 4 : 3;
   const cw = iw / cols;
@@ -219,7 +225,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
   const t = (text: string, o: Parameters<PdfWriter["text"]>[3]) => (draw ? pdf.text(text, pad, y, { width: iw, ...o }) : pdf.measure(text, { width: iw, ...o }));
   y += t(brand.appName, { size: 12, bold: true, align: "center" });
   if (brand.support) y += t(`Support: ${brand.support}`, { size: 7, align: "center", color: COLOR.muted, maxLines: 2 });
-  if (brand.bin) y += t(`BIN ${brand.bin}`, { size: 7, align: "center", color: COLOR.muted });
+  if (brand.bin && brand.vatRate > 0) y += t(`BIN ${brand.bin}`, { size: 7, align: "center", color: COLOR.muted });
   y += 4;
   y += t(KIND[s.line].toUpperCase(), { size: 8, bold: true, align: "center" });
   if (draw) pdf.barcode(s.trackingId, pad, y + 2, iw, 34);
@@ -251,7 +257,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
     y += pdf.measure(l.label, { size: 7.5, width: iw - 60, maxLines: 2 });
   }
   const sum: [string, string, boolean][] = [
-    [`VAT ${brand.vatRate}% (included)`, fmtAmount(s.vat), false],
+    ...(brand.vatRate > 0 ? ([[`VAT ${brand.vatRate}% (included)`, fmtAmount(s.vat), false]] as [string, string, boolean][]) : []),
     ["Delivery charge", `৳ ${fmtAmount(s.total)}`, true],
     ["COD to collect", `৳ ${fmtAmount(s.codAmount)}`, true],
   ];

@@ -444,7 +444,7 @@ export async function cashPosition(db: Db, franchiseId: string, hubId: string, r
     db.codCollection.findMany({ where: { state: "AT_HUB", handover: { hubId }, id: { notIn: deposited } }, select: { id: true, amount: true } }),
     db.franchiseCounterCharge.aggregate({ where: { franchiseId, remittanceId: null }, _sum: { amount: true }, _count: { _all: true } }),
     db.codCollection.aggregate({ where: { riderId: { in: riderIds }, state: "WITH_RIDER" }, _sum: { amount: true } }),
-    db.cashHandoverRequest.count({ where: { hubId, status: "PENDING" } }),
+    db.cashSlip.count({ where: { riderId: { in: riderIds }, status: "OPEN" } }),
     db.franchiseCommission.aggregate({ where: { franchiseId, invoiceId: null, remittanceId: null }, _sum: { amount: true } }),
   ]);
   const codOnHand = round2(cod.reduce((a, c) => a + n(c.amount), 0));

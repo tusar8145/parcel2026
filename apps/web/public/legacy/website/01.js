@@ -53,13 +53,14 @@
       orders:["Your orders","Orders & pickups","Track delivery progress, review pickup requests, and open shipment details."],
       addresses:["Saved addresses","Address book","Review pickup and delivery addresses saved for future bookings."],
       profile:["Account settings","Your profile","Manage the contact details saved for your customer demo account."],
+      payments:["Cash on delivery","Payments","The COD your recipients paid: where it is, what's ready and what's been paid to you."],
       support:["Help & support","Customer support","Ask about a delivery or pickup request and continue the conversation with courier operations."],
       submitted:["Application received","Thanks for getting in touch","Your sample application has been recorded for this demo."]
     };
     function routeField(label,id,placeholder,type="text",required=true){return `<div class="field"><label for="${id}">${label}${required?" *":""}</label><input id="${id}" name="${id}" type="${type}" placeholder="${placeholder}" ${required?"required":""} autocomplete="${type==="email"?"email":"off"}"></div>`}
     function routeFrame(route,content){const [eyebrow,title,copy]=routeInfo[route];return `<div class="route-shell"><button class="route-back" type="button" data-route="home"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 10H4m5 5-5-5 5-5"/></svg>Back to home</button><div class="route-intro"><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p>${copy}</p></div>${content}</div>`}
     function customerAreaShell(content,active){
-      const links=[["account","Overview","M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"],["orders","Orders","M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"],["request","Request a pickup","M12 5v14M5 12h14"],["tracking","Track parcel","M10.8 3.5a7.3 7.3 0 1 0 0 14.6 7.3 7.3 0 0 0 0-14.6ZM16 16l5 5"],["addresses","Saved addresses","M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0ZM12 10h.01"],["support","Support","M4 5h16v11H9l-5 4V5ZM8 9h8M8 12h5"],["profile","Profile","M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"]];
+      const links=[["account","Overview","M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6"],["orders","Orders","M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"],["request","Request a pickup","M12 5v14M5 12h14"],["tracking","Track parcel","M10.8 3.5a7.3 7.3 0 1 0 0 14.6 7.3 7.3 0 0 0 0-14.6ZM16 16l5 5"],["addresses","Saved addresses","M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0ZM12 10h.01"],["payments","Payments","M3 7h18v10H3zM3 10h18M7 15h3"],["support","Support","M4 5h16v11H9l-5 4V5ZM8 9h8M8 12h5"],["profile","Profile","M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"]];
       const menu=links.map(([route,label,path])=>`<a href="#/${route}" ${active===route?'aria-current="page"':""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg>${label}</a>`).join("");
       return `<div class="customer-area"><aside class="customer-sidebar"><div class="customer-sidebar-user"><small>Customer workspace</small><strong>${escapeHtml(customerSession?.name||customerName||"Delivery Fast customer")}</strong></div><p class="customer-sidebar-label">Menu</p><nav aria-label="Customer menu">${menu}</nav><button class="customer-sidebar-logout" id="accountLogout" type="button">Sign out</button></aside><section class="customer-area-content">${content}</section></div>`;
     }
@@ -148,10 +149,11 @@
       else if(route==="orders")content=routeFrame(route,customerOrdersMarkup());
       else if(route==="addresses")content=routeFrame(route,customerAddressesMarkup());
       else if(route==="profile")content=routeFrame(route,customerProfileMarkup());
+      else if(route==="payments")content=routeFrame(route,`<div class="route-card" id="dfCustomerPayments">Loading your payments…</div>`);
       else if(route==="support")content=routeFrame(route,`<div class="route-card">Loading support conversations…</div>`);
       else content=routeFrame(route,`<div class="route-card"><h2>Application prepared</h2><p class="route-note">This is a frontend demo; your information has not been sent to a courier.</p><button class="button button-primary" type="button" data-route="home">Back to Delivery Fast</button></div>`);
       if(window.DFReact?.owns(route))content=routeFrame(route,`<div class="react-view" data-react-view="${route}"></div>`);
-      if(customerSession&&["account","orders","addresses","profile","support","request","tracking","pricing"].includes(route))content=customerAreaShell(content,route);
+      if(customerSession&&["account","orders","addresses","profile","payments","support","request","tracking","pricing"].includes(route))content=customerAreaShell(content,route);
       pageView.innerHTML=content;window.scrollTo({top:0,behavior:"smooth"});
       if(route==="request")setRequestStep(0);
       if(route==="pricing")updatePrice();

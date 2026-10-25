@@ -169,7 +169,7 @@
         <p>${esc(d.merchant.name)} · ${esc(d.merchant.code)}${d.package.effectiveFrom ? ` · in force since ${esc(dateOnly(d.package.effectiveFrom))}` : ""} · version ${esc(d.package.version)}</p>
         ${scheduled ? `<div class="dfp-notice" id="dfpScheduled">Your plan changes to <b>&nbsp;${esc(scheduled.name)}&nbsp;</b> on ${esc(dateOnly(scheduled.effectiveFrom))}. Parcels booked before then keep today's prices.</div>` : ""}
         ${status}
-        <p>Prices include VAT. Every parcel keeps the price it was booked with, even if your plan changes later.</p>
+        <p>Every parcel keeps the price it was booked with, even if your plan changes later.</p>
         <div><button type="button" class="dfp-link" data-dfp-ask>Questions about your plan? Ask us →</button></div>
       </section>
       <section class="dfp-stats" aria-label="At a glance">
@@ -281,7 +281,7 @@
       <div class="dfp-section-title"><div><h3>Examples</h3><p>Worked out with your plan's prices, exactly as an order is priced.</p></div></div>
       <div class="dfp-grid">${examples}</div>
       ${calculatorMarkup(d)}
-      <p class="dfp-foot">All prices in Bangladeshi taka, VAT included. The price shown when you book is final for that parcel.</p>`;
+      <p class="dfp-foot">All prices in Bangladeshi taka. The price shown when you book is final for that parcel.</p>`;
   }
 
   function calculatorMarkup(d) {

@@ -6,10 +6,6 @@
  *                      with the previous period for trends); the stage cards and the "Live now" row
  *                      (waiting for a rider, out for delivery, riders on shift, exceptions, COD with
  *                      riders) stay live and are labelled so. Default: Today.
- *   COD & settlement   finance staff: COD collected, cash received at hubs and paid to merchants in the
- *                      period (GET /finance/summary?from&to `period`), beside the live position; hub
- *                      cash desks: cash received in the period (GET /cod/handovers?from&to). Default:
- *                      This month.
  *   Reports › Analytics & SLA   the first figures column is the period (GET /ops/analytics?from&to
  *                      `period`), beside this month and last month. Default: Today.
  *
@@ -28,7 +24,6 @@
 
   const periods = {
     Overview: DF.period.control("ops-today", { defaultKey: "today", onChange: () => Ops.rerender(true) }),
-    "COD & finance": DF.period.control("ops-cod", { defaultKey: "this_month", onChange: () => Ops.rerender(true) }),
     Analytics: DF.period.control("ops-analytics", { defaultKey: "today", onChange: () => Ops.rerender(true) }),
   };
   Ops.periods = periods;
@@ -130,50 +125,6 @@
     { debounceMs: 3000, fallbackMs: 180_000 },
   );
 
-  // ───────────── COD & settlement ─────────────
-
-  function cod() {
-    const period = periods["COD & finance"];
-    mountIn(period);
-    const s = period.get();
-    const finance = Ops.can("financeStaff");
-    const cash = Ops.can("receiveCash");
-    if (!finance && !cash) return;
-    subtitle(period, "period figures; cash with riders and awaiting settlement are now");
-    const box = q("#mainContent .metrics");
-    if (!box) return;
-    box.dataset.periodMetrics = s.key;
-    if (finance) {
-      const key = `period-finance:${period.query()}`;
-      const f = Ops.lazy(key, () => DF.api(`/finance/summary?${period.query()}`), 30000);
-      const p = f?.period;
-      box.innerHTML = [
-        ["COD collected", p ? Ops.money(p.codCollected) : "—", "wallet", p ? `${Ops.num(p.codCollections)} collections` : "", s.words],
-        ["Received at hubs", p ? Ops.money(p.cashReceivedAtHubs) : "—", "chart", p ? `${Ops.num(p.handovers)} handovers` : "", s.words],
-        ["Paid to merchants", p ? Ops.money(p.settledPaid) : "—", "check", p ? `${Ops.money(p.invoiced)} invoiced` : "", s.words],
-        ["COD with riders", f ? Ops.money(f.codWithRiders) : "—", "wallet", "to hand over", "now"],
-        ["Awaiting settlement", f ? Ops.money(f.codAtHubs) : "—", "clock", f ? `${Ops.money(f.payablePendingApproval)} pending approval` : "", "now"],
-      ]
-        .map(m => metric(...m))
-        .join("");
-      return;
-    }
-    // Hub cash desks: cash received from riders in the period (their hubs), plus what riders hold now.
-    const to = new Date(Date.parse(`${s.to}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    const key = `period-handovers:${period.query()}`;
-    const page = Ops.lazy(key, () => DF.api(`/cod/handovers?limit=200&from=${s.from}&to=${to}`), 20000);
-    const cards = [...box.querySelectorAll(".metric")];
-    const received = page?.items || [];
-    const total = received.reduce((n, h) => n + Number(h.amount || 0), 0);
-    const html = metric(`Received ${s.words}`, page ? Ops.money(total) : "—", "chart", page ? `${received.length}${page.nextCursor ? "+" : ""} handover${received.length === 1 ? "" : "s"}` : "", "at hubs");
-    if (cards[2]) cards[2].outerHTML = html;
-    else box.insertAdjacentHTML("beforeend", html);
-    [...box.querySelectorAll(".metric")].slice(0, 2).forEach(card => {
-      const foot = card.querySelectorAll(".metric-foot span")[1];
-      if (foot && !/now/.test(foot.textContent)) foot.textContent = `${foot.textContent} · now`;
-    });
-  }
-
   // ───────────── Reports › Analytics & SLA ─────────────
 
   const analyticsKey = () => `analytics:${periods.Analytics.query()}`;
@@ -211,7 +162,7 @@
 
   // ───────────── drawing ─────────────
 
-  const DRAW = { Overview: today, "COD & finance": cod, Analytics: analytics };
+  const DRAW = { Overview: today, Analytics: analytics };
   const innerRender = render;
   render = function (page) {
     // Before the page's data is prepared (Analytics loads for the period).

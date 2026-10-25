@@ -108,18 +108,19 @@ describe("franchise hubs", () => {
     expect((await commissions()).map(c => c.type)).toEqual(["PICKUP", "DELIVERY"]);
     expect(Number((await commissions())[1].amount)).toBe(deliveryCommission);
 
-    // Rider cash goes to the franchise only.
-    const wrong = await ctx.api("POST", "/rider/handover-requests", { token: rider.token, body: { hubId: s.company.id } });
+    // Rider cash goes to the franchise only: a company hub can't receive the franchise rider's slip.
+    const slip = await ctx.api("POST", "/rider/my-cash/slip", { token: rider.token });
+    expect(slip.status, JSON.stringify(slip.body)).toBe(201);
+    const wrong = await ctx.api("POST", `/cash/slips/${slip.body.id}/receive`, { token: s.ops.token, body: { received: 1500, hubId: s.company.id } });
     expect(wrong.status).toBe(422);
     expect(wrong.body.error.code).toBe("WRONG_CASH_HUB");
-    expect((await ctx.api("POST", "/rider/handover-requests", { token: rider.token, body: { hubId } })).status).toBe(201);
     let cash = (await ctx.api("GET", "/franchise/cash", { token: s.token })).body;
     expect(cash.riders).toHaveLength(1);
-    expect(cash.handoverRequests).toHaveLength(1);
+    expect(cash.handoverRequests).toHaveLength(1); // the rider's open slip
     const handed = await ctx.api("POST", "/franchise/cash/handovers", { token: s.token, body: { riderId: rider.id, collectionIds: cash.riders[0].collectionIds, amountReceived: 1500 } });
     expect(handed.status, JSON.stringify(handed.body)).toBe(201);
     expect(handed.body).toMatchObject({ codOnHand: 1500, withRiders: 0 });
-    expect(handed.body.handoverRequests).toHaveLength(0);
+    expect(handed.body.handoverRequests).toHaveLength(0); // the counter took the cash: the slip is closed
 
     // Walk-in at the counter: website customer default price, paid at the counter, pickup commission.
     const walkBody = { ...parcelBody({ serviceLevel: "Regular", codAmount: 0, contents: undefined }), pickup: undefined };

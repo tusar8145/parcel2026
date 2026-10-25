@@ -4,7 +4,6 @@
  * every redraw), and CSS shows the current tab's. Sections without a known title show on every tab, the counters
  * stay on top, and a tab with nothing for this person (e.g. finance-only sections) is hidden.
  *   Transfers (Linehaul)   Send · Receive · On the road · Issues · Vehicles
- *   COD & settlement       Cash from riders · Franchise · Settlements & payouts · Invoices & accounts
  *   Riders                 Riders · Shifts & attendance · Verification
  */
 (() => {
@@ -37,32 +36,6 @@
           <li><b>4</b><div><strong>Depart</strong><small>When the truck leaves: Depart. Every parcel goes in transit; the other hub receives the bags.</small></div></li>
         </ol>`,
         receive: `<h2 class="panel-title">Receiving a truck</h2><p class="panel-subtitle">Scan each bag's label to receive the whole bag (or open it and scan the parcels one by one). Type the seal number to check it. Missing and extra parcels are recorded on Issues. Single parcels can also be received on Scan desk → Receive entry.</p></div></div>`,
-      },
-    },
-    "COD & finance": {
-      parts: ["cash", "franchise", "settlements", "accounts"],
-      sections: {
-        "Rider cash on hand": "cash",
-        "Cash handover requests": "cash",
-        "COD & finance register": "cash",
-        "Cash received at hubs": "cash",
-        "Recent cash handovers": "cash",
-        "Franchise deposits": "franchise",
-        "Franchise commission invoices": "franchise",
-        "Settlement approvals": "settlements",
-        "Paid settlements": "settlements",
-        "Automatic settlement schedule": "settlements",
-        "Rider payouts": "settlements",
-        "Delivery-charge invoices · VAT": "accounts",
-        "Refunds, claims and weight disputes": "accounts",
-        "Bank / bKash reconciliation": "accounts",
-        "Ledger · trial balance": "accounts",
-      },
-      buttons: {},
-      // The action first: the riders' cash to receive, then what was received.
-      order: ["Cash handover requests", "Rider cash on hand", "COD & finance register", "Cash received at hubs"],
-      guide: {
-        cash: `<h2 class="panel-title">Cash from riders</h2><p class="panel-subtitle">Riders hand the cash they collected to the hub. Count it and press Receive cash on the rider; the handover appears under the register below.</p></div></div>`,
       },
     },
     Riders: {

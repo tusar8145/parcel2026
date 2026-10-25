@@ -15,7 +15,6 @@ let shop: TempMerchant;
 let OPS: TempUser;
 let OWNER: TempUser;
 let ADMIN: TempUser;
-let FINANCE: TempUser;
 const DAY_A = "2020-01-15";
 const DAY_B = "2020-01-16";
 const WEB = { "x-df-client": "web" };
@@ -79,7 +78,6 @@ test.beforeAll(async ({ browser }) => {
   shop = await fx.merchant({ label: "Period Shop" });
   OPS = await fx.staff("OPS_MANAGER");
   OWNER = await fx.member(shop);
-  FINANCE = await fx.staff("FINANCE");
   ADMIN = await fx.user(`E2E-Period-Admin-${fx.stamp} Test`, [{ role: "SUPER_ADMIN" }]);
   // Five orders through the operations booking API, then four moved into January 2020.
   const errors: string[] = [];
@@ -236,25 +234,9 @@ test("super admin: overview bookings and the platform activity traffic chart fol
   expect(errors).toEqual([]);
 });
 
-test("COD & settlement and Analytics & SLA: period figures beside the live ones", async ({ browser }) => {
+test("Analytics & SLA: period figures beside this month and last month", async ({ browser }) => {
   test.setTimeout(240_000);
-  // COD collected on 15 Jan 2020 for one of that day's deliveries.
-  const [parcel] = await sql<{ id: string }>(`SELECT id FROM parcels WHERE "merchantId" = $1 AND status = 'DELIVERED' ORDER BY "createdAt" LIMIT 1`, [shop.id]);
-  await sql(`INSERT INTO cod_collections (id, "parcelId", amount, state, "collectedAt") VALUES (gen_random_uuid(), $1, 300, 'AT_HUB', $2::timestamptz)`, [parcel.id, `${DAY_A}T16:00:00+06:00`]);
   const errors: string[] = [];
-  const page = await signIn(browser, FINANCE, "/courier-operation", errors);
-  await opsNav(page, "cod");
-  await expect(periodSelect(page)).toHaveValue("this_month");
-  await expect(subtitle(page)).toContainText("This month ·");
-  const collected = page.locator("#mainContent .metrics .metric").first();
-  await expect(collected).toContainText("COD collected");
-  await customRange(page, DAY_A, DAY_A);
-  await expect(collected.locator(".metric-value")).toHaveText("৳ 300", { timeout: 20_000 });
-  await expect(page.locator("#mainContent .metrics .metric").nth(3)).toContainText("now");
-  await customRange(page, DAY_B, DAY_B);
-  await expect(collected.locator(".metric-value")).toHaveText("৳ 0", { timeout: 20_000 });
-  await page.context().close();
-
   const ops = await signIn(browser, OPS, "/courier-operation", errors);
   await opsNav(ops, "analytics");
   await expect(periodSelect(ops)).toHaveValue("today");

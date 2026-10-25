@@ -5,7 +5,7 @@
  *   COD and failed attempts.
  * - Overview, My route, Earnings, Performance and Settings from GET /rider/summary (today's,
  *   this week's and this month's work), GET /rider/cash (COD in hand), GET /rider/earnings
- *   (the real earnings ledger, plan and payouts) and GET /rider/handover-requests.
+ *   (the real earnings ledger, plan and payouts) and GET /rider/my-cash (cash to hand over, the slip).
  * - Start delivery (Deliveries list button, scan page "Mark out for delivery", scan section "Start
  *   deliveries"): POST /rider/parcels/:id/start-delivery sends the recipient a fresh delivery code by
  *   SMS. Assignment sends none, so the OTP proof only appears once the delivery has started.
@@ -14,7 +14,8 @@
  * - Task actions go through DFOffline.send (offline.js): run at once when online, otherwise
  *   queued with an Idempotency-Key and synced later (bridge-pwa.js shows the queue).
  * - Delivery proof carries the capture time and GPS fix, stamped onto the image (bridge-proof.js).
- * - "Request cash handover": POST /rider/handover-requests; the hub completes it.
+ * - My cash (Earnings): one tap makes a handover slip of all the cash held (POST /rider/my-cash/slip); the
+ *   hub scans its barcode and counts the cash (Courier Operations › Accounts › Rider cash).
  * - Shift chip / toggle: POST /rider/shift/check-in | check-out (attendance), PATCH /rider/me/status for breaks.
  */
 (() => {
@@ -46,7 +47,7 @@
   const sameDay = iso => new Date(iso).toDateString() === new Date().toDateString();
 
   const rider = DF.auth.user.rider;
-  const state = { summary: null, cash: null, status: null, earnings: null, handovers: [], returnRuns: [] };
+  const state = { summary: null, cash: null, status: null, earnings: null, myCash: null, returnRuns: [] };
   DF.riderState = state; // read by the other rider bridges
   const statusPillFor = text => pill(text); // the page's own status pill
   const VEHICLE = { MOTORBIKE: "Motorcycle", BICYCLE: "Bicycle", VAN: "Van", ON_FOOT: "On foot" };
@@ -111,16 +112,16 @@
   const read = (name, path) => (window.DFOffline ? window.DFOffline.cached(name, () => DF.api(path)) : DF.api(path));
 
   async function loadSummary() {
-    const [summary, cash, earnings, handovers] = await Promise.all([
+    const [summary, cash, earnings, myCash] = await Promise.all([
       read("summary", "/rider/summary"),
       read("cash", "/rider/cash"),
       read("earnings", "/rider/earnings").catch(error => (console.error("Delivery Fast: earnings could not be loaded", error), state.earnings)),
-      read("handovers", "/rider/handover-requests").catch(() => state.handovers),
+      read("myCash", "/rider/my-cash").catch(() => state.myCash),
     ]);
     state.summary = summary;
     state.cash = cash;
     state.earnings = earnings;
-    state.handovers = handovers || [];
+    state.myCash = myCash || null;
     state.status = summary.rider.status;
     updateShiftChip();
     document.dispatchEvent(new CustomEvent("df:rider-status", { detail: { status: state.status } }));
@@ -160,7 +161,7 @@
   }
   DF.riderRefresh = refresh;
   // Live: new assignments, changes by operations, pay and cash events (plus a slow safety poll).
-  DF.live(["parcel.updated", "parcel.created", "rider.earnings", "rider.payout", "cod.handover_request", "rider.kyc"], refresh, { fallbackMs: 60_000 });
+  DF.live(["parcel.updated", "parcel.created", "rider.earnings", "rider.payout", "cash.slip", "rider.kyc"], refresh, { fallbackMs: 60_000 });
 
   window.addEventListener(
     "storage",
@@ -396,23 +397,7 @@
         setText(q(".earnings-total strong", breakdown), money(pay.today));
       }
       const cashPanel = panelTitled(/^Cash reconciliation$/);
-      if (cashPanel) {
-        setText(q(".cash-banner strong", cashPanel), money(state.cash?.inHand));
-        qa(".earnings-row", cashPanel).forEach(r => r.remove());
-        const rows = (state.cash?.collections || [])
-          .map(c => `<div class="earnings-row"><span>Cash collected · ${esc(c.trackingId)} · ${esc(time(c.collectedAt))}</span><strong>${money(c.amount)}</strong></div>`)
-          .join("");
-        q(".cash-banner", cashPanel).insertAdjacentHTML("afterend", rows || `<div class="earnings-row"><span>No COD cash to hand over</span><strong>${money(0)}</strong></div>`);
-        const pending = state.handovers.find(h => h.status === "PENDING");
-        const button = q('[data-action="handover"]', cashPanel);
-        if (pending && button) {
-          button.insertAdjacentHTML(
-            "beforebegin",
-            `<div class="earnings-row" id="dfHandoverPending"><span>Handover requested at ${esc(pending.hub.name)} · ${esc(when(pending.createdAt))}<small style="display:block;color:#8a94a3">Hand ${money(pending.amount)} to the hub cashier. They confirm it in Courier Operations.</small></span>${pill("Pending")}</div>`,
-          );
-          button.outerHTML = `<button class="button" style="width:100%;margin-top:15px" data-df-cancel-handover="${esc(pending.id)}">Cancel handover request</button>`;
-        } else if (button && !(state.cash?.inHand > 0)) button.disabled = true;
-      }
+      if (cashPanel) myCashPanel(cashPanel);
       payPanel();
     },
     Performance() {
@@ -664,22 +649,6 @@
       const devCode = deliveryTask(id)?.devDeliveryCode;
       if (hint) hint.textContent = devCode ? `Development code: ${devCode}` : "The recipient received this code by SMS.";
     }
-    if (type === "handover") {
-      const amount = $("handoverAmount");
-      if (amount) {
-        amount.value = String(state.cash?.inHand ?? 0);
-        amount.readOnly = true;
-      }
-      const hub = $("handoverHub");
-      if (hub && DF.state.hubs.length) {
-        hub.innerHTML = DF.state.hubs.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
-        if (state.summary?.rider.hub) hub.value = state.summary.rider.hub.id;
-      }
-      $("modalDescription").textContent = `The hub is told you're bringing ${money(state.cash?.inHand)} (${state.cash?.collections.length ?? 0} collection${state.cash?.collections.length === 1 ? "" : "s"}). The cashier counts it and confirms the handover.`;
-      $("modalFields").insertAdjacentHTML("beforeend", `<div class="field full"><label for="handoverNote">Note for the cashier (optional)</label><textarea id="handoverNote" maxlength="300" placeholder="e.g. Arriving around 6 PM"></textarea></div>`);
-      const pending = state.handovers.find(h => h.status === "PENDING");
-      if (pending) $("modalDescription").textContent = `You already asked ${pending.hub.name} to receive ${money(pending.amount)}. Cancel that request on the Earnings page to choose another hub.`;
-    }
   };
 
   const queuedText = id => `${id}: saved on this phone. It syncs automatically when you're back online.`;
@@ -747,22 +716,6 @@
         event.stopImmediatePropagation();
         closeModal();
         return void setShift("OFFLINE", "Shift ended. Thanks for riding with Delivery Fast.");
-      }
-      if (type === "handover") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const hub = DF.state.hubs.find(h => h.id === $("handoverHub")?.value);
-        if (!hub) return void showToast("Choose the hub you're handing the cash to.");
-        if (!(state.cash?.inHand > 0)) return void (closeModal(), showToast("You have no COD cash to hand over."));
-        if (navigator.onLine === false) return void showToast("You're offline. Request the handover when you're connected, or hand the cash over at the hub counter.");
-        const note = $("handoverNote")?.value.trim() || undefined;
-        return void submit(
-          async () => {
-            const request = await DF.api("/rider/handover-requests", { method: "POST", body: { hubId: hub.id, note }, headers: { "Idempotency-Key": `handover-${crypto.randomUUID?.() ?? Date.now()}` } });
-            state.handovers = [request, ...state.handovers.filter(h => h.id !== request.id)];
-          },
-          `Handover requested: take ${money(state.cash.inHand)} to the cashier at ${hub.name}. They'll confirm it when they count the cash.`,
-        );
       }
       if (type === "arrive") {
         event.preventDefault();
@@ -842,26 +795,77 @@
     true,
   );
 
-  // Cancel a pending cash handover request (Earnings page).
+  // ───────────── My cash: the cash to hand over and the handover slip (Earnings › Cash reconciliation) ─────────────
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="dfMyCashStyles">
+.mc{display:grid;gap:12px}
+.mc-total{border-radius:16px;padding:16px;background:linear-gradient(135deg,#1d3fae,#2f55c9);color:#fff;display:grid;gap:4px}
+.mc-total small{opacity:.85;font-size:12px;font-weight:600;letter-spacing:.02em}
+.mc-total strong{font-size:30px;font-weight:800;line-height:1.1}
+.mc-total span{opacity:.9;font-size:12.5px}
+.mc-slip{border:2px dashed #2f55c9;border-radius:16px;padding:14px;display:grid;gap:8px;background:#f5f8ff}
+.mc-slip .no{font-family:ui-monospace,monospace;font-size:20px;font-weight:800;letter-spacing:.06em;color:#1d3fae}
+.mc-slip p{margin:0;color:#475467;font-size:13px}
+.mc-list{display:grid;border:1px solid #e6e9ef;border-radius:12px;overflow:hidden}
+.mc-row{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f2f5;font-size:13px}
+.mc-row:last-child{border-bottom:0}
+.mc-row small{display:block;color:#8a94a3}
+.mc-btns{display:grid;gap:8px}
+.mc-btn{width:100%;height:46px;border-radius:12px;border:1px solid #d0d5dd;background:#fff;font:inherit;font-weight:700;font-size:15px;color:#344054}
+.mc-btn.primary{background:#2f55c9;border-color:#2f55c9;color:#fff}
+.mc-btn:disabled{opacity:.5}
+.mc-due{padding:10px 12px;border-radius:12px;background:#fef3f2;color:#b42318;font-size:13px}
+</style>`,
+  );
+  function myCashPanel(panel) {
+    const c = state.myCash;
+    const title = q(".panel-title", panel)?.outerHTML || `<h2 class="panel-title">Cash reconciliation</h2>`;
+    if (!c) return void (panel.innerHTML = `${title}<p class="panel-subtitle">Loading your cash…</p>`);
+    const slip = c.slip;
+    const rows = c.parcels
+      .map(p => `<div class="mc-row"><span><strong>${esc(p.trackingId)}</strong><small>${esc(p.recipient || "")} · ${esc(time(p.collectedAt))}${p.partial ? " · partial" : ""}</small></span><strong>${money(p.amount)}</strong></div>`)
+      .join("");
+    panel.innerHTML = `${title}<div class="mc" id="dfMyCash">
+      <div class="mc-total"><small>TO HAND OVER AT THE HUB</small><strong>${money(c.total)}</strong><span>${c.parcels.length} COD parcel${c.parcels.length === 1 ? "" : "s"}${c.due ? ` · includes ${money(c.due)} you still owe` : ""}</span></div>
+      ${c.dues.length ? `<div class="mc-due">You owe ${money(c.due)} from ${c.dues.map(d => esc(d.source)).join(", ")}: it's added to your next slip.</div>` : ""}
+      ${
+        slip
+          ? `<div class="mc-slip"><p>Your handover slip</p><div class="no">${esc(slip.number)}</div><p><strong>${money(slip.expected)}</strong> · ${slip.parcels} parcel${slip.parcels === 1 ? "" : "s"}${slip.hub ? ` · ${esc(slip.hub.name)}` : ""}</p><p>Show the slip at the hub: they scan its barcode and count the cash.</p>${c.slipOutdated ? `<p style="color:#b54708"><strong>You collected more cash since:</strong> update the slip.</p>` : ""}</div>
+             <div class="mc-btns"><button type="button" class="mc-btn primary" data-df-slip="show" data-number="${esc(slip.number)}">Show slip with barcode</button>${c.slipOutdated ? `<button type="button" class="mc-btn" data-df-slip="make">Update slip</button>` : ""}<button type="button" class="mc-btn" data-df-slip="cancel">Cancel slip</button></div>`
+          : `<div class="mc-btns"><button type="button" class="mc-btn primary" data-df-slip="make" ${c.total > 0 ? "" : "disabled"}>${c.total > 0 ? "Make handover slip" : "No cash to hand over"}</button></div>`
+      }
+      ${rows ? `<div class="mc-list">${rows}</div>` : ""}
+    </div>`;
+  }
   window.addEventListener(
     "click",
     event => {
-      const button = event.target.closest("[data-df-cancel-handover]");
+      const button = event.target instanceof Element ? event.target.closest("[data-df-slip]") : null;
       if (!button) return;
+      event.preventDefault();
       event.stopImmediatePropagation();
-      void DF.confirm({ title: "Cancel your cash handover request?", message: "You keep the cash and can ask again later.", confirm: "Cancel request", cancel: "Keep it", danger: true }).then(ok => {
-      if (!ok) return;
-      button.disabled = true;
-      DF.api(`/rider/handover-requests/${encodeURIComponent(button.dataset.dfCancelHandover)}/cancel`, { method: "POST" })
-        .then(async () => {
+      const action = button.dataset.dfSlip;
+      if (action === "show") return void window.DFPrint?.open(`/documents/cash-slip/${encodeURIComponent(button.dataset.number)}`, { title: "Preparing your slip…" });
+      if (navigator.onLine === false) return void showToast("You're offline. Make the slip when you're connected.");
+      const run = async () => {
+        button.disabled = true;
+        try {
+          if (action === "make") {
+            const slip = await DF.api("/rider/my-cash/slip", { method: "POST" });
+            showToast(`Slip ${slip.number}: hand ${money(slip.expected)} to the hub.`);
+          } else {
+            await DF.api("/rider/my-cash/slip/cancel", { method: "POST" });
+            showToast("Slip cancelled. You keep the cash until you make a new one.");
+          }
           await refresh().catch(() => undefined);
-          showToast("Handover request cancelled.");
-        })
-        .catch(error => {
+        } catch (error) {
           button.disabled = false;
           showToast(DF.describe(error));
-        });
-      });
+        }
+      };
+      if (action === "cancel") return void DF.confirm({ title: "Cancel your handover slip?", message: "You keep the cash and can make a new slip later.", confirm: "Cancel slip", cancel: "Keep it", danger: true }).then(ok => ok && run());
+      void run();
     },
     true,
   );

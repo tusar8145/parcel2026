@@ -122,6 +122,17 @@ i6HxcvPHP%gCy%4pzN
 hubop.chattogram@deliveryfast.example
 i6HxcvPHP%gCy%4pzN
 
+55. 
+Name	Tangail Hub Manager
+Sign in with (phone)	01711000109
+Password	Tng-dhXQoLySMP
+
+
+55. Dhanmondi hub
+dhanmondi@mail.com
+01794851236
+aCco+6j9Q%?2khoS2Z 
+
 6. Finance (maker)
 finance.maker@deliveryfast.example
 aCco+6j9Q%?2khoS2Z
@@ -193,6 +204,9 @@ EeongQnuknW!gY9g3#
 23. Rider (R-2110, Fahim Chowdhury, Sylhet)
 01811000210
 %67u#=pfBSa@auHT+V
+
+
+
 
 
 
@@ -275,3 +289,37 @@ pm2 status
 pm2 reload df-api --update-env
 pm2 reload df-worker --update-env
 pm2 status
+
+
+
+# fe-be changed
+
+cd /var/www/deliveryfast
+
+# 1. Back up the database first (this release adds tables)
+pg_dump -U deliveryfast -h localhost deliveryfast > ~/backup-$(date +%F-%H%M).sql
+
+# 2. Get the new code
+git fetch origin
+git checkout enterprise-upgrade        # only if the server is on another branch
+git pull
+
+# 3. Install packages (includes the new OCR packages; nothing is downloaded at run time)
+npm ci
+
+# 4. Build shared + API + web (API_ORIGIN must be set at build time)
+API_ORIGIN=http://127.0.0.1:4000 npm run build
+
+# 5. Database changes (adds the parcel_scan tables; nothing existing is changed)
+(cd apps/api && npx prisma migrate deploy)
+
+# 6. Copy the web's static files next to the standalone server
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+
+# 7. Folder for the OCR language files (created next to FILE_STORAGE_DIR)
+sudo mkdir -p /var/www/tesseract
+sudo chown $(whoami) /var/www/tesseract
+
+# 8. Restart the API, worker and web
+pm2 reload all

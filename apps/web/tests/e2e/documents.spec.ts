@@ -77,7 +77,7 @@ test("print options open generated PDFs in a new tab", async ({ page, api }) => 
     for (const box of boxes) await expect(box).toBeChecked({ timeout: 1000 });
   }).toPass({ timeout: 30_000 });
 
-  // "E-commerce invoices · A4": one delivery invoice per page, with VAT, COD and both parcels.
+  // "E-commerce invoices · A4": one delivery invoice per page, with COD and both parcels.
   const invoices = await openPdf(page, () => printAs(page, "invoice-ecommerce"));
   expect(invoices.response.url()).toContain("line=ecommerce");
   expect(invoices.info.pages, invoices.response.url()).toBe(2);

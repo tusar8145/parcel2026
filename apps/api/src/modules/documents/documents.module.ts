@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { FinanceModule } from "../finance/finance.module";
+import { MoneyModule } from "../money/money.module";
 import { LinehaulModule } from "../linehaul/linehaul.module";
 import { CnStockModule } from "../cn-stock/cn-stock.module";
 import { ReturnsModule } from "../returns/returns.module";
@@ -11,7 +11,7 @@ import { DocumentsService } from "./documents.service";
 
 /** Printable PDFs (labels, invoices, manifests, run sheets, statements, reports) for every print button. */
 @Module({
-  imports: [FinanceModule, LinehaulModule, CnStockModule, ReturnsModule, ReportsModule, SlaModule, HubReconciliationModule],
+  imports: [MoneyModule, LinehaulModule, CnStockModule, ReturnsModule, ReportsModule, SlaModule, HubReconciliationModule],
   controllers: [DocumentsController],
   providers: [DocumentsService],
   exports: [DocumentsService],

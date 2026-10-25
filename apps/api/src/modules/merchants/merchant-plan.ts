@@ -140,7 +140,6 @@ export function accountEvents(segment: PackageSegment): string[] {
     "merchant.payout_account_changed",
     ...(isBanking(segment) ? [] : ["finance.settlement_paid"]),
     "finance.invoice_issued",
-    "finance.dispute_update",
     "import.completed",
   ];
 }

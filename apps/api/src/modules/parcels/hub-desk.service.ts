@@ -180,7 +180,6 @@ export class HubDeskService {
           await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId: rider.id, createdAt: now, outcome: "DELIVERED", note: input.note ?? "Entered at the hub desk from the signed slip" } });
           if (collected > 0) {
             await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: rider.id, amount: collected, collectedAt: now } });
-            await this.ledger.record(tx, { type: "COD_COLLECTED", amount: collected, reference: parcel.trackingId, riderId: rider.id, merchantId: parcel.merchantId, occurredAt: now });
           }
           await recordTaskEarning(tx, { riderId: rider.id, type: "DELIVERY", parcel: current, at: now }, this.ledger);
           if (partial) returnOrder = (await createPartialReturn(tx, current, { hubId: current.currentHubId ?? rider.hubId, note: input.note, by: actorLabel(actor) }, after)).trackingId;
@@ -477,9 +476,6 @@ export class HubDeskService {
             meta,
             after,
           );
-          const charge = returned.returnCharge == null ? 0 : Number(returned.returnCharge);
-          if (charge > 0)
-            await this.ledger.record(tx, { type: "DELIVERY_CHARGE_EARNED", amount: charge, reference: `${returned.trackingId}:return`, merchantId: returned.merchantId, hubId: run?.hubId ?? returned.currentHubId, memo: "Return charge" });
           if (run?.riderId) await recordFranchiseReturn(tx, this.ledger, { riderId: run.riderId, parcel: returned });
           // The run's last parcel: the run is completed.
           if (run && run.status !== "COMPLETED" && run.status !== "CANCELLED" && !(await tx.parcel.count({ where: { returnRunId: run.id, status: "RETURN_SCHEDULED" } }))) {

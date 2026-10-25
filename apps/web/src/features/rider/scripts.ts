@@ -14,6 +14,8 @@ export const scripts = [
   // In-app notifications: the bell (unread count, latest) and the Notifications page (before the bridges: the bell is its own).
   "/legacy/shared/notifications.js",
   "/legacy/shared/scanner.js",
+  // PDF printing (DFPrint): My cash › Show slip with barcode.
+  "/legacy/shared/print.js",
   "/legacy/rider/bridge.js",
   "/legacy/rider/bridge-proof.js",
   "/legacy/rider/bridge-pwa.js",

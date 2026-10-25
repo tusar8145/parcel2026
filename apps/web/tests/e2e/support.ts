@@ -106,10 +106,14 @@ export const OPS_NAV = {
   needsInfo: ["Problems", "Needs info"],
   slaRisk: ["Problems", "SLA late-risk"],
   returns: ["Returns"],
-  cod: ["COD & settlement", "Cash from riders"],
-  codFranchise: ["COD & settlement", "Franchise"],
-  codSettlements: ["COD & settlement", "Settlements & payouts"],
-  codAccounts: ["COD & settlement", "Invoices & accounts"],
+  accounts: ["Accounts", "Overview"],
+  accountsEcommerce: ["Accounts", "E-commerce"],
+  accountsFinancial: ["Accounts", "Financial"],
+  accountsCustomer: ["Accounts", "Customer"],
+  riderCash: ["Accounts", "Rider cash"],
+  hubTransfers: ["Accounts", "Hub transfers"],
+  riderPay: ["Accounts", "Rider pay"],
+  franchiseMoney: ["Accounts", "Franchise"],
   allParcels: ["All parcels", "All"],
   ecommerce: ["All parcels", "E-commerce"],
   banking: ["All parcels", "Banking & Financial"],
@@ -355,8 +359,20 @@ export class Fixtures {
       // Messages to the temporary accounts and about their parcels.
       await q(`DELETE FROM outbox_messages WHERE "userId" = ANY($1::uuid[]) OR "to" = ANY($2::text[]) OR body LIKE ANY($3::text[])`, [U, phones, T.map(t => `%${t}%`)]);
       await q(`DELETE FROM otp_challenges WHERE phone = ANY($1::text[])`, [phones]);
-      // Money: COD, cash handovers, settlements, invoices. Ledger postings stay: journal rows are
+      // Money (Accounts): the merchants' / customers' accounts and their lines, settlements, bills and payments;
+      // riders' handover slips and dues; transfers our staff sent. Ledger postings stay: journal rows are
       // append-only (database triggers) and only name merchants/riders by id, without foreign keys.
+      const accounts = `SELECT id FROM accounts WHERE "merchantId" = ANY($1::uuid[]) OR "customerId" = ANY($2::uuid[]) OR phone = ANY($3::text[])`;
+      await q(`DELETE FROM account_bill_allocations WHERE "paymentId" IN (SELECT id FROM account_payments WHERE "accountId" IN (${accounts})) OR "billId" IN (SELECT id FROM account_bills WHERE "accountId" IN (${accounts}))`, [M, U, phones]);
+      await q(`DELETE FROM account_entries WHERE "accountId" IN (${accounts}) OR "parcelId" = ANY($4::uuid[])`, [M, U, phones, P]);
+      await q(`DELETE FROM account_payouts WHERE "accountId" IN (${accounts})`, [M, U, phones]);
+      await q(`DELETE FROM account_bills WHERE "accountId" IN (${accounts})`, [M, U, phones]);
+      await q(`DELETE FROM account_payments WHERE "accountId" IN (${accounts})`, [M, U, phones]);
+      await q(`DELETE FROM accounts WHERE id IN (${accounts})`, [M, U, phones]);
+      await q(`DELETE FROM cash_dues WHERE "riderId" = ANY($1::uuid[])`, [R]);
+      await q(`DELETE FROM cash_slips WHERE "riderId" = ANY($1::uuid[])`, [R]);
+      await q(`UPDATE cash_slips SET "transferId" = NULL WHERE "transferId" IN (SELECT id FROM hub_transfers WHERE "sentById" = ANY($1::uuid[]))`, [U]);
+      await q(`DELETE FROM hub_transfers WHERE "sentById" = ANY($1::uuid[])`, [U]);
       await q(`DELETE FROM cod_collections WHERE "parcelId" = ANY($1::uuid[]) OR "riderId" = ANY($2::uuid[])`, [P, R]);
       await q(`DELETE FROM cash_handover_requests WHERE "riderId" = ANY($1::uuid[])`, [R]);
       await q(`DELETE FROM cash_handovers WHERE "riderId" = ANY($1::uuid[])`, [R]);

@@ -207,12 +207,22 @@ export class MerchantToolsService {
     if (kind === "cod-reconciliation") {
       const parcels = await this.prisma.parcel.findMany({
         where: { merchantId: m.id, status: "DELIVERED", deliveredAt: range, codAmount: { gt: 0 } },
-        include: { codCollection: { include: { settlement: { select: { number: true, status: true, paidAt: true } } } } },
+        include: { codCollection: true },
         orderBy: { deliveredAt: "asc" },
         take: REPORT_MAX_ROWS,
       });
+      // The settlement (Accounts) that paid each parcel's COD.
+      const settled = new Map(
+        (
+          await this.prisma.accountEntry.findMany({
+            where: { parcelId: { in: parcels.map(p => p.id) }, type: "COD", payoutId: { not: null }, payout: { status: { not: "CANCELLED" } } },
+            select: { parcelId: true, payout: { select: { number: true, status: true, paidAt: true } } },
+          })
+        ).map(e => [e.parcelId!, e.payout!]),
+      );
       const rows = parcels.map((p): Cell[] => {
         const c = p.codCollection;
+        const payout = settled.get(p.id);
         return [
           iso(p.deliveredAt),
           p.trackingId,
@@ -221,12 +231,12 @@ export class MerchantToolsService {
           num(c?.amount),
           c ? c.state : "NOT_RECORDED",
           num(p.totalCharge),
-          c?.settlement?.number ?? null,
-          c?.settlement?.status ?? null,
-          iso(c?.settlement?.paidAt),
+          payout?.number ?? null,
+          payout?.status ?? null,
+          iso(payout?.paidAt),
         ];
       });
-      const settled = parcels.filter(p => p.codCollection?.state === "SETTLED");
+      const paid = parcels.filter(p => p.codCollection?.state === "SETTLED");
       return {
         ...base,
         columns: ["Delivered", "Tracking ID", "Order ref", "COD due (BDT)", "COD collected (BDT)", "Cash state", "Delivery charge (BDT)", "Settlement", "Settlement status", "Paid"],
@@ -235,7 +245,7 @@ export class MerchantToolsService {
           parcels: parcels.length,
           codDue: sum(parcels.map(p => p.codAmount)),
           collected: sum(parcels.map(p => p.codCollection?.amount ?? 0)),
-          settled: sum(settled.map(p => p.codCollection!.amount)),
+          settled: sum(paid.map(p => p.codCollection!.amount)),
           charges: sum(parcels.map(p => p.totalCharge)),
         },
       };
@@ -271,12 +281,15 @@ export class MerchantToolsService {
       };
     }
 
-    const invoices = await this.prisma.invoice.findMany({ where: { merchantId: m.id, issuedAt: range }, orderBy: { issuedAt: "asc" }, take: REPORT_MAX_ROWS });
+    // Bills (Accounts): Financial merchants' bills, with what's paid and due.
+    const account = await this.prisma.account.findUnique({ where: { merchantId: m.id }, select: { id: true } });
+    const bills = account ? await this.prisma.bill.findMany({ where: { accountId: account.id, issuedAt: range }, orderBy: { issuedAt: "asc" }, take: REPORT_MAX_ROWS }) : [];
+    const open = bills.filter(b => b.status === "ISSUED" || b.status === "PARTLY_PAID");
     return {
       ...base,
-      columns: ["Invoice", "Period start", "Period end", "Issued", "Due", "Status", "Subtotal (BDT)", "VAT (BDT)", "Total (BDT)", "Paid"],
-      rows: invoices.map(i => [i.number, dhakaDay(i.periodStart), dhakaDay(new Date(i.periodEnd.getTime() - 1)), iso(i.issuedAt), iso(i.dueAt), i.status, num(i.subtotal), num(i.vatAmount), num(i.total), iso(i.paidAt)]),
-      summary: { invoices: invoices.length, total: sum(invoices.map(i => i.total)), unpaid: sum(invoices.filter(i => i.status === "ISSUED").map(i => i.total)) },
+      columns: ["Bill", "Delivered from", "Delivered to", "Issued", "Status", "Total (BDT)", "Paid (BDT)", "Due (BDT)"],
+      rows: bills.map(b => [b.number, dhakaDay(b.periodFrom), dhakaDay(new Date(b.periodTo.getTime() - 1)), iso(b.issuedAt), b.status, num(b.total), num(b.paid), b.status === "VOID" ? 0 : num(b.total.minus(b.paid))]),
+      summary: { invoices: bills.length, total: sum(bills.filter(b => b.status !== "VOID").map(b => b.total)), unpaid: sum(open.map(b => b.total.minus(b.paid))) },
     };
   }
 

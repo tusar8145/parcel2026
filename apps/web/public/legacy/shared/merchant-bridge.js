@@ -11,7 +11,7 @@
  * - Booking through POST /parcels with an Idempotency-Key (Excel/CSV batches: shared/importer.js),
  *   priced on the server; the form shows POST /merchants/me/quote as a preview.
  * - Cancel, tracking history, labels and invoices from real parcels.
- * - Invoices (GET /invoices), settlements (GET /settlements), API keys, webhooks,
+ * - Balance: shared/merchant-balance.js (the merchant's account: settlements, bills, payments). API keys, webhooks,
  *   profile, payout account and team (/merchants/me/...).
  *
  * The page scripts keep rendering; this file swaps their data and handles their actions
@@ -502,16 +502,11 @@
     return changed;
   }
 
+  /** Money moved to Balance (shared/merchant-balance.js, the account's own API): nothing to load here. */
   async function loadFinance() {
-    if (!isOwner()) return false;
-    const [invoices, settlements] = await Promise.all([
-      DF.api(`/invoices?limit=200${q("&")}`).catch(() => ({ items: [] })),
-      S.cfg.document ? Promise.resolve({ items: [] }) : DF.api(`/settlements?limit=200${q("&")}`).catch(() => ({ items: [] })),
-    ]);
-    const changed = JSON.stringify([invoices.items, settlements.items]) !== JSON.stringify([S.invoices, S.settlements]);
-    S.invoices = invoices.items;
-    S.settlements = settlements.items;
-    return changed;
+    S.invoices = [];
+    S.settlements = [];
+    return false;
   }
 
   async function loadIntegrations() {
@@ -629,6 +624,8 @@
   function afterRender(page) {
     const main = $("mainContent");
     if (page === "Overview") return patchDashboard();
+    // Balance (shared/merchant-balance.js) draws these pages itself.
+    if (page === "Payments" || page === "Billing") return;
     const subtitle = main.querySelector(".page-table-panel .panel-heading p.panel-subtitle");
     const live = ["Orders", "Shipments", "Pickup requests", "Customers", "Payments", "Settings"].includes(page);
     if (subtitle && live) subtitle.textContent = `Live data · updated ${timeOf(new Date())}${S.truncated && ["Orders", "Shipments", "Pickup requests"].includes(page) ? ` · newest ${PARCEL_CAP.toLocaleString("en-BD")} shown` : ""}`;
@@ -1562,7 +1559,7 @@
         `<tr><td colspan="8" class="empty-state">No invoices yet. Delivery Fast issues one for each month with delivered consignments.</td></tr>`;
     return `<div class="page-heading"><div><p class="eyebrow">Corporate finance · ${esc(m?.name)}</p><h1>Billing & invoices</h1><p class="subtitle">Review delivery charges, preview the charges not yet invoiced, and track invoice settlement.</p></div><div class="heading-actions"><select id="documentBillingPeriod" class="select-small" aria-label="Billing period">${billingMonths().map(month => option(month.value, month.label)).join("")}</select><button class="button button-primary" id="generateDocumentBill">${icon("plus")} Preview unbilled charges</button></div></div>
       <div class="metrics">${metricCard("Outstanding balance", money ? taka(money.invoices.outstanding) : "—", "wallet", money ? `${money.invoices.outstandingCount} unpaid invoice(s)` : "visible to owners", money?.invoices.overdueCount ? `${money.invoices.overdueCount} overdue` : "Due")}${metricCard("Delivered, not billed", String(money?.unbilled.parcels ?? "—"), "box", money ? `${taka(money.unbilled.charges)} in charges` : "visible to owners", "Ready")}${metricCard("Invoices", String(S.invoices.length), "chart", "issued to this account", "")}</div>
-      <section class="panel billing-note"><div><strong>Corporate billing account</strong><p>${esc(m?.name)} · ${esc(m?.code)} · Monthly consolidated billing · Due 15 days after issue</p></div><span class="status status-blue">Tax handled per contract</span></section>
+      <section class="panel billing-note"><div><strong>Corporate billing account</strong><p>${esc(m?.name)} · ${esc(m?.code)} · Monthly consolidated billing · Due 15 days after issue</p></div></section>
       <section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">Invoices & statements</h2><p class="panel-subtitle">Invoices consolidate delivered document consignments; billed consignments are excluded from future bills.</p></div><div class="table-tools"><input class="table-search" id="documentBillSearch" placeholder="Search invoice ID..." aria-label="Search invoices"><button class="button button-sm" id="exportDocumentBills">${icon("download")} Export</button></div></div>
       <div class="table-scroll"><table><thead><tr><th>INVOICE</th><th>BILLING PERIOD</th><th>ISSUED</th><th>DUE DATE</th><th>DOCUMENTS</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody id="documentBillRows">${body}</tbody></table></div>
       <div class="table-footer"><span>${S.invoices.length} invoice(s) · Live billing data</span><span>Payments are recorded by Delivery Fast finance when your transfer arrives.</span></div></section>

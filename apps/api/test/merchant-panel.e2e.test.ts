@@ -1,4 +1,5 @@
 import { parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { postParcelEntries } from "../src/modules/money/entries";
 
 /** What the merchant panels (ecommerce-merchant, banking-merchant) need from the API. */
 describe("merchant panels", () => {
@@ -47,9 +48,11 @@ describe("merchant panels", () => {
     return res.body;
   };
 
+  /** Delivered (with its account lines); a COD parcel's cash is at the central hub, ready to settle. */
   const markDelivered = async (trackingId: string, deliveredAt: Date, riderId?: string) => {
     const parcel = await ctx.prisma.parcel.update({ where: { trackingId }, data: { status: "DELIVERED", deliveredAt, pickedUpAt: deliveredAt } });
-    if (riderId && Number(parcel.codAmount) > 0) await ctx.prisma.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: parcel.codAmount, state: "AT_HUB" } });
+    if (riderId && Number(parcel.codAmount) > 0) await ctx.prisma.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: parcel.codAmount, state: "AT_CENTRAL" } });
+    await postParcelEntries(ctx.prisma, parcel);
     return parcel;
   };
 
@@ -128,7 +131,6 @@ describe("merchant panels", () => {
       const { m, owner, staff } = await workspace();
       const other = await workspace();
       const rider = await riderUser(ctx, "R-STAT1");
-      const finance = await userWithRoles(ctx, [{ role: "FINANCE" }], "Finance");
 
       const pending = await book(owner.token, { recipient: { name: "Repeat Buyer", phone: "01812000010" } });
       const moving = await book(owner.token, { recipient: { name: "Repeat Buyer", phone: "01812000010" }, codAmount: 800 });
@@ -145,12 +147,6 @@ describe("merchant panels", () => {
       await markDelivered(prepaidUnbilled.trackingId, new Date());
       await ctx.api("POST", `/parcels/${cancelled.trackingId}/cancel`, { token: owner.token, body: {} });
 
-      // Finance bills the earlier prepaid delivery.
-      const invoice = await ctx.api("POST", "/invoices", {
-        token: finance.token,
-        body: { merchantId: m.id, periodStart: new Date(Date.now() - 3 * 86_400_000).toISOString(), periodEnd: new Date(Date.now() - 86_400_000).toISOString() },
-      });
-      expect(invoice.status, JSON.stringify(invoice.body)).toBe(201);
 
       const res = await ctx.api("GET", "/merchants/me/stats?period=30d", { token: owner.token });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -168,11 +164,12 @@ describe("merchant panels", () => {
       // Four recipients (the cancelled order excluded), one of whom ordered twice.
       expect(s.customers).toMatchObject({ total: 4, repeat: 1, repeatRate: 25 });
 
+      // E-commerce: the COD at the central hub less every delivered parcel's charge (prepaid ones come off it too).
       expect(s.money.cod).toMatchObject({ atHubs: 2000, withRiders: 0 });
-      expect(s.money.cod.readyToSettle.parcels).toBe(1);
-      expect(s.money.cod.readyToSettle.net).toBe(2000 - codDelivered.charges.total);
-      expect(s.money.invoices).toMatchObject({ outstandingCount: 1, outstanding: prepaidBilled.charges.total, overdueCount: 0 });
-      expect(s.money.unbilled).toEqual({ parcels: 1, charges: prepaidUnbilled.charges.total });
+      expect(s.money.cod.readyToSettle.parcels).toBe(3);
+      expect(s.money.cod.readyToSettle.net).toBe(2000 - codDelivered.charges.total - prepaidBilled.charges.total - prepaidUnbilled.charges.total);
+      expect(s.money.invoices).toMatchObject({ outstandingCount: 0, outstanding: 0 });
+      expect(s.money.unbilled).toEqual({ parcels: 0, charges: 0 });
 
       const year = await ctx.api("GET", "/merchants/me/stats?period=year", { token: owner.token });
       expect(year.body.series.bucket).toBe("month");
@@ -225,28 +222,27 @@ describe("merchant panels", () => {
   });
 
   describe("billing and payouts", () => {
-    it("shows owners their invoices and settlements; staff can't open them", async () => {
+    it("shows owners their bills (Accounts); staff don't see them", async () => {
       const { m, owner, staff } = await workspace("BANKING_FINANCIAL");
       const finance = await userWithRoles(ctx, [{ role: "FINANCE" }], "Finance");
       const doc = await book(owner.token, { type: "DOCUMENT", codAmount: 0, weightKg: 0.5 });
-      await markDelivered(doc.trackingId, new Date(Date.now() - 2 * 86_400_000));
-      const created = await ctx.api("POST", "/invoices", {
-        token: finance.token,
-        body: { merchantId: m.id, periodStart: new Date(Date.now() - 3 * 86_400_000).toISOString(), periodEnd: new Date(Date.now() - 86_400_000).toISOString() },
-      });
+      const parcel = await markDelivered(doc.trackingId, new Date(Date.now() - 2 * 86_400_000));
+      const account = await ctx.prisma.account.findUniqueOrThrow({ where: { merchantId: m.id } });
+      const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+      const created = await ctx.api("POST", `/accounts/${account.id}/bills`, { token: finance.token, body: { from: "2026-01-01", to: day, parcelIds: [parcel.id] } });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
 
-      const list = await ctx.api("GET", `/invoices?merchantId=${m.id}`, { token: owner.token });
+      const list = await ctx.api("GET", "/bills", { token: owner.token });
       expect(list.status).toBe(200);
       expect(list.body.items).toHaveLength(1);
-      expect(list.body.items[0]).toMatchObject({ status: "ISSUED", lineCount: 1, subtotal: doc.charges.total });
-      const detail = await ctx.api("GET", `/invoices/${created.body.id}`, { token: owner.token });
+      expect(list.body.items[0]).toMatchObject({ status: "ISSUED", parcels: 1, total: doc.charges.total });
+      const detail = await ctx.api("GET", `/bills/${created.body.id}`, { token: owner.token });
       expect(detail.body.lines).toEqual([expect.objectContaining({ trackingId: doc.trackingId, amount: doc.charges.total })]);
-      expect((await ctx.api("POST", `/invoices/${created.body.id}/mark-paid`, { token: owner.token, body: {} })).status).toBe(403);
+      expect((await ctx.api("POST", `/bills/${created.body.id}/void`, { token: owner.token, body: { reason: "Not mine" } })).status).toBe(403);
 
-      expect((await ctx.api("GET", "/settlements", { token: owner.token })).status).toBe(200);
-      expect((await ctx.api("GET", "/invoices", { token: staff.token })).status).toBe(403);
-      expect((await ctx.api("GET", "/settlements", { token: staff.token })).status).toBe(403);
+      expect((await ctx.api("GET", "/my-accounts", { token: owner.token })).body[0].financial).toMatchObject({ billedDue: doc.charges.total });
+      expect((await ctx.api("GET", "/bills", { token: staff.token })).body.items).toHaveLength(0);
+      expect((await ctx.api("GET", "/my-accounts", { token: staff.token })).body).toHaveLength(0);
     });
   });
 });

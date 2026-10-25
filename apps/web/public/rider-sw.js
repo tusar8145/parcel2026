@@ -13,7 +13,7 @@
  * Bump VERSION when this file or the precache list changes. Keep PRECACHE in step with
  * src/features/rider/scripts.ts.
  */
-const VERSION = "2026.10.20-1";
+const VERSION = "2026.10.25-1";
 const PREFIX = "df-rider-";
 const SHELL = `${PREFIX}shell-${VERSION}`;
 const RUNTIME = `${PREFIX}runtime-${VERSION}`;
@@ -38,6 +38,7 @@ const PRECACHE = [
   "/legacy/shared/support.js",
   "/legacy/shared/notifications.js",
   "/legacy/shared/scanner.js",
+  "/legacy/shared/print.js",
   "/legacy/rider/bridge.js",
   "/legacy/rider/bridge-proof.js",
   "/legacy/rider/bridge-pwa.js",

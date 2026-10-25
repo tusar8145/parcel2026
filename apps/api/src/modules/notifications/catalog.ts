@@ -549,18 +549,6 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       text: "Hi {{name}},\n\n{{admin}} from Delivery Fast support opened your account ({{mode}}) for up to {{minutes}} minutes to help with your request. Every action is recorded.\n\nIf you didn't ask for help, contact {{support}}.",
     },
   },
-  "finance.dispute_update": {
-    label: "Dispute / claim update",
-    group: "Finance",
-    audience: "Customer or merchant who raised it",
-    vars: ["number", "trackingId", "status", "details", "link"],
-    sample: { number: "DSP-261016-0001", trackingId: "PP-261016-4821", status: "Approved", details: "Tk 500 will be credited to your next settlement.", link: "https://deliveryfast.example/#/support" },
-    sms: "Delivery Fast: claim {{number}} for {{trackingId}} is {{status}}.{{#details}} {{details}}{{/details}}",
-    email: {
-      subject: "Claim {{number}}: {{status}}",
-      text: "Hi {{name}},\n\nYour claim {{number}} for parcel {{trackingId}} is now {{status}}.{{#details}}\n\n{{details}}{{/details}}\n\nView it: {{link}}",
-    },
-  },
   "support.sla_escalation": {
     label: "Support SLA escalation",
     group: "Support",

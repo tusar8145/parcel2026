@@ -74,7 +74,6 @@ describe("dashboard periods (from / to on overview, stats and summary endpoints)
       [s.ops.token, "/ops/stage-counts"],
       [s.ops.token, "/ops/analytics"],
       [s.owner.token, "/merchants/me/stats"],
-      [s.finance.token, "/finance/summary"],
       [s.admin.token, "/analytics/traffic"],
       [s.admin.token, "/admin/overview"],
     ];
@@ -146,18 +145,6 @@ describe("dashboard periods (from / to on overview, stats and summary endpoints)
     // Staff (not owners) get no money figures.
     const staff = await userWithRoles(ctx, [{ role: "MERCHANT_STAFF", merchantId: s.shop.id }], "Shop Staff");
     expect((await get(staff.token, `/merchants/me/stats?${OCT_11}`)).range.money).toBeNull();
-  });
-
-  it("finance summary: period figures beside the live position", async () => {
-    const s = await setup();
-    const oct11 = await get(s.finance.token, `/finance/summary?${OCT_11}`);
-    expect(oct11.period).toMatchObject({ from: "2026-10-11", to: "2026-10-11", codCollected: 1500, codCollections: 1, delivered: 1 });
-    expect(oct11.period.deliveryCharges).toBeGreaterThan(0);
-    expect(oct11.codAtHubs).toBe(1500); // now, whatever the period
-    const oct10 = await get(s.finance.token, `/finance/summary?${OCT_10}`);
-    expect(oct10.period).toMatchObject({ codCollected: 0, delivered: 0 });
-    expect(oct10.codAtHubs).toBe(1500);
-    expect((await get(s.finance.token, "/finance/summary")).period.from).toMatch(/-01$/); // default: this month
   });
 
   it("super admin: overview period figures and chart, traffic for a period", async () => {

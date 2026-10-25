@@ -27,6 +27,8 @@ export const scripts = [
   "/legacy/shared/merchant-address.js",
   "/legacy/shared/merchant-bridge.js",
   "/legacy/ecommerce-merchant/bridge.js",
+  // Balance (the old Payments / Billing pages): the merchant's account, settlements, bills, payments.
+  "/legacy/shared/merchant-balance.js",
   "/legacy/shared/merchant-features.js",
   // "Where is it now" map in the parcel drawer (DFParcelMap, GET /parcels/:id/position; Leaflet loads on first use).
   "/legacy/shared/parcel-map.js",

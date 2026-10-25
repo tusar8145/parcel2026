@@ -57,22 +57,22 @@ const visibleMenu = (page: Page) => page.locator("#navigation [data-nav]:visible
 test("each role sees its own menu", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
-  const all = ["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "Reports", "Riders", "Merchants", "CN stock", "Settings"];
+  const all = ["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "Accounts", "Reports", "Riders", "Merchants", "CN stock", "Settings"];
 
   const ops = await signedIn(browser, OPS, errors);
   await expect.poll(() => visibleMenu(ops)).toEqual(all);
   await ops.context().close();
 
-  // Hub managers: the work queue, the journey, All parcels, Riders (they read riders) and the COD page where they receive riders' cash.
+  // Hub managers: the work queue, the journey, All parcels, Riders (they read riders) and Accounts (rider cash slips, hub transfers).
   const hub = await signedIn(browser, HUB, errors);
-  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "COD & settlement", "Riders"]);
+  await expect.poll(() => visibleMenu(hub)).toEqual(["Today", "New orders", "All parcels", "Work queue", "Scan desk", "Pickup", "Hub desk", "Transfers", "Delivery", "Problems", "Returns", "Accounts", "Riders"]);
   await hub.context().close();
 
-  // Finance: COD & settlement first, and it opens there.
+  // Finance: Accounts first, and it opens there.
   const finance = await signedIn(browser, FINANCE, errors);
-  await expect.poll(() => visibleMenu(finance)).toEqual(["COD & settlement", "All parcels", "Reports", "Merchants"]);
-  await expect(finance.locator("#breadcrumbLabel")).toHaveText("COD & settlement");
-  await expect(finance.locator('#navigation [data-nav="COD & settlement"]')).toHaveClass(/active/);
+  await expect.poll(() => visibleMenu(finance)).toEqual(["Accounts", "All parcels", "Reports", "Merchants"]);
+  await expect(finance.locator("#breadcrumbLabel")).toHaveText("Accounts");
+  await expect(finance.locator('#navigation [data-nav="Accounts"]')).toHaveClass(/active/);
   await finance.context().close();
 
   // Support: All parcels, Today and the support inbox.
@@ -169,7 +169,7 @@ test("stage counts, the New orders filter, the next action, the drawer from the 
   await expect(page.locator("#breadcrumbLabel")).toHaveText("Reports");
   await expect(page.locator('[data-nav-tab="Analytics & SLA"]')).toHaveAttribute("aria-selected", "true");
   await renderOld("COD & finance");
-  await expect(page.locator("#breadcrumbLabel")).toHaveText("COD & settlement");
+  await expect(page.locator("#breadcrumbLabel")).toHaveText("Accounts");
   await renderOld("Dispatch");
   await expect(page.locator("#breadcrumbLabel")).toHaveText("Delivery");
   await renderOld("Scheduled pickups");

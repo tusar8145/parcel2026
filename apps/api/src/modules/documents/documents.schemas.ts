@@ -63,11 +63,3 @@ export const slaReportQuerySchema = z.object({
   hubId: z.uuid().optional(),
 });
 
-export const statementQuerySchema = z.object({
-  /** Delivered on or after this Dhaka day. */
-  from: day.optional(),
-  /** Delivered before the end of this Dhaka day. */
-  to: day.optional(),
-  /** Only document consignments / only parcels. */
-  line: z.enum(["all", "ecommerce", "document"]).default("all"),
-});

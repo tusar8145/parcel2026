@@ -12,10 +12,10 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import type { Prisma } from "../../generated/prisma/client";
 import { NotificationSettingsService } from "../notifications/notification-settings.service";
 import { readFinanceConfig, vatSplit } from "../finance/finance-config";
-import { financeMerchantScope } from "../finance/finance.scope";
-import { InvoicesService } from "../finance/invoices.service";
-import { invoicedParcels } from "../finance/invoiced";
-import { SettlementsService } from "../finance/settlements.service";
+import { AccountsService } from "../money/accounts.service";
+import { PayoutsService } from "../money/payouts.service";
+import { BillsService } from "../money/bills.service";
+import { CashService } from "../money/cash.service";
 import { LinehaulService } from "../linehaul/linehaul.service";
 import { CnStockService } from "../cn-stock/cn-stock.service";
 import { ReturnsService } from "../returns/returns.service";
@@ -30,8 +30,9 @@ import { A4, dhakaToday, PdfWriter } from "./pdf/writer";
 import { drawLabels, LABEL_PAGE, labelPages, type LabelData } from "./render/labels";
 import { drawShipmentInvoices, drawShipmentList, type ShipmentDoc } from "./render/shipments";
 import { BAG_LABEL_SIZE, drawBagLabel, drawCnSheet, drawManifest, drawReturnRun, drawRunSheet, drawTableDoc, type RunSheetDoc } from "./render/operations";
-import { drawFinanceInvoice, drawSettlement, drawStatement, drawFranchiseInvoice, type FranchiseInvoiceDoc } from "./render/finance";
-import { MAX_INVOICES, MAX_LABELS, MAX_LIST_ROWS, type cnSheetQuerySchema, type invoicesQuerySchema, type labelsQuerySchema, type parcelListQuerySchema, type runSheetQuerySchema, type slaReportQuerySchema, type statementQuerySchema } from "./documents.schemas";
+import { drawFranchiseInvoice, type FranchiseInvoiceDoc } from "./render/finance";
+import { drawAccountStatement, drawBill, drawCashSlip, drawHubTransfer, drawPayout } from "./render/accounts";
+import { MAX_INVOICES, MAX_LABELS, MAX_LIST_ROWS, type cnSheetQuerySchema, type invoicesQuerySchema, type labelsQuerySchema, type parcelListQuerySchema, type runSheetQuerySchema, type slaReportQuerySchema } from "./documents.schemas";
 
 /** A generated PDF: streamed to the client as it is written. */
 export interface PdfFile {
@@ -101,19 +102,11 @@ function parseCsv(text: string): string[][] {
 
 /**
  * PDF documents for every print button: shipping labels, delivery invoices, shipment lists,
- * linehaul manifests and bag tags, rider run sheets, CN label sheets, return runs, finance tax
- * invoices, settlement statements, merchant statements and reports. Each endpoint checks the
+ * linehaul manifests and bag tags, rider run sheets, CN label sheets, return runs, Accounts documents
+ * (settlements, bills, statements, rider slips, hub transfers) and reports. Each endpoint checks the
  * same permissions and scope as the data it prints, and every generation is audited
  * (`document.generate`).
  */
-/** The merchant's payout account (Merchant.payoutAccount JSON) as the settlement PDF's "Pay to", or null. */
-function payToOf(raw: unknown): { method: string; accountName: string; accountNumber: string; bankName?: string; branch?: string; routingNumber?: string } | null {
-  const a = raw as { method?: unknown; accountName?: unknown; accountNumber?: unknown; bankName?: unknown; branch?: unknown; routingNumber?: unknown } | null;
-  if (!a || typeof a.method !== "string" || typeof a.accountNumber !== "string") return null;
-  const str = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : undefined);
-  return { method: a.method, accountName: str(a.accountName) ?? "—", accountNumber: a.accountNumber, bankName: str(a.bankName), branch: str(a.branch), routingNumber: str(a.routingNumber) };
-}
-
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger("Documents");
@@ -122,8 +115,10 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly settings: NotificationSettingsService,
-    private readonly invoices: InvoicesService,
-    private readonly settlements: SettlementsService,
+    private readonly accounts: AccountsService,
+    private readonly payouts: PayoutsService,
+    private readonly bills: BillsService,
+    private readonly cash: CashService,
     private readonly linehaul: LinehaulService,
     private readonly cnStock: CnStockService,
     private readonly returns: ReturnsService,
@@ -147,7 +142,8 @@ export class DocumentsService {
       appName: snap.brand.appName,
       legalName: fin.seller.name,
       address: fin.seller.address,
-      bin: fin.seller.bin,
+      // The BIN is a VAT registration: shown only while VAT is on.
+      bin: fin.vatRate > 0 ? fin.seller.bin : "",
       support: snap.brand.support,
       website,
       vatRate: fin.vatRate,
@@ -300,8 +296,15 @@ export class DocumentsService {
 
   private async toShipments(rows: ParcelRow[], vatRate: number): Promise<ShipmentDoc[]> {
     const labels = await this.toLabels(rows);
-    const merchantIds = [...new Set(rows.map(p => p.merchantId).filter((x): x is string => !!x))];
-    const invoiced = await invoicedParcels(this.prisma, merchantIds);
+    // Financial merchants' prepaid parcels: the bill that billed the parcel's charge (Accounts).
+    const billed = new Map(
+      (
+        await this.prisma.accountEntry.findMany({
+          where: { parcelId: { in: rows.map(r => r.id) }, type: "DELIVERY_CHARGE", billId: { not: null }, bill: { status: { not: "VOID" } } },
+          select: { parcelId: true, bill: { select: { number: true, status: true } } },
+        })
+      ).map(e => [e.parcelId!, e.bill!]),
+    );
     return rows.map((p, i) => {
       const l = labels[i];
       const snap = p.pricingSnapshot as { segment?: string; lines?: { code: string; label: string; amount: number }[] } | null;
@@ -320,15 +323,15 @@ export class DocumentsService {
       const line: ShipmentDoc["line"] = !p.merchantId ? "customer" : l.isDocument ? "document" : "ecommerce";
       const cod = num(p.codAmount) > 0;
       const delivered = p.status === "DELIVERED";
-      const billed = !cod && p.deliveredAt ? invoiced.get(p.trackingId) : undefined;
+      const bill = !cod && p.deliveredAt ? billed.get(p.id) : undefined;
       const payment = cod
         ? delivered
           ? "COD collected from recipient"
           : "Collect COD on delivery"
         : line === "customer"
           ? "Delivery charge paid by sender"
-          : billed
-            ? `Billed on ${billed.number} · ${billed.status === "PAID" ? "paid" : "unpaid"}`
+          : bill
+            ? `Billed on ${bill.number} · ${bill.status === "PAID" ? "paid" : bill.status === "PARTLY_PAID" ? "partly paid" : "unpaid"}`
             : delivered
               ? "Delivered · to be invoiced"
               : "Prepaid · billed monthly";
@@ -563,36 +566,6 @@ export class DocumentsService {
 
   // ───────────── finance ─────────────
 
-  async financeInvoice(actor: Actor, id: string, meta: RequestMeta): Promise<PdfFile> {
-    const i = await this.invoices.detail(actor, id);
-    const brand = await this.brand();
-    await this.record(actor, "finance_invoice", { number: i.number }, meta, i.id, "invoice");
-    const docMeta = this.meta(actor, "Tax invoice", { number: i.number, date: i.issuedAt, subtitle: `Mushak-6.3 draft · ${i.merchant.name} · ${i.status === "ISSUED" ? (i.overdue ? "overdue" : "unpaid") : i.status.toLowerCase()}` });
-    const seller = (i.seller ?? {}) as { name?: string; bin?: string; address?: string };
-    const lines = (Array.isArray(i.lines) ? i.lines : []) as { trackingId?: string; description?: string; amount?: number | string; taxableValue?: number | string; vat?: number | string }[];
-    const doc = {
-      number: i.number,
-      status: i.status,
-      overdue: i.overdue,
-      issuedAt: i.issuedAt,
-      dueAt: i.dueAt,
-      periodStart: i.periodStart,
-      periodEnd: i.periodEnd,
-      paidAt: i.paidAt,
-      paymentReference: i.paymentReference,
-      vatRate: i.vatRate,
-      taxableValue: num(i.taxableValue),
-      vatAmount: num(i.vatAmount),
-      total: num(i.total),
-      seller: { name: seller.name ?? brand.legalName, bin: seller.bin ?? brand.bin, address: seller.address ?? brand.address },
-      buyer: { name: i.buyer.name, code: i.buyer.code, address: i.buyer.address, phone: i.buyer.phone },
-      lines: lines.map(l => ({ trackingId: l.trackingId ?? "", description: l.description ?? "Delivery service", amount: num(l.amount), taxableValue: l.taxableValue == null ? undefined : num(l.taxableValue), vat: l.vat == null ? undefined : num(l.vat) })),
-      createdBy: i.createdBy?.name ?? null,
-    };
-    const pdf = new PdfWriter({ size: A4, title: `Tax invoice ${i.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFinanceInvoice(pdf, brand, doc, docMeta)) };
-  }
-
   /** A franchise commission invoice (the caller loads and authorises it: modules/franchise). */
   async franchiseInvoice(actor: Actor, i: FranchiseInvoiceDoc & { id: string }, meta: RequestMeta): Promise<PdfFile> {
     const brand = await this.brand();
@@ -602,87 +575,123 @@ export class DocumentsService {
     return { fileName: `delivery-fast-franchise-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFranchiseInvoice(pdf, brand, i, docMeta)) };
   }
 
-  async settlement(actor: Actor, id: string, meta: RequestMeta): Promise<PdfFile> {
-    const s = await this.settlements.detail(actor, id);
+  // ───────────── Accounts ─────────────
+
+  /** ST-: a settlement (staff, and the account's merchant owner / customer). */
+  async payout(actor: Actor, id: string, meta: RequestMeta): Promise<PdfFile> {
+    const s = await this.payouts.detail(actor, id);
     const brand = await this.brand();
-    await this.record(actor, "settlement_statement", { number: s.number }, meta, s.id, "settlement");
-    const docMeta = this.meta(actor, "COD settlement statement", { number: s.number, subtitle: `${s.merchant.name} · ${String(s.status).toLowerCase()}` });
-    const v = s as unknown as Record<string, unknown>;
+    await this.record(actor, "payout", { number: s.number }, meta, s.id, "payout");
+    const docMeta = this.meta(actor, "Settlement", { number: s.number, date: s.paidAt ?? s.createdAt, subtitle: `${s.account.name} · ${s.status === "PAID" ? "paid" : s.status === "CANCELLED" ? "cancelled" : "to be paid"}` });
     const doc = {
       number: s.number,
-      status: String(s.status),
-      merchant: { name: s.merchant.name, code: s.merchant.code },
-      autoDrafted: !!v.autoDrafted,
-      createdBy: s.createdBy?.name ?? null,
-      approvedBy: s.approvedBy?.name ?? null,
-      createdAt: (v.createdAt as Date) ?? new Date(),
-      paidAt: (v.paidAt as Date | null) ?? null,
-      reference: (v.reference as string | null) ?? null,
-      payTo: payToOf(v.payoutAccount),
-      paymentProof: !!v.paymentProof,
-      lines: s.lines.map(l => ({ trackingId: l.trackingId, deliveredAt: l.deliveredAt, codAmount: num(l.codAmount), charge: num(l.charge), net: num(l.net) })),
-      adjustments: s.adjustments.map(a => ({ kind: a.kind, description: a.description, amount: num(a.amount) })),
-      codTotal: num(v.codTotal),
-      chargesTotal: num(v.chargesTotal),
-      adjustmentsTotal: num(v.adjustmentsTotal),
-      netPayable: num(v.netPayable),
-      carriedForward: num(v.carriedForward),
-      vat: { rate: s.vat.rate, onCharges: num(s.vat.onCharges) },
+      status: s.status,
+      account: s.account,
+      createdAt: s.createdAt,
+      paidAt: s.paidAt,
+      method: s.method,
+      reference: s.reference,
+      receipt: !!s.receipt,
+      payTo: (s.payTo as Record<string, unknown> | null) ?? null,
+      createdBy: s.createdBy,
+      paidBy: s.paidBy,
+      parcels: s.parcels,
+      other: s.other,
+      codTotal: s.codTotal,
+      chargesTotal: s.chargesTotal,
+      adjustmentsTotal: s.adjustmentsTotal,
+      amount: s.amount,
     };
     const pdf = new PdfWriter({ size: A4, title: `Settlement ${s.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-settlement-${safeName(s.number)}.pdf`, stream: this.finish(pdf, () => drawSettlement(pdf, brand, doc, docMeta)) };
+    return { fileName: `delivery-fast-settlement-${safeName(s.number)}.pdf`, stream: this.finish(pdf, () => drawPayout(pdf, brand, doc, docMeta)) };
   }
 
-  /**
-   * Merchant panels: delivered prepaid parcels not yet covered by a tax invoice (pro-forma),
-   * optionally for a delivery period and one line (documents / parcels).
-   */
-  async statement(actor: Actor, query: z.infer<typeof statementQuerySchema>, meta: RequestMeta): Promise<PdfFile> {
-    const merchants = financeMerchantScope(actor);
-    if (!merchants || merchants.length !== 1) throw forbidden("Statements are for a merchant workspace");
-    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchants[0] }, select: { id: true, name: true, code: true, type: true } });
-    if (!merchant) throw notFound("Merchant");
-    const range = query.from || query.to ? dhakaDateRange(query.from ?? "2000-01-01", query.to ?? dhakaToday()) : null;
-    const [parcels, invoiced] = await Promise.all([
-      this.prisma.parcel.findMany({
-        where: {
-          merchantId: merchant.id,
-          status: "DELIVERED",
-          codAmount: 0,
-          ...(range ? { deliveredAt: { gte: range[0], lt: range[1] } } : {}),
-          ...(query.line === "document" ? { type: "DOCUMENT" as const } : query.line === "ecommerce" ? { type: { not: "DOCUMENT" as const } } : {}),
-        },
-        orderBy: { deliveredAt: "asc" },
-        take: MAX_LIST_ROWS,
-      }),
-      invoicedParcels(this.prisma, [merchant.id]),
-    ]);
-    const open = parcels.filter(p => p.deliveredAt && !invoiced.has(p.trackingId));
-    if (!open.length) throw new AppError("NOTHING_TO_PRINT", "No delivered prepaid parcels are waiting to be invoiced", 422);
+  /** INV-: a Financial merchant's bill (staff, and the merchant's owner). */
+  async bill(actor: Actor, id: string, meta: RequestMeta): Promise<PdfFile> {
+    const b = await this.bills.bill(actor, id);
+    const account = await this.prisma.account.findUniqueOrThrow({ where: { id: b.account.id }, select: { merchantId: true } });
+    const m = account.merchantId
+      ? await this.prisma.merchant.findUnique({ where: { id: account.merchantId }, select: { code: true, pickupAddress: true, pickupArea: true, pickupDistrict: true, contactPhone: true } })
+      : null;
     const brand = await this.brand();
-    await this.record(actor, "merchant_statement", { merchant: merchant.code, from: query.from ?? null, to: query.to ?? null, parcels: open.length }, meta, merchant.id, "merchant");
-    const document = merchant.type === "BANKING_FINANCIAL" || query.line === "document";
-    const period = range ? `${query.from ?? "start"} to ${query.to ?? dhakaToday()}` : "Not yet invoiced";
-    const docMeta = this.meta(actor, document ? "Unbilled delivery charges" : "Delivery charges statement", { number: merchant.code, subtitle: period });
+    await this.record(actor, "bill", { number: b.number }, meta, b.id, "bill");
+    const state = b.status === "PAID" ? "paid" : b.status === "PARTLY_PAID" ? "partly paid" : b.status === "VOID" ? "void" : "unpaid";
+    const docMeta = this.meta(actor, "Invoice", { number: b.number, date: b.issuedAt, subtitle: `${b.account.name} · ${state}` });
     const doc = {
-      merchant: { name: merchant.name, code: merchant.code },
-      period,
-      document,
-      parcels: open.map(p => ({
-        trackingId: p.trackingId,
-        item: (p.type === "DOCUMENT" ? (p.documentType ?? p.contents) : (p.productName ?? p.contents)) ?? "—",
-        branch: p.originBranchCode ?? undefined,
-        reference: p.merchantOrderRef ?? undefined,
-        service: p.speedOption ? ((SPEED_LABEL as Record<string, string>)[p.speedOption] ?? p.speedOption) : SERVICE_LEVEL_LABEL[p.serviceLevel],
-        base: num(p.baseCharge),
-        extra: num(p.weightCharge) + num(p.serviceCharge),
-        discount: num(p.discount),
-        total: num(p.totalCharge),
-        deliveredAt: p.deliveredAt,
-      })),
+      number: b.number,
+      status: b.status,
+      account: b.account,
+      buyer: { code: m?.code ?? null, address: m ? addressText(m.pickupAddress, m.pickupArea, m.pickupDistrict) : "", phone: m?.contactPhone ?? null },
+      from: b.from,
+      to: b.to,
+      issuedAt: b.issuedAt,
+      total: b.total,
+      paid: b.paid,
+      due: b.due,
+      lines: b.lines,
+      payments: b.payments,
     };
-    const pdf = new PdfWriter({ size: document ? LANDSCAPE : A4, title: `${docMeta.title} ${merchant.code}`, bufferPages: true });
-    return { fileName: `delivery-fast-statement-${safeName(merchant.code)}-${stamp()}.pdf`, stream: this.finish(pdf, () => drawStatement(pdf, brand, doc, docMeta)), count: open.length };
+    const pdf = new PdfWriter({ size: A4, title: `Invoice ${b.number}`, bufferPages: true });
+    return { fileName: `delivery-fast-invoice-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBill(pdf, brand, doc, docMeta)) };
+  }
+
+  /** An account's statement for a date range (staff, and the account's owner). */
+  async accountStatement(actor: Actor, id: string, query: { from?: string; to?: string }, meta: RequestMeta): Promise<PdfFile> {
+    const st = await this.accounts.statement(actor, id, query);
+    const brand = await this.brand();
+    await this.record(actor, "account_statement", { account: st.account.name, from: query.from ?? null, to: query.to ?? null }, meta, id, "account");
+    const docMeta = this.meta(actor, "Account statement", { number: st.account.code ?? undefined, subtitle: `${st.account.name} · ${query.from ?? "start"} to ${query.to ?? dhakaToday()}` });
+    const doc = { account: { name: st.account.name, code: st.account.code, kind: st.account.kind }, from: st.from, to: st.to, opening: st.opening, closing: st.closing, lines: st.lines };
+    const pdf = new PdfWriter({ size: A4, title: `Statement ${st.account.name}`, bufferPages: true });
+    return { fileName: `delivery-fast-statement-${safeName(st.account.code ?? st.account.name)}-${stamp()}.pdf`, stream: this.finish(pdf, () => drawAccountStatement(pdf, brand, doc, docMeta)) };
+  }
+
+  /** HS-: a rider's handover slip (the rider: their own; hub staff: their hubs'). */
+  async cashSlip(actor: Actor, key: string, meta: RequestMeta): Promise<PdfFile> {
+    const slip = await this.cash.slipFor(actor, key);
+    const brand = await this.brand();
+    await this.record(actor, "cash_slip", { number: slip.number }, meta, slip.id, "cash_slip");
+    const docMeta = this.meta(actor, "Cash handover slip", { number: slip.number, date: slip.createdAt, subtitle: `${slip.rider?.code ?? ""} · ${slip.rider?.name ?? ""}` });
+    const doc = {
+      number: slip.number,
+      status: slip.status,
+      rider: { code: slip.rider?.code ?? "", name: slip.rider?.name ?? "", phone: slip.rider?.phone ?? null },
+      hub: slip.hub?.name ?? "",
+      createdAt: slip.createdAt,
+      cod: slip.cod,
+      due: slip.due,
+      expected: slip.expected,
+      received: slip.received,
+      parcels: slip.parcels,
+    };
+    const pdf = new PdfWriter({ size: A4, title: `Slip ${slip.number}`, bufferPages: true });
+    return { fileName: `delivery-fast-slip-${safeName(slip.number)}.pdf`, stream: this.finish(pdf, () => drawCashSlip(pdf, brand, doc, docMeta)) };
+  }
+
+  /** HT-: a hub transfer to the central hub (hub staff of either hub, money staff). */
+  async hubTransfer(actor: Actor, key: string, meta: RequestMeta): Promise<PdfFile> {
+    const t = await this.cash.transfer(actor, key);
+    const brand = await this.brand();
+    await this.record(actor, "hub_transfer", { number: t.number }, meta, t.id, "hub_transfer");
+    const docMeta = this.meta(actor, "Hub cash transfer", { number: t.number, date: t.sentAt, subtitle: `${t.from.name} → ${t.to.name}` });
+    const doc = {
+      number: t.number,
+      status: t.status,
+      from: t.from.name,
+      to: t.to.name,
+      sentAt: t.sentAt,
+      sentBy: t.sentBy,
+      method: t.method,
+      reference: t.reference,
+      amount: t.amount,
+      received: t.received,
+      receivedAt: t.receivedAt,
+      slips: t.slips.map(s => ({ number: s.number, rider: `${s.rider?.code ?? ""} · ${s.rider?.name ?? ""}`, amount: s.cod })),
+      counter: Math.round(t.counter.reduce((a, c) => a + c.amount, 0) * 100) / 100,
+      due: t.due,
+    };
+    const pdf = new PdfWriter({ size: A4, title: `Transfer ${t.number}`, bufferPages: true });
+    return { fileName: `delivery-fast-transfer-${safeName(t.number)}.pdf`, stream: this.finish(pdf, () => drawHubTransfer(pdf, brand, doc, docMeta)) };
   }
 
   // ───────────── reports ─────────────

@@ -71,7 +71,7 @@ const auth = (t: string) => ({ authorization: `Bearer ${t}` });
 
 async function nav(page: Page, name: string) {
   await page.click(`#navigation [data-page="${name}"]`);
-  await expect(page.locator("#breadcrumbPage")).toContainText(name === "Billing" ? "Billing" : name);
+  await expect(page.locator("#breadcrumbPage")).toContainText(name === "Payments" ? "Balance" : name);
 }
 
 /** Fills the order modal's common fields. */
@@ -297,7 +297,7 @@ test("e-commerce merchant: a staff member works in the same workspace without th
   expect(errors).toEqual([]);
 });
 
-test("banking & financial merchant: redirect, document booking, delivery and invoices", async ({ browser, api: request }) => {
+test("banking & financial merchant: redirect, document booking, delivery and its bill on Balance", async ({ browser, api: request }) => {
   // Merchant owners land on the e-commerce panel; a Banking & Financial merchant is sent to its own.
   const { page, errors } = await signIn(browser, bankOwner, /\/(ecommerce|banking)-merchant/);
   await expect(page).toHaveURL(/\/banking-merchant/);
@@ -330,17 +330,16 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   await expect(toast(page)).toContainText(`already booked as ${trackingId}`);
   await page.click("#cancelModal");
 
-  // ── Delivered by a rider, then invoiced by finance ──
+  // ── Delivered by a rider, then billed by finance (Accounts) ──
   await deliver(request, trackingId);
-  await page.waitForTimeout(1100); // the invoice period must have ended
   const parcel = await (await request.get(`/api/v1/parcels/${trackingId}`, { headers: auth(await token(request, bankOwner.login, bankOwner.password)) })).json();
   const finance = await token(request, FINANCE.login, FINANCE.password);
-  const invoice = await request.post("/api/v1/invoices", {
-    headers: auth(finance),
-    data: { merchantId: parcel.merchant.id, periodStart: new Date(new Date(parcel.deliveredAt).getTime() - 500).toISOString(), periodEnd: new Date(Date.now() - 100).toISOString() },
-  });
-  expect(invoice.ok(), await invoice.text()).toBeTruthy();
-  const { number } = await invoice.json();
+  const accounts = await (await request.get("/api/v1/accounts?kind=FINANCIAL", { headers: auth(finance) })).json();
+  const account = accounts.items.find((a: { merchantId: string }) => a.merchantId === parcel.merchant.id);
+  const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+  const created = await request.post(`/api/v1/accounts/${account.id}/bills`, { headers: auth(finance), data: { from: day, to: day, parcelIds: [parcel.id] } });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const { number } = await created.json();
 
   await page.reload();
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
@@ -352,19 +351,20 @@ test("banking & financial merchant: redirect, document booking, delivery and inv
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Signature");
   await page.keyboard.press("Escape");
 
-  // ── Billing: the real invoice, printable with its lines ──
-  await nav(page, "Billing");
-  const bill = page.locator(`#documentBillRows tr[data-document-bill="${number}"]`);
-  await expect(bill).toContainText("Due");
-  await expect(page.locator("#documentBillRows [data-bill-paid]")).toHaveCount(0);
-  const billPdf = await openPdf(page, () => bill.locator("[data-bill-view]").click());
+  // ── Balance: what's due, the bill (PDF with its parcels), "I've paid" ──
+  await nav(page, "Payments");
+  await expect(page.locator(".mb-card", { hasText: "Due now" })).toBeVisible();
+  await page.click('[data-mb="sub"][data-sub="documents"]');
+  const bill = page.locator(".mb-table tr", { hasText: number });
+  await expect(bill).toContainText("Unpaid");
+  const billPdf = await openPdf(page, () => bill.locator('[data-mb="bill-pdf"]').click());
   expect(billPdf.has(number)).toBe(true);
   expect(billPdf.has(trackingId)).toBe(true);
   expect(billPdf.has(bank.name)).toBe(true);
-  expect(billPdf.has("MER-10124")).toBe(false);
   await billPdf.popup.close();
-
-  await nav(page, "Payments");
-  await expect(page.locator("#tableBody")).toContainText(number);
+  await page.click('[data-mb="paid"]');
+  await page.fill('#mbPaidForm [name="reference"]', "CHQ-77");
+  await page.click('#mbPaidForm [type="submit"]');
+  await expect(page.locator(".mb-table")).toContainText("Waiting for confirmation");
   expect(errors).toEqual([]);
 });

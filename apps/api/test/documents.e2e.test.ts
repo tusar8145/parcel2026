@@ -137,6 +137,7 @@ describe("documents (PDF)", () => {
   describe("shipment invoices and lists", () => {
     it("prints delivery invoices per layout with VAT, filters by service line and lists shipments", async () => {
       const s = await setup();
+      await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatEnabled: true } } });
       const ids = await book(s, 5);
       const one = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4`, s.ops.token));
       expect(one.pages).toBe(5);
@@ -249,42 +250,14 @@ describe("documents (PDF)", () => {
   });
 
   describe("finance documents", () => {
-    it("prints the tax invoice with VAT, BIN and payment status; merchants only their own", async () => {
+    it("with VAT off (the default) delivery invoices don't mention VAT, tax or BIN", async () => {
       const s = await setup();
       await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatRate: 15, seller: { name: "Delivery Fast Ltd.", bin: "000123456-0101", address: "Gulshan 1, Dhaka" } } } });
-      const invoice = await ctx.prisma.invoice.create({
-        data: {
-          number: "INV-2610-0001",
-          merchantId: s.shop.id,
-          periodStart: new Date("2026-09-30T18:00:00Z"),
-          periodEnd: new Date("2026-10-31T18:00:00Z"),
-          subtotal: 230,
-          total: 230,
-          vatRate: 15,
-          vatAmount: 30,
-          dueAt: new Date("2026-11-15T18:00:00Z"),
-          lines: [{ trackingId: "DF-261001-AAAAA", description: "Delivery · Regular", amount: 115, taxableValue: 100, vat: 15 }, { trackingId: "DF-261002-BBBBB", description: "Delivery · Regular", amount: 115, taxableValue: 100, vat: 15 }],
-        },
-      });
-      const info = ok(await pdf("GET", `/documents/finance-invoice/${invoice.id}`, s.finance.token));
-      for (const t of ["INV-2610-0001", "Mushak-6.3", "000123456-0101", "VAT @ 15%", "Balance due", "UNPAID", "DF-261001-AAAAA", "Authorised signatory"]) expect(pdfHas(info, t), t).toBe(true);
-      ok(await pdf("GET", `/documents/finance-invoice/${invoice.id}`, s.owner.token));
-      expect((await pdf("GET", `/documents/finance-invoice/${invoice.id}`, s.otherOwner.token)).status).toBe(404);
-      expect((await pdf("GET", `/documents/finance-invoice/${invoice.id}`, s.hubOp.token)).status).toBe(403);
+      const ids = await book(s, 1);
+      const shipment = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4`, s.ops.token));
+      expect(pdfHas(shipment, "Delivery charge")).toBe(true);
+      for (const t of ["VAT", "Taxable", "BIN"]) expect(pdfHas(shipment, t), t).toBe(false);
     });
 
-    it("prints settlement statements and the merchant's unbilled statement", async () => {
-      const s = await setup();
-      const st = await ctx.prisma.merchantSettlement.create({ data: { number: "ST-2610-0001", merchantId: s.shop.id, codTotal: 1500, chargesTotal: 130, netPayable: 1370 } });
-      const info = ok(await pdf("GET", `/documents/settlement/${st.id}`, s.finance.token));
-      expect(pdfHas(info, "COD settlement statement") && pdfHas(info, "ST-2610-0001") && pdfHas(info, "Net payable")).toBe(true);
-      expect((await pdf("GET", `/documents/settlement/${st.id}`, s.otherOwner.token)).status).toBe(404);
-
-      const [id] = await book(s, 1, { codAmount: 0 });
-      await ctx.prisma.parcel.update({ where: { trackingId: id }, data: { status: "DELIVERED", deliveredAt: new Date() } });
-      const statement = ok(await pdf("GET", "/documents/statement", s.owner.token));
-      expect(pdfHas(statement, id) && pdfHas(statement, "Delivery charges statement")).toBe(true);
-      expect((await pdf("GET", "/documents/statement", s.finance.token)).status).toBe(403);
-    });
   });
 });

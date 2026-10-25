@@ -9,14 +9,11 @@ import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { RiderLocationService } from "./location.service";
 import { ProofService } from "./proof.service";
 import { RiderPayService } from "./pay.service";
-import { HandoverRequestsService } from "./handover-requests.service";
 import { RiderKycService } from "./kyc.service";
 import {
   adjustmentSchema,
   cancelSchema,
-  completeHandoverRequestSchema,
   earningsQuerySchema,
-  handoverRequestsQuerySchema,
   kycDecisionSchema,
   kycDocumentReviewSchema,
   kycQueueQuerySchema,
@@ -41,7 +38,6 @@ export class RiderAdminController {
     private readonly locations: RiderLocationService,
     private readonly proofs: ProofService,
     private readonly pay: RiderPayService,
-    private readonly handovers: HandoverRequestsService,
     private readonly kyc: RiderKycService,
     private readonly outbox: OutboxService,
     private readonly prisma: PrismaService,
@@ -154,37 +150,6 @@ export class RiderAdminController {
   @ApiZodBody(cancelSchema)
   cancelPayout(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(cancelSchema) body: z.infer<typeof cancelSchema>, @ReqMeta() meta: RequestMeta) {
     return this.pay.cancel(actor, id, body.note, meta);
-  }
-
-  // ── cash handover requests (hub cashiers) ──
-
-  /** Requests from riders (default: pending) at the caller's hubs. */
-  @RequirePermissions("cod:receive")
-  @Get("cod/handover-requests")
-  @ApiZodQuery(handoverRequestsQuerySchema)
-  handoverRequests(@CurrentActor() actor: Actor, @ZQuery(handoverRequestsQuerySchema) query: z.infer<typeof handoverRequestsQuerySchema>) {
-    return this.handovers.list(actor, query);
-  }
-
-  /** After receiving the cash with POST /cod/handovers, link that handover to the request. */
-  @RequirePermissions("cod:receive")
-  @Post("cod/handover-requests/:id/complete")
-  @HttpCode(200)
-  @ApiZodBody(completeHandoverRequestSchema)
-  completeHandover(
-    @CurrentUser() actor: UserActor,
-    @Param("id", ParseUUIDPipe) id: string,
-    @ZBody(completeHandoverRequestSchema) body: z.infer<typeof completeHandoverRequestSchema>,
-    @ReqMeta() meta: RequestMeta,
-  ) {
-    return this.handovers.complete(actor, id, body, meta);
-  }
-
-  @RequirePermissions("cod:receive")
-  @Post("cod/handover-requests/:id/cancel")
-  @HttpCode(200)
-  cancelHandover(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
-    return this.handovers.cancel(actor, id, meta);
   }
 
   // ── onboarding / KYC review (rider:manage) ──

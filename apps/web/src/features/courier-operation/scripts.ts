@@ -37,12 +37,12 @@ export const scripts = [
   "/legacy/courier-operation/bridge-shifts.js",
   "/legacy/courier-operation/bridge-reports.js",
   "/legacy/courier-operation/bridge-rider-kyc.js",
-  "/legacy/courier-operation/bridge-rider-pay.js"
-,
+  "/legacy/courier-operation/bridge-rider-pay.js",
   "/legacy/courier-operation/bridge-returns.js",
-  "/legacy/courier-operation/bridge-finance.js",
   // Franchise hubs: hub tag, hand a pickup to a franchise hub, franchise deposits and commission invoices.
   "/legacy/courier-operation/bridge-franchise.js",
+  // Accounts (money): E-commerce / Financial / Customer accounts, rider cash slips, hub transfers, rider pay, franchise.
+  "/legacy/courier-operation/bridge-accounts.js",
   "/legacy/courier-operation/bridge-intake.js",
   "/legacy/courier-operation/bridge-collect.js",
   "/legacy/shared/importer.js",
@@ -71,9 +71,9 @@ export const scripts = [
   "/legacy/courier-operation/bridge-login-as.js",
   // Work queue: each parcel's next step, grouped, with Excel and scan-to-do (its own menu).
   "/legacy/courier-operation/bridge-workqueue.js",
-  // Long pages in tabs by task: Transfers, COD & settlement, Riders (sections tagged by title).
+  // Long pages in tabs by task: Transfers, Riders (sections tagged by title).
   "/legacy/courier-operation/bridge-section-tabs.js",
   "/legacy/courier-operation/bridge-nav.js",
-  // Period filter on Today, COD & settlement and Analytics & SLA (after the navigation has laid the page out).
+  // Period filter on Today and Analytics & SLA (after the navigation has laid the page out).
   "/legacy/courier-operation/bridge-period.js"
 ];

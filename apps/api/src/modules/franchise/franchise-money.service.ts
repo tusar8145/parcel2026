@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable, Logger, type OnApplicationBootstrap } from "@nestjs/common";
 import type { z } from "zod";
-import { PrismaService } from "../../common/prisma.service";
+import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError, conflict, forbidden, notFound } from "../../common/errors";
 import type { Actor, UserActor } from "../../common/auth/actor";
@@ -12,7 +12,7 @@ import { Prisma } from "../../generated/prisma/client";
 import { LedgerService, credit, debit } from "../finance/ledger.service";
 import { cashHubScope } from "../finance/finance.scope";
 import { CodService } from "../finance/cod.service";
-import { HandoverRequestsService } from "../rider/handover-requests.service";
+import { hubCashPlacement } from "../money/cash-placement";
 import { InboxService } from "../notifications/inbox.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { readFranchiseConfig } from "./franchise-config";
@@ -74,7 +74,6 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
     private readonly audit: AuditService,
     private readonly ledger: LedgerService,
     private readonly cod: CodService,
-    private readonly handovers: HandoverRequestsService,
     private readonly inbox: InboxService,
     private readonly realtime: RealtimeService,
     private readonly queues: QueueService,
@@ -98,7 +97,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
     const riderIds = (await this.prisma.rider.findMany({ where: { hubId: f.hubId }, select: { id: true } })).map(r => r.id);
     const [position, requests, remittances, config] = await Promise.all([
       cashPosition(this.prisma, f.id, f.hubId, riderIds),
-      this.handovers.list(actor, { hubId: f.hubId, status: "PENDING" }),
+      openSlips(this.prisma, riderIds),
       this.prisma.franchiseRemittance.findMany({ where: { franchiseId: f.id }, include: remittanceInclude, orderBy: { requestedAt: "desc" }, take: 50 }),
       readFranchiseConfig(this.prisma),
     ]);
@@ -126,14 +125,18 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
     };
   }
 
-  /** Cash a rider of the franchise hands over at the counter (closes their handover request when there is one). */
+  /** Cash a rider of the franchise hands over at the counter (their open handover slip, if any, is closed: the counter took the cash). */
   async receiveRiderCash(actor: UserActor, input: z.infer<typeof franchiseHandoverSchema>, meta: RequestMeta) {
     const f = await this.panel.context(actor);
     const rider = await this.prisma.rider.findUnique({ where: { id: input.riderId }, select: { hubId: true } });
     if (!rider || rider.hubId !== f.hubId) throw notFound("Rider");
-    const handover = (await this.cod.createHandover(actor, { riderId: input.riderId, hubId: f.hubId, collectionIds: input.collectionIds, amountReceived: input.amountReceived } as never, meta)) as { id: string };
-    const pending = await this.prisma.cashHandoverRequest.findFirst({ where: { riderId: input.riderId, hubId: f.hubId, status: "PENDING" }, select: { id: true, collectionIds: true } });
-    if (pending && pending.collectionIds.every(c => input.collectionIds.includes(c))) await this.handovers.complete(actor, pending.id, { handoverId: handover.id }, meta).catch(() => undefined);
+    await this.cod.createHandover(actor, { riderId: input.riderId, hubId: f.hubId, collectionIds: input.collectionIds, amountReceived: input.amountReceived } as never, meta);
+    await this.prisma.$transaction(async tx => {
+      const open = await tx.cashSlip.findFirst({ where: { riderId: input.riderId, status: "OPEN" } });
+      if (!open) return;
+      await tx.codCollection.updateMany({ where: { slipId: open.id }, data: { slipId: null } });
+      await tx.cashSlip.update({ where: { id: open.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+    });
     return this.cash(actor);
   }
 
@@ -181,7 +184,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
       await this.inbox.toStaff(
         tx,
         { roles: ["HUB_OPERATOR"], hubIds: [hub.id] },
-        { type: "staff.franchise_deposit", title: `Franchise deposit: ${f.name}`, body: `Tk ${n(created.net).toFixed(2)} to receive · ${created.number}`, target: { page: "cod-and-settlement" }, panel: "/courier-operation" },
+        { type: "staff.franchise_deposit", title: `Franchise deposit: ${f.name}`, body: `Tk ${n(created.net).toFixed(2)} to receive · ${created.number}`, target: { page: "accounts", tab: "franchise" }, panel: "/courier-operation" },
       );
       return created;
     });
@@ -244,6 +247,8 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
         createdById: actor.kind === "user" ? actor.userId : null,
         lines,
       });
+      // The deposited COD is now this hub's cash (Accounts: sent on to the central hub, or ready there).
+      if (r.collectionIds.length) await tx.codCollection.updateMany({ where: { id: { in: r.collectionIds }, state: "AT_HUB" }, data: { ...(await hubCashPlacement(tx, r.hubId)), slipId: null } });
       await this.audit.record(actor, { action: "franchise.deposit_receive", entityType: "franchise_remittance", entityId: id, data: { net: n(r.net), gross: n(r.gross) } }, meta, tx);
       return tx.franchiseRemittance.findUniqueOrThrow({ where: { id }, include: remittanceInclude });
     });
@@ -314,7 +319,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
         await this.inbox.toStaff(
           tx,
           { roles: ["FINANCE"] },
-          { type: "staff.franchise_invoice", title: `Franchise invoice to approve: ${created.franchise.name}`, body: `${created.number} · Tk ${amount.toFixed(2)}`, target: { page: "cod-and-settlement" }, panel: "/courier-operation" },
+          { type: "staff.franchise_invoice", title: `Franchise invoice to approve: ${created.franchise.name}`, body: `${created.number} · Tk ${amount.toFixed(2)}`, target: { page: "accounts", tab: "franchise" }, panel: "/courier-operation" },
         );
       return created;
     });
@@ -407,3 +412,13 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
 }
 
 export type FranchiseInvoiceDetail = Awaited<ReturnType<FranchiseMoneyService["invoiceDetail"]>>;
+
+/** Open handover slips of these riders, shaped like the franchise panel's "asked to hand over" list. */
+async function openSlips(db: Db, riderIds: string[]) {
+  const slips = await db.cashSlip.findMany({ where: { riderId: { in: riderIds }, status: "OPEN" }, orderBy: { createdAt: "asc" } });
+  const riders = await db.rider.findMany({ where: { id: { in: slips.map(s => s.riderId) } }, select: { id: true, code: true, user: { select: { name: true } } } });
+  return slips.flatMap(s => {
+    const rider = riders.find(r => r.id === s.riderId);
+    return rider ? [{ id: s.id, number: s.number, rider, amount: n(s.expected) }] : [];
+  });
+}

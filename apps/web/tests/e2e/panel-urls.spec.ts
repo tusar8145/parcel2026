@@ -176,9 +176,10 @@ test("Courier Operations bell: counts live, opens the ticket and marks it read",
 
 test("merchant panel: page links, Back / Forward, the live bell and the Notifications page", async ({ browser }) => {
   const errors: string[] = [];
+  // The old Payments link opens Balance.
   const page = await signIn(browser, OWNER, "/ecommerce-merchant?page=payments", errors);
-  await expect(page.locator("#breadcrumbPage")).toHaveText("Payments");
-  await expect(page).toHaveTitle("Payments · Delivery Fast · E-commerce merchant");
+  await expect(page.locator("#breadcrumbPage")).toHaveText("Balance");
+  await expect(page).toHaveTitle("Balance · Delivery Fast · E-commerce merchant");
   await page.click('#navigation [data-page="Shipments"]');
   await expect.poll(() => query(page).page).toBe("shipments");
   await page.click('#navigation [data-page="Reports"]');
@@ -186,7 +187,7 @@ test("merchant panel: page links, Back / Forward, the live bell and the Notifica
   await page.goBack();
   await expect(page.locator("#breadcrumbPage")).toHaveText("Shipments");
   await page.goBack();
-  await expect(page.locator("#breadcrumbPage")).toHaveText("Payments");
+  await expect(page.locator("#breadcrumbPage")).toHaveText("Balance");
   await page.goForward();
   await expect(page.locator("#breadcrumbPage")).toHaveText("Shipments");
   // Old names are rewritten.
@@ -235,9 +236,10 @@ test("merchant panel: page links, Back / Forward, the live bell and the Notifica
 
 test("banking merchant, super admin and rider: page and tab links", async ({ browser }) => {
   const errors: string[] = [];
+  // The old Billing link opens Balance.
   const banking = await signIn(browser, BANKER, "/banking-merchant?page=billing", errors);
-  await expect(banking.locator("#breadcrumbPage")).toHaveText("Billing & invoices");
-  await expect(banking).toHaveTitle("Billing & invoices · Delivery Fast · Banking & Financial merchant");
+  await expect(banking.locator("#breadcrumbPage")).toHaveText("Balance");
+  await expect(banking).toHaveTitle("Balance · Delivery Fast · Banking & Financial merchant");
   await banking.context().close();
 
   const admin = await signInAdmin(browser, "/super-admin?page=import-settings&tab=e-commerce", errors);

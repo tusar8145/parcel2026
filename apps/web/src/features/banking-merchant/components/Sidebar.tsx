@@ -72,13 +72,7 @@ export default function Sidebar() {
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-wallet" />
             </svg>
-            Payments
-          </button>{" "}
-          <button className="nav-item" data-page="Billing">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-wallet" />
-            </svg>
-            {"Billing & invoices"}
+            Balance
           </button>{" "}
           <button className="nav-item" data-page="Reports">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

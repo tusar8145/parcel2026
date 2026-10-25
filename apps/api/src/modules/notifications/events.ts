@@ -53,7 +53,6 @@ export const NOTIFICATION_EVENTS = [
   "auth.mfa_reset",
   "account.support_access",
   // finance, support and partner applications (appended)
-  "finance.dispute_update",
   "support.sla_escalation",
   "partner.application_status",
   // hub drop-off bookings (appended)

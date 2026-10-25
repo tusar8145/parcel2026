@@ -8,5 +8,9 @@ export const scripts = [
   "/legacy/website/01.js",
   "/legacy/website/02.js",
   "/legacy/shared/support.js",
-  "/legacy/website/bridge.js"
+  "/legacy/website/bridge.js",
+  // PDF printing (DFPrint) for the customer area's payment documents.
+  "/legacy/shared/print.js",
+  // Customer area › Payments: COD the recipients paid, settlements to the sender and their receipts.
+  "/legacy/website/customer-payments.js",
 ];

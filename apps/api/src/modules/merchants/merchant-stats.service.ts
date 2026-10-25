@@ -10,7 +10,6 @@ import { quoteRequestOf } from "../packages/packages.controller";
 import { MerchantsService } from "./merchants.service";
 import type { merchantStatsQuerySchema } from "./merchants.schemas";
 import { fillSeries, periodBuckets, periodView, resolvePeriod, type Period } from "../../common/period";
-import { invoicedParcels } from "../finance/invoiced";
 
 /** Bangladesh has no daylight saving time: local time is always UTC+6. */
 const DHAKA_OFFSET_MS = 6 * 3600_000;
@@ -38,6 +37,7 @@ const ts = (t: number) => new Date(t).toISOString().replace("T", " ").replace("Z
 
 const MONTH_LABEL = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const money = (d: Prisma.Decimal | number | null | undefined) => Math.round(Number(d ?? 0) * 100) / 100;
+const sum = (values: Prisma.Decimal[]) => values.reduce((a, b) => a.plus(b), new Prisma.Decimal(0));
 const rate = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
 
 type Window = { start: number; end: number };
@@ -159,7 +159,7 @@ export class MerchantStatsService {
         SELECT count(*)::int AS n, coalesce(sum(c.amount), 0)::float8 AS cod, coalesce(sum(p."totalCharge"), 0)::float8 AS charges
         FROM cod_collections c JOIN parcels p ON p.id = c."parcelId"
         WHERE p."merchantId" = ${merchantId}::uuid AND c."collectedAt" >= ${ts(window.gte.getTime())}::timestamp AND c."collectedAt" < ${ts(window.lt.getTime())}::timestamp`,
-      this.prisma.merchantSettlement.aggregate({ where: { merchantId, status: "PAID", paidAt: window }, _sum: { netPayable: true }, _count: { _all: true } }),
+      this.prisma.payout.aggregate({ where: { account: { merchantId }, status: "PAID", paidAt: window }, _sum: { amount: true }, _count: { _all: true } }),
     ]);
     return {
       codCollected: money(cod.cod),
@@ -167,7 +167,7 @@ export class MerchantStatsService {
       chargesOnCollected: money(cod.charges),
       /** COD collected less the delivery charges of those parcels: what the merchant is owed for the period. */
       payable: money(cod.cod - cod.charges),
-      paidOut: money(paid._sum.netPayable),
+      paidOut: money(paid._sum.amount),
       payouts: paid._count._all,
     };
   }
@@ -270,59 +270,55 @@ export class MerchantStatsService {
     return { total: row.total, newThisMonth: row.new_this_month, repeat: row.repeat, repeatRate: rate(row.repeat, row.total) };
   }
 
-  /** COD, payouts and invoices: what the merchant is owed and owes. */
+  /** COD, settlements and bills from the merchant's account (Accounts): what the merchant is owed and owes. */
   private async money(merchantId: string, now: number) {
     const { year, month } = dhakaParts(now);
     const quarterStart = new Date(dhakaMonth(year, month - (month % 3)));
-    const [cod, [ready], settlements, lastPaid, outstanding, overdue, paidThisQuarter, billedParcels] = await Promise.all([
+    const account = await this.prisma.account.findUnique({ where: { merchantId }, select: { id: true, kind: true } });
+    // Financial merchants are billed; E-commerce charges come off their COD (nothing "unbilled").
+    const billed = account?.kind === "FINANCIAL";
+    const accountId = account?.id ?? "00000000-0000-0000-0000-000000000000";
+    const [cod, [ready], payouts, lastPaid, outstanding, paidThisQuarter, unbilled] = await Promise.all([
       this.prisma.codCollection.groupBy({ by: ["state"], where: { parcel: { merchantId } }, _sum: { amount: true }, _count: { _all: true } }),
-      this.prisma.$queryRaw<{ n: number; cod: number; charges: number }[]>`
-        SELECT count(*)::int AS n, coalesce(sum(c.amount), 0)::float8 AS cod, coalesce(sum(p."totalCharge"), 0)::float8 AS charges
-        FROM cod_collections c JOIN parcels p ON p.id = c."parcelId"
-        WHERE p."merchantId" = ${merchantId}::uuid AND c.state = 'AT_HUB' AND c."settlementId" IS NULL`,
-      this.prisma.merchantSettlement.groupBy({ by: ["status"], where: { merchantId }, _sum: { netPayable: true }, _count: { _all: true } }),
-      this.prisma.merchantSettlement.findFirst({ where: { merchantId, status: "PAID" }, orderBy: { paidAt: "desc" }, select: { number: true, netPayable: true, paidAt: true } }),
-      this.prisma.invoice.aggregate({ where: { merchantId, status: "ISSUED" }, _sum: { subtotal: true }, _count: { _all: true }, _min: { dueAt: true } }),
-      this.prisma.invoice.count({ where: { merchantId, status: "ISSUED", dueAt: { lt: new Date(now) } } }),
-      this.prisma.invoice.aggregate({ where: { merchantId, status: "PAID", paidAt: { gte: quarterStart } }, _sum: { subtotal: true }, _count: { _all: true } }),
-      invoicedParcels(this.prisma, [merchantId]),
+      this.prisma.$queryRaw<{ n: number; cod: number; charges: number; net: number }[]>`
+        SELECT count(DISTINCT e."parcelId")::int AS n,
+          coalesce(sum(e.amount) FILTER (WHERE e.type = 'COD'), 0)::float8 AS cod,
+          coalesce(-sum(e.amount) FILTER (WHERE e.type IN ('DELIVERY_CHARGE','RETURN_CHARGE')), 0)::float8 AS charges,
+          coalesce(sum(e.amount), 0)::float8 AS net
+        FROM account_entries e LEFT JOIN cod_collections c ON c."parcelId" = e."parcelId" AND e.type IN ('COD','DELIVERY_CHARGE')
+        WHERE e."accountId" = ${accountId}::uuid AND e."payoutId" IS NULL AND e.type IN ('COD','DELIVERY_CHARGE','RETURN_CHARGE','ADJUSTMENT')
+          AND (e."parcelId" IS NULL OR c.id IS NULL OR c.state = 'AT_CENTRAL')`,
+      this.prisma.payout.groupBy({ by: ["status"], where: { accountId }, _sum: { amount: true } }),
+      this.prisma.payout.findFirst({ where: { accountId, status: "PAID" }, orderBy: { paidAt: "desc" }, select: { number: true, amount: true, paidAt: true } }),
+      this.prisma.bill.aggregate({ where: { accountId, status: { in: ["ISSUED", "PARTLY_PAID"] } }, _sum: { total: true, paid: true }, _count: { _all: true } }),
+      this.prisma.accountPayment.aggregate({ where: { accountId, status: "CONFIRMED", paidOn: { gte: quarterStart } }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.accountEntry.aggregate({ where: { accountId, billId: null, type: { in: ["DELIVERY_CHARGE", "RETURN_CHARGE"] } }, _sum: { amount: true }, _count: { _all: true } }),
     ]);
-    // Delivered prepaid parcels (no COD to deduct from) not on an issued or paid invoice.
-    const unbilled = await this.prisma.parcel.aggregate({
-      where: {
-        merchantId,
-        status: "DELIVERED",
-        codCollection: { is: null },
-        ...(billedParcels.size ? { trackingId: { notIn: [...billedParcels.keys()] } } : {}),
-      },
-      _sum: { totalCharge: true },
-      _count: { _all: true },
-    });
-    const codBy = (state: "WITH_RIDER" | "AT_HUB" | "SETTLED") => cod.find(g => g.state === state);
-    const settlementBy = (status: "DRAFT" | "APPROVED" | "PAID") => settlements.find(g => g.status === status);
+    const codBy = (...states: string[]) => money(sum(cod.filter(g => states.includes(g.state)).map(g => g._sum.amount ?? new Prisma.Decimal(0))));
+    const payout = (status: "UNPAID" | "PAID") => payouts.find(g => g.status === status)?._sum.amount;
     return {
       cod: {
-        withRiders: money(codBy("WITH_RIDER")?._sum.amount),
-        atHubs: money(codBy("AT_HUB")?._sum.amount),
-        settled: money(codBy("SETTLED")?._sum.amount),
-        /** Collected COD not yet in a settlement, less the delivery charges deducted from it. */
-        readyToSettle: { parcels: ready.n, cod: money(ready.cod), charges: money(ready.charges), net: money(ready.cod - ready.charges) },
+        withRiders: codBy("WITH_RIDER"),
+        atHubs: codBy("AT_HUB", "IN_TRANSIT", "AT_CENTRAL"),
+        settled: codBy("SETTLED"),
+        /** Ready to settle now (cash at the central hub, less the charges deducted from it). */
+        readyToSettle: { parcels: ready.n, cod: money(ready.cod), charges: money(ready.charges), net: money(ready.net) },
       },
       payouts: {
-        pendingApproval: money(settlementBy("DRAFT")?._sum.netPayable),
-        awaitingPayment: money(settlementBy("APPROVED")?._sum.netPayable),
-        paidTotal: money(settlementBy("PAID")?._sum.netPayable),
-        lastPaid: lastPaid ? { number: lastPaid.number, amount: money(lastPaid.netPayable), paidAt: lastPaid.paidAt } : null,
+        pendingApproval: 0,
+        awaitingPayment: money(payout("UNPAID")),
+        paidTotal: money(payout("PAID")),
+        lastPaid: lastPaid ? { number: lastPaid.number, amount: money(lastPaid.amount), paidAt: lastPaid.paidAt } : null,
       },
       invoices: {
-        outstanding: money(outstanding._sum.subtotal),
+        outstanding: money((outstanding._sum.total ?? new Prisma.Decimal(0)).minus(outstanding._sum.paid ?? 0)),
         outstandingCount: outstanding._count._all,
-        overdueCount: overdue,
-        nextDueAt: outstanding._min.dueAt,
-        paidThisQuarter: money(paidThisQuarter._sum.subtotal),
+        overdueCount: 0,
+        nextDueAt: null,
+        paidThisQuarter: money(paidThisQuarter._sum.amount),
         paidThisQuarterCount: paidThisQuarter._count._all,
       },
-      unbilled: { parcels: unbilled._count._all, charges: money(unbilled._sum.totalCharge) },
+      unbilled: billed ? { parcels: unbilled._count._all, charges: money((unbilled._sum.amount ?? new Prisma.Decimal(0)).negated()) } : { parcels: 0, charges: 0 },
     };
   }
 }

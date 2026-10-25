@@ -26,6 +26,7 @@ import { ParcelsModule } from "./modules/parcels/parcels.module";
 import { AccountsModule } from "./modules/accounts/accounts.module";
 import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { FinanceModule } from "./modules/finance/finance.module";
+import { MoneyModule } from "./modules/money/money.module";
 import { SupportModule } from "./modules/support/support.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { OpsModule } from "./modules/ops/ops.module";
@@ -97,6 +98,7 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     AccountsModule,
     MerchantsModule,
     FinanceModule,
+    MoneyModule,
     SupportModule,
     AdminModule,
     OpsModule,

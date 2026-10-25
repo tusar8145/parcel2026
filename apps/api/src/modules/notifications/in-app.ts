@@ -99,7 +99,6 @@ export const IN_APP: Partial<Record<NotificationEvent, (v: Vars, panel: Panel) =
   "merchant.kyc_status": v => ({ title: `KYC: ${s(v.status)}`, body: s(v.details) || s(v.businessName) || null, target: { page: "settings" } }),
   "finance.settlement_paid": v => ({ title: `Settlement ${s(v.number)} paid`, body: join(money(v.amount), s(v.reference) ? `Ref ${s(v.reference)}` : ""), target: { page: "payments" } }),
   "finance.invoice_issued": (v, panel) => ({ title: `Invoice ${s(v.number)} issued`, body: join(money(v.amount), s(v.dueDate) ? `due ${s(v.dueDate)}` : ""), target: { page: panel === "/banking-merchant" ? "billing" : "payments" } }),
-  "finance.dispute_update": v => ({ title: `Claim ${s(v.number)}: ${s(v.status)}`, body: join(s(v.trackingId), s(v.details)), target: { page: "payments" } }),
   "import.completed": (v, panel) => ({
     title: `Import ${s(v.number)} finished`,
     body: join(s(v.fileName), `${s(v.created) || 0} created`, Number(v.incomplete) ? `${s(v.incomplete)} need info` : "", Number(v.notCreated) ? `${s(v.notCreated)} not created` : ""),

@@ -256,19 +256,9 @@
 
   const MERCHANT_STATUS = { ACTIVE: "Active", PENDING_REVIEW: "Review", SUSPENDED: "Suspended" };
   const loadMerchants = () => Ops.lazy("merchants", () => DF.api("/ops/merchants"), 60000);
-  // The COD cycle is the merchant's real settlement schedule (finance); other roles don't see the column.
-  const CYCLE = { MANUAL: "Manual", DAILY: "Daily", WEEKLY: "Weekly", BIWEEKLY: "Every two weeks" };
-  const loadSchedules = () => (Ops.can("financeStaff") ? Ops.lazy("fin-schedules", () => DF.api("/finance/settlement-schedules"), 60000) : null);
   Ops.prepare.Merchants = () => {
-    const schedules = loadSchedules();
-    const showCycle = Ops.can("financeStaff");
     // Service packages replaced service plans: the column shows the package each merchant books with.
-    genericPages.Merchants.cols = ["MERCHANT", "ACCOUNT ID", "PACKAGE", "PICKUP & HUB", "SHIPMENTS MTD", ...(showCycle ? ["COD CYCLE"] : []), "ACCOUNT OWNER", "STATUS"];
-    const cycleOf = m => {
-      if (!schedules) return Ops.lazyError("fin-schedules") ? "—" : "…";
-      const s = schedules.find(x => x.merchant.id === m.id);
-      return s ? `${CYCLE[s.cycle] || s.cycle}${s.weekdayLabel ? ` · ${s.weekdayLabel}` : ""}` : "Manual";
-    };
+    genericPages.Merchants.cols = ["MERCHANT", "ACCOUNT ID", "PACKAGE", "PICKUP & HUB", "SHIPMENTS MTD", "ACCOUNT OWNER", "STATUS"];
     genericPages.Merchants.rows = (loadMerchants() || []).map(m => [
       `${m.name} · ${m.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`,
       m.code,
@@ -276,7 +266,6 @@
       // Structured pickup (zone, district), the derived serving hub and the handover; older free text is flagged.
       `${m.pickupZone || m.pickupArea}, ${m.pickupDistrict}${m.pickupZone ? "" : " (address not completed)"} · ${m.pickupHub ? m.pickupHub.name : "no hub"}${m.handover === "HUB_DROP" ? " · drops at hub" : ""}`,
       Ops.num(m.parcelsThisMonth),
-      ...(showCycle ? [cycleOf(m)] : []),
       m.contactName,
       MERCHANT_STATUS[m.status] || m.status,
     ]);
@@ -287,7 +276,7 @@
     registerText(error ? DF.describe(error) : "Live accounts · shipments booked this month", `Showing ${rows} merchant account${rows === 1 ? "" : "s"}`);
   };
 
-  // COD & finance: see bridge-finance.js (finance, support and partner-applications area).
+  // Money: Accounts (bridge-accounts.js).
 
   // ───────────── analytics & SLA ─────────────
 

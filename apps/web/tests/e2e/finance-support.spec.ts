@@ -32,48 +32,48 @@ async function signedIn(browser: Browser, account: TempUser, errors: string[]) {
   return page;
 }
 
-test("finance staff see approvals, invoices, disputes, reconciliation, ledger and schedules", async ({ browser }) => {
+test("finance: Accounts overview, merchants' accounts, invoice settings; the old COD & settlement page is gone", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   const page = await signedIn(browser, await fx.staff("FINANCE"), errors);
+  await expect(page.locator('#navigation [data-nav="COD & settlement"]')).toHaveCount(0);
+  await opsNav(page, "accounts");
   const main = page.locator("#mainContent");
-  // A tab per task: settlements and schedules; invoices, disputes, reconciliation and the ledger.
-  await opsNav(page, "codSettlements");
-  for (const id of ["#finSettlements", "#finSchedules"]) await expect(main.locator(id)).toBeVisible();
-  await opsNav(page, "codAccounts");
-  for (const id of ["#finInvoices", "#finDisputes", "#finRecon", "#finLedger"]) await expect(main.locator(id)).toBeVisible();
-  await expect(main.locator("#finLedger")).toContainText(/Balanced · debits|No postings this month/);
-  await expect(main.locator("#finRecon form#finReconForm")).toBeVisible();
-  await expect(main.locator("#finLedger [data-fin-config]")).toBeVisible();
-
-  // The ledger API backs the page.
-  const tb = await page.evaluate(() => (window as unknown as { DF: { api: (p: string) => Promise<{ balanced: boolean }> } }).DF.api("/finance/ledger/trial-balance"));
-  expect(tb.balanced).toBe(true);
+  await expect(main.locator("h1")).toHaveText("Accounts");
+  for (const label of ["With riders", "At hubs", "In transit", "At central hub", "Settlements to pay"]) await expect(main.locator(".acc-card", { hasText: label })).toBeVisible();
+  await expect(main.locator('[data-acc="settings"]')).toBeVisible();
+  for (const tab of ["Overview", "E-commerce", "Financial", "Customer", "Rider cash", "Hub transfers", "Rider pay"]) await expect(main.locator(`[data-nav-tab="${tab}"]`)).toBeVisible();
+  await opsNav(page, "accountsFinancial");
+  await expect(main.locator(".acc-table thead")).toContainText("Not billed");
+  // Invoice settings: VAT off by default.
+  await opsNav(page, "accounts");
+  await main.locator('[data-acc="settings"]').click();
+  await expect(page.locator("#of_vatEnabled")).toHaveValue("off");
   expect(errors).toEqual([]);
   await page.context().close();
 });
 
-test("operations managers work COD & settlement and generate bills (not finance settings); support agents get SLA and canned responses", async ({ browser }) => {
+test("operations managers work Accounts (not invoice settings); hub staff get rider cash and transfers; support agents get SLA and canned responses", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, await fx.staff("OPS_MANAGER"), errors);
-  await opsNav(ops, "cod");
-  await expect(ops.locator("#mainContent")).toBeVisible();
-  for (const tab of ["Cash from riders", "Franchise", "Settlements & payouts", "Invoices & accounts"])
-    await expect(ops.locator(`#mainContent [data-nav-tab="${tab}"]`)).toBeVisible();
-  await opsNav(ops, "codSettlements");
+  await opsNav(ops, "accounts");
+  for (const tab of ["Overview", "E-commerce", "Financial", "Customer", "Rider cash", "Hub transfers", "Rider pay"]) await expect(ops.locator(`#mainContent [data-nav-tab="${tab}"]`)).toBeVisible();
+  await expect(ops.locator('#mainContent [data-acc="settings"]')).toHaveCount(0);
+  await opsNav(ops, "riderPay");
   await expect(ops.locator("#riderPayoutsPanel")).toBeVisible();
-  await expect(ops.locator("#finSettlements")).toBeVisible();
-  await opsNav(ops, "codAccounts");
-  await expect(ops.locator("#finInvoices")).toBeVisible();
-  // VAT & BIN settings stay with finance and super admins.
-  await expect(ops.locator("#finLedger [data-fin-config]")).toHaveCount(0);
-  // Generate bill: merchant, delivery dates, then the deliveries to tick.
-  await ops.click("#finInvoices [data-fin-invoice-new]");
-  await expect(ops.locator("#finBillPick")).toContainText("Choose the merchant first.");
-  await expect(ops.locator("#of_from")).toBeVisible();
-  await expect(ops.locator("#of_to")).toBeVisible();
+  await opsNav(ops, "riderCash");
+  await expect(ops.locator("#accSlipScan")).toBeVisible();
   await ops.context().close();
+
+  // A hub's staff (not the central hub): rider cash and hub transfers only.
+  const hubStaff = await signedIn(browser, await fx.staff("HUB_OPERATOR", "Dhanmondi Hub"), errors);
+  await hubStaff.click('#navigation [data-nav="Accounts"]');
+  await expect(hubStaff.locator('#mainContent [data-nav-tab="Rider cash"]')).toBeVisible();
+  await expect(hubStaff.locator('#mainContent [data-nav-tab="Hub transfers"]')).toBeVisible();
+  for (const tab of ["Overview", "E-commerce", "Financial", "Customer"]) await expect(hubStaff.locator(`#mainContent [data-nav-tab="${tab}"]`)).toBeHidden();
+  await expect(hubStaff.locator("#accSlipScan")).toBeVisible();
+  await hubStaff.context().close();
 
   const agent = await signedIn(browser, await fx.staff("SUPPORT_AGENT"), errors);
   await agent.click('#navigation [data-page="Support"]');

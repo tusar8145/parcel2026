@@ -1,5 +1,5 @@
 import { type Browser, type Page } from "@playwright/test";
-import { Fixtures, confirmDialog, confirmReview, expect, opsNav, openPdf, sql, test, type TempMerchant, type TempUser } from "./support";
+import { Fixtures, expect, opsNav, openPdf, sql, test, type TempMerchant, type TempUser } from "./support";
 
 // Courier Operations desk tools (public/legacy/courier-operation/bridge-desk.js, bridge-parcel.js, bridge-finance.js):
 // in-page dialogs instead of prompt() / confirm() (a finance flow with a review step), the parcel drawer's
@@ -59,45 +59,31 @@ async function book(page: Page, name: string) {
   return parcel.trackingId;
 }
 
-test("finance: the settlement schedule is a form with a searchable merchant, inline validation and a review step (no prompt)", async ({ browser }) => {
+test("finance: an account opens in place; an adjustment is a validated form; a refusal stays inside the dialog (no prompt)", async ({ browser }) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   const native: string[] = [];
+  await sql(`INSERT INTO accounts (id, kind, "merchantId", name) VALUES (gen_random_uuid(), 'ECOMMERCE', $1, $2) ON CONFLICT DO NOTHING`, [shop.id, shop.name]);
   const page = await signedIn(browser, FIN, errors, native);
-  await opsNav(page, "codSettlements");
-  await page.locator("#finSchedules [data-fin-schedule-set]").click();
-  await expect(page.locator("#modalTitle")).toHaveText("Settlement schedule");
+  await opsNav(page, "accountsEcommerce");
+  await page.fill("#accListQ", shop.code);
+  await page.locator("tr[data-acc='open']", { hasText: shop.code }).click();
+  await expect(page.locator("#mainContent .acc-head h2")).toHaveText(shop.name);
 
-  // Nothing chosen: the field says so and the dialog stays open.
+  // Adjustment: nothing filled in → the fields say so; then a deduction with a reason.
+  await page.click('[data-acc="adjust"]');
   await page.click("#modalSubmit");
-  await expect(page.locator("#of_merchantId")).toHaveAttribute("aria-invalid", "true");
-  await expect(page.locator('[data-of-field="merchantId"] .df-field-error')).toHaveText("Choose one");
-
-  // Search by code picks the merchant; weekly needs a weekday; the minimum is validated.
-  await page.fill("#of_merchantId_q", shop.code);
-  await expect(page.locator("#of_merchantId")).toHaveValue(shop.id);
-  await page.selectOption("#of_cycle", "DAILY");
-  await expect(page.locator('[data-of-field="weekday"]')).toBeHidden();
-  await page.selectOption("#of_cycle", "WEEKLY");
-  await expect(page.locator('[data-of-field="weekday"]')).toBeVisible();
-  await page.selectOption("#of_weekday", "2");
-  await page.fill("#of_minimumAmount", "12.345");
+  await expect(page.locator("#of_amount")).toHaveAttribute("aria-invalid", "true");
+  await page.fill("#of_amount", "50");
+  await page.fill("#of_reason", "Damaged packaging claim");
   await page.click("#modalSubmit");
-  await expect(page.locator('[data-of-field="minimumAmount"] .df-field-error')).toHaveText("Use a number with up to 2 decimals");
-  await page.fill("#of_minimumAmount", "250");
-  await page.click("#modalSubmit");
+  await expect(page.locator("#toast")).toContainText("Adjustment of ৳50 added.");
+  await page.click('[data-acc="sub"][data-sub="statement"]');
+  await expect(page.locator("#mainContent .acc-table")).toContainText("Damaged packaging claim");
 
-  // Review, then confirm.
-  await expect(page.locator("#modalSubmit")).toHaveText("Save schedule");
-  await confirmReview(page, [shop.code, "Weekly", "Tuesday", "250"]);
-  await expect(page.locator("#toast")).toContainText(`${shop.name}: weekly settlements`);
-  await expect(page.locator("#modalBackdrop")).not.toHaveClass(/open/);
-  const [schedule] = await sql<{ cycle: string; weekday: number; minimumAmount: string }>(`SELECT cycle, weekday, "minimumAmount"::text FROM settlement_schedules WHERE "merchantId" = $1`, [shop.id]);
-  expect(schedule).toEqual({ cycle: "WEEKLY", weekday: 2, minimumAmount: "250.00" });
-
-  // An API refusal stays inside the dialog: drafting a settlement for a merchant with nothing to settle.
-  await page.locator("#finSettlements [data-fin-settlement-new]").click();
-  await page.fill("#of_merchantId_q", shop.code);
+  // Settle with nothing but a deduction: the API refuses and the message stays in the dialog.
+  await page.click('[data-acc="settle"]');
+  await expect(page.locator("#accSettlePick")).toContainText("No delivered parcel is ready");
   await page.click("#modalSubmit");
   await expect(page.locator("#opsFormError")).toBeVisible();
   await expect(page.locator("#modalBackdrop")).toHaveClass(/open/);

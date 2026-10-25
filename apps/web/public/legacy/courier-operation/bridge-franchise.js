@@ -3,7 +3,7 @@
  * - Hub register: franchise hubs carry a "Franchise" tag.
  * - Assign dialog: franchise riders are labelled (operations managers see them; hub staff don't get them from the
  *   API); a waiting pickup can be handed to a franchise hub (POST /parcels/:id/pickup-hub), which assigns its rider.
- * - COD & finance: franchise deposits to confirm at your hub (GET/POST /franchise-deposits…), and for finance the
+ * - Accounts › Franchise: franchise deposits to confirm at your hub (GET/POST /franchise-deposits…), and for finance the
  *   franchise commission invoices to approve and pay (maker-checker; /franchise-invoices…).
  */
 (() => {
@@ -76,11 +76,8 @@
     true,
   );
 
-  // ───────────── COD & finance: deposits and invoices ─────────────
-  const previousEnhance = Ops.enhance["COD & finance"];
-  Ops.enhance["COD & finance"] = (...args) => {
-    previousEnhance?.(...args);
-    if (Ops.page() !== "COD & finance") return;
+  // ───────────── Accounts › Franchise: deposits and invoices (bridge-accounts.js draws this) ─────────────
+  Ops.franchiseMoneyHtml = () => {
     const html = [];
     if (Ops.can("receiveCash") || Ops.can("financeStaff")) {
       const deposits = Ops.lazy("franchise-deposits", () => DF.api("/franchise-deposits?status=PENDING"), 20000) || [];
@@ -109,7 +106,7 @@
         }</tbody></table></div></section>`,
       );
     }
-    if (html.length) $("mainContent").insertAdjacentHTML("beforeend", html.join(""));
+    return html.join("");
   };
 
   const after = keys => {
@@ -176,6 +173,6 @@
   );
   DF.live?.(["franchise.cash"], () => {
     Ops.invalidate("franchise-deposits", "franchise-invoices");
-    if (Ops.page() === "COD & finance") Ops.rerender();
+    if (Ops.page() === "Franchise money") Ops.rerender();
   });
 })();

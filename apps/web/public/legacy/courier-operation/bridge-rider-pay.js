@@ -1,40 +1,19 @@
 /*
- * Courier Operations → COD & finance: riders' cash handover requests and rider payouts.
- *
- * - Cash handover requests (cod:receive, scoped to the cashier's hubs): riders ask a hub to
- *   receive their COD cash from the rider app. "Receive" counts the cash against exactly the
- *   requested collections (POST /cod/handovers), then links the handover to the request
- *   (POST /cod/handover-requests/:id/complete). "Decline" cancels the request.
- * - Rider payouts (finance, or rider:manage): prepare payouts for a period from riders' unpaid
- *   earnings (POST /rider-payouts/runs), approve (a different person: maker-checker), and
- *   finance marks them paid (ledger RIDER_PAYOUT_PAID, the rider gets an SMS).
+ * Courier Operations → Accounts › Rider pay: rider payouts (finance, or rider:manage). Prepare payouts for a period
+ * from riders' unpaid earnings (POST /rider-payouts/runs), approve (a different person: maker-checker), and finance
+ * marks them paid (the rider gets an SMS). Riders' COD cash goes through handover slips (bridge-accounts.js).
  */
 (() => {
   const DF = window.DF;
   const Ops = window.DFOps;
   const $ = id => document.getElementById(id);
   const esc = Ops.esc;
-  const PAGE = "COD & finance";
   const PAYOUT = { DRAFT: ["To approve", "status-pending"], APPROVED: ["Ready to pay", "status-transit"], PAID: ["Paid", "status-delivered"], CANCELLED: ["Cancelled", "status-failed"] };
   const METHODS = ["BKASH", "NAGAD", "ROCKET", "BANK_TRANSFER", "CASH"];
   const tag = ([text, cls]) => `<span class="status ${cls}">${esc(text)}</span>`;
   const canPay = () => Ops.can("manageFinance") || Ops.can("manageRiders");
 
-  const requests = () => (Ops.can("receiveCash") ? Ops.lazy("handover-requests", () => DF.api("/cod/handover-requests"), 20000) : null);
   const payouts = () => (canPay() ? Ops.lazy("rider-payouts", () => DF.api("/rider-payouts?limit=30"), 30000) : null);
-
-  function requestsPanel() {
-    const rows = requests();
-    const error = Ops.lazyError("handover-requests");
-    const body =
-      (rows || [])
-        .map(
-          r =>
-            `<tr><td><strong>${esc(r.rider.code)} · ${esc(r.rider.name)}</strong><span class="subcell">${esc(DF.localPhone(r.rider.phone))}</span></td><td>${esc(r.hub.name)}</td><td>${r.collections}</td><td>${Ops.money(r.amount)}</td><td>${esc(Ops.ago(r.createdAt))}${r.note ? `<span class="subcell">${esc(r.note)}</span>` : ""}</td><td style="white-space:nowrap"><button class="button button-sm" data-handover-request="${esc(r.id)}">Receive</button> <button class="button button-sm" data-handover-decline="${esc(r.id)}">Decline</button></td></tr>`,
-        )
-        .join("") || `<tr><td colspan="6" class="empty-state">${error ? esc(DF.describe(error)) : rows ? "No riders are waiting to hand over cash." : "Loading…"}</td></tr>`;
-    return `<section class="panel table-panel" id="handoverRequestsPanel"><div class="panel-heading"><div><h2 class="panel-title">Cash handover requests</h2><p class="panel-subtitle">Riders on their way to hand over COD cash · receive it against the requested collections</p></div></div><div class="table-scroll"><table><thead><tr><th>RIDER</th><th>HUB</th><th>COLLECTIONS</th><th>AMOUNT</th><th>REQUESTED</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
-  }
 
   function payoutsPanel() {
     const page = payouts();
@@ -53,62 +32,8 @@
     return `<section class="panel table-panel" id="riderPayoutsPanel"><div class="panel-heading"><div><h2 class="panel-title">Rider payouts</h2><p class="panel-subtitle">Riders' earnings ledger · prepared, approved by someone else, then paid by finance</p></div><button class="button button-sm" data-payout-run>Prepare payouts</button></div><div class="table-scroll"><table><thead><tr><th>PAYOUT</th><th>RIDER</th><th>PERIOD</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
   }
 
-  // Called by the COD page (bridge-finance.js draws the page, then these two sections).
-  Ops.riderPayPanels = () => {
-    $("handoverRequestsPanel")?.remove();
-    $("riderPayoutsPanel")?.remove();
-    if (Ops.can("receiveCash")) {
-      // Above the "Rider cash on hand" table, when there is one.
-      const anchor = $("codRiderCash");
-      if (anchor) anchor.insertAdjacentHTML("beforebegin", requestsPanel());
-      else $("mainContent").insertAdjacentHTML("beforeend", requestsPanel());
-    }
-    if (canPay()) $("mainContent").insertAdjacentHTML("beforeend", payoutsPanel());
-  };
-
-  // ───────────── receive a requested handover ─────────────
-
-  let current = null;
-  Ops.modals.handoverRequest = id => {
-    if (!Ops.require("receiveCash", "receive rider cash")) return;
-    current = (requests() || []).find(r => r.id === id);
-    if (!current) return void showToast("That request is no longer pending.");
-    modalContext = { kind: "handoverRequest", shipmentId: id };
-    $("modalTitle").textContent = `Receive cash · ${current.rider.code} · ${current.rider.name}`;
-    $("modalDescription").textContent = `Requested ${Ops.ago(current.createdAt)} at ${current.hub.name}: ${current.collections} collection${current.collections === 1 ? "" : "s"} totalling ${Ops.money(current.amount)}. Count the cash before recording it.`;
-    $("modalSubmit").textContent = "Record handover";
-    $("modalFields").innerHTML = `<div class="field"><label for="requestAmount">Cash counted (৳)</label><input id="requestAmount" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="${esc(String(current.amount))}"></div><div class="field"><label>Hub</label><input value="${esc(current.hub.name)}" disabled></div>${
-      current.note ? `<div class="field full"><label>Rider's note</label><input value="${esc(current.note)}" disabled></div>` : ""
-    }<div class="field full"><label for="requestNote">Note (optional)</label><textarea id="requestNote" maxlength="500" placeholder="e.g. Counted with the rider at the counter"></textarea></div>`;
-    $("modalBackdrop").classList.add("open");
-    $("requestAmount").focus();
-  };
-
-  window.addEventListener(
-    "submit",
-    event => {
-      if (event.target.id !== "modalForm" || modalContext.kind !== "handoverRequest" || !current) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const request = current;
-      const amountReceived = $("requestAmount").value.trim();
-      if (!amountReceived) return void $("requestAmount").focus();
-      const button = $("modalSubmit");
-      button.disabled = true;
-      const body = { riderId: request.rider.id, hubId: request.hub.id, collectionIds: request.collectionIds, amountReceived, note: $("requestNote").value.trim() || undefined };
-      DF.api("/cod/handovers", { method: "POST", body })
-        .then(h => DF.api(`/cod/handover-requests/${request.id}/complete`, { method: "POST", body: { handoverId: h.id } }).then(() => h))
-        .then(async h => {
-          closeModal();
-          Ops.invalidate("handover-requests", "cod-riders", "handovers", "finance-summary");
-          await Ops.refresh().catch(() => undefined);
-          showToast(`${Ops.money(h.amount)} received from ${request.rider.code} at ${request.hub.name}.`);
-        })
-        .catch(error => showToast(DF.describe(error)))
-        .finally(() => (button.disabled = false));
-    },
-    true,
-  );
+  // Accounts › Rider pay draws this panel (bridge-accounts.js).
+  Ops.riderPayoutsHtml = () => (canPay() ? payoutsPanel() : "");
 
   // ───────────── payouts ─────────────
 
@@ -141,26 +66,6 @@
     "click",
     event => {
       const t = event.target;
-      const receive = t.closest("[data-handover-request]");
-      if (receive) {
-        event.stopImmediatePropagation();
-        return void openModal("handoverRequest", receive.dataset.handoverRequest);
-      }
-      const decline = t.closest("[data-handover-decline]");
-      if (decline) {
-        event.stopImmediatePropagation();
-        void Ops.confirm({ title: "Decline this handover request?", message: "The rider keeps the cash and can ask again.", confirm: "Decline request", danger: true }).then(ok => {
-          if (!ok) return;
-          DF.api(`/cod/handover-requests/${decline.dataset.handoverDecline}/cancel`, { method: "POST" })
-            .then(() => {
-              Ops.invalidate("handover-requests");
-              Ops.rerender(true);
-              showToast("Request declined.");
-            })
-            .catch(error => showToast(DF.describe(error)));
-        });
-        return;
-      }
       if (t.closest("[data-payout-run]")) {
         event.stopImmediatePropagation();
         const { start, end } = thisMonth();
@@ -230,32 +135,8 @@
     true,
   );
 
-  // Menu › COD & settlement: riders' cash handover requests waiting to be received (amber; none = hidden).
-  // Hub managers see their hub's, operations managers all (GET /cod/handover-requests is scoped).
-  async function paintNavCount() {
-    const badge = document.querySelector('#navigation [data-stage-count="COD & settlement"]');
-    if (!badge) return;
-    if (!Ops.can("receiveCash")) return void (badge.hidden = true);
-    let n = 0;
-    try {
-      const list = await DF.api("/cod/handover-requests");
-      n = (Array.isArray(list) ? list : list.items || []).length;
-    } catch {
-      return;
-    }
-    badge.textContent = Ops.num(n);
-    badge.hidden = !n;
-    badge.style.background = "#fff5df";
-    badge.style.color = "#b87913";
-    badge.title = `${n} cash handover request${n === 1 ? "" : "s"} from riders to receive`;
-  }
-  let navTries = 0;
-  const navWhenReady = () => (Ops.me ? void paintNavCount() : ++navTries < 60 && setTimeout(navWhenReady, 500));
-  navWhenReady();
-
-  DF.live(["cod.handover_request", "rider.payout"], async () => {
-    Ops.invalidate("handover-requests", "rider-payouts", "cod-riders");
-    if (Ops.page() === PAGE) Ops.rerender();
-    void paintNavCount();
+  DF.live(["rider.payout"], async () => {
+    Ops.invalidate("rider-payouts");
+    if (Ops.page() === "Rider pay") Ops.rerender();
   });
 })();

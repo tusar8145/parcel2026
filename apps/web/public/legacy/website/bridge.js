@@ -14,9 +14,9 @@
   const PARTNER_ROUTES = ["merchant", "rider", "franchise"];
   const ACCOUNT_ROUTES = ["account", "orders"];
   /** The customer area: only website customers use it; merchants, staff and riders go to their panel. */
-  const CUSTOMER_ONLY_ROUTES = ["account", "orders", "addresses", "profile", "request"];
+  const CUSTOMER_ONLY_ROUTES = ["account", "orders", "addresses", "profile", "payments", "request"];
   /** Account pages: signed-out visitors are asked to log in first. */
-  const SIGNED_IN_ROUTES = ["account", "orders", "addresses", "profile"];
+  const SIGNED_IN_ROUTES = ["account", "orders", "addresses", "profile", "payments"];
   const isCustomer = () => DF.auth.isWebsiteCustomer();
   const currentRoute = () => DF.route.path().split("/")[0] || "home";
 

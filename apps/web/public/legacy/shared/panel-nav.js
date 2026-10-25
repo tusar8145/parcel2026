@@ -29,7 +29,11 @@
   /** Pages whose slug isn't their internal name (the menu label reads better). */
   const SLUGS = {
     "super-admin": { Approvals: "approval-center", "Platform settings": "global-notifications", "Pricing & catalogs": "catalogs-and-locations" },
+    // Merchant panels: the Payments page is Balance (shared/merchant-balance.js); old Payments / Billing links open it.
+    "ecommerce-merchant": { Payments: "balance" },
+    "banking-merchant": { Payments: "balance" },
   }[app] || {};
+  const ALIASES = { Payments: ["Payments", "Billing", "Billing & invoices"] };
   /** Tabs inside pages: the buttons' attribute and their values (value, label, slug). */
   const TABS = {
     "super-admin": {
@@ -79,7 +83,7 @@
         name,
         label,
         slug: SLUGS[name] || DF.nav.slug(name),
-        aliases: [label],
+        aliases: [label, ...(app.endsWith("-merchant") ? ALIASES[name] || [] : [])],
         tabs: tabs?.list.map(([value, tabLabel, slug]) => ({ name: value, label: tabLabel, slug })),
       };
     });

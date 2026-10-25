@@ -96,8 +96,9 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect(parcel).toMatchObject({ status: "DELIVERED", partialDelivery: true, partialNote: "Kept the shirt, returned the jeans", receiverRelation: "Father" });
     expect(Number(parcel.codCollectedAmount)).toBe(600);
     expect(Number(parcel.codCollection!.amount)).toBe(600);
-    const ledger = await ctx.prisma.journalEntry.findFirstOrThrow({ where: { eventType: "COD_COLLECTED", reference: id }, include: { lines: true } });
-    expect(ledger.lines.reduce((t, l) => t + Number(l.debit), 0)).toBe(600);
+    // The merchant's account: the COD actually collected (Accounts), not the full COD.
+    const cod = await ctx.prisma.accountEntry.findFirstOrThrow({ where: { parcelId: parcel.id, type: "COD" } });
+    expect(Number(cod.amount)).toBe(600);
 
     // The return order: same merchant, back to its pickup address, nothing to collect, no delivery charge, waiting at the hub.
     const ret = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: returnId } });

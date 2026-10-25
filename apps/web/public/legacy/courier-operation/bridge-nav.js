@@ -15,7 +15,8 @@
  *   5 Delivery          Dispatch: waiting for a delivery rider + out with riders, map, route planner
  *   6 Problems          Exceptions page: Exceptions · Failed delivery · Needs info · SLA late-risk
  *   7 Returns           Returns
- *   8 COD & settlement  COD & finance
+ *   Accounts            Money (bridge-accounts.js): Overview · E-commerce · Financial · Customer · Rider cash ·
+ *                       Hub transfers · Rider pay · Franchise (tabs shown by role: Ops.accountsTab)
  *   All parcels         Shipments · E-commerce · Banking & Financial · Customer (the service-line pages)
  *   Reports             Reports · Analytics & SLA
  *   Riders · Merchants · CN stock · Settings (hubs, zones and routes are set up in Super admin › Hubs & zones)
@@ -130,13 +131,18 @@
       subtitle: "Resolve exceptions, failed deliveries, missing details and parcels at risk of running late.",
     },
     Returns: { stage: "Returns", tabs: [{ id: "Returns", page: "Returns" }], bulk: {} },
-    // A tab per task (bridge-section-tabs.js); tabs with nothing for this person are hidden.
-    "COD & settlement": {
+    // Money (bridge-accounts.js): each tab its own page; tabs this person doesn't use are hidden (Ops.accountsTab).
+    Accounts: {
+      keepTitle: true,
       tabs: [
-        { id: "Cash from riders", page: "COD & finance", part: "cash" },
-        { id: "Franchise", page: "COD & finance", part: "franchise" },
-        { id: "Settlements & payouts", page: "COD & finance", part: "settlements" },
-        { id: "Invoices & accounts", page: "COD & finance", part: "accounts" },
+        { id: "Overview", page: "Accounts overview", show: () => Ops.accountsTab?.("Overview") },
+        { id: "E-commerce", page: "Accounts E-commerce", show: () => Ops.accountsTab?.("E-commerce") },
+        { id: "Financial", page: "Accounts Financial", show: () => Ops.accountsTab?.("Financial") },
+        { id: "Customer", page: "Accounts Customer", show: () => Ops.accountsTab?.("Customer") },
+        { id: "Rider cash", page: "Rider cash", show: () => Ops.accountsTab?.("Rider cash") },
+        { id: "Hub transfers", page: "Hub transfers", show: () => Ops.accountsTab?.("Hub transfers") },
+        { id: "Rider pay", page: "Rider pay", show: () => Ops.accountsTab?.("Rider pay") },
+        { id: "Franchise", page: "Franchise money", show: () => Ops.accountsTab?.("Franchise") },
       ],
     },
     "All parcels": {
@@ -203,7 +209,8 @@
     Exceptions: ["Problems", "Exceptions"],
     Analytics: ["Reports", "Analytics & SLA"],
     "Analytics & SLA": ["Reports", "Analytics & SLA"],
-    "COD & finance": ["COD & settlement"],
+    "COD & finance": ["Accounts"],
+    "COD & settlement": ["Accounts"],
     "Merchant accounts": ["Merchants"],
     "Riders & fleet": ["Riders"],
     "Admin settings": ["Settings"],
@@ -319,12 +326,18 @@
   function tabsBar(view) {
     const v = VIEWS[view];
     if (v.tabs.length < 2) return;
+    // A tab can be hidden for this person (`show`); on a hidden tab, the first visible one opens.
+    const shown = t => !t.show || t.show() !== false;
     const bar = `<div class="df-tabs" role="tablist" aria-label="${esc(view)}">${v.tabs
       .map(
         (t, i) =>
-          `<button type="button" role="tab" class="button button-sm${i === state.tab ? " button-primary" : ""}" data-nav-tab="${esc(t.id)}" aria-selected="${i === state.tab}">${esc(t.id)}</button>`,
+          `<button type="button" role="tab" class="button button-sm${i === state.tab ? " button-primary" : ""}" data-nav-tab="${esc(t.id)}" aria-selected="${i === state.tab}"${shown(t) ? "" : ' style="display:none"'}>${esc(t.id)}</button>`,
       )
       .join("")}</div>`;
+    if (!shown(v.tabs[state.tab])) {
+      const first = v.tabs.find(shown);
+      if (first) setTimeout(() => document.querySelector(`#mainContent [data-nav-tab="${CSS.escape(first.id)}"]`)?.click(), 0);
+    }
     const heading = q("#mainContent .page-heading");
     if (heading) heading.insertAdjacentHTML("afterend", bar);
     else $("mainContent").insertAdjacentHTML("afterbegin", bar);
@@ -741,10 +754,10 @@
     if (roles.has("HUB_OPERATOR")) {
       ["Today", ...JOURNEY, "Work queue", "Scan desk", "All parcels"].forEach(v => allow.add(v));
       if (Ops.can("readRiders")) allow.add("Riders");
-      // Hub operators receive riders' cash on the COD page (cash handovers).
-      if (Ops.can("receiveCash")) allow.add("COD & settlement");
+      // Hub operators receive riders' cash slips and send transfers (Accounts › Rider cash · Hub transfers).
+      if (Ops.can("receiveCash")) allow.add("Accounts");
     }
-    if (roles.has("FINANCE")) ["COD & settlement", "All parcels", "Merchants", "Reports"].forEach(v => allow.add(v));
+    if (roles.has("FINANCE")) ["Accounts", "All parcels", "Merchants", "Reports"].forEach(v => allow.add(v));
     if (roles.has("SUPPORT_AGENT")) ["All parcels", "Today"].forEach(v => allow.add(v));
     return allow.size ? allow : all; // other (custom) roles: the whole menu; the API still decides
   }

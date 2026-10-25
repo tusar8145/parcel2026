@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { postParcelEntries } from "../money/entries";
 import { chosenOperationTime, operationNow } from "../../common/operation-time";
 import { canTransition, packagePricesSchema, PARCEL_STATUS_LABEL, reattemptFeeFor, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -203,6 +204,8 @@ export class ParcelWorkflowService {
     }
 
     const updated = await db.parcel.findUniqueOrThrow({ where: { id: parcel.id } });
+    // Delivered / returned: the parcel's COD and charges go onto its merchant's or sender's account (Accounts).
+    if (input.to === "DELIVERED" || input.to === "RETURNED") await postParcelEntries(db, updated);
     // The previous holders (e.g. the rider handing over) must also see it leave their list.
     const event = parcelEvent(updated);
     event.riderIds?.push(parcel.pickupRiderId, parcel.deliveryRiderId);

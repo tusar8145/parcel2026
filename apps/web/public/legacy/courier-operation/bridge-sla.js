@@ -96,9 +96,36 @@
     );
   }
 
+  // Reports › Analytics & SLA look: separated sections, the SLA cards across the row, health as badges.
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="anStyles">
+#mainContent:has(#slaReport) > .panel,#mainContent:has(#slaReport) > section,#mainContent:has(#slaReport) > .metrics{margin-top:18px}
+#mainContent:has(#slaReport) > .panel,#mainContent:has(#slaReport) > section{border-radius:14px;overflow:hidden}
+#mainContent:has(#slaReport) .panel-heading{border-bottom:1px solid #eef0f4;padding-bottom:12px}
+#slaMetrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+@media(max-width:720px){#slaMetrics{grid-template-columns:1fr!important}}
+#mainContent:has(#slaReport) .panel-heading .button{white-space:nowrap}
+.an-badge{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.an-badge.good{background:#ecfdf3;color:#067647}.an-badge.warn{background:#fffaeb;color:#b54708}.an-badge.bad{background:#fef3f2;color:#b42318}.an-badge.none{background:#f2f4f7;color:#98a2b3}
+</style>`,
+  );
+  const HEALTH = { Healthy: "good", Monitor: "warn", "At risk": "bad", "No data": "none" };
+  /** The Analytics register's Health column as coloured badges (its text unchanged). */
+  function healthBadges() {
+    const table = document.querySelector("#mainContent .table-panel table");
+    if (!table) return;
+    for (const row of table.querySelectorAll("tbody tr")) {
+      const cell = row.lastElementChild;
+      const text = cell?.textContent.trim();
+      if (cell && HEALTH[text] && !cell.querySelector(".an-badge")) cell.innerHTML = `<span class="an-badge ${HEALTH[text]}">${text}</span>`;
+    }
+  }
+
   const baseAnalytics = Ops.enhance.Analytics;
   Ops.enhance.Analytics = page => {
     baseAnalytics?.(page);
+    healthBadges();
     const s = summary();
     const main = $("mainContent");
     const metrics = s

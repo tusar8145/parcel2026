@@ -25,8 +25,33 @@
     runs: null,
     schedules: null,
     compliance: null,
+    allHubs: false, // Scan compliance: every hub, or only hubs with arrivals (default)
     loading: false,
   };
+
+  // Separated sections, summary cards, compliance badges (the page's look; ids, actions and data unchanged).
+  document.head.insertAdjacentHTML(
+    "beforeend",
+    `<style id="rpStyles">
+.rp{display:grid;gap:18px}
+.rp > section.panel{margin:0;border-radius:14px;overflow:hidden}
+.rp > section.panel .panel-heading{padding-bottom:12px;border-bottom:1px solid #eef0f4;margin-bottom:0}
+#rpForm{background:linear-gradient(180deg,#f8faff,#fff)}
+#rpForm .workflow-form{padding-top:14px;gap:12px}
+#rpForm .workflow-form label{font-size:12px;font-weight:600;color:#475467}
+.rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 16px 4px}
+.rp-card{border:1px solid #e6e9ef;border-radius:12px;padding:12px 14px;background:#fff;display:grid;gap:3px}
+.rp-card small{color:#667085;font-size:11.5px;font-weight:600;letter-spacing:.02em}
+.rp-card strong{font-size:20px;line-height:1.2}
+.rp-sub{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:16px 16px 6px}
+.rp-sub h3{margin:0;font-size:13px;font-weight:700;color:#344054}
+.rp-sub span{font-size:12px;color:#667085}
+.rp-badge{display:inline-flex;min-width:52px;justify-content:center;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.rp-badge.good{background:#ecfdf3;color:#067647}.rp-badge.warn{background:#fffaeb;color:#b54708}.rp-badge.bad{background:#fef3f2;color:#b42318}.rp-badge.none{background:#f2f4f7;color:#98a2b3}
+</style>`,
+  );
+  /** Compliance as a coloured badge: ≥95% good, ≥80% watch, below that a problem. */
+  const badge = v => (v == null ? `<span class="rp-badge none">—</span>` : `<span class="rp-badge ${v >= 95 ? "good" : v >= 80 ? "warn" : "bad"}">${v}%</span>`);
 
   const csvText = (header, rows) =>
     "﻿" +
@@ -57,7 +82,7 @@
 
   Ops.pages[PAGE] = {
     render: () =>
-      `<div class="page-heading"><div><p class="eyebrow">Network operations · reporting</p><h1>Reports</h1><p class="subtitle">Delivery, SLA, COD and rider reports as Excel-compatible CSV or printable PDF, emailed on a schedule.</p></div><div class="heading-actions">${Ops.can("manageHubs") ? `<button class="button button-primary" data-rp="add-schedule">${icon("plus")} Schedule a report</button>` : ""}</div></div><section class="panel" id="rpForm"></section><section class="panel table-panel" id="rpResult" hidden></section><section class="panel table-panel" id="rpCompliance"></section><section class="panel table-panel" id="rpSchedules"></section><section class="panel table-panel" id="rpRuns"></section>`,
+      `<div class="page-heading"><div><p class="eyebrow">Network operations · reporting</p><h1>Reports</h1><p class="subtitle">Delivery, SLA, COD and rider reports as Excel-compatible CSV or printable PDF, emailed on a schedule.</p></div><div class="heading-actions">${Ops.can("manageHubs") ? `<button class="button button-primary" data-rp="add-schedule">${icon("plus")} Schedule a report</button>` : ""}</div></div><div class="rp"><section class="panel" id="rpForm"></section><section class="panel table-panel" id="rpResult" hidden></section><section class="panel table-panel" id="rpCompliance"></section><section class="panel table-panel" id="rpSchedules"></section><section class="panel table-panel" id="rpRuns"></section></div>`,
   };
   Ops.enhance[PAGE] = () => {
     paint();
@@ -82,13 +107,23 @@
     }
 
     const c = state.compliance;
-    const hubRows = (c?.hubs || []).map(h => `<tr><td>${esc(h.hub.name)}</td><td>${h.expected}</td><td>${h.scanned}</td><td>${h.missed}</td><td>${h.camera}</td><td>${h.compliance == null ? "—" : `${h.compliance}%`}</td></tr>`).join("");
-    const riderRows = (c?.riders || []).slice(0, 30).map(x => `<tr><td>${esc(x.rider.label)}</td><td>${x.pickups.scanned}/${x.pickups.expected}</td><td>${x.deliveries.scanned}/${x.deliveries.expected}</td><td>${x.compliance == null ? "—" : `${x.compliance}%`}</td></tr>`).join("");
+    // Hubs with arrivals first (busiest first); hubs with none only on "Show all hubs".
+    const allHubs = [...(c?.hubs || [])].sort((a, b) => b.expected - a.expected || a.hub.name.localeCompare(b.hub.name));
+    const active = allHubs.filter(h => h.expected > 0 || h.scanned > 0);
+    const shown = state.allHubs ? allHubs : active;
+    const idle = allHubs.length - active.length;
+    const hubRows = shown.map(h => `<tr><td><strong>${esc(h.hub.name)}</strong></td><td>${h.expected}</td><td>${h.scanned}</td><td>${h.missed ? `<strong style="color:#b42318">${h.missed}</strong>` : 0}</td><td>${h.camera}</td><td>${badge(h.compliance)}</td></tr>`).join("");
+    const riderRows = (c?.riders || []).slice(0, 30).map(x => `<tr><td><strong>${esc(x.rider.label)}</strong></td><td>${x.pickups.scanned}/${x.pickups.expected}</td><td>${x.deliveries.scanned}/${x.deliveries.expected}</td><td>${badge(x.compliance)}</td></tr>`).join("");
+    const t = c?.totals;
+    const cards = t
+      ? `<div class="rp-cards"><div class="rp-card"><small>SCANS</small><strong>${Ops.num(t.scans)}</strong></div><div class="rp-card"><small>BY CAMERA</small><strong>${Ops.num(t.camera)}</strong></div><div class="rp-card"><small>REFUSED</small><strong>${Ops.num(t.refused)}</strong></div><div class="rp-card"><small>HUB COMPLIANCE</small><strong>${badge(t.hubCompliance)}</strong></div><div class="rp-card"><small>RIDER COMPLIANCE</small><strong>${badge(t.riderCompliance)}</strong></div></div>`
+      : "";
+    const hubToggle = idle ? `<button class="button button-sm" data-rp="all-hubs">${state.allHubs ? "Only hubs with arrivals" : `Show all hubs (+${idle} with none)`}</button>` : "";
     $("rpCompliance").outerHTML = ui.panel(
       "Scan compliance",
-      c?.totals ? `${state.form.from} to ${state.form.to} · ${Ops.num(c.totals.scans)} scans (${Ops.num(c.totals.camera)} camera, ${Ops.num(c.totals.refused)} refused) · hubs ${c.totals.hubCompliance ?? "—"}% · riders ${c.totals.riderCompliance ?? "—"}%` : c?.error || "Loading…",
-      `<h3 class="panel-subtitle" style="margin:4px 16px 6px;font-weight:650">By hub · arrivals scanned</h3>${ui.table(["Hub", "Arrivals", "Scanned", "Missed", "By camera", "Compliance"], hubRows, c ? "No arrivals in this range." : "Loading…")}<h3 class="panel-subtitle" style="margin:14px 16px 6px;font-weight:650">By rider · pickups and deliveries scanned</h3>${ui.table(["Rider", "Pickups scanned", "Deliveries scanned", "Compliance"], riderRows, c ? "No rider pickups or deliveries in this range." : "Loading…")}`,
-      "",
+      t ? `${state.form.from} to ${state.form.to} · expected scans against the scans made` : c?.error || "Loading…",
+      `${cards}<div class="rp-sub"><h3>By hub · arrivals scanned</h3><span>${active.length} hub(s) with arrivals</span></div>${ui.table(["Hub", "Arrivals", "Scanned", "Missed", "By camera", "Compliance"], hubRows, c ? "No arrivals in this range." : "Loading…")}<div class="rp-sub"><h3>By rider · pickups and deliveries scanned</h3><span>${(c?.riders || []).length} rider(s)</span></div>${ui.table(["Rider", "Pickups scanned", "Deliveries scanned", "Compliance"], riderRows, c ? "No rider pickups or deliveries in this range." : "Loading…")}`,
+      hubToggle,
       'id="rpCompliance"',
     );
 
@@ -190,6 +225,9 @@
       event.stopImmediatePropagation();
       const id = el.dataset.id;
       switch (el.dataset.rp) {
+        case "all-hubs":
+          state.allHubs = !state.allHubs;
+          return paint();
         case "csv": {
           const t = state.result.table;
           return courierCsvDownload(`delivery-fast-${t.kind.toLowerCase()}-${t.from}-to-${t.to}.csv`, csvText(t.header, t.rows));

@@ -27,6 +27,12 @@ Setup and run instructions: `docs/development.md`.
 - SMS and webhooks: write with `OutboxService.queueSms` / `WebhooksService.emit` inside the
   transaction, then `flush` the ids after commit.
 - Lists use UUIDv7 cursor pagination (`common/pagination.ts`). Money is `Decimal(12,2)` BDT.
+- Merchants' and customers' money is Accounts (`modules/money`, schema `accounts.prisma`): a parcel
+  posts its account lines when it becomes DELIVERED / RETURNED (`money/entries.ts`, called by
+  `ParcelWorkflowService`); lines are never edited (adjustments, void). Rider COD → handover slip
+  (HS-) → hub → hub transfer (HT-) → central hub (`accounts.config`, super admin) → settlement (ST-)
+  for E-commerce merchants and customers; Financial merchants get bills (INV-) and payments (PAY-,
+  partial, oldest bill first, credit). Rider pay and franchise money keep the ledger (`LedgerService`).
 - Schema lives in `prisma/schema/*.prisma` (one file per area; `core.prisma` holds the original
   models). To change it: `node scripts/schema-lock.mjs acquire <you>` → edit →
   `node scripts/schema-lock.mjs migrate <name>` (writes and applies a migration, regenerates
@@ -78,6 +84,9 @@ Setup and run instructions: `docs/development.md`.
   platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
   the `deliveryfast-demo-config` key for every page. Widgets with no backing data (maps,
   traffic charts, some report rows) remain decorative.
+- Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
+  merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),
+  website customer › Payments (`website/customer-payments.js`).
 
 ## Commands (from repo root)
 - Docker, whole stack: `docker compose --env-file .env.docker up -d --build` (web on :8080)

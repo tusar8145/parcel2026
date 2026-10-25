@@ -760,7 +760,9 @@ model DeliveryProof {
 
 enum CodState {
   WITH_RIDER // collected from the recipient
-  AT_HUB // handed over by the rider
+  AT_HUB // handed over by the rider (or paid at a hub counter), at a hub that isn't the central hub
+  IN_TRANSIT // on a hub transfer to the central hub
+  AT_CENTRAL // received at the central hub: ready to settle
   SETTLED // paid out to the merchant / sender
 }
 
@@ -776,6 +778,11 @@ model CodCollection {
   collectedAt   DateTime            @default(now())
   handoverId    String?             @db.Uuid
   settlementId  String?             @db.Uuid
+  /// Accounts: the rider's handover slip (HS-), the hub transfer (HT-) that carried it, the hub holding it now.
+  slipId        String?             @db.Uuid
+  transferId    String?             @db.Uuid
+  cashHubId     String?             @db.Uuid
+  centralAt     DateTime?
   parcel        Parcel              @relation(fields: [parcelId], references: [id])
   rider         Rider?              @relation(fields: [riderId], references: [id])
   handover      CashHandover?       @relation(fields: [handoverId], references: [id])
@@ -784,6 +791,9 @@ model CodCollection {
   @@index([riderId, state])
   @@index([state])
   @@index([hubId, state])
+  @@index([cashHubId, state])
+  @@index([slipId])
+  @@index([transferId])
   @@index([collectedAt])
   @@map("cod_collections")
 }

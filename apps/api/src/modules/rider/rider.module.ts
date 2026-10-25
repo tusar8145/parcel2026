@@ -5,7 +5,6 @@ import { RiderAdminController } from "./rider-admin.controller";
 import { RiderLocationService } from "./location.service";
 import { ProofService } from "./proof.service";
 import { RiderPayService } from "./pay.service";
-import { HandoverRequestsService } from "./handover-requests.service";
 import { RiderKycService } from "./kyc.service";
 
 /**
@@ -16,7 +15,7 @@ import { RiderKycService } from "./kyc.service";
 @Module({
   imports: [ParcelsModule],
   controllers: [RiderAppController, RiderAdminController],
-  providers: [RiderLocationService, ProofService, RiderPayService, HandoverRequestsService, RiderKycService],
-  exports: [RiderKycService, RiderLocationService, HandoverRequestsService],
+  providers: [RiderLocationService, ProofService, RiderPayService, RiderKycService],
+  exports: [RiderKycService, RiderLocationService],
 })
 export class RiderModule {}

@@ -1,0 +1,277 @@
+// ───────────────────────────── Accounts: merchants' and customers' money ─────────────────────────────
+// Owned by src/modules/accounts. Courier Operations › Accounts, rider › My cash, merchant › Balance.
+// Amounts are Decimal(12,2) BDT. Every money event is an AccountEntry (the account's statement); documents:
+// HS- cash slip (rider → hub), HT- hub transfer (hub → central hub), ST- payout (settlement), INV- bill, PAY- payment.
+
+enum AccountKind {
+  ECOMMERCE
+  FINANCIAL
+  CUSTOMER
+}
+
+/// One per E-commerce / Financial merchant, and one per customer (the sender's phone) with COD parcels.
+model Account {
+  id         String      @id @default(uuid(7)) @db.Uuid
+  kind       AccountKind
+  merchantId String?     @unique @db.Uuid
+  /// Customers: the sender's phone (E.164); a signed-in customer's user id is kept too.
+  phone      String?
+  customerId String?     @db.Uuid
+  name       String
+  /// Customers: where payouts go {method: BKASH | NAGAD | ROCKET | BANK, accountName, accountNumber, bankName?, branch?}.
+  payTo      Json?
+  createdAt  DateTime    @default(now())
+  entries    AccountEntry[]
+  payouts    Payout[]
+  bills      Bill[]
+  payments   AccountPayment[]
+
+  @@unique([kind, phone])
+  @@index([kind, name])
+  @@index([customerId])
+  @@map("accounts")
+}
+
+enum AccountEntryType {
+  /// COD the recipient paid (E-commerce, Customer): + owed to the account.
+  COD
+  /// The parcel's delivery charge: − owed by the account.
+  DELIVERY_CHARGE
+  /// The parcel's return charge: − owed by the account.
+  RETURN_CHARGE
+  /// Manual correction with a reason: + or −.
+  ADJUSTMENT
+  /// A payout paid to the account (E-commerce, Customer): − (it was owed and is now paid).
+  PAYOUT
+  /// A payment received from the account (Financial): +.
+  PAYMENT
+}
+
+/// A statement line. Signed: + = Delivery Fast owes the account, − = the account owes Delivery Fast. Lines are never edited.
+model AccountEntry {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  accountId   String           @db.Uuid
+  type        AccountEntryType
+  amount      Decimal          @db.Decimal(12, 2)
+  parcelId    String?          @db.Uuid
+  trackingId  String?
+  description String
+  /// The document it belongs to (ST- / INV- / PAY- number) or an adjustment's reference.
+  reference   String?
+  /// E-commerce / Customer: the payout that settles it (null = open).
+  payoutId    String?          @db.Uuid
+  /// Financial: the bill that bills it (null = not billed).
+  billId      String?          @db.Uuid
+  createdById String?          @db.Uuid
+  createdAt   DateTime         @default(now())
+  account     Account          @relation(fields: [accountId], references: [id])
+  payout      Payout?          @relation(fields: [payoutId], references: [id])
+  bill        Bill?            @relation(fields: [billId], references: [id])
+
+  /// One COD / delivery-charge / return-charge line per parcel (parcel-less lines: any number).
+  @@unique([parcelId, type])
+  @@index([accountId, createdAt])
+  @@index([payoutId])
+  @@index([billId])
+  @@map("account_entries")
+}
+
+enum PayoutStatus {
+  UNPAID
+  PAID
+  CANCELLED
+}
+
+/// ST-: a settlement paid out to an E-commerce merchant or a customer (COD − charges ± adjustments).
+model Payout {
+  id               String       @id @default(uuid(7)) @db.Uuid
+  number           String       @unique
+  accountId        String       @db.Uuid
+  codTotal         Decimal      @db.Decimal(12, 2)
+  chargesTotal     Decimal      @db.Decimal(12, 2)
+  adjustmentsTotal Decimal      @db.Decimal(12, 2)
+  amount           Decimal      @db.Decimal(12, 2)
+  status           PayoutStatus @default(UNPAID)
+  /// Where it was sent {method, accountName, accountNumber, ...} at creation.
+  payTo            Json?
+  method           String?
+  reference        String?
+  proofFileId      String?      @db.Uuid
+  paidAt           DateTime?
+  paidById         String?      @db.Uuid
+  createdById      String?      @db.Uuid
+  createdAt        DateTime     @default(now())
+  cancelledAt      DateTime?
+  account          Account      @relation(fields: [accountId], references: [id])
+  entries          AccountEntry[]
+
+  @@index([accountId, createdAt])
+  @@index([status])
+  @@map("account_payouts")
+}
+
+enum BillStatus {
+  ISSUED
+  PARTLY_PAID
+  PAID
+  VOID
+}
+
+/// INV-: a Financial merchant's bill of chosen parcels' charges.
+model Bill {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  number      String     @unique
+  accountId   String     @db.Uuid
+  periodFrom  DateTime
+  periodTo    DateTime
+  total       Decimal    @db.Decimal(12, 2)
+  paid        Decimal    @default(0) @db.Decimal(12, 2)
+  status      BillStatus @default(ISSUED)
+  createdById String?    @db.Uuid
+  issuedAt    DateTime   @default(now())
+  voidedAt    DateTime?
+  voidedById  String?    @db.Uuid
+  voidReason  String?
+  account     Account    @relation(fields: [accountId], references: [id])
+  entries     AccountEntry[]
+  allocations BillAllocation[]
+
+  @@index([accountId, issuedAt])
+  @@index([status])
+  @@map("account_bills")
+}
+
+enum AccountPaymentStatus {
+  /// Submitted by the merchant ("I've paid"), waiting for finance to confirm.
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+/// PAY-: money a Financial merchant paid us; confirmed payments pay bills oldest first, the rest is advance credit.
+model AccountPayment {
+  id            String               @id @default(uuid(7)) @db.Uuid
+  number        String               @unique
+  accountId     String               @db.Uuid
+  amount        Decimal              @db.Decimal(12, 2)
+  method        String
+  reference     String?
+  paidOn        DateTime
+  note          String?
+  proofFileId   String?              @db.Uuid
+  status        AccountPaymentStatus @default(CONFIRMED)
+  submittedById String?              @db.Uuid
+  confirmedById String?              @db.Uuid
+  confirmedAt   DateTime?
+  rejectReason  String?
+  createdAt     DateTime             @default(now())
+  account       Account              @relation(fields: [accountId], references: [id])
+  allocations   BillAllocation[]
+
+  @@index([accountId, createdAt])
+  @@index([status])
+  @@map("account_payments")
+}
+
+/// How much of a payment went to a bill.
+model BillAllocation {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  paymentId String         @db.Uuid
+  billId    String         @db.Uuid
+  amount    Decimal        @db.Decimal(12, 2)
+  createdAt DateTime       @default(now())
+  payment   AccountPayment @relation(fields: [paymentId], references: [id])
+  bill      Bill           @relation(fields: [billId], references: [id])
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+  @@map("account_bill_allocations")
+}
+
+// ─── Cash: rider → hub → central hub ───
+
+enum CashSlipStatus {
+  OPEN
+  RECEIVED
+  CANCELLED
+}
+
+/// HS-: a rider's handover slip: all the COD cash the rider holds (+ open rider dues); a hub scans it and receives it.
+model CashSlip {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  number       String         @unique
+  riderId      String         @db.Uuid
+  /// The rider's hub when the slip was made.
+  hubId        String         @db.Uuid
+  codAmount    Decimal        @db.Decimal(12, 2)
+  dueAmount    Decimal        @default(0) @db.Decimal(12, 2)
+  expected     Decimal        @db.Decimal(12, 2)
+  received     Decimal?       @db.Decimal(12, 2)
+  short        Decimal        @default(0) @db.Decimal(12, 2)
+  status       CashSlipStatus @default(OPEN)
+  /// The hub that received it.
+  receivedHubId String?       @db.Uuid
+  receivedById String?        @db.Uuid
+  receivedAt   DateTime?
+  cancelledAt  DateTime?
+  /// The transfer that sent it on to the central hub.
+  transferId   String?        @db.Uuid
+  createdAt    DateTime       @default(now())
+  transfer     HubTransfer?   @relation(fields: [transferId], references: [id])
+
+  @@index([riderId, status])
+  @@index([receivedHubId, status])
+  @@index([transferId])
+  @@map("cash_slips")
+}
+
+enum HubTransferStatus {
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+/// HT-: a hub sending received cash (whole slips and counter cash) to the central hub by bank / MFS.
+model HubTransfer {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  number       String            @unique
+  fromHubId    String            @db.Uuid
+  toHubId      String            @db.Uuid
+  codAmount    Decimal           @db.Decimal(12, 2)
+  dueAmount    Decimal           @default(0) @db.Decimal(12, 2)
+  amount       Decimal           @db.Decimal(12, 2)
+  method       String
+  reference    String?
+  proofFileId  String?           @db.Uuid
+  status       HubTransferStatus @default(IN_TRANSIT)
+  sentById     String?           @db.Uuid
+  sentAt       DateTime          @default(now())
+  received     Decimal?          @db.Decimal(12, 2)
+  short        Decimal           @default(0) @db.Decimal(12, 2)
+  receivedById String?           @db.Uuid
+  receivedAt   DateTime?
+  cancelledAt  DateTime?
+  slips        CashSlip[]
+
+  @@index([fromHubId, status])
+  @@index([toHubId, status])
+  @@map("hub_transfers")
+}
+
+/// Cash a rider or a hub still owes (a short slip / transfer); the next slip / transfer collects it.
+model CashDue {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  riderId   String?   @db.Uuid
+  hubId     String?   @db.Uuid
+  amount    Decimal   @db.Decimal(12, 2)
+  /// The slip / transfer that came up short.
+  source    String
+  createdAt DateTime  @default(now())
+  clearedAt DateTime?
+  /// The slip / transfer that paid it.
+  clearedBy String?
+
+  @@index([riderId, clearedAt])
+  @@index([hubId, clearedAt])
+  @@map("cash_dues")
+}

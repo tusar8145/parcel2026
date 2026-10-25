@@ -238,7 +238,7 @@
       <h3 class="panel-title" style="margin:12px 0 4px">Services</h3>
       <div style="display:grid;gap:9px">${groups}</div>
       <h3 class="panel-title" style="margin:14px 0 4px">Price fields</h3>
-      <p class="panel-subtitle" style="margin:0 0 8px">Prices depend on the districts only. VAT-inclusive, every line rounded to whole taka. “−” adjustments are subtracted; the delivery charge never goes below ৳0.</p>
+      <p class="panel-subtitle" style="margin:0 0 8px">Prices depend on the districts only. Every line rounded to whole taka. “−” adjustments are subtracted; the delivery charge never goes below ৳0.</p>
       <div style="display:grid;gap:9px">${prices}</div>
       <div class="modal-actions"><button type="button" class="button" data-pkg-cancel>Cancel</button><button type="submit" class="button button-primary" id="pkgSave">${S.editing === "new" ? "Create package" : "Save new version"}</button></div>
     </form>`;

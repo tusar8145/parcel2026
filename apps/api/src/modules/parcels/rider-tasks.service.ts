@@ -254,7 +254,6 @@ export class RiderTasksService {
         await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: input.proof.method, receivedBy: input.receivedBy, fileId, otpVerified, note: input.note, ...capture } });
         await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "DELIVERED", note: input.note } });
         if (collected > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: collected, collectedAt: now } });
-        if (collected > 0) await this.ledger.record(tx, { type: "COD_COLLECTED", amount: collected, reference: parcel.trackingId, riderId, merchantId: parcel.merchantId, occurredAt: now });
         if (partial) {
           const rider = await tx.rider.findUniqueOrThrow({ where: { id: riderId }, select: { hubId: true } });
           await createPartialReturn(tx, parcel, { hubId: parcel.currentHubId ?? rider.hubId, note: input.note, by: actorLabel(actor) }, after);
@@ -472,9 +471,6 @@ export class RiderTasksService {
           meta,
           after,
         );
-        const charge = returned.returnCharge == null ? 0 : Number(returned.returnCharge);
-        if (charge > 0)
-          await this.ledger.record(tx, { type: "DELIVERY_CHARGE_EARNED", amount: charge, reference: `${returned.trackingId}:return`, merchantId: returned.merchantId, hubId: run.hubId ?? returned.currentHubId, memo: "Return charge" });
         await recordFranchiseReturn(tx, this.ledger, { riderId, parcel: returned });
         let runCompleted = false;
         if (!(await tx.parcel.count({ where: { returnRunId: run.id, status: "RETURN_SCHEDULED" } }))) {

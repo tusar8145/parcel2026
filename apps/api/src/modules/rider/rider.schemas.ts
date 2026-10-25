@@ -107,20 +107,6 @@ export const payPayoutSchema = z.object({
 
 export const cancelSchema = z.object({ note: optionalText(300) });
 
-// ── cash handover requests ──
-
-export const handoverRequestSchema = z.object({
-  hubId: z.uuid(),
-  note: optionalText(300),
-});
-
-export const handoverRequestsQuerySchema = z.object({
-  hubId: z.uuid().optional(),
-  status: z.enum(["PENDING", "COMPLETED", "CANCELLED"]).optional(),
-});
-
-export const completeHandoverRequestSchema = z.object({ handoverId: z.uuid() });
-
 // ── KYC / onboarding ──
 
 export const KYC_DOCUMENT_TYPES = ["NID_FRONT", "NID_BACK", "DRIVING_LICENSE", "PHOTO", "VEHICLE_PAPERS"] as const;

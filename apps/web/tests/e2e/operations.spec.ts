@@ -3,7 +3,7 @@ import { Fixtures, OPS_NAV, confirmDialog, expect, opsNav, test, type OpsArea, t
 
 // Every account is temporary (support.ts): the operations manager, the Gulshan hub operator,
 // finance and support staff, the merchant and the rider are created in the database before the
-// tests and deleted afterwards with the parcel, its COD and the cash handover.
+// tests and deleted afterwards with the parcel, its COD and the rider's handover slip.
 
 const fx = new Fixtures();
 let shop: TempMerchant;
@@ -63,7 +63,7 @@ async function chooseOption(page: Page, selector: string, text: string) {
   await page.selectOption(selector, value ?? { label: text });
 }
 
-test("merchant parcel through hubs, rider delivery with COD and the cash handover", async ({ browser }) => {
+test("merchant parcel through hubs, rider delivery with COD and the handover slip", async ({ browser }) => {
   test.setTimeout(420_000);
   const errors: string[] = [];
   const recipient = `Ops E2E ${Date.now().toString(36)}`;
@@ -173,28 +173,28 @@ test("merchant parcel through hubs, rider delivery with COD and the cash handove
   await confirmDialog(riderPage, { title: "Cash collected?" });
   await expect(toast(riderPage)).toContainText(`${trackingId} delivered`);
 
-  // ── The rider's cash page shows the collection ──
+  // ── The rider's My cash shows the collection; one tap makes the handover slip ──
   await nav(riderPage, "Earnings");
-  const cash = riderPage.locator(".panel", { hasText: "Cash reconciliation" });
-  await expect(cash).toContainText(`Cash collected · ${trackingId}`);
-  await expect(cash).toContainText("৳ 750");
+  const cash = riderPage.locator("#dfMyCash");
+  await expect(cash).toContainText(trackingId);
+  await expect(cash.locator(".mc-total")).toContainText("৳ 750");
+  await cash.locator('[data-df-slip="make"]').click();
+  await expect(toast(riderPage)).toContainText("Slip HS-");
+  const slipNo = (await riderPage.locator("#dfMyCash .mc-slip .no").textContent())!.trim();
 
-  // ── Gulshan receives the rider's cash ──
+  // ── Gulshan scans the slip and receives the cash ──
   await reload(hub);
-  await opsNav(hub, "cod");
-  const row = hub.locator("#codRiderCash tr", { hasText: rider.code });
-  await row.locator("[data-cod-receive]").click();
-  await expect(hub.locator("#codCollections")).toContainText(trackingId);
-  const expected = (await hub.locator("#modalDescription").textContent())!.match(/৳\s*([\d,.]+)/)![1].replace(/,/g, "");
-  expect(Number(expected)).toBe(750);
-  await hub.fill("#codAmount", expected);
-  await hub.click("#modalSubmit");
-  await expect(toast(hub)).toContainText(`received from ${riderLabel} at Gulshan Sorting Hub`);
-  await expect(hub.locator("#mainContent")).toContainText(riderLabel);
+  await opsNav(hub, "riderCash");
+  await hub.fill("#accSlipScan", slipNo);
+  await hub.press("#accSlipScan", "Enter");
+  await expect(hub.locator(".acc-slip")).toContainText(rider.code);
+  await expect(hub.locator("#accReceived")).toHaveValue("750");
+  await hub.click('[data-acc="slip-receive"]');
+  await expect(toast(hub)).toContainText(`${slipNo} received`);
 
   await reload(riderPage);
   await nav(riderPage, "Earnings");
-  await expect(riderPage.locator(".panel", { hasText: "Cash reconciliation" })).toContainText("No COD cash to hand over");
+  await expect(riderPage.locator("#dfMyCash")).toContainText("No cash to hand over");
 
   expect(errors).toEqual([]);
 });

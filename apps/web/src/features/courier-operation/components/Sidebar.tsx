@@ -86,7 +86,7 @@ export default function Sidebar() {
         </div>{" "}
         <div className="nav-group" data-nav-group="money">
           <div className="nav-label">Money</div>
-          <NavItem nav="COD & settlement" icon="wallet" label="COD & settlement" count />
+          <NavItem nav="Accounts" icon="wallet" label="Accounts" count />
         </div>{" "}
         <div className="nav-group" data-nav-group="find">
           <div className="nav-label">{"Find & report"}</div>

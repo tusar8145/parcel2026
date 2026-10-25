@@ -17,7 +17,8 @@
  *     <body>, fixed-positioned above everything, and follows scrolling).
  *
  * Applied automatically to every single-choice select with more than DF.searchSelect.threshold
- * (12) options, including selects added or refilled later (events are delegated, nothing is bound
+ * (12) options — in Courier Operations and the merchant panels to every single-choice select —
+ * including selects added or refilled later (events are delegated, nothing is bound
  * per element). Opt out with data-search="off"; opt in a short list with data-search or by calling
  * DF.searchSelect(select, { label, placeholder }).
  */
@@ -25,6 +26,9 @@
   const DF = window.DF || (window.DF = {});
   const explicit = new WeakMap(); // select → options from DF.searchSelect(select, opts)
   const THRESHOLD = 12;
+  /** Panels where every single select opens the searchable list (not only long ones). */
+  const EVERY_SELECT = new Set(["courier-operation", "ecommerce-merchant", "banking-merchant"]);
+  const panelThreshold = () => (EVERY_SELECT.has(document.body?.dataset.app) ? 0 : THRESHOLD);
   let uid = 0;
   let open = null; // { select, pop, input, list, items, active, observer, query }
 
@@ -50,11 +54,18 @@
 select[data-df-ss]{cursor:pointer}
 @media (max-width:640px){.df-ss-pop{font-size:14px}.df-ss-input{font-size:16px}.df-ss-option{padding:10px}}
 `;
+  // Panels where every select opens the list: the closed select looks like a dropdown too (chevron, rounded border).
+  const closedCss = `
+select[data-df-ss]{-webkit-appearance:none;-moz-appearance:none;appearance:none;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px;padding-right:30px!important;border:1px solid var(--line,#dfe4ec);border-radius:8px;transition:border-color .15s,box-shadow .15s}
+select[data-df-ss]:hover{border-color:#c3ccd9}
+select[data-df-ss]:focus,select[data-df-ss][aria-expanded="true"]{border-color:var(--blue,var(--green,#3766e8));box-shadow:0 0 0 3px color-mix(in srgb,var(--blue,var(--green,#3766e8)) 14%,transparent);outline:none}
+select[data-df-ss]:disabled{background-color:#f5f7fa;color:#98a2b3;cursor:not-allowed}
+`;
   function injectStyles() {
     if (document.getElementById("df-select-search-css")) return;
     const style = document.createElement("style");
     style.id = "df-select-search-css";
-    style.textContent = css;
+    style.textContent = css + (panelThreshold() === 0 ? closedCss : "");
     document.head.append(style);
   }
 
@@ -65,7 +76,7 @@ select[data-df-ss]{cursor:pointer}
     const opts = explicit.get(select);
     if (opts) return select.options.length > (opts.threshold ?? 0);
     if (select.hasAttribute("data-search")) return true;
-    return select.options.length > (DF.searchSelect?.threshold ?? THRESHOLD);
+    return select.options.length > (DF.searchSelect?.threshold ?? panelThreshold());
   }
   function mark(select) {
     if (eligible(select)) {
@@ -406,7 +417,10 @@ select[data-df-ss]{cursor:pointer}
       refresh: () => (open?.select === select ? render(false) : mark(select)),
     };
   }
-  searchSelect.threshold = THRESHOLD;
+  // DF.searchSelect.threshold overrides the panel's default (panelThreshold) when set.
+  searchSelect.threshold = undefined;
+  /** The threshold in effect on this panel. */
+  searchSelect.effectiveThreshold = () => searchSelect.threshold ?? panelThreshold();
   searchSelect.isOpen = () => !!open;
   DF.searchSelect = searchSelect;
 })();

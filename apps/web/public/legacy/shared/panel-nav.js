@@ -46,6 +46,16 @@
           ["document", "Banking & Financial template", "banking-and-financial"],
         ],
       },
+      // SMS & Email Integrations (super-admin/bridge-notifications.js).
+      Integrations: {
+        attr: "data-int-tab",
+        detect: () => document.querySelector('#mainContent [data-int-tab][aria-selected="true"]')?.dataset.intTab || null,
+        list: [
+          ["settings", "Channels & limits", "channels-and-limits"],
+          ["messages", "Recent messages", "recent-messages"],
+          ["gateways", "Gateway Settings", "gateway-settings"],
+        ],
+      },
       "Service plans": {
         attr: "data-pkg-segment",
         detect: () => document.querySelector('#mainContent [data-pkg-segment][aria-pressed="true"]')?.dataset.pkgSegment || null,

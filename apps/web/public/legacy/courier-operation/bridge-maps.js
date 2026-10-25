@@ -94,6 +94,8 @@
     if (!entry) {
       const host = document.createElement("div");
       host.className = "map";
+      // Which page's map (Today's "Overview" map is taller: bridge-nav.js styles).
+      host.dataset.mapPage = page;
       host.style.background = "#eef2f5";
       // Leaflet's panes use z-index 400–1000; keep them inside the map so dialogs (z-index 50) stay on top.
       host.style.isolation = "isolate";

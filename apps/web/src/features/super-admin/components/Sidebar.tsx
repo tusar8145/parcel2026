@@ -61,15 +61,27 @@ export default function Sidebar() {
             </svg>
             Banking & Financial merchants
           </button>{" "}
-        </div>{" "}
-        <div className="nav-group">
-          <div className="nav-label">{"Merchant setup & pricing"}</div>{" "}
           <button className="nav-item" data-page="Service plans">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-settings" />
             </svg>
             {"Service plans & pricing"}
           </button>{" "}
+          <button className="nav-item" data-page="Import settings">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            Excel Import settings
+          </button>{" "}
+          <button className="nav-item" data-page="Parcel notifications">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-settings" />
+            </svg>
+            Parcel notifications
+          </button>{" "}
+        </div>{" "}
+        <div className="nav-group">
+          <div className="nav-label">{"Rider setup & pricing"}</div>{" "}
           <button className="nav-item" data-page="Rider plans">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-wallet" />
@@ -91,29 +103,23 @@ export default function Sidebar() {
             </svg>
             {"Admin users & roles"}
           </button>{" "}
-          <button className="nav-item" data-page="Import settings">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            Excel Import settings
-          </button>{" "}
           <button className="nav-item" data-page="Platform settings">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-settings" />
             </svg>
             Global notifications
           </button>{" "}
+          <button className="nav-item" data-page="Integrations">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+            {"SMS & Email Integrations"}
+          </button>{" "}
           <button className="nav-item" data-page={"Pricing & catalogs"}>
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-box" />
             </svg>
             {"Shared catalogs & locations"}
-          </button>{" "}
-          <button className="nav-item" data-page="Integrations">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-plug" />
-            </svg>
-            Integrations
           </button>{" "}
           <button className="nav-item" data-page="Audit log">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

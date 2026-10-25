@@ -32,6 +32,8 @@
     if (i < 0) return void (cfg.rows = cfg.rows.map(row => row.map(asText)));
     cfg.cols.splice(i, 1, "PICKUP", "HUB");
     let pairs = cfg.rows.map((row, k) => ({ m: all[k], row: [...row.slice(0, i), pickupText(all[k]), all[k]?.pickupHub?.name || "No hub", ...row.slice(i + 1)].map(asText) }));
+    // Only active merchants (suspended, rejected and under-review accounts aren't worked with here).
+    pairs = pairs.filter(p => p.m?.status === "ACTIVE");
     if (state.hub) pairs = pairs.filter(p => (state.hub === "none" ? !p.m?.pickupHub : p.m?.pickupHub?.id === state.hub));
     cfg.rows = pairs.map(p => p.row);
     state.shown = pairs.map(p => p.m);
@@ -53,14 +55,27 @@
         `<select class="select-small" id="merchantHubFilter" aria-label="Filter by hub"><option value="">All hubs</option>${hubs.map(h => `<option value="${esc(h.id)}" ${state.hub === h.id ? "selected" : ""}>${esc(h.name)}</option>`).join("")}<option value="none" ${state.hub === "none" ? "selected" : ""}>No hub</option></select>`,
       );
     }
-    // Change address, per row (the rows are in the order of state.shown).
+    // Each row's merchant (the rows are in the order of state.shown; bridge-login-as.js reads it too).
+    panel.querySelectorAll("tbody tr").forEach((tr, k) => {
+      if (state.shown[k]) tr.dataset.merchantId = state.shown[k].id;
+    });
+    // Change address, per row.
     if (can())
       panel.querySelectorAll("tbody tr").forEach((tr, k) => {
         const m = state.shown[k];
         if (!m || tr.querySelector("[data-merchant-address]")) return;
-        tr.dataset.merchantId = m.id;
-        tr.lastElementChild?.insertAdjacentHTML("beforeend", ` <button type="button" class="mini-button" data-merchant-address="${esc(m.id)}" title="The merchant's hub follows its pickup address">Change address</button>`);
+        tr.lastElementChild?.insertAdjacentHTML("beforeend", ` <button type="button" class="button button-sm" data-merchant-address="${esc(m.id)}" title="The merchant's hub follows its pickup address">Change address</button>`);
       });
+    // With "Log in as" (bridge-login-as.js adds its cell right after this): both actions together in that cell.
+    queueMicrotask(() =>
+      panel.querySelectorAll("tbody tr").forEach(tr => {
+        const change = tr.querySelector("[data-merchant-address]");
+        const cell = tr.querySelector("[data-login-as-merchant]")?.closest("td");
+        if (!change || !cell || change.closest("td") === cell) return;
+        cell.style.whiteSpace = "nowrap";
+        cell.prepend(change, " ");
+      }),
+    );
     // Address changes waiting for approval.
     const requests = loadRequests();
     $("addressRequestsPanel")?.remove();

@@ -41,6 +41,30 @@ function pageView() {
   }).catch(() => undefined);
 }
 
+/** This tab's random id for "visitors online now" (sessionStorage: gone when the tab closes). */
+function tabId() {
+  try {
+    let id = sessionStorage.getItem("df-tab-id");
+    if (!id) sessionStorage.setItem("df-tab-id", (id = `t${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`));
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/** "Still here" every 30 s while the tab is visible, only with consent (Platform activity › Live now). */
+function ping() {
+  if (document.visibilityState !== "visible" || !readConsent()?.analytics) return;
+  const sid = tabId();
+  if (!sid) return;
+  void fetch("/api/v1/analytics/ping", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sid, path: location.pathname }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 export default function CookieConsent() {
   const [open, setOpen] = useState(false);
 
@@ -54,10 +78,18 @@ export default function CookieConsent() {
         setOpen(true);
       }
     };
+    const onVisible = () => ping();
+    ping();
+    const heartbeat = setInterval(ping, 30_000);
     window.addEventListener("df:route", onRoute);
+    window.addEventListener("df:route", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
     document.addEventListener("click", reopen);
     return () => {
+      clearInterval(heartbeat);
       window.removeEventListener("df:route", onRoute);
+      window.removeEventListener("df:route", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
       document.removeEventListener("click", reopen);
     };
   }, []);
@@ -67,7 +99,10 @@ export default function CookieConsent() {
       localStorage.setItem(CONSENT_KEY, JSON.stringify({ analytics, at: new Date().toISOString() }));
     } catch {}
     setOpen(false);
-    if (analytics) pageView();
+    if (analytics) {
+      pageView();
+      ping();
+    }
   };
 
   if (!open) return null;

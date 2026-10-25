@@ -198,7 +198,7 @@
     const box = select.previousElementSibling?.dataset?.dfSearch === select.id ? select.previousElementSibling : null;
     box?.remove();
     for (const option of select.options) option.hidden = false;
-    if (window.DF?.searchSelect) DF.searchSelect(select, { label, threshold: Math.min(threshold, DF.searchSelect.threshold) });
+    if (window.DF?.searchSelect) DF.searchSelect(select, { label, threshold: Math.min(threshold, DF.searchSelect.effectiveThreshold?.() ?? 12) });
   }
 
   /** Hub Pickup: names the hub serving the delivery zone, from the price quote (quote.collectHub). */

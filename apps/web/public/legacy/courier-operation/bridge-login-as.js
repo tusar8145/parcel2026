@@ -35,9 +35,9 @@
     const merchants = Ops.cache.merchants?.value || [];
     const head = q("#mainContent table.generic-table thead tr");
     if (head && !q("[data-login-as-head]", head)) head.insertAdjacentHTML("beforeend", `<th data-login-as-head></th>`);
-    // The register lists the merchants in the API's order (bridge-pages.js Ops.prepare.Merchants); search only hides rows.
+    // Each row's merchant (data-merchant-id, bridge-merchant-hubs.js: the list is filtered to active merchants and by hub).
     qa("#genericBody tr").forEach((row, i) => {
-      const m = merchants[i];
+      const m = row.dataset.merchantId ? merchants.find(x => x.id === row.dataset.merchantId) : merchants[i];
       if (!m || q("[data-login-as-merchant]", row)) return;
       row.insertAdjacentHTML("beforeend", `<td>${button(`data-login-as-merchant="${esc(m.id)}"`)}</td>`);
     });

@@ -1,12 +1,14 @@
 /*
  * Super admin: notifications and messaging gateways on the API.
  *
- * - Global notifications ("Platform settings"): the event catalogue comes from
- *   GET /notifications/events. Per event × channel on/off switches, a template editor
- *   (variables, live preview, reset to default) and the SMS / OTP limits
- *   (GET/PUT /notifications/settings). The SMS / email channel switches stay on the page's own
- *   form (platform-config), as before.
- * - Integrations: real status cards for the SMS (mram) and email (Mailjet) gateways
+ * - Global notifications ("Platform settings", Platform control): every message except the Parcel ones,
+ *   in tabs per group with their counts (GET /notifications/events). Per event × channel on/off
+ *   switches and a template editor (variables, live preview, reset to default).
+ * - Parcel notifications (Merchant management): the Parcel group's messages, the same list and editor.
+ * - SMS & Email Integrations ("Integrations", Platform control), tab "Channels & limits": Notification
+ *   channels (SMS / email on or off; the page's own platform-config, saved as before) and the SMS / OTP
+ *   limits and message settings (GET/PUT /notifications/settings). More settings go here later.
+ * - SMS & Email Integrations, tab "Gateways": real status cards for the SMS (mram) and email (Mailjet) gateways
  *   (GET /notifications/gateways): settings with write-only keys, health, 24 h counts, a
  *   "Send test" action that sends one real message, and the most recent messages.
  */
@@ -34,54 +36,141 @@
     }
   }
 
-  const S = { catalog: null, settings: null, editing: null, gateways: null, outbox: [] };
+  const S = { catalog: null, settings: null, editing: null, gateways: null, outbox: [], scope: "others" };
   let current = null;
+  const PARCEL_GROUP = "Parcel";
+  const PARCEL_PAGE = "Parcel notifications";
+  // Old links to the Settings page open SMS & Email Integrations › Channels & limits.
+  const SETTINGS_PAGE = "Settings";
+
+  // The base renderer (01.js) draws unknown pages from its `generic` table: give the new pages an empty entry.
+  try {
+    for (const [page, desc] of [[PARCEL_PAGE, "Parcel messages"]])
+      if (typeof generic === "object" && !generic[page]) generic[page] = { desc, cols: [], rows: [] };
+  } catch {}
 
   const baseShowPage = window.showPage;
   window.showPage = showPage = function (page) {
+    if (page === SETTINGS_PAGE) {
+      S.intTab = "settings";
+      page = "Integrations";
+    }
     baseShowPage(page);
     current = page;
-    if (page === "Platform settings") void notificationsPage();
+    if (page === "Platform settings" || page === PARCEL_PAGE) void notificationsPage(page);
     if (page === "Integrations") void integrationsPage();
   };
   const still = page => current === page && document.getElementById("mainContent");
 
   // ───────────────────────────── Global notifications ─────────────────────────────
 
-  async function notificationsPage() {
+  /** Global notifications (every group but Parcel, in tabs) or Parcel notifications (the Parcel group). */
+  async function notificationsPage(page) {
+    const parcel = page === PARCEL_PAGE;
+    if (parcel)
+      document.getElementById("mainContent").innerHTML =
+        `<div class="page-heading"><div><p class="eyebrow">Merchant management</p><h1>Parcel notifications</h1><p class="subtitle">The SMS and emails about a parcel (booked, picked up, out for delivery, delivered, returned…) that merchants, senders and recipients get. Switch them on or off and edit their texts.</p></div></div><div class="config-layout" id="ntParcelLayout"><p class="panel-subtitle">Loading…</p></div>`;
+    else {
+      // The channel switches and the SMS limits have their own page now (Settings).
+      const sub = document.querySelector("#mainContent .page-heading .subtitle");
+      if (sub) sub.textContent = "Messages about merchants, money, support, accounts, operations, riders and partners. Parcel messages are in Merchant management › Parcel notifications; SMS / email switches and limits in Settings.";
+      document.querySelector("#mainContent .page-heading [data-config-save]")?.remove();
+      const old = document.querySelector("#mainContent .config-layout");
+      if (old) old.innerHTML = `<p class="panel-subtitle">Loading…</p>`;
+    }
     try {
-      [S.catalog, S.settings] = await Promise.all([DF.api("/notifications/events"), DF.api("/notifications/settings")]);
+      S.catalog = await DF.api("/notifications/events");
     } catch (error) {
       return fail(error);
     }
-    if (!still("Platform settings")) return;
+    if (!still(page)) return;
+    S.scope = parcel ? "parcel" : "others";
+    S.editing = null;
     const layout = document.querySelector("#mainContent .config-layout");
     if (!layout) return;
-    // Events are defined by the platform: the page's demo "add event" fields don't apply.
-    const form = document.getElementById("notificationConfigForm");
-    for (const name of ["event", "channels"]) form?.querySelector(`[name="${name}"]`)?.closest("label")?.style.setProperty("display", "none");
-    form?.querySelector('button[type="submit"]')?.style.setProperty("display", "none");
-    const catalogPanel = layout.querySelectorAll(":scope > .panel")[1];
-    const html = `${eventsPanel()}${editorPanel()}${limitsPanel()}`;
-    if (catalogPanel) catalogPanel.outerHTML = html;
-    else layout.insertAdjacentHTML("beforeend", html);
-    wireNotifications();
+    layout.style.display = "block";
+    layout.innerHTML = `${eventsPanel()}<div style="height:16px"></div>${editorPanel()}`;
+    wireEvents();
+    wireEditor();
   }
 
+  // ───────────────────────────── Settings ─────────────────────────────
+
+  /** The page's own platform-config channel switches (02.js), or defaults if it isn't there. */
+  const pageChannels = () => {
+    try {
+      return adminChannels; // eslint-disable-line no-undef
+    } catch {
+      return null;
+    }
+  };
+
+  /** Channels & limits tab: notification channels and the SMS limits (more settings will be added here). */
+  async function settingsTab(box) {
+    const channels = pageChannels() || { sms: true, email: true };
+    box.innerHTML = `<div class="config-layout" id="sysSettings" style="align-items:start">
+        ${panel("Notification channels", "SMS and email can be switched off for the whole platform (security messages are always sent); public tracking is always available.", `<form class="config-form" id="sysChannelsForm"><label class="config-check"><input type="checkbox" name="sms" ${channels.sms ? "checked" : ""}> SMS notifications enabled</label><label class="config-check"><input type="checkbox" name="email" ${channels.email ? "checked" : ""}> Email notifications enabled</label><label class="config-check"><input type="checkbox" checked disabled> Website tracking for everyone · always on</label><button class="button button-primary" type="submit">Save channels</button></form>`, 'id="sysChannelsPanel"')}
+        <div id="sysLimits">${panel("SMS limits and message settings", "Loading…", "")}</div>
+      </div>`;
+    try {
+      S.settings = await DF.api("/notifications/settings");
+    } catch (error) {
+      return fail(error);
+    }
+    if (!still("Integrations") || !document.getElementById("sysLimits")) return;
+    document.getElementById("sysLimits").innerHTML = limitsPanel();
+    wireNotifications();
+  }
+  // The channel switches: the same platform-config save the old page used (02.js), staying on this page.
+  window.addEventListener(
+    "submit",
+    event => {
+      if (event.target?.id !== "sysChannelsForm") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const form = event.target;
+      const channels = pageChannels();
+      if (!channels) return fail(new Error("The settings could not be saved here; reload the page."));
+      channels.sms = form.elements.sms.checked;
+      channels.email = form.elements.email.checked;
+      try {
+        persistAdminConfig(); // eslint-disable-line no-undef -- 02.js: saved to the server (bridge.js)
+        toast(`Notification channels saved: SMS ${channels.sms ? "on" : "off"}, email ${channels.email ? "on" : "off"}.`);
+      } catch (error) {
+        fail(error);
+      }
+    },
+    true,
+  );
+
   // List filters survive re-renders (a switch or a saved template redraws the list).
-  const F = { q: "", channel: "", state: "" };
+  const F = { q: "", channel: "", state: "", group: "" };
   const isCustomized = e => Object.values(e.channels).some(c => c.customized);
   const isDisabled = e => Object.values(e.channels).some(c => !c.locked && !c.enabledByAdmin);
 
   function eventsPanel() {
     const order = S.catalog.groups || [];
     const groups = [];
-    for (const e of S.catalog.events) {
+    const inScope = e => (S.scope === "parcel" ? e.group === PARCEL_GROUP : e.group !== PARCEL_GROUP);
+    for (const e of S.catalog.events.filter(inScope)) {
       let g = groups.find(x => x.name === e.group);
       if (!g) groups.push((g = { name: e.group, events: [] }));
       g.events.push(e);
     }
     groups.sort((a, b) => (order.indexOf(a.name) + 1 || 99) - (order.indexOf(b.name) + 1 || 99));
+    // Global notifications: one group at a time, in tabs with their counts.
+    const tabbed = S.scope !== "parcel" && groups.length > 1;
+    if (tabbed && !groups.some(g => g.name === F.group)) F.group = groups[0]?.name || "";
+    const shownGroups = tabbed ? groups.filter(g => g.name === F.group) : groups;
+    const scoped = shownGroups.reduce((n, g) => n + g.events.length, 0);
+    const tabs = tabbed
+      ? `<div class="nt-tabs" role="tablist" aria-label="Message groups" style="display:inline-flex;gap:4px;flex-wrap:wrap;padding:4px;border-radius:11px;background:#eef1f5;margin:0 16px 12px">${groups
+          .map(
+            g =>
+              `<button type="button" role="tab" class="button button-sm${g.name === F.group ? " button-primary" : ""}" data-nt-tab="${esc(g.name)}" aria-selected="${g.name === F.group}" style="${g.name === F.group ? "" : "background:transparent;border:0;box-shadow:none;color:#556274"}">${esc(g.name)} <span style="display:inline-block;min-width:20px;margin-left:4px;padding:0 6px;border-radius:999px;background:${g.name === F.group ? "#ffffff33" : "#dfe4ec"};font-size:11px;line-height:18px">${g.events.length}</span></button>`,
+          )
+          .join("")}</div>`
+      : "";
     const cell = (e, channel) => {
       const c = e.channels[channel];
       if (!c) return `<td><span class="panel-subtitle">No ${CHANNEL_NAME[channel].toLowerCase()}</span></td>`;
@@ -98,7 +187,7 @@
         .filter(Boolean)
         .join(" ");
     const channelList = e => Object.keys(e.channels).map(c => CHANNEL_NAME[c]).join(" + ");
-    const rows = groups
+    const rows = shownGroups
       .map(
         g =>
           `<tr data-nt-group="${esc(g.name)}"><td colspan="4" style="background:#f6f8fb"><strong>${esc(g.name)}</strong> <span class="panel-subtitle" data-nt-group-count>${g.events.length} message${g.events.length === 1 ? "" : "s"}</span></td></tr>` +
@@ -112,13 +201,13 @@
       .join("");
     const off = ["sms", "email"].filter(c => !S.catalog.channels[c]).map(c => CHANNEL_NAME[c]);
     const note = off.length
-      ? `${off.join(" and ")} notifications are switched off above: only security messages (codes, alerts) are sent.`
-      : `Every SMS and email the platform sends (${S.catalog.events.length}). Switch them on or off per channel and edit their texts. Security messages (codes, alerts) are always sent.`;
+      ? `${off.join(" and ")} notifications are switched off in Settings: only security messages (codes, alerts) are sent.`
+      : `${S.scope === "parcel" ? `The parcel messages (${scoped})` : `${F.group} messages (${scoped})`}. Switch them on or off per channel and edit their texts. Security messages (codes, alerts) are always sent.`;
     const option = (value, label, current) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(label)}</option>`;
     const tools = `<input class="table-search" id="ntSearch" type="search" placeholder="Search messages..." aria-label="Search notification messages" value="${esc(F.q)}" style="width:190px">
       <select class="select-small" id="ntChannelFilter" aria-label="Filter by channel">${option("", "SMS and email", F.channel)}${option("sms", "Has SMS", F.channel)}${option("email", "Has email", F.channel)}</select>
       <select class="select-small" id="ntStateFilter" aria-label="Filter by state">${option("", "All messages", F.state)}${option("customised", "Customised", F.state)}${option("disabled", "Switched off", F.state)}${option("security", "Security messages", F.state)}</select>`;
-    return `<section class="panel table-panel" id="notificationEventsPanel"><div class="panel-heading" style="flex-wrap:wrap;gap:10px"><div><h2 class="panel-title">Notification messages</h2><p class="panel-subtitle">${esc(note)}</p></div><div class="table-tools" style="flex-wrap:wrap">${tools}</div></div><div class="table-scroll"><table id="notificationEventsTable"><thead><tr><th>MESSAGE</th><th>RECIPIENT</th><th>SMS</th><th>EMAIL</th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer" style="padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px"><span id="ntShowing"></span></div></section>`;
+    return `<section class="panel table-panel" id="notificationEventsPanel"><div class="panel-heading" style="flex-wrap:wrap;gap:10px"><div><h2 class="panel-title">Notification messages</h2><p class="panel-subtitle">${esc(note)}</p></div><div class="table-tools" style="flex-wrap:wrap">${tools}</div></div>${tabs}<div class="table-scroll"><table id="notificationEventsTable"><thead><tr><th>MESSAGE</th><th>RECIPIENT</th><th>SMS</th><th>EMAIL</th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer" style="padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px"><span id="ntShowing"></span></div></section>`;
   }
 
   /** Shows the rows matching the search box and filters; hides group headers left empty. */
@@ -144,7 +233,7 @@
       }
     }
     for (const header of table.querySelectorAll("tr[data-nt-group]")) header.hidden = !visibleByGroup.get(header.dataset.ntGroup);
-    const total = S.catalog.events.length;
+    const total = table.querySelectorAll("tr[data-nt-event]").length;
     const showing = document.getElementById("ntShowing");
     if (showing) showing.textContent = shown === total ? `Showing all ${total} messages` : shown ? `Showing ${shown} of ${total} messages` : "No messages match the search and filters.";
   }
@@ -364,6 +453,16 @@
     });
   }
 
+  document.addEventListener("click", event => {
+    const tab = event.target instanceof Element ? event.target.closest("[data-nt-tab]") : null;
+    if (!tab || !S.catalog) return;
+    F.group = tab.dataset.ntTab;
+    const old = document.getElementById("notificationEventsPanel");
+    if (!old) return;
+    old.outerHTML = eventsPanel();
+    wireEvents();
+  });
+
   function draft(form) {
     const value = id => form.querySelector(`#${id}`)?.value;
     return { subject: value("ntSubject"), body: value("ntBody"), html: value("ntHtml") };
@@ -462,20 +561,59 @@
 
   // ───────────────────────────── Integrations ─────────────────────────────
 
+  /** SMS & Email Integrations: Channels & limits (first) · Recent messages · Gateways (status, keys, test). */
+  const INT_TABS = [
+    ["settings", "Channels & limits"],
+    ["messages", "Recent messages"],
+    ["gateways", "Gateway Settings"],
+  ];
   async function integrationsPage() {
+    const main = document.getElementById("mainContent");
+    const tab = INT_TABS.some(([k]) => k === S.intTab) ? S.intTab : "settings";
+    const tabs = INT_TABS;
+    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS & Email Integrations</h1><p class="subtitle">The SMS and email gateways (keys are stored encrypted and never shown again), which channels are on, and the SMS limits and message settings.</p></div></div>
+      <div class="int-tabs" role="tablist" aria-label="SMS and email" style="display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5">${tabs
+        .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${k === tab ? " button-primary" : ""}" data-int-tab="${k}" aria-selected="${k === tab}" style="${k === tab ? "" : "background:transparent;border:0;box-shadow:none;color:#556274"}">${label}</button>`)
+        .join("")}</div>
+      <div id="intBody"><p class="panel-subtitle">Loading…</p></div>`;
+    const crumb = document.getElementById("breadcrumbPage");
+    if (crumb) crumb.textContent = "SMS & Email Integrations";
+    const box = document.getElementById("intBody");
+    if (tab === "settings") return settingsTab(box);
+    if (tab === "messages") {
+      try {
+        S.outbox = await DF.api("/notifications/outbox?limit=50");
+      } catch (error) {
+        return fail(error);
+      }
+      if (!still("Integrations") || !box.isConnected) return;
+      box.innerHTML = outboxPanel();
+      return;
+    }
     try {
-      [S.gateways, S.outbox] = await Promise.all([DF.api("/notifications/gateways"), DF.api("/notifications/outbox?limit=15")]);
+      S.gateways = await DF.api("/notifications/gateways");
     } catch (error) {
       return fail(error);
     }
-    if (!still("Integrations")) return;
-    const main = document.getElementById("mainContent");
-    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>Integrations</h1><p class="subtitle">Messaging gateways used for codes, parcel updates and account notices. Keys are stored encrypted and never shown again.</p></div></div>
-      <section class="metrics" id="gatewayMetrics">${S.gateways.map(metric).join("")}</section>
-      <div class="config-layout" id="gatewayCards">${S.gateways.map(gatewayCard).join("")}</div>
-      ${outboxPanel()}`;
+    if (!still("Integrations") || !box.isConnected) return;
+    box.innerHTML = `<section class="metrics" id="gatewayMetrics">${S.gateways.map(metric).join("")}</section>
+      <div class="config-layout" id="gatewayCards">${S.gateways.map(gatewayCard).join("")}</div>`;
     wireIntegrations();
   }
+  // The menu item opens Channels & limits (redraws after data loads keep the tab; a ?tab= link clicks its tab, shared/panel-nav.js).
+  document.addEventListener(
+    "click",
+    event => {
+      if (event.target instanceof Element && event.target.closest('#navigation [data-page="Integrations"]')) S.intTab = "settings";
+    },
+    true,
+  );
+  document.addEventListener("click", event => {
+    const tab = event.target instanceof Element ? event.target.closest("[data-int-tab]") : null;
+    if (!tab || current !== "Integrations") return;
+    S.intTab = tab.dataset.intTab;
+    void integrationsPage();
+  });
 
   const STATUS = g => (g.mode === "live" ? ["Live", "good"] : g.configured && g.enabled ? ["Log only (development)", "blue"] : g.configured ? ["Disabled", "warn"] : ["Not configured", "bad"]);
 
@@ -525,7 +663,7 @@
       : `<tr><td colspan="6">No messages yet.</td></tr>`;
     return panel(
       "Recent messages",
-      "The latest SMS and emails (message text is hidden: it can contain codes).",
+      "The latest 50 SMS and emails (message text is hidden: it can contain codes).",
       `<div class="table-scroll"><table id="outboxTable"><thead><tr><th>TIME</th><th>CHANNEL</th><th>EVENT</th><th>TO</th><th>STATUS</th><th>GATEWAY</th></tr></thead><tbody>${rows}</tbody></table></div>`,
     );
   }

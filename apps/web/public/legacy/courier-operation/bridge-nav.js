@@ -45,6 +45,25 @@
     "beforeend",
     `<style id="dfNavStyles">
 #navigation [hidden]{display:none!important}
+/* Sections drawn one after another (e.g. Delivery: route planner, route roster) keep a gap between them. */
+#mainContent > .panel + .panel,#mainContent > div:not([class]) > .panel + .panel{margin-top:14px}
+/* … and after a plain wrapper of sections (Riders › Shifts & attendance: #shiftPanels), not inside grids. */
+#mainContent > div:not([class]) > .panel:first-child{margin-top:0}
+/* Single selects everywhere in Courier Operations: one look instead of the browser's default (sizes stay as each page sets them). */
+select:not([multiple]):not([size]){-webkit-appearance:none;-moz-appearance:none;appearance:none;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px;padding-right:30px!important;border:1px solid #dfe4ec;border-radius:8px;color:#344054;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+select:not([multiple]):not([size]):hover{border-color:#c3ccd9}
+select:not([multiple]):not([size]):focus{border-color:#7c9cf5;box-shadow:0 0 0 3px #3766e81f;outline:none}
+select:not([multiple]):not([size]):disabled{background-color:#f5f7fa;color:#98a2b3;cursor:not-allowed}
+select:not([multiple]):not([size])::-ms-expand{display:none}
+/* Riders › Shifts & attendance (bridge-shifts.js): readable table text, the rider in bold. */
+#shiftPanels tbody td{color:#344054;font-size:13px}
+#shiftPanels tbody td:first-child{color:#1d2939;font-weight:600}
+#shiftPanels tbody td.empty-state{color:#667085;font-weight:400}
+/* Footer notes under tables (e.g. Riders: "Run sheets include…"): padded with a divider, like the lists' footers. */
+#mainContent .panel > .table-footer{padding:11px 16px;border-top:1px solid #eef0f4;color:#7a8696;font-size:12.5px}
+/* Today: a taller live network map (bridge-maps.js). */
+.map[data-map-page="Overview"]{height:440px}
+@media(max-width:720px){.map[data-map-page="Overview"]{height:300px}}
 .df-tabs{display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5;max-width:100%}
 .df-tabs .button{border:0;background:transparent;color:#556274;padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:none}
 .df-tabs .button:hover{background:#e3e7ee;color:#1d2939}

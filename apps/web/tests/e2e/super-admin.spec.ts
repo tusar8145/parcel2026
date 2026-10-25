@@ -182,6 +182,7 @@ test.describe("super admin", () => {
     // The panel shows the real two-step status on Admin users & roles.
     await nav(page, "Admin users");
     await expect(page.locator("#dfSecurity")).toContainText("Two-step verification is on");
+    await page.click('[data-admin-tab="roles"]');
     await expect(page.locator("#dfMatrix")).toBeVisible();
     await page.context().close();
   });
@@ -190,10 +191,19 @@ test.describe("super admin", () => {
     const admin = await open(browser, "/", errors);
     await signInAsAdmin(admin);
     await nav(admin, "Admin users");
-    await expect(admin.locator("#dfMatrix input[data-sec-col=\"FINANCE\"]").first()).toBeAttached();
-    await expect(admin.locator("#dfChanges")).toContainText("Changes waiting for approval");
-    await expect(admin.locator("#dfSupportForm")).toBeVisible();
+    // The sections are in tabs: Administrators (default) · Approvals · Roles & permissions · Support access.
     await expect(admin.locator("#mainContent .callout")).toContainText("Two-step verification is required for super admins");
+    await expect(admin.locator("#adminBody")).toBeVisible();
+    await expect(admin.locator("#dfMatrix")).toBeHidden();
+    await admin.click('[data-admin-tab="roles"]');
+    await expect(admin.locator("#dfMatrix input[data-sec-col=\"FINANCE\"]").first()).toBeVisible();
+    await expect(admin.locator("#adminBody")).toBeHidden();
+    await admin.click('[data-admin-tab="approvals"]');
+    await expect(admin.locator("#dfChanges")).toContainText("Changes waiting for approval");
+    await expect(admin.locator("#dfChanges")).toBeVisible();
+    await admin.click('[data-admin-tab="support"]');
+    await expect(admin.locator("#dfSupportForm")).toBeVisible();
+    await admin.click('[data-admin-tab="admins"]');
     await nav(admin, "Platform activity");
     await expect(admin.locator("#mainContent .page-heading .eyebrow")).toHaveText("Platform insights · First-party analytics");
     // Default period: the last 7 days, one bar a day (dashboard-periods.spec.ts covers the other periods).
@@ -347,17 +357,22 @@ test.describe("super admin", () => {
   test("platform settings persist on the server", async ({ browser }) => {
     const admin = await open(browser, "/", errors);
     await signInAsAdmin(admin);
-    const sms = admin.locator('#notificationConfigForm [name="sms"]');
+    // The notification channels are on SMS & Email Integrations › Channels & limits.
+    const settingsTab = async (who: Page) => {
+      await nav(who, "Integrations");
+      await who.click('[data-int-tab="settings"]');
+    };
+    const sms = admin.locator('#sysChannelsForm [name="sms"]');
     // The owner's current choice is put back afterwards.
-    await nav(admin, "Platform settings");
+    await settingsTab(admin);
     const smsWasOn = await sms.isChecked();
     const setSms = async (on: boolean) => {
-      await nav(admin, "Platform settings");
+      await settingsTab(admin);
       await sms.setChecked(on);
       const saved = settingsSaved(admin);
-      await admin.click("[data-config-save]");
+      await admin.click('#sysChannelsForm button[type="submit"]');
       await saved;
-      await expect(toast(admin)).toContainText("channel preferences saved");
+      await expect(toast(admin)).toContainText("Notification channels saved");
     };
     try {
       await setSms(!smsWasOn);
@@ -365,15 +380,15 @@ test.describe("super admin", () => {
       // A fresh browser (nothing in local storage) sees the saved settings.
       const other = await open(browser, "/", errors);
       await signInAsAdmin(other);
-      await nav(other, "Platform settings");
-      await expect(other.locator('#notificationConfigForm [name="sms"]')).toBeChecked({ checked: !smsWasOn });
+      await settingsTab(other);
+      await expect(other.locator('#sysChannelsForm [name="sms"]')).toBeChecked({ checked: !smsWasOn });
       await other.context().close();
     } finally {
       await setSms(smsWasOn);
     }
     await admin.reload();
     await admin.waitForSelector("html.legacy-ready", { state: "attached" });
-    await nav(admin, "Platform settings");
+    await settingsTab(admin);
     await expect(sms).toBeChecked({ checked: smsWasOn });
   });
 });

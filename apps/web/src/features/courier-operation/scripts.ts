@@ -75,11 +75,15 @@ export const scripts = [
   "/legacy/courier-operation/bridge-failed.js",
   // "Log in as" on the Merchants and Riders lists (support access in a new tab; shared/api.js DF.startSupportAccess).
   "/legacy/courier-operation/bridge-login-as.js",
+  // Merchants: the register in tabs by merchant type (E-commerce · Banking & Financial · All).
+  "/legacy/courier-operation/bridge-merchant-tabs.js",
   // Work queue: each parcel's next step, grouped, with Excel and scan-to-do (its own menu).
   "/legacy/courier-operation/bridge-workqueue.js",
   // Long pages in tabs by task: Transfers, Riders (sections tagged by title).
   "/legacy/courier-operation/bridge-section-tabs.js",
   "/legacy/courier-operation/bridge-nav.js",
+  // Super admins: a link back to the super admin panel at the bottom of the sidebar.
+  "/legacy/courier-operation/bridge-admin-link.js",
   // Period filter on Today and Analytics & SLA (after the navigation has laid the page out).
   "/legacy/courier-operation/bridge-period.js"
 ];

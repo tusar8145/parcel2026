@@ -28,6 +28,14 @@ export const scripts = [
   "/legacy/super-admin/bridge-location.js",
   "/legacy/shared/mfa.js",
   "/legacy/super-admin/bridge-security.js",
+  // Admin users & roles: its sections in tabs (shows / hides what bridge-security.js draws).
+  "/legacy/super-admin/bridge-admin-tabs.js",
+  // Platform activity in tabs: Live now, Website traffic, Parcel tracking (website lookups), Merchants & riders, User activity.
+  "/legacy/super-admin/bridge-activity.js",
+  // Registrations: the review queue in tabs (To review · Rejected · Approved · All).
+  "/legacy/super-admin/bridge-registration-tabs.js",
+  // E-commerce / Banking & Financial merchants, Franchises: the lists in tabs by account status, with counts.
+  "/legacy/super-admin/bridge-status-tabs.js",
   // Period filter on Overview and Platform activity.
   "/legacy/super-admin/bridge-period.js",
   // Last: every page (and tab) has its own address: ?page=<slug>[&tab=<slug>], Back / Forward, titles (DF.nav).

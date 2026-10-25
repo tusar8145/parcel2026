@@ -244,7 +244,7 @@ test("banking merchant, super admin and rider: page and tab links", async ({ bro
 
   const admin = await signInAdmin(browser, "/super-admin?page=import-settings&tab=e-commerce", errors);
   await expect(admin.locator('#importSettings [data-import-tab="ecommerce"]')).toHaveAttribute("aria-selected", "true");
-  await expect(admin).toHaveTitle("Import settings › E-commerce template · Delivery Fast · Super admin");
+  await expect(admin).toHaveTitle("Excel Import settings › E-commerce template · Delivery Fast · Super admin");
   await admin.click('#importSettings [data-import-tab="document"]');
   await expect.poll(() => query(admin).tab).toBe("banking-and-financial");
   await admin.goBack();

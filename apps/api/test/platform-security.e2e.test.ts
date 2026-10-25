@@ -416,6 +416,54 @@ describe("platform security (super admin)", () => {
       const row = await ctx.prisma.analyticsDaily.findFirst({ where: { metric: "tracking_lookup", dimension: "" } });
       expect(row?.count).toBe(1);
     });
+
+    it("records which parcels were tracked on the website (no visitor data): period counts, the paged list, live now", async () => {
+      const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
+      const a = (await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() })).body.trackingId as string;
+      const b = (await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() })).body.trackingId as string;
+      const track = (id: string, headers = browser) => ctx.api("GET", `/track/${id}`, { headers });
+      expect((await track(a)).status).toBe(200);
+      expect((await track(a)).status).toBe(200); // the same visitor again within 10 minutes: one lookup
+      expect((await track(a, { ...browser, "user-agent": `${browser["user-agent"]} Edg/130` })).status).toBe(200); // another visitor
+      expect((await track(b)).status).toBe(200);
+      await new Promise(r => setTimeout(r, 300)); // recorded after the response
+      const rows = await ctx.prisma.trackingLookup.findMany();
+      expect(rows).toHaveLength(3);
+      expect(Object.keys(rows[0]).sort()).toEqual(["createdAt", "id", "parcelId", "via"]);
+
+      const { token } = await admin();
+      const summary = (await ctx.api("GET", "/analytics/tracking/summary", { token })).body;
+      expect(summary.periods.today).toMatchObject({ lookups: 3, parcels: 2 });
+      expect(summary.periods.thisMonth).toMatchObject({ lookups: 3, parcels: 2 });
+      expect(summary.periods.lastMonth).toMatchObject({ lookups: 0, parcels: 0 });
+      expect(summary.periods.allTime).toMatchObject({ lookups: 3, parcels: 2 });
+
+      const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+      const list = (await ctx.api("GET", `/analytics/tracking/parcels?from=${day}&to=${day}&limit=1`, { token })).body;
+      expect(list).toMatchObject({ total: 2, lookups: 3, pages: 2, page: 1 });
+      expect(list.items).toHaveLength(1);
+      const second = (await ctx.api("GET", `/analytics/tracking/parcels?from=${day}&to=${day}&limit=1&page=2`, { token })).body.items;
+      expect([list.items[0].trackingId, second[0].trackingId].sort()).toEqual([a, b].sort());
+      const found = (await ctx.api("GET", `/analytics/tracking/parcels?from=${day}&to=${day}&q=${a}`, { token })).body.items;
+      expect(found).toEqual([expect.objectContaining({ trackingId: a, lookups: 2, status: expect.any(String) })]);
+
+      // Live: two open tabs ping, page views count per minute.
+      for (const sid of ["tab-aaaaaaaa", "tab-bbbbbbbb"]) expect((await ctx.api("POST", "/analytics/ping", { body: { sid, path: "/track/PP-1" }, headers: browser })).status).toBe(202);
+      expect((await ctx.api("POST", "/analytics/ping", { body: { sid: "tab-cccccccc", path: "/" }, headers: { ...browser, "user-agent": "Googlebot/2.1" } })).body.ok).toBe(false);
+      await ctx.api("POST", "/analytics/pageview", { body: { path: "/" }, headers: browser });
+      await new Promise(r => setTimeout(r, 200));
+      const live = (await ctx.api("GET", "/analytics/live", { token })).body;
+      expect(live.online).toBe(2);
+      expect(live.pages).toEqual([{ path: "/track/:id", visitors: 2 }]);
+      expect(live.perMinute).toHaveLength(30);
+      expect(live.perMinute.at(-1).pageviews).toBe(1);
+      expect(live.lookupsLastHour).toBe(3);
+      expect(live.recentLookups[0]).toMatchObject({ trackingId: expect.any(String), via: "search" });
+
+      const finance = await userWithRoles(ctx, [{ role: "FINANCE" }]);
+      expect((await ctx.api("GET", "/analytics/live", { token: finance.token })).status).toBe(403);
+      expect((await ctx.api("GET", "/analytics/tracking/summary", { token: finance.token })).status).toBe(403);
+    });
   });
 
   // ───────────── overview ─────────────

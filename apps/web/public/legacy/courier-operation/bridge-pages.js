@@ -254,7 +254,7 @@
 
   // ───────────── merchant accounts ─────────────
 
-  const MERCHANT_STATUS = { ACTIVE: "Active", PENDING_REVIEW: "Review", SUSPENDED: "Suspended" };
+  const MERCHANT_STATUS = { ACTIVE: "Active", PENDING_REVIEW: "Review", INFO_REQUESTED: "Info requested", SUSPENDED: "Suspended", REJECTED: "Rejected" };
   const loadMerchants = () => Ops.lazy("merchants", () => DF.api("/ops/merchants"), 60000);
   Ops.prepare.Merchants = () => {
     // Service packages replaced service plans: the column shows the package each merchant books with.
@@ -273,7 +273,7 @@
   Ops.enhance.Merchants = () => {
     const rows = genericPages.Merchants.rows.length;
     const error = Ops.lazyError("merchants");
-    registerText(error ? DF.describe(error) : "Live accounts · shipments booked this month", `Showing ${rows} merchant account${rows === 1 ? "" : "s"}`);
+    registerText(error ? DF.describe(error) : "Active accounts · shipments booked this month", `Showing ${rows} active merchant account${rows === 1 ? "" : "s"}`);
   };
 
   // Money: Accounts (bridge-accounts.js).

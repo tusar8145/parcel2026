@@ -153,3 +153,17 @@ model AnalyticsHourly {
   @@id([hour, metric])
   @@map("analytics_hourly")
 }
+
+/// A parcel looked up on the public website (GET /track/:id): which parcel and when, nothing about the visitor.
+/// Super admin › Platform activity › Parcel tracking (counts per period, the parcels tracked).
+model TrackingLookup {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  parcelId  String   @db.Uuid
+  /// "search": typed on the website; "link": opened from the SMS / guest link (?t=).
+  via       String   @default("search")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([parcelId, createdAt])
+  @@map("tracking_lookups")
+}

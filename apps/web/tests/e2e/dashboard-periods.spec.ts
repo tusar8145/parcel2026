@@ -213,6 +213,8 @@ test("super admin: overview bookings and the platform activity traffic chart fol
 
   // Platform activity has its own period (default: last 7 days → one bar a day); Today → the day's 24 hours.
   await page.click('#navigation [data-page="Platform activity"]');
+  // The page is in tabs (Live now first); the period picker belongs to Website traffic.
+  await page.click('[data-pa-tab="traffic"]');
   await expect(periodSelect(page)).toHaveValue("last_7_days");
   await expect(page.locator("#mainContent .traffic-bar")).toHaveCount(7, { timeout: 20_000 });
   await expect(page).toHaveURL(/period=last_7_days/);

@@ -22,6 +22,7 @@ import { parcelNoteSchema, riderHandoverSchema, riderReturnSchema, riderHandover
 import { listParcelsWithStageSchema } from "./parcel-stages";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { AnalyticsService } from "../analytics/analytics.service";
+import { WebsiteActivityService } from "../analytics/website-activity.service";
 
 @ApiTags("parcels")
 @Controller()
@@ -31,6 +32,7 @@ export class ParcelsController {
     private readonly riderTasks: RiderTasksService,
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
+    private readonly website: WebsiteActivityService,
   ) {}
 
   /** Public tracking by ID (masked: no phones or street addresses). */
@@ -38,10 +40,12 @@ export class ParcelsController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get("track/:trackingId")
   @ApiZodQuery(trackQuerySchema)
-  async track(@Param("trackingId") trackingId: string, @ZQuery(trackQuerySchema) query: z.infer<typeof trackQuerySchema>) {
+  async track(@Param("trackingId") trackingId: string, @ZQuery(trackQuerySchema) query: z.infer<typeof trackQuerySchema>, @ReqMeta() meta: RequestMeta) {
     // ?t= (the SMS / guest link) unlocks the delivery rider's live position; the ID alone doesn't.
     const result = await this.parcels.publicTrack(trackingId, query.t);
-    this.analytics.countTrackingLookup(); // first-party analytics: a count only, no IDs kept
+    this.analytics.countTrackingLookup(); // first-party analytics: the daily / hourly count
+    // Which parcel was tracked and when (Platform activity › Parcel tracking); nothing about the visitor is kept.
+    this.website.recordTrackingLookup(result.trackingId, query.t ? "link" : "search", meta);
     return result;
   }
 

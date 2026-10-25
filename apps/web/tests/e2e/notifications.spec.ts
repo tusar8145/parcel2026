@@ -92,12 +92,13 @@ test.describe.serial("super admin notifications", () => {
   test("edits, previews and resets a template; switches an event off and on", async () => {
     const before = (await api(page, "/notifications/events")).body.events.find((e: any) => e.event === "parcel.booked");
     try {
-      await nav(page, "Platform settings");
+      // Parcel messages have their own page (Merchant management › Parcel notifications).
+      await nav(page, "Parcel notifications");
       const row = page.locator('#notificationEventsTable tr[data-nt-event="parcel.booked"]');
       await expect(row).toContainText("Pickup request received");
-      // The page's demo "add event" fields are hidden; the channel switches stay.
-      await expect(page.locator('#notificationConfigForm [name="event"]')).toBeHidden();
-      await expect(page.locator('#notificationConfigForm [name="sms"]')).toBeVisible();
+      // Only the Parcel group here; the channel switches are on Settings.
+      await expect(page.locator('#notificationEventsTable tr[data-nt-event="auth.otp.login"]')).toHaveCount(0);
+      await expect(page.locator("#notificationConfigForm")).toHaveCount(0);
 
       await row.locator('[data-nt-edit="parcel.booked|sms"]').click();
       const editor = page.locator("#notificationTemplateEditor");
@@ -147,7 +148,7 @@ test.describe.serial("super admin notifications", () => {
     }
   });
 
-  test("lists every message by group with search, channel and state filters", async () => {
+  test("lists the messages by group (Global notifications in tabs, Parcel notifications on their own) with search, channel and state filters", async () => {
     const catalog = (await api(page, "/notifications/events")).body;
     const events = catalog.events as any[];
     expect(events.length).toBeGreaterThanOrEqual(45);
@@ -157,13 +158,20 @@ test.describe.serial("super admin notifications", () => {
     expect(original).toBeTruthy();
     await api(page, "/notifications/templates/parcel.changed_to_drop_off/sms", "PUT", { body: "{{trackingId}}: bring it to {{hub}}. Tk {{charge}}." });
     try {
+      // Global notifications: every group but Parcel, one tab each with its count.
       await nav(page, "Integrations");
       await nav(page, "Platform settings");
       const table = page.locator("#notificationEventsTable");
       const rows = table.locator("tr[data-nt-event]");
-      await expect(rows).toHaveCount(events.length);
-      for (const group of catalog.groups) await expect(table.locator(`tr[data-nt-group="${group}"]`)).toBeVisible();
-      await expect(page.locator("#ntShowing")).toHaveText(`Showing all ${events.length} messages`);
+      const others = catalog.groups.filter((g: string) => g !== "Parcel");
+      const count = (group: string) => events.filter(e => e.group === group).length;
+      await expect(page.locator("[data-nt-tab]")).toHaveCount(others.length);
+      await expect(page.locator('[data-nt-tab="Parcel"]')).toHaveCount(0);
+      for (const group of others) await expect(page.locator(`[data-nt-tab="${group}"]`)).toContainText(String(count(group)));
+      await expect(rows).toHaveCount(count(others[0]));
+      await page.click('[data-nt-tab="Account & security"]');
+      await expect(rows).toHaveCount(count("Account & security"));
+      await expect(page.locator("#ntShowing")).toHaveText(`Showing all ${count("Account & security")} messages`);
 
       // Audience and channels at a glance; security messages are marked and locked on.
       const otp = table.locator('tr[data-nt-event="auth.otp.login"]');
@@ -171,6 +179,21 @@ test.describe.serial("super admin notifications", () => {
       await expect(otp).toContainText("auth.otp.login · SMS");
       await expect(otp).toContainText("Security · always sent");
       await expect(otp.locator('[data-nt-toggle="auth.otp.login|sms"]')).toBeDisabled();
+
+      // Security texts stay editable: preview the sign-in code with its required placeholder.
+      await otp.locator('[data-nt-edit="auth.otp.login|sms"]').click();
+      const editor = page.locator("#notificationTemplateEditor");
+      await expect(editor).toContainText("Sign-in code · SMS");
+      await expect(editor).toContainText("must include {{code}}");
+      await editor.locator("[data-nt-preview]").click();
+      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Delivery Fast sign-in code");
+      await editor.locator("[data-nt-close]").click();
+
+      // Parcel notifications: the Parcel group only, with the same filters.
+      await nav(page, "Parcel notifications");
+      await expect(rows).toHaveCount(count("Parcel"));
+      await expect(page.locator("[data-nt-tab]")).toHaveCount(0);
+      await expect(page.locator("#ntShowing")).toHaveText(`Showing all ${count("Parcel")} messages`);
       const drop = table.locator('tr[data-nt-event="parcel.changed_to_drop_off"]');
       await expect(drop).toContainText("Changed to hub drop-off");
       await expect(drop).toContainText("SMS + Email");
@@ -187,46 +210,39 @@ test.describe.serial("super admin notifications", () => {
       await page.locator("#ntShowing").hover();
       await expect(card).toBeHidden();
 
-      // Search across name, key and audience; empty groups hide.
+      // Search across name, key and audience.
       await page.fill("#ntSearch", "drop-off");
       await expect(drop).toBeVisible();
       await expect(table.locator('tr[data-nt-event="parcel.drop_off_booked"]')).toBeVisible();
       await expect(table.locator('tr[data-nt-event="parcel.booked"]')).toBeHidden();
-      await expect(table.locator('tr[data-nt-group="Finance"]')).toBeHidden();
-      await expect(page.locator("#ntShowing")).toContainText(`of ${events.length} messages`);
+      await expect(page.locator("#ntShowing")).toContainText(`of ${count("Parcel")} messages`);
       await page.fill("#ntSearch", "");
-
-      // Channel filter: email-only list hides SMS-only codes.
-      await page.selectOption("#ntChannelFilter", "email");
-      await expect(otp).toBeHidden();
-      await expect(table.locator('tr[data-nt-event="ops.scheduled_report"]')).toBeVisible();
-      await page.selectOption("#ntChannelFilter", "");
 
       // State filters.
       await page.selectOption("#ntStateFilter", "customised");
       await expect(drop).toBeVisible();
       await expect(table.locator('tr[data-nt-event="parcel.booked"]')).toBeHidden();
       await page.selectOption("#ntStateFilter", "security");
-      await expect(otp).toBeVisible();
+      await expect(table.locator('tr[data-nt-event="parcel.delivery_code"]')).toBeVisible();
       await expect(drop).toBeHidden();
-
-      // Security texts stay editable: preview the sign-in code with its required placeholder.
-      await otp.locator('[data-nt-edit="auth.otp.login|sms"]').click();
-      const editor = page.locator("#notificationTemplateEditor");
-      await expect(editor).toContainText("Sign-in code · SMS");
-      await expect(editor).toContainText("must include {{code}}");
-      await editor.locator("[data-nt-preview]").click();
-      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Delivery Fast sign-in code");
-      await editor.locator("[data-nt-close]").click();
       await page.selectOption("#ntStateFilter", "");
-      await expect(page.locator("#ntShowing")).toHaveText(`Showing all ${events.length} messages`);
+      await expect(page.locator("#ntShowing")).toHaveText(`Showing all ${count("Parcel")} messages`);
+
+      // Channel filter on Global notifications: email-only list hides SMS-only codes.
+      await nav(page, "Platform settings");
+      await page.click('[data-nt-tab="Account & security"]');
+      await page.selectOption("#ntChannelFilter", "email");
+      await expect(otp).toBeHidden();
+      await page.selectOption("#ntChannelFilter", "");
+      await expect(otp).toBeVisible();
     } finally {
       await api(page, "/notifications/templates/parcel.changed_to_drop_off/sms/reset", "POST");
     }
   });
 
-  test("validates and saves SMS limits", async () => {
-    await nav(page, "Platform settings");
+  test("validates and saves SMS limits (SMS & Email Integrations › Channels & limits)", async () => {
+    await nav(page, "Integrations");
+    await page.click('[data-int-tab="settings"]');
     const form = page.locator("#notificationLimitsForm");
     const perHour = await form.locator("#ntPerHour").inputValue();
     const perDay = form.locator("#ntPerDay");
@@ -242,7 +258,13 @@ test.describe.serial("super admin notifications", () => {
   });
 
   test("shows real gateway status cards on Integrations", async () => {
+    // Tabs: Channels & limits (first) · Recent messages · Gateway Settings.
     await nav(page, "Integrations");
+    await expect(page.locator("[data-int-tab]")).toHaveText(["Channels & limits", "Recent messages", "Gateway Settings"]);
+    await expect(page.locator("#sysChannelsForm")).toBeVisible();
+    await page.click('[data-int-tab="messages"]');
+    await expect(page.locator("#outboxTable")).toBeVisible();
+    await page.click('[data-int-tab="gateways"]');
     const sms = page.locator('[data-gateway="SMS"]');
     const email = page.locator('[data-gateway="EMAIL"]');
     await expect(sms).toContainText("SMS gateway · mram");
@@ -258,6 +280,5 @@ test.describe.serial("super admin notifications", () => {
     await phone.fill("12345");
     await phone.blur();
     await expect(sms).toContainText("Enter the 10 digits after +880");
-    await expect(page.locator("#outboxTable")).toBeVisible();
   });
 });

@@ -158,6 +158,10 @@
       tabs: [
         { id: "Reports", page: "Reports" },
         { id: "Analytics & SLA", page: "Analytics" },
+        // Per rider for a day: pickups, deliveries, failures, COD collected / handed in, position (bridge-rider-report.js).
+        { id: "Rider report", page: "Rider report" },
+        // Parcels moved hub to hub: sent, received, on the way, missing per route and hub (bridge-hub-transfer-report.js).
+        { id: "Hub transfer report", page: "Hub transfer report" },
       ],
     },
     // Quick updates by scanning, one tab per job (the Hubs page's parts; bridge-hub-desk.js, bridge-intake.js, bridge-collect.js).

@@ -120,6 +120,8 @@ export const OPS_NAV = {
   customerParcels: ["All parcels", "Customer"],
   reports: ["Reports", "Reports"],
   analytics: ["Reports", "Analytics & SLA"],
+  riderReport: ["Reports", "Rider report"],
+  hubTransferReport: ["Reports", "Hub transfer report"],
   riders: ["Riders"],
   merchants: ["Merchants"],
   cnStock: ["CN stock"],

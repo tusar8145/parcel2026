@@ -36,6 +36,10 @@ export const scripts = [
   "/legacy/courier-operation/bridge-cn.js",
   "/legacy/courier-operation/bridge-shifts.js",
   "/legacy/courier-operation/bridge-reports.js",
+  // Reports › Rider report: per rider for a day, with the parcels and CSV.
+  "/legacy/courier-operation/bridge-rider-report.js",
+  // Reports › Hub transfer report: parcels sent / received hub to hub, with the parcels and CSV (uses the Rider report's styles).
+  "/legacy/courier-operation/bridge-hub-transfer-report.js",
   "/legacy/courier-operation/bridge-rider-kyc.js",
   "/legacy/courier-operation/bridge-rider-pay.js",
   "/legacy/courier-operation/bridge-returns.js",
@@ -43,6 +47,8 @@ export const scripts = [
   "/legacy/courier-operation/bridge-franchise.js",
   // Accounts (money): E-commerce / Financial / Customer accounts, rider cash slips, hub transfers, rider pay, franchise.
   "/legacy/courier-operation/bridge-accounts.js",
+  // Accounts tab badges: what waits in each tab (count and amount).
+  "/legacy/courier-operation/bridge-accounts-badges.js",
   "/legacy/courier-operation/bridge-intake.js",
   "/legacy/courier-operation/bridge-collect.js",
   "/legacy/shared/importer.js",

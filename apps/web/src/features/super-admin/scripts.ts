@@ -26,8 +26,6 @@ export const scripts = [
   "/legacy/super-admin/bridge-hubs-admin.js",
   // Rider plans › "Rider location": the location interval (2 / 5 / 10 min) and movement threshold.
   "/legacy/super-admin/bridge-location.js",
-  // Platform settings › Finance approvals: single or double approval of merchant settlements.
-  "/legacy/super-admin/bridge-accounts-settings.js",
   "/legacy/shared/mfa.js",
   "/legacy/super-admin/bridge-security.js",
   // Period filter on Overview and Platform activity.

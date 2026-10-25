@@ -7,12 +7,50 @@ import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { listRunsQuerySchema, listSchedulesQuerySchema, reportScheduleSchema, runReportSchema, updateReportScheduleSchema } from "./reports.schemas";
 import { ReportsService } from "./reports.service";
+import { RiderReportService, riderReportQuerySchema } from "./rider-report.service";
+import { HubTransferReportService, hubTransferReportQuerySchema } from "./hub-transfer-report.service";
 
 /** Operations reports: on-demand runs, Excel-compatible CSV downloads and emailed schedules. */
 @ApiTags("reports")
 @Controller("reports")
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly riderReport: RiderReportService,
+    private readonly hubTransferReport: HubTransferReportService,
+  ) {}
+
+  /** Hub transfer report: per route and hub for Dhaka days — parcels sent, received, still on the way, missing, time on the road. */
+  @RequirePermissions("parcel:read:any")
+  @Get("hub-transfers")
+  @ApiZodQuery(hubTransferReportQuerySchema)
+  hubTransfers(@CurrentActor() actor: Actor, @ZQuery(hubTransferReportQuerySchema) query: z.infer<typeof hubTransferReportQuerySchema>) {
+    return this.hubTransferReport.summary(actor, query);
+  }
+
+  /** The parcels behind the hub transfer report (one route with fromHubId / toHubId), for the list and the CSV. */
+  @RequirePermissions("parcel:read:any")
+  @Get("hub-transfers/parcels")
+  @ApiZodQuery(hubTransferReportQuerySchema)
+  hubTransferParcels(@CurrentActor() actor: Actor, @ZQuery(hubTransferReportQuerySchema) query: z.infer<typeof hubTransferReportQuerySchema>) {
+    return this.hubTransferReport.parcels(actor, query);
+  }
+
+  /** Rider report: per rider for Dhaka days — pickups, deliveries, failed, COD collected, cash handed in, held now, position. */
+  @RequirePermissions("parcel:read:any")
+  @Get("riders")
+  @ApiZodQuery(riderReportQuerySchema)
+  riders(@CurrentActor() actor: Actor, @ZQuery(riderReportQuerySchema) query: z.infer<typeof riderReportQuerySchema>) {
+    return this.riderReport.summary(actor, query);
+  }
+
+  /** The parcels behind the rider report (one rider with riderId), for the list and the CSV. */
+  @RequirePermissions("parcel:read:any")
+  @Get("riders/parcels")
+  @ApiZodQuery(riderReportQuerySchema)
+  riderParcels(@CurrentActor() actor: Actor, @ZQuery(riderReportQuerySchema) query: z.infer<typeof riderReportQuerySchema>) {
+    return this.riderReport.parcels(actor, query);
+  }
 
   @RequirePermissions("parcel:read:any")
   @Get("schedules")

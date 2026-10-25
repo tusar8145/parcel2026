@@ -295,6 +295,68 @@ describe("accounts: cash slips, transfers, settlements, bills and payments", () 
     expect((await ctx.api("POST", "/accounts/cutover", { token: s.finance.token })).status).toBe(403);
   });
 
+  it("rider report: pickups, deliveries, failures, COD collected and handed in for a day; the parcels behind it", async () => {
+    const s = await setup();
+    await deliver(s, s.owner.token, { codAmount: 1000 });
+    await deliver(s, s.owner.token, { codAmount: 400 });
+    const slip = (await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body;
+    await ctx.api("POST", `/cash/slips/${slip.id}/receive`, { token: s.branchOp.token, body: { received: 1300 } });
+    await ctx.prisma.riderLocation.create({ data: { riderId: s.rider.rider.id, lat: 23.79, lng: 90.41, accuracy: 10, at: new Date() } });
+    const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+
+    const report = await ctx.api("GET", `/reports/riders?from=${day}&to=${day}`, { token: s.branchOp.token });
+    expect(report.status, JSON.stringify(report.body)).toBe(200);
+    // The branch's staff see only their own hub's rider.
+    expect(report.body.items.map((i: { rider: { code: string } }) => i.rider.code)).toEqual(["R-3001"]);
+    expect(report.body.items[0]).toMatchObject({
+      pickups: { assigned: 2, pickedUp: 2 },
+      deliveries: { delivered: 2, failed: 0 },
+      cash: { collected: 1400, handedIn: 1300, holdingNow: 100 },
+      location: { lat: 23.79, lng: 90.41 },
+    });
+    expect(report.body.totals).toMatchObject({ delivered: 2, collected: 1400, handedIn: 1300 });
+
+    const parcels = (await ctx.api("GET", `/reports/riders/parcels?from=${day}&to=${day}&riderId=${s.rider.rider.id}`, { token: s.ops.token })).body.items;
+    expect(parcels.filter((p: { leg: string }) => p.leg === "Delivery").map((p: { outcome: string; cod: number }) => [p.outcome, p.cod]).sort()).toEqual([["Delivered", 1000], ["Delivered", 400]].sort());
+    expect(parcels.filter((p: { leg: string }) => p.leg === "Pickup")).toHaveLength(2);
+    // Another day: nothing; too long a range is refused; merchants can't see it.
+    expect((await ctx.api("GET", `/reports/riders?from=2025-01-01&to=2025-01-01`, { token: s.ops.token })).body.totals.delivered).toBe(0);
+    expect((await ctx.api("GET", `/reports/riders?from=2025-01-01&to=2025-03-01`, { token: s.ops.token })).status).toBe(422);
+    expect((await ctx.api("GET", `/reports/riders?from=${day}&to=${day}`, { token: s.owner.token })).status).toBe(403);
+  });
+
+  it("Accounts tab badges: riders holding cash, then hub cash to send, then a transfer on the way; per person's tabs", async () => {
+    const s = await setup();
+    await deliver(s, s.owner.token, { codAmount: 1000 });
+    const counts = async (token: string) => {
+      const res = await ctx.api("GET", "/accounts/tab-counts", { token });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      return res.body;
+    };
+    let ops = await counts(s.ops.token);
+    expect(ops["Rider cash"]).toMatchObject({ count: 1, amount: 1000 });
+    expect(ops["Rider cash"].hint).toContain("1 rider hold");
+    expect(ops["E-commerce"]).toBeDefined();
+    // Hub staff: only their tabs.
+    const branch = await counts(s.branchOp.token);
+    expect(Object.keys(branch)).not.toContain("E-commerce");
+    expect(branch["Rider cash"]).toMatchObject({ count: 1, amount: 1000 });
+
+    const slip = (await ctx.api("POST", "/rider/my-cash/slip", { token: s.rider.token })).body;
+    await ctx.api("POST", `/cash/slips/${slip.id}/receive`, { token: s.branchOp.token, body: { received: 1000 } });
+    ops = await counts(s.ops.token);
+    expect(ops["Rider cash"]).toMatchObject({ count: 0, amount: 0 });
+    expect(ops["Hub transfers"]).toMatchObject({ count: 1, amount: 1000 });
+    expect(ops["Hub transfers"].hint).toContain("1 hub to send");
+
+    await ctx.api("POST", "/cash/transfers", { token: s.branchOp.token, body: { fromHubId: s.branch.id, method: "BKASH" } });
+    ops = await counts(s.ops.token);
+    expect(ops["Hub transfers"]).toMatchObject({ count: 1, amount: 1000 });
+    expect(ops["Hub transfers"].hint).toContain("1 transfer on the way");
+    // Merchants see no tabs.
+    expect(await counts(s.owner.token)).toEqual({});
+  });
+
   it("PDFs: the rider's slip with its barcode, the hub transfer, the statement", async () => {
     const s = await setup();
     await deliver(s, s.owner.token, { codAmount: 900 });

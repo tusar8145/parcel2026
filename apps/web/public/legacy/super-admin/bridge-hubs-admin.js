@@ -2,7 +2,8 @@
  * Super admin → "Hubs & zones" (network setup, moved here from Courier Operations):
  *   Hubs            the hub register: add, edit (place, address, capacity, map pin), deactivate / reactivate,
  *                   delete when unused (GET /hubs?includeInactive=true, POST /hubs, PATCH /hubs/:id,
- *                   GET /hubs/:id/usage, DELETE /hubs/:id)
+ *                   GET /hubs/:id/usage, DELETE /hubs/:id); the central hub is highlighted and changed here
+ *                   ("Make central hub": GET / PUT /accounts/config)
  *   Delivery zones  which hub serves each zone (merchants and parcels follow it), its route, zones on / off
  *                   (GET /zones, PATCH /zones/:id); new zones are added in Pricing & catalogs (geography)
  *   Routes          delivery routes of a hub with a default rider (GET/POST/PATCH /routes)
@@ -16,7 +17,7 @@
   const toast = message => (typeof showToast === "function" ? showToast(message) : console.info(message));
   const fail = error => toast(DF.describe(error));
   const num = n => Number(n || 0).toLocaleString("en-US");
-  const S = { tab: "hubs", hubs: [], catalog: null, riders: [], zones: { items: [], next: null, loading: false, q: "", district: "", hubId: "" }, routes: [], form: null, loaded: false };
+  const S = { tab: "hubs", hubs: [], central: null, catalog: null, riders: [], zones: { items: [], next: null, loading: false, q: "", district: "", hubId: "" }, routes: [], form: null, loaded: false };
   let active = false;
   // Courier Operations' search links a zone here: /super-admin?page=Hubs+%26+zones&zone=<name> (read before the address is tidied).
   const linkedZone = new URLSearchParams(location.search).get("zone");
@@ -40,13 +41,14 @@
   }
 
   async function load() {
-    const [hubs, catalog, routes, riders] = await Promise.all([
+    const [hubs, catalog, routes, riders, accounts] = await Promise.all([
       DF.api("/hubs?includeInactive=true"),
       S.catalog ? Promise.resolve(S.catalog) : DF.api("/catalog").catch(() => null),
       DF.api("/routes?limit=200").catch(() => ({ items: [] })),
       DF.api("/riders?active=true").catch(() => []),
+      DF.api("/accounts/config").catch(() => null),
     ]);
-    Object.assign(S, { hubs, catalog, routes: routes.items || routes || [], riders, loaded: true });
+    Object.assign(S, { hubs, catalog, routes: routes.items || routes || [], riders, central: accounts?.centralHub?.id ?? null, loaded: true });
     if (!S.zones.items.length) await loadZones(true);
   }
   async function loadZones(reset) {
@@ -73,16 +75,19 @@
   const hubOptions = (selected, empty) => `${empty ? `<option value="">${esc(empty)}</option>` : ""}${S.hubs.filter(h => h.active || h.id === selected).map(h => `<option value="${esc(h.id)}" ${h.id === selected ? "selected" : ""}>${esc(h.name)}${h.type === "FRANCHISE" ? " · Franchise" : ""}</option>`).join("")}`;
 
   function hubsMarkup() {
-    const rows = S.hubs
+    const central = S.hubs.find(h => h.id === S.central);
+    // The central hub first, highlighted; any other active company hub can become it.
+    const rows = [...S.hubs]
+      .sort((a, b) => Number(b.id === S.central) - Number(a.id === S.central))
       .map(
-        h => `<tr data-hub-row="${esc(h.id)}"><td class="primary-cell">${esc(h.name)}${h.type === "FRANCHISE" ? ` <span class="status status-blue" data-hub-tag>Franchise</span>` : ""}<span class="subcell">${esc(h.code)}</span></td>
+        h => `<tr data-hub-row="${esc(h.id)}"${h.id === S.central ? ' data-central-hub style="background:#eff4ff;box-shadow:inset 3px 0 0 #2f55c9"' : ""}><td class="primary-cell">${esc(h.name)}${h.type === "FRANCHISE" ? ` <span class="status status-blue" data-hub-tag>Franchise</span>` : ""}${h.id === S.central ? ` <span class="status status-blue" data-central-tag style="background:#2f55c9;color:#fff">★ Central hub</span>` : ""}<span class="subcell">${esc(h.code)}</span></td>
           <td>${esc([h.zone, h.district].filter(Boolean).join(", "))}<span class="subcell">${esc(h.address)}</span></td>
           <td>${h.capacity ? num(h.capacity) : "—"}</td>
           <td>${pill(h.active ? "Active" : "Inactive", h.active)}</td>
-          <td style="white-space:nowrap"><button class="mini-button" data-hz-edit="${esc(h.id)}">Edit</button> <button class="mini-button" data-hz-toggle="${esc(h.id)}">${h.active ? "Deactivate" : "Activate"}</button> <button class="mini-button" data-hz-delete="${esc(h.id)}">Delete</button></td></tr>`,
+          <td style="white-space:nowrap">${h.id !== S.central && h.active && h.type !== "FRANCHISE" ? `<button class="mini-button" data-hz-central="${esc(h.id)}">Make central hub</button> ` : ""}<button class="mini-button" data-hz-edit="${esc(h.id)}">Edit</button> <button class="mini-button" data-hz-toggle="${esc(h.id)}">${h.active ? "Deactivate" : "Activate"}</button> <button class="mini-button" data-hz-delete="${esc(h.id)}">Delete</button></td></tr>`,
       )
       .join("");
-    return `<section class="panel table-panel"><div class="panel-heading"><div><h2 class="panel-title">Hubs</h2><p class="panel-subtitle">${S.hubs.filter(h => h.active).length} active of ${S.hubs.length}. A hub's place sets where drop-offs are priced from; its capacity is used for planning.</p></div><div class="table-tools"><button class="button button-primary" id="hzNewHub">Add hub</button></div></div><div class="table-scroll"><table><thead><tr><th>HUB</th><th>PLACE</th><th>CAPACITY</th><th>STATUS</th><th></th></tr></thead><tbody id="hzHubs">${rows || `<tr><td colspan="5" class="empty-state">No hubs yet.</td></tr>`}</tbody></table></div></section>`;
+    return `<section class="panel table-panel"><div class="panel-heading"><div><h2 class="panel-title">Hubs</h2><p class="panel-subtitle">${S.hubs.filter(h => h.active).length} active of ${S.hubs.length}. A hub's place sets where drop-offs are priced from; its capacity is used for planning.</p><p class="panel-subtitle" data-central-note style="margin-top:4px;${central ? "" : "color:#b42318;font-weight:600"}">${central ? `Central hub: <strong>${esc(central.name)}</strong>. Hubs send riders' cash here (Accounts › Hub transfers); only cash that reached it is settled with merchants and customers.` : "No central hub yet: choose one with “Make central hub” so hubs can send riders' cash and settlements can be paid."}</p></div><div class="table-tools"><button class="button button-primary" id="hzNewHub">Add hub</button></div></div><div class="table-scroll"><table><thead><tr><th>HUB</th><th>PLACE</th><th>CAPACITY</th><th>STATUS</th><th></th></tr></thead><tbody id="hzHubs">${rows || `<tr><td colspan="5" class="empty-state">No hubs yet.</td></tr>`}</tbody></table></div></section>`;
   }
 
   function zonesMarkup() {
@@ -194,6 +199,26 @@
     }
   }
 
+  async function makeCentral(h) {
+    const from = S.hubs.find(x => x.id === S.central);
+    const ok = await DF.confirm({
+      title: `Make ${h.name} the central hub?`,
+      message: from
+        ? `Hubs will send riders' cash to ${h.name} instead of ${from.name}. Transfers already on the way still go to ${from.name}; cash already at ${from.name} stays ready to settle.`
+        : `Hubs will send riders' cash to ${h.name}; only cash that reached it is settled with merchants and customers.`,
+      confirm: "Make central hub",
+    });
+    if (!ok) return;
+    try {
+      const cfg = await DF.api("/accounts/config", { method: "PUT", body: { centralHubId: h.id } });
+      S.central = cfg.centralHub?.id ?? null;
+      toast(`${h.name} is the central hub.`);
+      render();
+    } catch (error) {
+      fail(error);
+    }
+  }
+
   async function toggleHub(h) {
     const off = h.active;
     const ok = await DF.confirm({
@@ -253,6 +278,7 @@
       let el;
       if ((el = t.closest("[data-hz-tab]"))) return void ((S.tab = el.dataset.hzTab), render());
       if (t.closest("#hzNewHub")) return openHub(null);
+      if ((el = t.closest("[data-hz-central]"))) return void makeCentral(S.hubs.find(h => h.id === el.dataset.hzCentral));
       if ((el = t.closest("[data-hz-edit]"))) return openHub(S.hubs.find(h => h.id === el.dataset.hzEdit));
       if ((el = t.closest("[data-hz-toggle]"))) return void toggleHub(S.hubs.find(h => h.id === el.dataset.hzToggle));
       if ((el = t.closest("[data-hz-delete]"))) return void removeHub(S.hubs.find(h => h.id === el.dataset.hzDelete));

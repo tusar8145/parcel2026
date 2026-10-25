@@ -142,6 +142,44 @@ describe("linehaul between hubs", () => {
     expect((await ctx.api("POST", `/linehaul/trips/${trip.id}/cancel`, { token: s.gulOp.token })).body.error.code).toBe("INVALID_TRIP_STATUS");
   });
 
+  it("hub transfer report: sent, received, on the way and missing per route and hub; the parcels behind it", async () => {
+    const s = await setup();
+    const [p1, p2, p3] = [await atHub(s, s.gulshan.id), await atHub(s, s.gulshan.id), await atHub(s, s.gulshan.id)];
+    const { bag, trip } = await departed(s, [p1, p2]);
+    // p1 arrives, p2 is missing when the bag is opened; p3 is moved by hand to Uttara and is still on the way.
+    const opened = await ctx.api("POST", `/linehaul/bags/${bag.number}/receive`, { token: s.dhnOp.token, body: { hubId: s.dhanmondi.id, trackingIds: [p1] } });
+    expect(opened.body, JSON.stringify(opened.body)).toMatchObject({ received: 1, missing: 1 });
+    expect((await ctx.api("POST", `/parcels/${p3}/status`, { token: s.gulOp.token, body: { status: "IN_TRANSIT", hubId: s.uttara.id } })).status).toBe(200);
+    const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+
+    const report = await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}`, { token: s.ops.token });
+    expect(report.status, JSON.stringify(report.body)).toBe(200);
+    expect(report.body.totals).toMatchObject({ sent: 3, received: 1, onTheWay: 1, missing: 1, routes: 2 });
+    const route = (to: string) => report.body.routes.find((r: { to: { name: string } }) => r.to.name === to);
+    expect(route(s.dhanmondi.name)).toMatchObject({ from: { id: s.gulshan.id }, sent: 2, received: 1, onTheWay: 0, missing: 1 });
+    expect(route(s.dhanmondi.name).avgHours).toBeGreaterThanOrEqual(0);
+    expect(route(s.uttara.name)).toMatchObject({ sent: 1, received: 0, onTheWay: 1, missing: 0, avgHours: null });
+    const gul = report.body.hubs.find((h: { hub: { id: string } }) => h.hub.id === s.gulshan.id);
+    expect(gul).toMatchObject({ sentOut: 3, receivedIn: 0, onTheWayOut: 1, missingOut: 1 });
+
+    // Hub staff: only transfers into or out of their hub.
+    const dhn = (await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}`, { token: s.dhnOp.token })).body;
+    expect(dhn.totals).toMatchObject({ sent: 2, received: 1 });
+    expect((await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}&hubId=${s.uttara.id}`, { token: s.dhnOp.token })).status).toBe(403);
+
+    const parcels = (await ctx.api("GET", `/reports/hub-transfers/parcels?from=${day}&to=${day}&fromHubId=${s.gulshan.id}&toHubId=${s.dhanmondi.id}`, { token: s.ops.token })).body.items;
+    expect(parcels.map((p: { trackingId: string; state: string }) => [p.trackingId, p.state]).sort()).toEqual([[p1, "Received"], [p2, "Missing"]].sort());
+    expect(parcels.find((p: { trackingId: string }) => p.trackingId === p1)).toMatchObject({ trip: trip.number, bag: bag.number, receivedAt: expect.any(String) });
+    // From hub → to hub: one direction only.
+    const toUtt = (await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}&fromHubId=${s.gulshan.id}&toHubId=${s.uttara.id}`, { token: s.ops.token })).body;
+    expect(toUtt.totals).toMatchObject({ sent: 1, received: 0, onTheWay: 1, routes: 1 });
+    expect((await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}&fromHubId=${s.dhanmondi.id}`, { token: s.ops.token })).body.totals.sent).toBe(0);
+    expect((await ctx.api("GET", `/reports/hub-transfers?from=${day}&to=${day}&toHubId=${s.dhanmondi.id}`, { token: s.ops.token })).body.totals).toMatchObject({ sent: 2, received: 1, missing: 1 });
+    // Another day: nothing; too long a range is refused.
+    expect((await ctx.api("GET", `/reports/hub-transfers?from=2025-01-01&to=2025-01-01`, { token: s.ops.token })).body.totals.sent).toBe(0);
+    expect((await ctx.api("GET", `/reports/hub-transfers?from=2025-01-01&to=2025-03-01`, { token: s.ops.token })).status).toBe(422);
+  });
+
   it("receives a whole bag at the destination and closes the trip", async () => {
     const s = await setup();
     const p1 = await atHub(s, s.gulshan.id);

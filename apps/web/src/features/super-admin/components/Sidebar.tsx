@@ -95,7 +95,7 @@ export default function Sidebar() {
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-box" />
             </svg>
-            Import settings
+            Excel Import settings
           </button>{" "}
           <button className="nav-item" data-page="Platform settings">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

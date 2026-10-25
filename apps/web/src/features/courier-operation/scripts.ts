@@ -77,6 +77,9 @@ export const scripts = [
   "/legacy/courier-operation/bridge-login-as.js",
   // Merchants: the register in tabs by merchant type (E-commerce · Banking & Financial · All).
   "/legacy/courier-operation/bridge-merchant-tabs.js",
+  // Settings › System guide (a dialog): numbers, parcel statuses, money flow, roles (GET /guide).
+  "/legacy/shared/system-guide.js",
+  "/legacy/courier-operation/bridge-guide.js",
   // Work queue: each parcel's next step, grouped, with Excel and scan-to-do (its own menu).
   "/legacy/courier-operation/bridge-workqueue.js",
   // Long pages in tabs by task: Transfers, Riders (sections tagged by title).

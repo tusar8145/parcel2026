@@ -125,6 +125,7 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
 
 /** Pages rendered by the server on their own (not through the page scripts' router). */
 export const STATIC_PAGES = [
+  { path: "about", title: "Delivery Fast — About us", description: "Delivery Fast: a nationwide courier and logistics service in Bangladesh since 2024 — our story, services, management, mission and how we work." },
   { path: "privacy", title: "Delivery Fast — Privacy Policy", description: "How Delivery Fast collects, uses and protects personal information of senders, recipients, merchants and riders in Bangladesh." },
   { path: "terms", title: "Delivery Fast — Terms of Service", description: "The terms for booking, sending, tracking and receiving parcels and documents with Delivery Fast." },
 ];

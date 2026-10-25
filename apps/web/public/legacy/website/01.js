@@ -44,7 +44,7 @@
       request:["Send a parcel","Request a pickup","Enter pickup and delivery details, choose a service, and review delivery and optional COD fees before submitting. Operations must confirm each request."],
       tracking:["Track a parcel","Follow your delivery","Get a clear view of the latest update, estimated arrival, route, and shipment history."],
       pricing:["Delivery prices","A clear estimate, before you book","Choose a service, area, and parcel weight to see a demo delivery estimate."],
-      login:["Customer access","Log in to Delivery Fast","Manage deliveries as a customer, or continue to your existing merchant, rider, or operations demo."],
+      login:["Customer access","Log in to Delivery Fast","Manage deliveries as a customer, or continue to your existing merchant, rider, or operations account."],
       signup:["Join Delivery Fast","Create your account","Create a customer account, or choose a dedicated partner application."],
       merchant:["Merchant application","Choose the right merchant account","An e-commerce seller or Banking & Financial merchant—such as a bank or fintech—can join with the workflow designed for its shipments."],
       rider:["Rider application","Ride with Delivery Fast","Share your contact details and preferred area to start your rider application."],

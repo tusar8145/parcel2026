@@ -19,6 +19,7 @@ import { passwordSchema } from "@delivery-fast/shared";
 import { PrismaClient, type Prisma, type Role, type VehicleType } from "../generated/prisma/client";
 import { hashPassword } from "../common/crypto";
 import { nextCounter } from "../common/counters";
+import { merchantCodePrefix } from "@delivery-fast/shared";
 
 type Group = "SUPER_ADMIN" | "OPS" | "HUB" | "FINANCE" | "SUPPORT" | "RIDER" | "MERCHANT" | "CUSTOMER";
 const PANEL: Record<Group, string> = {
@@ -195,7 +196,7 @@ async function main() {
           if (!merchant) {
             let code = "";
             for (let i = 0; i < 100 && !code; i++) {
-              const candidate = `MR-${await nextCounter(tx, "merchant-code", 1000)}`;
+              const candidate = `${merchantCodePrefix(data.type)}-${await nextCounter(tx, "merchant-code", 1000)}`;
               if (!(await tx.merchant.findUnique({ where: { code: candidate } }))) code = candidate;
             }
             merchant = await tx.merchant.create({ data: { ...data, code } });

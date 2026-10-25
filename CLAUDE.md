@@ -53,6 +53,9 @@ Setup and run instructions: `docs/development.md`.
   columns, never appended. Address forms pick them from the typed address via `GET /catalog/place`
   (panels: `DF.autoPlace({ street, district, zone, area })` with the field ids; React:
   `usePlaceFromAddress`); the user can still change them.
+- Numbered documents (`nextNumber` / `nextCounter`: PP, MR, HS, ST, INV…): list each prefix in
+  `packages/shared/src/system-guide.ts` (super admin › System guide, `GET /guide`); `test/guide.e2e.test.ts`
+  fails when the code makes a prefix the guide doesn't list.
 - Tests are e2e against a real database (`apps/api/test`, helpers in `test/helpers.ts`).
 
 ## Web conventions (apps/web)

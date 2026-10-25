@@ -72,6 +72,7 @@ export default function SiteHeader({ legacy = false }: { legacy?: boolean }) {
           </a>
           <a href="#partners">Partner with us</a>
           <a href="#faq">Help</a>
+          <a href="/about">About us</a>
           <a href="/signup" data-route="signup" style={{ color: "var(--green)", fontWeight: "750" }}>
             Sign up
           </a>

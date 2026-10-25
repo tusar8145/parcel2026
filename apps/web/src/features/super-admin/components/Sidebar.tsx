@@ -127,6 +127,12 @@ export default function Sidebar() {
             </svg>
             {"Audit & security log"}
           </button>{" "}
+          <button className="nav-item" data-page="System guide">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-clipboard" />
+            </svg>
+            System guide
+          </button>{" "}
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">

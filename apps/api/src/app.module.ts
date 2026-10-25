@@ -46,6 +46,7 @@ import { CnStockModule } from "./modules/cn-stock/cn-stock.module";
 import { SlaModule } from "./modules/sla/sla.module";
 import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { GuideModule } from "./modules/guide/guide.module";
 import { RoutingModule } from "./modules/routing/routing.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { ParcelScansModule } from "./modules/parcel-scans/parcel-scans.module";
@@ -108,6 +109,7 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     SlaModule,
     ShiftsModule,
     ReportsModule,
+    GuideModule,
     RoutingModule,
     ImportsModule,
     ParcelScansModule,

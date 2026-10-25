@@ -165,6 +165,7 @@ export function MapPin({
   useEffect(() => {
     let disposed = false;
     let lookup: ReturnType<typeof setTimeout> | undefined;
+    let resize: ResizeObserver | undefined;
     loadLeaflet()
       .then(L => {
         if (disposed || !box.current) return;
@@ -197,10 +198,21 @@ export function MapPin({
           marker.current.setLatLng(e.latlng);
           moved(e.latlng.lat, e.latlng.lng);
         });
+        // A map drawn while hidden (a later step of a form) has no size: redraw it once it shows or resizes,
+        // centred on its pin.
+        let wasHidden = box.current.offsetWidth === 0;
+        resize = new ResizeObserver(() => {
+          if (!map.current || !box.current || box.current.offsetWidth === 0) return void (wasHidden = true);
+          map.current.invalidateSize();
+          if (wasHidden) map.current.setView(marker.current.getLatLng(), map.current.getZoom(), { animate: false });
+          wasHidden = false;
+        });
+        resize.observe(box.current);
       })
       .catch(err => setFailed(err.message));
     return () => {
       disposed = true;
+      resize?.disconnect();
       clearTimeout(lookup);
       map.current?.remove();
       map.current = null;

@@ -326,8 +326,8 @@ export function parseLabel(rawText: string, kind: ImportKindKey, catalog: Places
   // No "Order …" label: a code shaped like one ("CUS-1001", "INV-2045") written on its own.
   else {
     const code = all.match(/(?<![\w-])([A-Z]{2,6}-\d{3,10})(?![\w-])/);
-    // Not an address part, and not a merchant code ("MR-1109", printed on Delivery Fast labels).
-    if (code && !/^(?:road|house|block|sector|flat|mr)$/i.test(code[1].split("-")[0])) out.order_ref = code[1];
+    // Not an address part, and not a merchant code ("EC-1109", "FM-1110", older "MR-1031", printed on Delivery Fast labels).
+    if (code && !/^(?:road|house|block|sector|flat|mr|ec|fm)$/i.test(code[1].split("-")[0])) out.order_ref = code[1];
   }
 
   // Names, address and note without OCR specks at their ends ("Nusrat Jahan - an").

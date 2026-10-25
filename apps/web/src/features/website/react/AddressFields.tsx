@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { df, type Catalog } from "./df";
-import { AddressSearch, MapPin, matchOption, type Place } from "./geo";
+import { MapPin, matchOption, type Place } from "./geo";
 import { FieldError, Select, TextInput } from "./form";
 import { usePlaceFromAddress } from "@/shared/usePlaceFromAddress";
 
@@ -59,7 +60,8 @@ export interface AddressNames {
   street: string;
   lat: string;
   lng: string;
-  search: string;
+  /** No longer shown: the full address does the finding (kept so existing forms still type-check). */
+  search?: string;
 }
 
 type FormLike = {
@@ -71,8 +73,9 @@ type FormLike = {
 };
 
 /**
- * Category, district → zone (→ area), street, plus address search and a map pin.
- * District/zone/area come from the server catalog; a picked place fills what matches.
+ * Category, the full address, district → zone (→ area), and a map pin. The full address does the finding in the
+ * background: its district / zone / area are picked as it is typed (GET /catalog/place), and once typing stops the
+ * pin is placed from it (GET /geo/search) unless the user placed the pin themselves.
  */
 export function AddressFields({ form, names, label, streetLabel, streetPlaceholder = "e.g. Flat 4B, House 22, Road 7, Banani, Dhaka" }: { form: FormLike; names: AddressNames; label: string; streetLabel: string; streetPlaceholder?: string }) {
   const v = form.values;
@@ -101,6 +104,29 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
     });
   };
 
+  // The pin follows the typed full address until the user moves it by hand.
+  const pinnedByUser = useRef(false);
+  const street = (v[names.street] ?? "").trim();
+  useEffect(() => {
+    if (pinnedByUser.current || street.length < 8) return;
+    let stale = false;
+    const timer = setTimeout(() => {
+      df()
+        .api<{ items: Place[] }>(`/geo/search?q=${encodeURIComponent(street)}&limit=1`)
+        .then(r => {
+          const place = r.items[0];
+          if (stale || !place || pinnedByUser.current) return;
+          form.setValues((c: Record<string, string>) => ({ ...c, [names.lat]: String(place.lat), [names.lng]: String(place.lng) }));
+        })
+        .catch(() => undefined);
+    }, 900);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for the typed address only
+  }, [street]);
+
   // The street field holds the full address: its district / zone / area are picked from it as it is typed.
   usePlaceFromAddress(v[names.street] ?? "", place =>
     form.setValues((current: Record<string, string>) => {
@@ -128,8 +154,9 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
         </div>
       </div>
       <div className="field full">
-        <label htmlFor={names.search}>Find the address</label>
-        <AddressSearch id={names.search} onPick={place => applyPlace(place, true)} />
+        <label htmlFor={names.street}>{`${streetLabel} *`}</label>
+        <TextInput bound={form.bind(names.street)} error={form.error(names.street)} placeholder={streetPlaceholder} autoComplete="street-address" />
+        <FieldError id={names.street} message={form.error(names.street)} />
       </div>
       <div className="field">
         <label htmlFor={names.district}>{`${label} district *`}</label>
@@ -163,14 +190,12 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
         </div>
       ) : null}
       <div className="field full">
-        <label htmlFor={names.street}>{`${streetLabel} *`}</label>
-        <TextInput bound={form.bind(names.street)} error={form.error(names.street)} placeholder={streetPlaceholder} autoComplete="street-address" />
-        <FieldError id={names.street} message={form.error(names.street)} />
-      </div>
-      <div className="field full">
         <MapPin
           value={pin}
-          onChange={p => form.setValues((c: Record<string, string>) => ({ ...c, [names.lat]: String(p.lat), [names.lng]: String(p.lng) }))}
+          onChange={p => {
+            pinnedByUser.current = true;
+            form.setValues((c: Record<string, string>) => ({ ...c, [names.lat]: String(p.lat), [names.lng]: String(p.lng) }));
+          }}
           onAddress={place => applyPlace(place, false)}
         />
       </div>

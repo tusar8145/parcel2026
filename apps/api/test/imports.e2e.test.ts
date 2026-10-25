@@ -395,6 +395,8 @@ describe("imports", () => {
       });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body.counts).toMatchObject({ valid: 3, errors: 0 });
+      // A listed product with "Send SMS & email" switched off: its parcels get no messages; unlisted names keep them (on by default).
+      expect((await ctx.prisma.parcelProduct.updateMany({ where: { segment: "ECOMMERCE", name: "Papers" }, data: { sendMessages: false } })).count).toBe(1);
       const commit = await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       expect(commit.body).toMatchObject({ status: "COMPLETED", result: { created: 3 } });
       const parcels = await ctx.prisma.parcel.findMany({ where: { merchantId: m.id }, orderBy: { merchantOrderRef: "asc" } });
@@ -405,6 +407,9 @@ describe("imports", () => {
       ]);
       // The same row with a listed Regular product costs the same as the free name.
       expect(Number(parcels[0].totalCharge)).toBe(Number(parcels[2].totalCharge));
+      expect(parcels[0].notifications.length).toBeGreaterThan(0); // unlisted product: SMS / email on
+      expect(parcels[0].notifications).toEqual(parcels[2].notifications);
+      expect(parcels[1].notifications).toEqual([]); // listed product with messages off
 
       // Banking & Financial too: an unlisted name is booked as written and priced as Regular (like an empty Product).
       const { m: bm, owner: bank } = await merchant("BANKING_FINANCIAL");

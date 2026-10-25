@@ -36,6 +36,9 @@ export const scripts = [
   "/legacy/super-admin/bridge-registration-tabs.js",
   // E-commerce / Banking & Financial merchants, Franchises: the lists in tabs by account status, with counts.
   "/legacy/super-admin/bridge-status-tabs.js",
+  // System guide: numbers, parcel statuses, money flow, roles (GET /guide).
+  "/legacy/shared/system-guide.js",
+  "/legacy/super-admin/bridge-guide.js",
   // Period filter on Overview and Platform activity.
   "/legacy/super-admin/bridge-period.js",
   // Last: every page (and tab) has its own address: ?page=<slug>[&tab=<slug>], Back / Forward, titles (DF.nav).

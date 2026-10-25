@@ -48,7 +48,8 @@ const websiteRoutes: string[] = [];
 /**
  * Intended changes to the original website, applied to it before comparing: links use real
  * URLs instead of hash routes ("#/pricing" -> "/pricing", "#/tracking" -> "/track"), and the
- * footer links to the Privacy Policy, Terms of Service and cookie settings, and the document merchant is
+ * footer links to About us, the Privacy Policy, Terms of Service and cookie settings and shows the contact details
+ * (no "demo" wording), and the document merchant is
  * now the Banking & Financial merchant. The logo mark is a pigeon carrying a parcel (copied from the new page).
  */
 const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider", franchise: "/become-a-franchise" };
@@ -63,11 +64,22 @@ async function applyIntendedWebsiteChanges(page: Page, brandMark: string) {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue?.includes("document merchant")) n.nodeValue = n.nodeValue.replace(/document merchant/g, "Banking & Financial merchant");
     const col = document.querySelectorAll(".footer .footer-col")[2];
-    if (col)
+    if (col) {
+      col.querySelector("strong")?.insertAdjacentHTML("afterend", '<a href="/about">About us</a>');
       col.insertAdjacentHTML(
         "beforeend",
         '<a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/privacy#cookies" data-cookie-settings="1">Cookie settings</a>',
       );
+    }
+    // "About us" in the menu (after Help).
+    document.querySelector('.nav-links a[href="#faq"]')?.insertAdjacentHTML("afterend", '<a href="/about">About us</a>');
+    // The company's contact details under the brand; no "demo" wording in the footer (owner, 2026-10-26).
+    document.querySelector(".footer .footer-brand p")?.insertAdjacentHTML(
+      "afterend",
+      '<div class="footer-col footer-contact" style="margin-top:18px"><strong>Contact Us</strong><a href="tel:+8801969921122">01969 921122</a><a href="mailto:info@deliveryfast.com.bd">info@deliveryfast.com.bd</a><a href="https://www.google.com/maps/search/?api=1&amp;query=House-6%20Road-2A%20Banani%2C%20Dhaka-1213" target="_blank" rel="noopener">House-6 Road -2A Banani, Dhaka-1213</a></div>',
+    );
+    const bottom = document.querySelector(".footer .footer-bottom");
+    if (bottom) bottom.innerHTML = "<span>© 2026 Delivery Fast. All rights reserved.</span><span>Built for Bangladesh</span>";
   }, [WEBSITE_PATHS, brandMark] as const);
 }
 

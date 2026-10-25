@@ -6,3 +6,4 @@ export * from "./packages";
 export * from "./schemas/auth";
 export * from "./schemas/parcel";
 export * from "./schemas/website";
+export * from "./system-guide";

@@ -4,6 +4,7 @@ import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { nextCounter } from "../../common/counters";
+import { merchantCodePrefix } from "@delivery-fast/shared";
 import { sha256 } from "../../common/crypto";
 import { AppError, conflict, forbidden, notFound } from "../../common/errors";
 import { merchantNotActive } from "./merchant-status";
@@ -211,7 +212,7 @@ export class MerchantsService {
         { ...input, pickupContactName: input.pickupContactName ?? contactName, pickupContactPhone: input.pickupContactPhone ?? contactPhone, pickup: input.pickupSameAsBusiness ? undefined : input.pickup },
         null,
       );
-      const code = await this.nextMerchantCode(tx);
+      const code = await this.nextMerchantCode(tx, type);
       const created = await tx.merchant.create({
         data: {
           ...address.data,
@@ -273,10 +274,13 @@ export class MerchantsService {
     return invite;
   }
 
-  /** MR-1001, MR-1002…; skips codes already taken (e.g. imported merchants). */
-  private async nextMerchantCode(tx: Db) {
+  /**
+   * EC-1040 (E-commerce) or FM-1041 (Banking & Financial): one running number for both, so a number is never
+   * reused; skips codes already taken. Merchants made before keep their MR- code.
+   */
+  private async nextMerchantCode(tx: Db, type: "ECOMMERCE" | "BANKING_FINANCIAL") {
     for (let i = 0; i < 100; i++) {
-      const code = `MR-${await nextCounter(tx, "merchant-code", 1000)}`;
+      const code = `${merchantCodePrefix(type)}-${await nextCounter(tx, "merchant-code", 1000)}`;
       if (!(await tx.merchant.findUnique({ where: { code }, select: { id: true } }))) return code;
     }
     throw new Error("Could not allocate a merchant code");

@@ -58,11 +58,11 @@ describe("merchants", () => {
   // ───────────── onboarding ─────────────
 
   describe("applications", () => {
-    it("creates a pending merchant with an MR code and makes the applicant its owner", async () => {
+    it("creates a pending merchant with an EC code (E-commerce) and makes the applicant its owner", async () => {
       const u = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Nabila Ahmed");
       const res = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application() });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(res.body.merchant).toMatchObject({ code: "MR-1001", status: "PENDING_REVIEW", type: "ECOMMERCE", contactPhone: "+8801812000000", contactEmail: "nabila@example.com", plan: null });
+      expect(res.body.merchant).toMatchObject({ code: "EC-1001", status: "PENDING_REVIEW", type: "ECOMMERCE", contactPhone: "+8801812000000", contactEmail: "nabila@example.com", plan: null });
       expect(res.body.message).toMatch(/refresh|sign in/i);
       const grant = await ctx.prisma.userRole.findFirstOrThrow({ where: { userId: u.user.id, role: "MERCHANT_OWNER" } });
       expect(grant.merchantId).toBe(res.body.merchant.id);
@@ -72,14 +72,14 @@ describe("merchants", () => {
       expect((await ctx.api("GET", "/merchants/me", { token: u.token })).status).toBe(403);
       const fresh = await refresh(u.refreshToken);
       const me = await ctx.api("GET", "/merchants/me", { token: fresh });
-      expect(me.body).toMatchObject({ code: "MR-1001", status: "PENDING_REVIEW", myRole: "MERCHANT_OWNER" });
+      expect(me.body).toMatchObject({ code: "EC-1001", status: "PENDING_REVIEW", myRole: "MERCHANT_OWNER" });
     });
 
-    it("allows one open application per user and skips taken codes", async () => {
-      await ctx.prisma.merchant.create({ data: { name: "Nabila Fashion House", contactName: "Nabila Ahmed", contactPhone: "+8801812000000", pickupAddress: "House 12, Road 7", pickupArea: "Dhanmondi", pickupDistrict: "Dhaka Central", type: "ECOMMERCE", code: "MR-1001" } });
+    it("allows one open application per user, skips taken codes, and gives Banking & Financial merchants an FM code on the same running number", async () => {
+      await ctx.prisma.merchant.create({ data: { name: "Nabila Fashion House", contactName: "Nabila Ahmed", contactPhone: "+8801812000000", pickupAddress: "House 12, Road 7", pickupArea: "Dhanmondi", pickupDistrict: "Dhaka Central", type: "ECOMMERCE", code: "EC-1001" } });
       const u = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
       const first = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application() });
-      expect(first.body.merchant.code).toBe("MR-1002");
+      expect(first.body.merchant.code).toBe("EC-1002");
       const second = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ name: "Another shop" }) });
       expect(second.status).toBe(409);
       expect(second.body.error.code).toBe("APPLICATION_PENDING");
@@ -88,7 +88,7 @@ describe("merchants", () => {
       await ctx.prisma.merchant.update({ where: { id: first.body.merchant.id }, data: { status: "ACTIVE" } });
       const third = await ctx.api("POST", "/merchants/applications", { token: u.token, body: application({ type: "BANKING_FINANCIAL", name: "Docs Ltd" }) });
       expect(third.status).toBe(201);
-      expect(third.body.merchant.code).toBe("MR-1003");
+      expect(third.body.merchant.code).toBe("FM-1003");
     });
 
     it("serialises concurrent applications from the same user", async () => {

@@ -27,7 +27,7 @@
   const explicit = new WeakMap(); // select → options from DF.searchSelect(select, opts)
   const THRESHOLD = 12;
   /** Panels where every single select opens the searchable list (not only long ones). */
-  const EVERY_SELECT = new Set(["courier-operation", "ecommerce-merchant", "banking-merchant"]);
+  const EVERY_SELECT = new Set(["courier-operation", "ecommerce-merchant", "banking-merchant", "super-admin"]);
   const panelThreshold = () => (EVERY_SELECT.has(document.body?.dataset.app) ? 0 : THRESHOLD);
   let uid = 0;
   let open = null; // { select, pop, input, list, items, active, observer, query }

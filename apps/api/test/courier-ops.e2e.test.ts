@@ -93,7 +93,7 @@ describe("courier operations: configuration and engines", () => {
       expect(batch.status, JSON.stringify(batch.body)).toBe(201);
       expect(batch.body.stock).toMatchObject({ total: 3, available: 3, used: 0, void: 0 });
       const [cn1, cn2, cn3] = batch.body.items.map((i: { cn: string }) => i.cn);
-      expect(cn1).toMatch(/^PP-\d{6}-[0-9A-Z]{5}$/);
+      expect(cn1).toMatch(/^PP-\d{6}-[0-9A-Z]{5}$/); // a hub's labels: PP (the parcel's type isn't known yet)
 
       const printed = await ctx.api("POST", `/cn/batches/${batch.body.id}/print`, { token: s.gulOp.token, body: {} });
       expect(printed.body.labels).toHaveLength(3);

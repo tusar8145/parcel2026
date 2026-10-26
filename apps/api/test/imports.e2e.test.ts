@@ -405,6 +405,8 @@ describe("imports", () => {
         ["FREE-2", "Papers", "DOCUMENT", false],
         ["FREE-3", null, "REGULAR", true],
       ]);
+      // E-commerce merchants' parcels are EP-…
+      expect(parcels.every(p => /^EP-\d{6}-/.test(p.trackingId))).toBe(true);
       // The same row with a listed Regular product costs the same as the free name.
       expect(Number(parcels[0].totalCharge)).toBe(Number(parcels[2].totalCharge));
       expect(parcels[0].notifications.length).toBeGreaterThan(0); // unlisted product: SMS / email on
@@ -424,6 +426,8 @@ describe("imports", () => {
         ["BANK-2", null, "REGULAR", true],
       ]);
       expect(Number(docs[0].totalCharge)).toBe(Number(docs[1].totalCharge));
+      // … Banking & Financial merchants' FD-…
+      expect(docs.every(p => /^FD-\d{6}-/.test(p.trackingId))).toBe(true);
     });
 
     it("books valid and incomplete rows (incomplete ones priced with defaults), skips errors and keeps a history", async () => {

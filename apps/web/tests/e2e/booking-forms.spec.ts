@@ -31,7 +31,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(() => fx.cleanup());
 
-const TRACKING = /PP-\d{6}-[0-9A-Z]{4,5}/;
+const TRACKING = /(?:EP|FD|CP|PP)-\d{6}-[0-9A-Z]{4,5}/;
 const toast = (page: Page) => page.locator("#toast");
 const taka = async (locator: Locator) => Number(((await locator.textContent()) || "").replace(/[^0-9.]/g, ""));
 

@@ -127,6 +127,9 @@ test("guest books with SMS verification, then tracks and cancels with the privat
   await page.selectOption("#requestZone", "Dhanmondi");
   await page.fill("#requestDelivery", "Road 7, Flat 3B");
   await form.getByRole("button", { name: "Continue" }).click();
+  // Cash on delivery is ticked by default; this parcel is prepaid.
+  await expect(page.locator("#requestCodEnabled")).toBeChecked();
+  await page.uncheck("#requestCodEnabled");
   await expect(page.locator("#requestPricePreview")).toContainText("Sender pays for delivery");
   await page.click("#requestSubmit"); // sends the code
   const hint = page.locator("[data-guest-verification] .field-hint").first();

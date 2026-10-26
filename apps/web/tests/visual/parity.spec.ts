@@ -49,12 +49,12 @@ const websiteRoutes: string[] = [];
  * Intended changes to the original website, applied to it before comparing: links use real
  * URLs instead of hash routes ("#/pricing" -> "/pricing", "#/tracking" -> "/track"), and the
  * footer links to About us, the Privacy Policy, Terms of Service and cookie settings and shows the contact details
- * (no "demo" wording), and the document merchant is
+ * (no "demo" wording), the hero picture is animated (frame 0 = the original), and the document merchant is
  * now the Banking & Financial merchant. The logo mark is a pigeon carrying a parcel (copied from the new page).
  */
 const WEBSITE_PATHS: Record<string, string> = { tracking: "/track", rider: "/become-a-rider", franchise: "/become-a-franchise" };
-async function applyIntendedWebsiteChanges(page: Page, brandMark: string) {
-  await page.evaluate(([paths, mark]) => {
+async function applyIntendedWebsiteChanges(page: Page, brandMark: string, heroMotion: string) {
+  await page.evaluate(([paths, mark, motion]) => {
     for (const el of document.querySelectorAll(".brand-mark")) el.outerHTML = mark;
     for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href^="#/"]')) {
       const route = a.getAttribute("href")!.slice(2);
@@ -80,7 +80,16 @@ async function applyIntendedWebsiteChanges(page: Page, brandMark: string) {
     );
     const bottom = document.querySelector(".footer .footer-bottom");
     if (bottom) bottom.innerHTML = "<span>© 2026 Delivery Fast. All rights reserved.</span><span>Built for Bangladesh</span>";
-  }, [WEBSITE_PATHS, brandMark] as const);
+    // The hero picture's animation (heroMotion.ts): its style and the night / moon / status layers, frozen at frame 0
+    // like the new page's (frame 0 is the original picture).
+    document.querySelector(".hero-art .art-van")?.insertAdjacentHTML("afterend", motion);
+    // The "Pickup confirmed" card is gone from the hero (the statuses animate there instead).
+    document.querySelector(".hero-art .tag-top")?.remove();
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 0;
+    }
+  }, [WEBSITE_PATHS, brandMark, heroMotion] as const);
 }
 
 const PAGES: { file: string; route: string; views: (page: Page) => Promise<View[]> }[] = [
@@ -243,7 +252,12 @@ for (const def of PAGES) {
     const use = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch };
     const original = await open(browser, ORIGINAL + "/" + def.file, false, use);
     const next = await open(browser, NEXT + def.route, true, use);
-    if (def.file === "website.html") await applyIntendedWebsiteChanges(original.page, await next.page.locator(".header .brand-mark").evaluate(el => el.outerHTML));
+    if (def.file === "website.html")
+      await applyIntendedWebsiteChanges(
+        original.page,
+        await next.page.locator(".header .brand-mark").evaluate(el => el.outerHTML),
+        await next.page.evaluate(() => [...document.querySelectorAll(".hero-art .art-night, .hero-art .art-moon, .hero-art .art-steps, #heroMotion")].map(el => el.outerHTML).join("")),
+      );
     const problems: string[] = [];
 
     for (const view of await def.views(original.page)) {

@@ -1,3 +1,5 @@
+import { HERO_MOTION_CSS } from "./heroMotion";
+
 export default function Hero() {
   return (
     <section className="hero">
@@ -68,16 +70,33 @@ export default function Hero() {
             <i className="wheel one" />
             <i className="wheel two" />
           </div>{" "}
-          <div className="float-tag tag-top">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-              <path d="M20 7 10 17l-5-5" />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-            <span>
+          {/* Night tint and the moon with stars (heroMotion.ts: invisible in the still picture). */}
+          <div className="art-night" aria-hidden="true" />
+          <div className="art-moon" aria-hidden="true" />
+          {/* The parcel's statuses, one by one (heroMotion.ts). */}
+          <div className="art-steps" aria-hidden="true">
+            <div className="art-step s0">
+              <i>{"✓"}</i>
               <strong>Pickup confirmed</strong>
-              <small>Your rider is on the way</small>
-            </span>
-          </div>{" "}
+              <span>{"· Rider on the way"}</span>
+            </div>
+            <div className="art-step s1">
+              <i>{"✓"}</i>
+              <strong>Picked up</strong>
+              <span>{"· Parcel collected"}</span>
+            </div>
+            <div className="art-step s2">
+              <i>{"✓"}</i>
+              <strong>Out for delivery</strong>
+              <span>{"· Rider heading to you"}</span>
+            </div>
+            <div className="art-step s3">
+              <i>{"✓"}</i>
+              <strong>Delivered</strong>
+              <span>{"· Handed over at the door"}</span>
+            </div>
+          </div>
+          <style id="heroMotion">{HERO_MOTION_CSS}</style>
           <div className="float-tag tag-bottom">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
               <path d="M3 7h11v11H3zM14 11h4l3 3v4h-7z" />

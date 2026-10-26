@@ -26,6 +26,8 @@ export const scripts = [
   // Structured merchant addresses (DFMerchantAddress): Settings editor and the staff summary.
   "/legacy/shared/merchant-address.js",
   "/legacy/shared/merchant-bridge.js",
+  // Create order: "Paste a message" fills the form from an SMS / chat text (POST /parse-message).
+  "/legacy/shared/paste-message.js",
   "/legacy/ecommerce-merchant/bridge.js",
   // Balance (the old Payments / Billing pages): the merchant's account, settlements, bills, payments.
   "/legacy/shared/merchant-balance.js",

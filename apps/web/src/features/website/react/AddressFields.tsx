@@ -104,28 +104,46 @@ export function AddressFields({ form, names, label, streetLabel, streetPlacehold
     });
   };
 
-  // The pin follows the typed full address until the user moves it by hand.
+  // The pin follows the full address — or, when the map can't find that, the chosen area / zone / district —
+  // until the user moves it by hand.
   const pinnedByUser = useRef(false);
   const street = (v[names.street] ?? "").trim();
+  const district = v[names.district] ?? "";
+  const zone = v[names.zone] ?? "";
+  const area = names.area ? (v[names.area] ?? "") : "";
   useEffect(() => {
-    if (pinnedByUser.current || street.length < 8) return;
+    if (pinnedByUser.current) return;
+    // "Dhaka North" → "Dhaka", "Kaliganj (Gazipur)" → "Kaliganj, Gazipur": names the map knows.
+    const city = district.replace(/\s+(North|South|Central)$/i, "");
+    // … and "Bashundhara R/A" → "Bashundhara Residential Area".
+    const plain = (s: string) => s.replace(/\s*\(([^)]*)\)\s*$/, ", $1").replace(/\bR\/A\b/i, "Residential Area");
+    // The map finds "place, city" best (more parts, e.g. the zone or "Bangladesh", often find nothing).
+    const inCity = (s: string) => [plain(s), city].filter(Boolean).join(", ");
+    const queries = [
+      street.length >= 8 ? street : "",
+      street.length >= 8 && city && !street.toLowerCase().includes(city.toLowerCase()) ? `${street}, ${city}` : "",
+      area ? inCity(area) : "",
+      zone ? inCity(zone) : "",
+      !zone && city ? city : "",
+    ].filter((q, i, all) => q && all.indexOf(q) === i);
+    if (!queries.length) return;
     let stale = false;
-    const timer = setTimeout(() => {
-      df()
-        .api<{ items: Place[] }>(`/geo/search?q=${encodeURIComponent(street)}&limit=1`)
-        .then(r => {
-          const place = r.items[0];
-          if (stale || !place || pinnedByUser.current) return;
-          form.setValues((c: Record<string, string>) => ({ ...c, [names.lat]: String(place.lat), [names.lng]: String(place.lng) }));
-        })
-        .catch(() => undefined);
+    const timer = setTimeout(async () => {
+      for (const q of queries) {
+        const found = await df()
+          .api<{ items: Place[] }>(`/geo/search?q=${encodeURIComponent(q)}&limit=1`)
+          .then(r => r.items[0])
+          .catch(() => undefined);
+        if (stale || pinnedByUser.current) return;
+        if (found) return form.setValues((c: Record<string, string>) => ({ ...c, [names.lat]: String(found.lat), [names.lng]: String(found.lng) }));
+      }
     }, 900);
     return () => {
       stale = true;
       clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for the typed address only
-  }, [street]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs for the address and its place only
+  }, [street, district, zone, area]);
 
   // The street field holds the full address: its district / zone / area are picked from it as it is typed.
   usePlaceFromAddress(v[names.street] ?? "", place =>

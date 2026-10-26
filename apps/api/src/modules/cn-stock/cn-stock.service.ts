@@ -11,6 +11,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { opsHubScope } from "../parcels/ops-scope";
 import { assertHubInScope } from "../ops/ops-common";
 import type { createBatchSchema, listBatchesQuerySchema, listStockQuerySchema, printSchema, updateBatchSchema, voidSchema } from "./cn-stock.schemas";
+import { parcelPrefixOfMerchant } from "@delivery-fast/shared";
 
 const batchInclude = {
   hub: { select: { id: true, code: true, name: true } },
@@ -42,8 +43,11 @@ export class CnStockService {
         const created = await tx.cnBatch.create({
           data: { number: await nextNumber(tx, "CNB"), count: input.count, hubId: input.hubId, merchantId: input.merchantId, note: input.note, createdById: actor.kind === "user" ? actor.userId : null },
         });
+        // A merchant's labels carry its parcel type (EP / FD); a hub's stay PP (the parcel's type isn't known yet).
+        const merchant = input.merchantId ? await tx.merchant.findUnique({ where: { id: input.merchantId }, select: { type: true } }) : null;
+        const prefix = merchant ? parcelPrefixOfMerchant(merchant.type) : "PP";
         const cns: string[] = [];
-        for (let i = 0; i < input.count; i++) cns.push(await nextTrackingId(tx));
+        for (let i = 0; i < input.count; i++) cns.push(await nextTrackingId(tx, prefix));
         await tx.cnStock.createMany({ data: cns.map(cn => ({ cn, batchId: created.id })) });
         await this.audit.record(
           actor,

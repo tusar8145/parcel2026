@@ -4,7 +4,7 @@ import { notifyNewWork } from "../notifications/new-work";
 import { deliveryHubsOf } from "./delivery-hub";
 import { operationNow } from "../../common/operation-time";
 import type { z } from "zod";
-import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
+import { isCustomerCancellable, parcelPrefix, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
 import { TERMINAL_STATUSES, type assignRiderSchema, type cancelParcelSchema, type listParcelsQuerySchema, type updateStatusSchema } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -203,7 +203,7 @@ export class ParcelsService {
       const handling = ["B2B", "TRADE", "URGENT"].includes(quote.selection.speed) ? SPEED_LABEL[quote.selection.speed] : undefined;
       // A pre-printed CN label (CN stock) becomes the tracking ID; otherwise a new one is issued.
       const cn = input.cn ? await claimCn(tx, input.cn, { merchantId: ctx.merchantId, channel: ctx.channel }) : null;
-      const trackingId = cn?.cn ?? (await nextTrackingId(tx));
+      const trackingId = cn?.cn ?? (await nextTrackingId(tx, parcelPrefix(quote.segment)));
       const due = await slaDueDates(tx, {
         serviceLevel: quote.serviceLevel,
         pickupDistrict: input.pickup.district,

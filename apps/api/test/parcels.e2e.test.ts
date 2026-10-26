@@ -24,7 +24,7 @@ describe("parcel lifecycle", () => {
     const { customer } = await setup();
     const res = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(res.body.trackingId).toMatch(/^PP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/); // date + random Crockford base32
+    expect(res.body.trackingId).toMatch(/^CP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/); // CP = customer parcel; date + random Crockford base32
     expect(res.body).toMatchObject({ status: "PENDING_CONFIRMATION", statusLabel: "Pending operations confirmation", channel: "WEBSITE", canCancel: true });
     // Service packages v2 (customer default): Dhaka → Dhaka (same district) 70 + 2 kg (2 × 15) + Express ("Same day") 40 + COD fee 15.
     expect(res.body.charges).toMatchObject({ base: 70, weight: 30, service: 40, codFee: 15, discount: 0, reattempt: 0, total: 155 });

@@ -83,6 +83,8 @@ export const normPlace = (s: string) =>
   s
     .toLowerCase()
     .replace(/[-_.,;:()/\\|'"’`]+/g, " ")
+    // "Residential Area" is written "R/A" in the catalog ("Bashundhara R/A").
+    .replace(/\bresidential\s+area\b/g, "r a")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -151,6 +153,9 @@ function indexOf(places: Places): Entry[] {
     const bare = normPlace(name.replace(/\s*\([^)]*\)\s*$/, ""));
     entries.push({ name, kind, parent, bare, tokens: normPlace(name).split(" ").filter(Boolean) });
     if (bare && bare !== normPlace(name)) entries.push({ name, kind, parent, bare, tokens: bare.split(" ") });
+    // "Bashundhara R/A" is also found as plain "Bashundhara".
+    const tokens = normPlace(name).split(" ");
+    if (tokens.length > 2 && tokens.at(-2) === "r" && tokens.at(-1) === "a") entries.push({ name, kind, parent, bare, tokens: tokens.slice(0, -2) });
   };
   for (const d of places.districts) add(d, "district");
   for (const [d, zones] of Object.entries(places.zonesByDistrict)) for (const z of zones) add(z, "zone", d);

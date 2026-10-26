@@ -89,7 +89,7 @@ async function fillOrder(page: Page, recipient: string, phone: string) {
 /** The booking toast's tracking ID; the new order's details open with "Print label (PDF)" (closed here). */
 async function createdId(page: Page) {
   await expect(toast(page)).toContainText(/created · delivery charge ৳/);
-  const trackingId = (await toast(page).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  const trackingId = (await toast(page).textContent())!.match(/(?:EP|FD|CP|PP)-\d{6}-[0-9A-Z]{4,5}/)![0];
   const details = page.locator("#merchantHistoryBackdrop");
   await expect(details).toContainText(trackingId);
   await expect(details.locator(`[data-df-label="${trackingId}"]`)).toHaveText("Print label (PDF)");

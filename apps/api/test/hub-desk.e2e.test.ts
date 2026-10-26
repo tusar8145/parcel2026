@@ -90,7 +90,7 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     const done = await scan(s.desk.token, "deliver", { code: id, partial: true, codCollected: 600, note: "Kept the shirt, returned the jeans", receiverRelation: "Father" });
     expect(done).toMatchObject({ ok: true, outcome: "PARTIALLY_DELIVERED" });
     const returnId = (done as unknown as { returnOrder: string }).returnOrder;
-    expect(returnId).toMatch(/^PP-/);
+    expect(returnId.slice(0, 3)).toBe(id.slice(0, 3)); // the same parcel type prefix (EP / FD / CP)
 
     const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id }, include: { codCollection: true } });
     expect(parcel).toMatchObject({ status: "DELIVERED", partialDelivery: true, partialNote: "Kept the shirt, returned the jeans", receiverRelation: "Father" });

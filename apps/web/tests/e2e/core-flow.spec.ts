@@ -78,7 +78,7 @@ test("customer books, operations dispatches, rider delivers with OTP", async ({ 
   await customer.fill("#requestCodAmount", "1500");
   while (!(await form.locator('button[type="submit"]').isVisible())) await form.getByRole("button", { name: "Continue" }).click();
   await form.locator('button[type="submit"]').click();
-  await expect(customer).toHaveURL(/\/track\/PP-\d{6}-[0-9A-Z]{5}/);
+  await expect(customer).toHaveURL(/\/track\/CP-\d{6}-[0-9A-Z]{5}/);
   const trackingId = decodeURIComponent(new URL(customer.url()).pathname.split("/track/")[1]);
   // Priced by the Customer default package (route, weight, Express, COD fee).
   await expect(toast(customer)).toContainText(/৳[0-9]+/);

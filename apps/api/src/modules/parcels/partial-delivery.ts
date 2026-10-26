@@ -7,6 +7,7 @@ import { AppError } from "../../common/errors";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
 import { returnChargeFor } from "../returns/return-charge";
 import { parcelEvent, type AfterCommit } from "./parcel-workflow.service";
+import { parcelPrefixOfMerchant } from "@delivery-fast/shared";
 
 /**
  * Partial delivery (docs/architecture-contracts.md "Partial delivery"): at delivery the recipient keeps
@@ -42,7 +43,9 @@ export const partialData = (collected: number, note?: string | null) => ({ parti
 export async function createPartialReturn(tx: Db, parcel: Parcel, input: { hubId: string | null; note?: string | null; by: string }, after: AfterCommit): Promise<Parcel> {
   const at = operationNow();
   const charge = returnChargeFor(parcel);
-  const trackingId = await nextTrackingId(tx);
+  // The return part has the parcel type's prefix (EP / FD / CP).
+  const merchant = parcel.merchantId ? await tx.merchant.findUnique({ where: { id: parcel.merchantId }, select: { type: true } }) : null;
+  const trackingId = await nextTrackingId(tx, parcelPrefixOfMerchant(merchant?.type));
   const note = input.note?.trim() || null;
   const data: Prisma.ParcelUncheckedCreateInput = {
     trackingId,

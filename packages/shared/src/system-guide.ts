@@ -7,6 +7,14 @@
 import { PARCEL_STATUSES, PARCEL_STATUS_LABEL, TERMINAL_STATUSES, allowedNextStatuses, type ParcelStatus } from "./parcel-status";
 import { PANEL_FOR_ROLE, PERMISSION_INFO, ROLE_PERMISSIONS, ROLES, type Role } from "./roles";
 
+/**
+ * New parcels' tracking ID prefix by parcel type: EP (E-commerce), FD (Banking & Financial), CP (Customer: website,
+ * walk-in). Parcels made before, and a hub's CN stock (its type not known yet), keep PP.
+ */
+export const parcelPrefix = (segment: "CUSTOMER" | "ECOMMERCE" | "BANKING_FINANCIAL") => (segment === "ECOMMERCE" ? "EP" : segment === "BANKING_FINANCIAL" ? "FD" : "CP");
+/** The parcel prefix of a merchant (null = no merchant: a customer parcel). */
+export const parcelPrefixOfMerchant = (type: "ECOMMERCE" | "BANKING_FINANCIAL" | null | undefined) => parcelPrefix(type ?? "CUSTOMER");
+
 /** New merchants' code prefix: EC (E-commerce) or FM (Banking & Financial); merchants made before keep MR. */
 export const merchantCodePrefix = (type: "ECOMMERCE" | "BANKING_FINANCIAL") => (type === "BANKING_FINANCIAL" ? "FM" : "EC");
 
@@ -31,13 +39,43 @@ export interface NumberPrefix {
 export const NUMBER_PREFIXES: readonly NumberPrefix[] = [
   // ── parcels ──
   {
+    prefix: "EP",
+    name: "E-commerce parcel (tracking ID / CN)",
+    area: "Parcels",
+    format: "EP-YYMMDD-XXXXX",
+    example: "EP-261026-7K3QF",
+    meaning: "An E-commerce merchant's parcel number everywhere: label, tracking page, SMS, scans, reports. Also called the CN (consignment number).",
+    created: "When an E-commerce merchant's parcel is booked (or a CN batch is made for such a merchant); a partial delivery's return part gets a new one.",
+    where: "All parcels, the parcel drawer, the label, the public tracking page.",
+  },
+  {
+    prefix: "FD",
+    name: "Banking & Financial parcel (tracking ID / CN)",
+    area: "Parcels",
+    format: "FD-YYMMDD-XXXXX",
+    example: "FD-261026-2M8RP",
+    meaning: "A Banking & Financial merchant's parcel / document number, used everywhere like any tracking ID.",
+    created: "When a Banking & Financial merchant's parcel is booked (or a CN batch is made for such a merchant).",
+    where: "All parcels, the parcel drawer, the label, the public tracking page.",
+  },
+  {
+    prefix: "CP",
+    name: "Customer parcel (tracking ID / CN)",
+    area: "Parcels",
+    format: "CP-YYMMDD-XXXXX",
+    example: "CP-261026-9HT4D",
+    meaning: "A customer's parcel (booked on the website, or a walk-in sender at a hub).",
+    created: "When a customer or walk-in parcel is booked.",
+    where: "All parcels, the parcel drawer, the label, the public tracking page.",
+  },
+  {
     prefix: "PP",
-    name: "Parcel tracking ID (CN)",
+    name: "Parcel tracking ID (older / hub CN stock)",
     area: "Parcels",
     format: "PP-YYMMDD-XXXXX",
     example: "PP-261025-5PTW8",
-    meaning: "The parcel's number everywhere: label, tracking page, SMS, scans, reports. Also called the CN (consignment number). Older parcels may have a running number at the end (PP-261015-1001).",
-    created: "When a parcel is booked (or taken from CN stock); a partial delivery's remaining part gets a new PP number.",
+    meaning: "Parcels booked before EP / FD / CP, and CN labels printed for a hub (the parcel's type isn't known when they are printed). They keep working everywhere.",
+    created: "CN stock made for a hub; no longer for new bookings without a pre-printed label.",
     where: "All parcels, the parcel drawer, the label, the public tracking page.",
   },
   {
@@ -46,7 +84,7 @@ export const NUMBER_PREFIXES: readonly NumberPrefix[] = [
     area: "Parcels",
     format: "CNB-YYMMDD-NNNN",
     example: "CNB-261015-0001",
-    meaning: "A batch of tracking IDs (PP numbers) printed on labels before booking, for a hub or a merchant.",
+    meaning: "A batch of tracking IDs printed on labels before booking: for a merchant they carry its type (EP / FD), for a hub PP.",
     created: "When operations allocate CN stock.",
     where: "Courier Operations › CN stock.",
   },

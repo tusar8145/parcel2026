@@ -84,7 +84,7 @@ test("merchant parcel through hubs, rider delivery with COD and the handover sli
   await ops.fill("#bkSvcCodAmount", "750");
   await ops.click("#modalSubmit");
   await expect(toast(ops)).toContainText(`booked for ${shop.name}`);
-  const trackingId = (await toast(ops).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  const trackingId = (await toast(ops).textContent())!.match(/(?:EP|FD|CP|PP)-\d{6}-[0-9A-Z]{4,5}/)![0];
   // The new parcel's drawer opens (details, price, "Print label (PDF)"); closed to work the tables.
   await expect(ops.locator("#parcelDrawerTitle")).toHaveText(trackingId);
   await ops.click("#parcelDrawerClose");

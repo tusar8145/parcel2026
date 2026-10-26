@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { df, describe, site, toast } from "./df";
 import { AddressFields, addressBody, catalog, type AddressNames } from "./AddressFields";
+import { PasteMessage, type MessageFields } from "./PasteMessage";
 import { Field, FieldError, PhoneInput, Select, TextInput, cooldownFrom, e164, rules, useBusy, useCountdown, useForm, local10 } from "./form";
 import { addressText } from "@/shared/addressText";
 
@@ -155,7 +156,8 @@ export default function BookingView() {
       requestDropHub: "",
       requestLastMile: pkg?.options.defaultLastMile ?? "DOORSTEP",
       requestCollectHub: "",
-      requestCodEnabled: "",
+      // Cash on delivery is ticked by default (the sender unticks it for prepaid parcels).
+      requestCodEnabled: "1",
       requestCodAmount: "",
       requestInstructions: "",
       guestCode: "",
@@ -389,8 +391,41 @@ export default function BookingView() {
     [pkg, cat.products],
   );
 
+  /** A pasted message (PasteMessage): what it has goes into the empty fields — the receiver and the delivery address, the sender, the amount. */
+  const fillFromMessage = (f: MessageFields) => {
+    const filled: string[] = [];
+    const next: Record<string, string> = {};
+    const put = (key: keyof typeof v, value: string | undefined, label: string, empty = (cur: string) => !cur.trim()) => {
+      if (value && empty(String(v[key] ?? ""))) {
+        next[key] = value;
+        filled.push(label);
+      }
+    };
+    put("requestReceiver", f.recipient_name, "receiver's name");
+    put("requestReceiverPhone", f.recipient_phone && local10(f.recipient_phone), "receiver's phone");
+    put("requestDelivery", f.address, "delivery address");
+    // The place found in the message (its district / zone / area also follow the address as it is set).
+    if (f.district && !v.requestDistrict && catalog().districts.includes(f.district)) {
+      next.requestDistrict = f.district;
+      if (f.zone && (catalog().zonesByDistrict[f.district] ?? []).includes(f.zone)) next.requestZone = f.zone;
+      if (f.zone && f.area && (catalog().areasByZone[f.zone] ?? []).includes(f.area)) next.requestArea = f.area;
+      filled.push("delivery district / zone");
+    }
+    put("requestName", f.sender_name, "your name");
+    put("requestPhone", f.sender_phone && local10(f.sender_phone), "your phone");
+    if (f.cod_amount && Number(f.cod_amount) > 0 && !v.requestCodAmount) {
+      Object.assign(next, { requestCodEnabled: "1", requestCodAmount: String(Number(f.cod_amount)) });
+      filled.push(`cash to collect ৳${Number(f.cod_amount).toLocaleString("en-US")}`);
+    }
+    put("requestWeight", f.weight_kg, "weight", cur => !cur.trim() || cur === "0.5");
+    put("requestInstructions", f.instructions, "note");
+    if (filled.length) form.setValues(c => ({ ...c, ...next }));
+    return filled;
+  };
+
   return (
     <form ref={form.formRef} id="requestForm" className="route-card route-form" data-form="request" data-react="1" noValidate onSubmit={submit}>
+      <PasteMessage onFill={fillFromMessage} />
       <div className="route-stepper" aria-label="Pickup request steps">
         {[0, 1, 2].map(i => (
           <span key={i} style={{ display: "contents" }}>

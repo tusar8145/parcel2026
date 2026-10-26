@@ -9,6 +9,7 @@ class ProfilePage extends StatelessWidget {
 
   Future<void> _signOut(BuildContext context) async {
     if (!await confirm(context, title: 'Sign out?', message: 'You will need your password to sign in again.', yes: 'Sign out')) return;
+    await Push.unregister();
     await Session.logout();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginPage()), (_) => false);

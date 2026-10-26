@@ -190,7 +190,24 @@ pm2 reload all
 - **Health.** `GET /api/v1/health/live` (process) and `/api/v1/health/ready` (database + Redis)
   for uptime monitoring.
 
-## 9. Reading parcel photos ("Scan with phone")
+## 9. Push notifications (merchant and rider apps)
+
+The Android apps (`mobile/`) get the users' notifications as pushes through Firebase Cloud Messaging.
+
+1. **Firebase key.** Super admin › SMS & Email Integrations › **Push notifications**: choose the service
+   account file (Firebase › Project settings › Service accounts › Generate new private key), tick
+   **Send push notifications**, **Save**. The private key is stored encrypted with `ENCRYPTION_KEY`.
+   Keep the downloaded file somewhere safe (not on the server, not in git).
+2. **Merchants.** A merchant gets pushes when their service plan has **Firebase push notifications**
+   (Service plans & pricing › Integrations). Riders always get them.
+3. **Check.** On the same tab, **Send a test** to someone signed in on the app; the status card shows the
+   phones registered and the last success / error.
+4. Outgoing HTTPS to `oauth2.googleapis.com` and `fcm.googleapis.com` must be allowed.
+
+`FIREBASE_SERVICE_ACCOUNT_FILE` in `apps/api/.env` (a path to the same file) is for development only; the
+super admin setting takes precedence when it is on.
+
+## 10. Reading parcel photos ("Scan with phone")
 
 Without any AI, the server reads photos with tesseract OCR: it turns the photo the right way up,
 straightens it, reads it, and when the phone, name or amount is missing (tables, scattered labels) reads

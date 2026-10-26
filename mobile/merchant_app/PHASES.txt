@@ -7,9 +7,9 @@ One Android app (Flutter) for both merchant types. It adapts to the signed-in me
 The app uses the existing API (https://deliveryfast.imagine-design.net/api/v1).
 
 
-PHASE 1 - MVP  [DONE, version 1.2.0, 26 Oct 2026]
+PHASE 1 - MVP  [DONE, version 1.3.0, 26 Oct 2026]
 -------------------------------------------------
-APK: E:\delivery-fast\apk\DeliveryFast-Merchant-1.2.0.apk
+APK: E:\delivery-fast\apk\DeliveryFast-Merchant-1.3.0.apk (phones and the emulator)
 
  1. Sign in / sign out, forgot password (SMS code).
  2. Home dashboard: today's numbers, orders by stage, this month's COD and charges,
@@ -42,8 +42,8 @@ Version 1.2.0 (26 Oct 2026) added:
 
 PHASE 2 - AFTER THE MVP WORKS  [PLANNED, about 4-5 days]
 --------------------------------------------------------
- 1. Push notifications (delivered, failed delivery, settlement paid).
-    The only new backend work: a Firebase project, and the API sends the pushes.
+ 1. (Done in 1.3.0: push notifications through Firebase. Merchants get them when their
+    service plan has "Firebase push notifications"; super admin can message all / chosen users.)
  2. Print / share the label and invoice PDF (existing document endpoints).
  3. (Done early in 1.2.0: support tickets.)
  4. Customers and products: saved recipients and the product list to prefill orders.

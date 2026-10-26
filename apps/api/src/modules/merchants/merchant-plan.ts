@@ -92,6 +92,8 @@ function serviceDetail(code: string, segment: PackageSegment, p: PackagePrices):
       return { detail: "Book and track parcels from your own system with API keys." };
     case "integration.webhooks":
       return { detail: "Status updates sent to your server as they happen." };
+    case "integration.push":
+      return { detail: "Your notifications arrive as push messages on your phone in the Delivery Fast Merchant app." };
     default:
       return { detail: "" };
   }

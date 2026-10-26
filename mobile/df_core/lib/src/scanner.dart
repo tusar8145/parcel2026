@@ -5,6 +5,28 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'widgets.dart';
 
+/// The scanner's sound: a short beep for a good scan, an error tone for a refused one (the app's
+/// "deliveryfast/beep" channel, Android's tone generator), with a vibration; the system click if missing.
+class Beep {
+  static const _channel = MethodChannel('deliveryfast/beep');
+
+  static Future<void> ok() async {
+    HapticFeedback.mediumImpact();
+    try {
+      await _channel.invokeMethod('ok');
+    } catch (_) {
+      SystemSound.play(SystemSoundType.click);
+    }
+  }
+
+  static Future<void> error() async {
+    HapticFeedback.heavyImpact();
+    try {
+      await _channel.invokeMethod('error');
+    } catch (_) {}
+  }
+}
+
 /// What happened to a scanned code: shown under the camera (green / red). [close] ends a continuous scan.
 class ScanFeedback {
   const ScanFeedback(this.ok, this.message, {this.close = false});
@@ -60,6 +82,9 @@ class _ScannerPageState extends State<ScannerPage> {
   final _controller = MobileScannerController(formats: const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.qrCode, BarcodeFormat.ean13]);
   bool _busy = false;
   ScanFeedback? _last;
+
+  /// The scans of this session, newest first (shown under the result).
+  final List<(String, ScanFeedback)> _history = [];
   String? _lastCode;
   DateTime _lastAt = DateTime(2000);
   int _count = 0;
@@ -78,7 +103,7 @@ class _ScannerPageState extends State<ScannerPage> {
     _lastCode = code;
     _lastAt = DateTime.now();
     if (widget.onCode == null) {
-      HapticFeedback.mediumImpact();
+      Beep.ok();
       Navigator.of(context).pop(code);
       return;
     }
@@ -91,15 +116,12 @@ class _ScannerPageState extends State<ScannerPage> {
     }
     if (!mounted) return;
     final ok = result?.ok ?? true;
-    if (ok) {
-      HapticFeedback.mediumImpact();
-      SystemSound.play(SystemSoundType.click);
-    } else {
-      HapticFeedback.heavyImpact();
-    }
+    ok ? Beep.ok() : Beep.error();
     setState(() {
       _busy = false;
       _last = result;
+      if (result != null) _history.insert(0, (code, result));
+      if (_history.length > 6) _history.removeLast();
       if (ok) _count++;
     });
     if (result?.close == true || (!widget.continuous && ok)) Navigator.of(context).pop(code);
@@ -214,7 +236,7 @@ class _ScannerPageState extends State<ScannerPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              last.message,
+                              widget.continuous ? '${last.message}\n${last.ok ? 'Ready: scan the next parcel.' : 'Scan another parcel.'}' : last.message,
                               style: TextStyle(color: last.ok ? good : bad, fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -251,6 +273,32 @@ class _ScannerPageState extends State<ScannerPage> {
                         '$_count scanned',
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  // Earlier scans of this session (the newest is in the box above).
+                  if (widget.continuous && _history.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        children: [
+                          for (final (code, r) in _history.skip(1))
+                            Row(
+                              children: [
+                                Icon(r.ok ? Icons.check : Icons.close, size: 16, color: r.ok ? good : bad),
+                                const SizedBox(width: 6),
+                                Text(code, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    r.message.replaceFirst(code, '').trim(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: muted, fontSize: 12.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
                     ),
                   OutlinedButton.icon(onPressed: _busy ? null : _type, icon: const Icon(Icons.keyboard_outlined), label: const Text('Type it instead')),

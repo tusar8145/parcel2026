@@ -13,6 +13,7 @@ import { EVENT_CATALOG, channelsOf } from "./catalog";
 import { NotificationSettingsService } from "./notification-settings.service";
 import { IN_APP, panelOf, panelUrl, type Panel, type Target } from "./in-app";
 import type { listNotificationsQuerySchema } from "./inbox.schemas";
+import { PushService } from "./push.service";
 
 /** One in-app notification to write. `link` wins over `target` (resolved per recipient's panel). */
 export interface InboxItem {
@@ -23,6 +24,8 @@ export interface InboxItem {
   target?: Target;
   /** The panel the target is in (default: each recipient's own panel). */
   panel?: Panel;
+  /** false: in-app only (the caller sends the push itself, e.g. a broadcast counting deliveries). Default true. */
+  push?: boolean;
 }
 
 /** Staff recipients by built-in role (custom roles count by their base role); hub roles optionally limited to hubs. */
@@ -55,6 +58,7 @@ export class InboxService implements OnModuleDestroy {
     private readonly audit: AuditService,
     private readonly realtime: RealtimeService,
     private readonly settings: NotificationSettingsService,
+    private readonly push: PushService,
   ) {}
 
   onModuleDestroy() {
@@ -78,7 +82,10 @@ export class InboxService implements OnModuleDestroy {
       })),
       select: { id: true },
     });
-    this.announce(rows.map(r => r.id));
+    this.announce(
+      rows.map(r => r.id),
+      item.push !== false,
+    );
     return rows.length;
   }
 
@@ -201,10 +208,34 @@ export class InboxService implements OnModuleDestroy {
   }
 
   /**
+   * The committed rows as push messages to the recipients' phones (merchant and rider apps): one push per
+   * user, or "N new notifications" when several arrive together (e.g. many parcels assigned at once).
+   */
+  private async pushRows(ids: string[]) {
+    try {
+      const rows = await this.prisma.userNotification.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: "desc" }, select: { id: true, userId: true, type: true, title: true, body: true, link: true } });
+      const byUser = new Map<string, typeof rows>();
+      for (const r of rows) byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r]);
+      for (const [userId, list] of byUser) {
+        const latest = list[0];
+        // What a tapped push opens (the app reads the tracking ID / request number like its notifications list).
+        const data = { notificationId: latest.id, type: latest.type, link: latest.link ?? "", title: latest.title, body: latest.body ?? "", count: String(list.length) };
+        const message =
+          list.length === 1
+            ? { title: latest.title, body: latest.body, data }
+            : { title: `${list.length} new notifications`, body: list.slice(0, 3).map(r => r.title).join(" · "), data };
+        await this.push.toUsers([userId], message);
+      }
+    } catch (err) {
+      this.logger.warn({ err }, "Push for in-app notifications failed");
+    }
+  }
+
+  /**
    * Announces committed rows to their recipients. Writers may still be inside a transaction, so the rows
    * are looked up (by primary key) a few times; rows that never appear were rolled back and stay silent.
    */
-  private announce(ids: string[]) {
+  private announce(ids: string[], push = true) {
     let pending = new Set(ids);
     const check = async (attempt: number) => {
       try {
@@ -213,6 +244,7 @@ export class InboxService implements OnModuleDestroy {
           for (const f of found) pending.delete(f.id);
           const users = [...new Set(found.map(f => f.userId))];
           this.realtime.publish({ type: "notification.created", userIds: users, staffPermission: NOBODY, data: { count: found.length } });
+          if (push) void this.pushRows(found.map(f => f.id));
         }
       } catch (err) {
         this.logger.warn({ err }, "In-app notification announce failed");

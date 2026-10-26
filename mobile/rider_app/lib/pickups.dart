@@ -1,6 +1,7 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
+import 'actions.dart';
 import 'home.dart';
 import 'offline.dart';
 import 'phone.dart';
@@ -145,30 +146,13 @@ class _PickupStopPageState extends State<PickupStopPage> {
 
   Future<ScanFeedback> _collect(String code, {String outcome = 'COLLECTED', String? note}) async {
     if (_done.containsKey(code)) return ScanFeedback(false, '$code is already done.');
-    final known = _expected.any((p) => p['trackingId'] == code);
-    try {
-      final sent = await Outbox.send(
-        Pending(
-          id: Outbox.newId(),
-          path: '/rider/parcels/${Uri.encodeComponent(code)}/pickup',
-          body: {'outcome': outcome, if (outcome == 'COLLECTED') 'expectedStop': widget.stopKey, 'note': ?note},
-          label: outcome == 'EXCEPTION' ? 'Pickup problem: $note' : (outcome == 'COLLECTED_DELIVER_DIRECT' ? 'Collected, delivering now' : 'Collected from ${_stop['name'] ?? 'the sender'}'),
-          trackingId: code,
-          kind: 'pickup',
-          createdAt: DateTime.now(),
-        ),
-      );
-      // Offline, a code that isn't on this list can't be checked: it stays in the outbox, the server decides.
-      setState(() => _done[code] = outcome == 'EXCEPTION' ? 'Problem reported' : (sent == Sent.later ? 'Collected · saved' : 'Collected'));
-      _updateProgress();
-      final left = _expected.length - _done.length;
-      return ScanFeedback(
-        true,
-        '$code ${outcome == 'EXCEPTION' ? 'reported' : 'collected'}${sent == Sent.later ? ' · saved, sends when online' : ''}${!known ? ' (not on this list)' : ''}${left > 0 ? ' · $left left' : ' · all done'}',
-      );
-    } on ApiError catch (e) {
-      return ScanFeedback(false, e.message);
-    }
+    final r = await collectParcel(_stop, code, outcome: outcome, note: note);
+    if (!r.ok) return r;
+    final saved = Outbox.of(code)?.kind == 'pickup';
+    setState(() => _done[code] = outcome == 'EXCEPTION' ? 'Problem reported' : (saved ? 'Collected · saved' : 'Collected'));
+    _updateProgress();
+    final left = _expected.length - _done.length;
+    return ScanFeedback(true, '${r.message}${left > 0 ? ' · $left left' : ' · all done'}');
   }
 
   Future<void> _problem(String code) async {
@@ -338,26 +322,11 @@ class _HandoverPageState extends State<HandoverPage> {
   }
 
   Future<ScanFeedback> _handover(String code, String source) async {
-    final hubId = _hub?['id'];
-    if (hubId == null) return const ScanFeedback(false, 'Your hub is not known yet. Try again when online.');
+    if (_hub?['id'] == null) return const ScanFeedback(false, 'Your hub is not known yet. Try again when online.');
     if (_handed.contains(code)) return ScanFeedback(false, '$code is already handed over.');
-    try {
-      final sent = await Outbox.send(
-        Pending(
-          id: Outbox.newId(),
-          path: '/rider/parcels/${Uri.encodeComponent(code)}/handover',
-          body: {'hubId': hubId, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'},
-          label: 'Handed over at ${_hub?['name'] ?? 'the hub'}',
-          trackingId: code,
-          kind: 'handover',
-          createdAt: DateTime.now(),
-        ),
-      );
-      setState(() => _handed.add(code));
-      return ScanFeedback(true, '$code handed over${sent == Sent.later ? ' · saved, sends when online' : ''}');
-    } on ApiError catch (e) {
-      return ScanFeedback(false, e.message);
-    }
+    final r = await handOver(_hub!, code, source);
+    if (r.ok) setState(() => _handed.add(code));
+    return r;
   }
 
   Future<void> _undo(String code) async {

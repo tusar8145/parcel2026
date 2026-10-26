@@ -1,5 +1,6 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { InboxService } from "../notifications/inbox.service";
+import { notifyRider } from "../notifications/new-work";
 import { notifyNewWork } from "../notifications/new-work";
 import { deliveryHubsOf } from "./delivery-hub";
 import { operationNow } from "../../common/operation-time";
@@ -586,6 +587,13 @@ export class ParcelsService {
         meta,
         after,
       );
+      if (parcel.pickupRiderId !== rider.id)
+        await notifyRider(this.inbox, tx, rider.id, {
+          type: "rider.pickup_assigned",
+          title: `New pickup: ${parcel.trackingId}`,
+          body: [parcel.senderName, [parcel.pickupArea, parcel.pickupZone].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
+          page: "Pickup queue",
+        });
     });
   }
 
@@ -626,6 +634,15 @@ export class ParcelsService {
         meta,
         after,
       );
+      if (parcel.deliveryRiderId !== rider.id) {
+        const cod = Number(parcel.codAmount);
+        await notifyRider(this.inbox, tx, rider.id, {
+          type: "rider.delivery_assigned",
+          title: `New delivery: ${parcel.trackingId}`,
+          body: [parcel.recipientName, [parcel.deliveryArea, parcel.deliveryZone].filter(Boolean).join(", "), cod > 0 ? `COD ৳${cod.toLocaleString("en-US")}` : null].filter(Boolean).join(" · "),
+          page: "Deliveries",
+        });
+      }
     });
   }
 

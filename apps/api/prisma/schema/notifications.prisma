@@ -70,3 +70,61 @@ model UserNotification {
   @@index([userId, readAt])
   @@map("user_notifications")
 }
+
+/// A phone signed in to a Delivery Fast app (merchant, rider): its Firebase Cloud Messaging token. In-app
+/// notifications of the user are also sent to it as a push. Removed at sign-out or when Firebase says the
+/// token is no longer valid.
+model PushDevice {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @db.Uuid
+  token      String   @unique
+  /// "merchant" or "rider"
+  app        String
+  platform   String   @default("android")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_devices")
+}
+
+/// Push notifications through Firebase Cloud Messaging (one row, id "fcm"): the service account, its private
+/// key encrypted at rest (super admin › SMS & Email Integrations › Gateway Settings).
+model PushGateway {
+  id                  String    @id @default("fcm")
+  enabled             Boolean   @default(false)
+  projectId           String?
+  clientEmail         String?
+  /// encrypt(private_key) of the service account
+  privateKeyEncrypted String?
+  lastSuccessAt       DateTime?
+  lastErrorAt         DateTime?
+  lastError           String?
+  updatedById         String?   @db.Uuid
+  updatedAt           DateTime  @updatedAt
+
+  @@map("push_gateway")
+}
+
+/// A message super admin sent as a push (and in-app notification) to many users: kept as the history.
+model PushBroadcast {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  title       String
+  body        String
+  /// ALL (every merchant and rider), MERCHANTS, RIDERS or USERS (the chosen userIds)
+  audience    String
+  userIds     String[]  @db.Uuid
+  /// Users it went to (in-app), phones it was pushed to, and how many pushes Firebase accepted / refused.
+  recipients  Int       @default(0)
+  devices     Int       @default(0)
+  delivered   Int       @default(0)
+  failed      Int       @default(0)
+  createdById String    @db.Uuid
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
+
+  @@index([createdAt])
+  @@map("push_broadcasts")
+}

@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
 import { TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
@@ -12,6 +12,8 @@ import { actorLabel, merchantIdsOf, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { Parcel, Prisma, ReturnRun } from "../../generated/prisma/client";
 import { WebhooksService } from "../notifications/webhooks.service";
+import { InboxService } from "../notifications/inbox.service";
+import { notifyRider } from "../notifications/new-work";
 import { LedgerService } from "../finance/ledger.service";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "../parcels/parcel-workflow.service";
 import { assertRiderAssignable, opsHubScope } from "../parcels/ops-scope";
@@ -166,6 +168,14 @@ export class ReturnsService {
     private readonly ledger: LedgerService,
     private readonly realtime: RealtimeService,
   ) {}
+
+  /** In-app / push notifications (property injection keeps the constructor stable). */
+  @Inject(InboxService) private readonly inbox!: InboxService;
+
+  /** The rider of a return run hears about it (bell and rider app push). */
+  private notifyRunRider(db: Db, riderId: string | null | undefined, number: string, parcels: number) {
+    return notifyRider(this.inbox, db, riderId, { type: "rider.return_run", title: `Return run ${number}`, body: `${parcels} parcel(s) to take back to the merchant`, page: "Scan parcel" });
+  }
 
   /**
    * The reasons offered on return requests: the list super admins keep in Shared catalogs &
@@ -343,6 +353,7 @@ export class ReturnsService {
           },
         });
         for (const parcel of parcels) await this.schedule(tx, actor, parcel, run, input.reason, meta, after);
+        await this.notifyRunRider(tx, input.riderId, run.number, parcels.length);
         await this.audit.record(actor, { action: "return_run.create", entityType: "return_run", entityId: run.id, data: { number: run.number, merchantId: input.merchantId, trackingIds: ids } }, meta, tx);
         return run.id;
       },
@@ -453,6 +464,7 @@ export class ReturnsService {
       if (!riderId) throw new AppError("RIDER_REQUIRED", "Choose the rider taking the parcels back", HttpStatus.UNPROCESSABLE_ENTITY);
       await this.rider(tx, riderId, actor);
       await tx.returnRun.update({ where: { id }, data: { status: "OUT_FOR_RETURN", riderId, dispatchedAt: operationNow() } });
+      if (riderId !== run.riderId) await this.notifyRunRider(tx, riderId, run.number, await tx.parcel.count({ where: { returnRunId: id, status: "RETURN_SCHEDULED" } }));
       await this.audit.record(actor, { action: "return_run.dispatch", entityType: "return_run", entityId: id, data: { riderId } }, meta, tx);
     });
     const run = await this.run(actor, id);

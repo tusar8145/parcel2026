@@ -566,12 +566,14 @@
     ["settings", "Channels & limits"],
     ["messages", "Recent messages"],
     ["gateways", "Gateway Settings"],
+    // Firebase push for the merchant and rider apps, messages to all / chosen users and their history (bridge-push.js).
+    ["push", "Push notifications"],
   ];
   async function integrationsPage() {
     const main = document.getElementById("mainContent");
     const tab = INT_TABS.some(([k]) => k === S.intTab) ? S.intTab : "settings";
     const tabs = INT_TABS;
-    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS & Email Integrations</h1><p class="subtitle">The SMS and email gateways (keys are stored encrypted and never shown again), which channels are on, and the SMS limits and message settings.</p></div></div>
+    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS & Email Integrations</h1><p class="subtitle">The SMS and email gateways and Firebase push for the mobile apps (keys are stored encrypted and never shown again), which channels are on, the SMS limits and message settings, and push messages to merchants and riders.</p></div></div>
       <div class="int-tabs" role="tablist" aria-label="SMS and email" style="display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5">${tabs
         .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${k === tab ? " button-primary" : ""}" data-int-tab="${k}" aria-selected="${k === tab}" style="${k === tab ? "" : "background:transparent;border:0;box-shadow:none;color:#556274"}">${label}</button>`)
         .join("")}</div>
@@ -580,6 +582,7 @@
     if (crumb) crumb.textContent = "SMS & Email Integrations";
     const box = document.getElementById("intBody");
     if (tab === "settings") return settingsTab(box);
+    if (tab === "push") return window.DFPushTab ? window.DFPushTab(box, () => still("Integrations")) : void (box.innerHTML = '<p class="panel-subtitle">Push notifications could not load.</p>');
     if (tab === "messages") {
       try {
         S.outbox = await DF.api("/notifications/outbox?limit=50");

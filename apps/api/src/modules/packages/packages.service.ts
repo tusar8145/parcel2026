@@ -461,6 +461,7 @@ export class PackagesService implements OnModuleInit {
         supportTickets: has.has("support.tickets"),
         api: has.has("integration.api"),
         webhooks: has.has("integration.webhooks"),
+        push: has.has("integration.push"),
         liveLocation: has.has("tracking.live_location"),
         riderPhone: has.has("tracking.rider_phone"),
       },

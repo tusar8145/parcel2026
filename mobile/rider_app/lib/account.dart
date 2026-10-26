@@ -81,6 +81,16 @@ class AccountPage extends StatelessWidget {
                   ],
                 ),
               ),
+              Panel(
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: const Icon(Icons.payments_outlined, color: brand),
+                  title: const Text('My cash', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('COD with you and the handover slip'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openCash(context),
+                ),
+              ),
               _tile(context, Icons.cloud_upload_outlined, 'Saved actions', 'Work saved on the phone, waiting to be sent', const OutboxPage()),
               _tile(context, Icons.undo, 'Returns to merchants', 'Return runs assigned to you', const ReturnsPage()),
               _tile(context, Icons.support_agent, 'Help & support', 'Ask about a parcel, cash, pay or safety', const SupportPage()),

@@ -212,6 +212,14 @@ export const SERVICES: readonly ServiceDef[] = [
   { code: "tracking.rider_phone", label: "Share rider phone number", group: "tracking", segments: ALL, kind: "entitlement", hint: "Only on the delivery day while out for delivery." },
   { code: "integration.api", label: "API integration", group: "integrations", segments: MERCHANTS, kind: "entitlement" },
   { code: "integration.webhooks", label: "Webhook", group: "integrations", segments: MERCHANTS, kind: "entitlement" },
+  {
+    code: "integration.push",
+    label: "Firebase push notifications (mobile app)",
+    group: "integrations",
+    segments: MERCHANTS,
+    kind: "entitlement",
+    hint: "The merchant's Delivery Fast app shows their notifications as push messages on the phone.",
+  },
 ];
 export const SERVICE_BY_CODE: ReadonlyMap<string, ServiceDef> = new Map(SERVICES.map(s => [s.code, s]));
 export const serviceLabel = (code: string) => SERVICE_BY_CODE.get(code)?.label ?? code;

@@ -9,6 +9,7 @@ import 'deliveries.dart';
 import 'offline.dart';
 import 'pickups.dart';
 import 'returns.dart';
+import 'scan.dart';
 
 /// The rider's tasks (GET /rider/tasks: pickups, deliveries, parcels carried), shared by the tabs and
 /// reloaded after every action and when the outbox has sent what was saved offline.
@@ -31,7 +32,48 @@ class Tasks {
   static List<Map<String, dynamic>> list(String key) => ((data.value?[key] as List?) ?? []).cast<Map<String, dynamic>>();
 }
 
-/// Today, Pickups, Deliveries, Cash, Account.
+/// The shell, so a tapped push can switch tabs.
+final riderShell = GlobalKey<RiderShellState>();
+
+/// Opens what a notification is about: new pickups / deliveries their tab, a return run the returns, a support
+/// reply its request; a message from Delivery Fast shows its full text.
+Future<void> openRiderNotification(BuildContext context, Map<String, dynamic> n) async {
+  final link = '${n['link'] ?? ''}';
+  final type = '${n['type'] ?? ''}';
+  final ticket = ticketIn(n);
+  if (ticket != null) {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TicketPage(number: ticket)));
+    return;
+  }
+  void tab(int i) {
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    riderShell.currentState?.openTab(i);
+    Tasks.load();
+  }
+
+  if (type == 'rider.pickup_assigned' || link.contains('Pickup')) return tab(1);
+  if (type == 'rider.delivery_assigned' || link.contains('Deliveries')) return tab(3);
+  if (type == 'rider.return_run') {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReturnsPage()));
+    return;
+  }
+  if (type.startsWith('cash.')) return openCash(context);
+  final title = '${n['title'] ?? ''}';
+  if (title.isEmpty) {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsPage(onOpen: openRiderNotification)));
+    return;
+  }
+  await showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text('${n['body'] ?? ''}'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ),
+  );
+}
+
+/// Today, Pickups, Scan, Deliveries, Account.
 class RiderShell extends StatefulWidget {
   const RiderShell({super.key});
   @override
@@ -50,6 +92,19 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
     Outbox.synced.addListener(Tasks.load);
     Outbox.load().then((_) => Outbox.flush());
     Tasks.load();
+    refreshUnread();
+    // Pushes: new work reloads the lists; a tapped one opens it.
+    Push.onReceive = (_) {
+      refreshUnread();
+      Tasks.load();
+    };
+    Push.onOpen = (data) {
+      final context = navigatorKey.currentContext;
+      if (context == null) return;
+      markNotificationRead(data['notificationId'] as String?);
+      openRiderNotification(context, data.cast<String, dynamic>());
+    };
+    Push.register('rider');
     // Back on shift after the app was closed: location sharing starts again.
     cachedGet('/rider/shift')
         .then((s) {
@@ -63,6 +118,7 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       Outbox.flush();
       Tasks.load();
+      refreshUnread();
     }
   }
 
@@ -76,8 +132,8 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final rider = Session.rider ?? {};
-    final tabs = [TodayPage(onOpenTab: openTab), const PickupsPage(), const DeliveriesPage(), const CashPage(), const AccountPage()];
-    const titles = ['Today', 'Pickups', 'Deliveries', 'My cash', 'Account'];
+    final tabs = [TodayPage(onOpenTab: openTab), const PickupsPage(), const ScanPage(), const DeliveriesPage(), const AccountPage()];
+    const titles = ['Today', 'Pickups', 'Scan', 'Deliveries', 'Account'];
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 16,
@@ -95,12 +151,18 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
                 ],
               )
             : Text(titles[_tab], style: const TextStyle(fontWeight: FontWeight.w800)),
-        actions: const [SyncButton(), SizedBox(width: 6)],
+        actions: const [
+          NotificationBell(onOpen: openRiderNotification),
+          SyncButton(),
+          SizedBox(width: 6),
+        ],
       ),
       body: Column(
         children: [
           const OfflineBar(),
-          Expanded(child: IndexedStack(index: _tab, children: tabs)),
+          Expanded(
+            child: IndexedStack(index: _tab, children: tabs),
+          ),
         ],
       ),
       bottomNavigationBar: ValueListenableBuilder<Map<String, dynamic>?>(
@@ -118,12 +180,12 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
                 selectedIcon: const Icon(Icons.storefront),
                 label: 'Pickups',
               ),
+              const NavigationDestination(icon: Icon(Icons.qr_code_scanner), label: 'Scan'),
               NavigationDestination(
                 icon: Badge(isLabelVisible: deliveries > 0, label: Text('$deliveries'), child: const Icon(Icons.local_shipping_outlined)),
                 selectedIcon: const Icon(Icons.local_shipping),
                 label: 'Deliveries',
               ),
-              const NavigationDestination(icon: Icon(Icons.payments_outlined), selectedIcon: Icon(Icons.payments), label: 'Cash'),
               const NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
             ],
           );
@@ -132,6 +194,18 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
     );
   }
 }
+
+/// My cash, opened from Today and Account.
+void openCash(BuildContext context) => Navigator.of(context).push(
+  MaterialPageRoute(
+    builder: (_) => Scaffold(
+      appBar: AppBar(
+        title: const Text('My cash', style: TextStyle(fontWeight: FontWeight.w800)),
+      ),
+      body: const CashPage(),
+    ),
+  ),
+);
 
 /// "Offline · showing what was saved at 10:42" while the server can't be reached.
 class OfflineBar extends StatelessWidget {
@@ -386,9 +460,9 @@ class _TodayPageState extends State<TodayPage> {
             builder: (context, _, _) => TilePairs(
               tiles: [
                 StatTile(label: 'Pickups to do', value: count(Tasks.list('pickups').length), icon: Icons.storefront_outlined, color: warn, onTap: () => widget.onOpenTab(1)),
-                StatTile(label: 'Deliveries to do', value: count(Tasks.list('deliveries').length), icon: Icons.local_shipping_outlined, onTap: () => widget.onOpenTab(2)),
+                StatTile(label: 'Deliveries to do', value: count(Tasks.list('deliveries').length), icon: Icons.local_shipping_outlined, onTap: () => widget.onOpenTab(3)),
                 StatTile(label: 'Carrying (to hand over)', value: count(Tasks.list('carrying').length), icon: Icons.inventory_2_outlined, onTap: () => widget.onOpenTab(1)),
-                StatTile(label: 'Cash in hand', value: taka(cash['inHand']), icon: Icons.payments_outlined, color: good, onTap: () => widget.onOpenTab(3)),
+                StatTile(label: 'Cash in hand', value: taka(cash['inHand']), icon: Icons.payments_outlined, color: good, onTap: () => openCash(context)),
               ],
             ),
           ),

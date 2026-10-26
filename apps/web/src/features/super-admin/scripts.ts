@@ -17,6 +17,8 @@ export const scripts = [
   "/legacy/super-admin/bridge.js",
   "/legacy/super-admin/bridge-merchants.js",
   "/legacy/super-admin/bridge-notifications.js",
+  // SMS & Email Integrations › Push notifications: Firebase settings, messages to all / chosen users, history.
+  "/legacy/super-admin/bridge-push.js",
   "/legacy/super-admin/bridge-imports.js",
   "/legacy/super-admin/bridge-geo.js",
   "/legacy/super-admin/bridge-packages.js",

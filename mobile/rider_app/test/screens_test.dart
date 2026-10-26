@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:rider_app/actions.dart';
 import 'package:rider_app/home.dart';
 import 'package:rider_app/main.dart';
 import 'package:rider_app/offline.dart';
@@ -41,7 +42,14 @@ void main() {
         return http.Response.bytes(utf8.encode(jsonEncode(fixtures[key] ?? {'ok': true})), 200, headers: {'content-type': 'application/json'});
       }
       final body = fixtures[key];
-      if (body == null) return http.Response(jsonEncode({'error': {'code': 'NOT_FOUND', 'message': 'Cannot GET $path'}}), 404);
+      if (body == null) {
+        return http.Response(
+          jsonEncode({
+            'error': {'code': 'NOT_FOUND', 'message': 'Cannot GET $path'},
+          }),
+          404,
+        );
+      }
       return http.Response.bytes(utf8.encode(jsonEncode(body)), 200, headers: {'content-type': 'application/json'});
     });
   });
@@ -95,7 +103,14 @@ void main() {
       'parcels': [
         {'trackingId': 'EP-261026-AAAAA', 'recipient': 'Karim Mia', 'amount': 950, 'collectedAt': '2026-10-26T08:00:00Z', 'partial': false, 'onSlip': true},
       ],
-      'slip': {'id': 's1', 'number': 'HS-2610-0001', 'status': 'OPEN', 'parcels': 1, 'expected': 950, 'hub': {'id': 'h', 'name': 'Dhanmondi Hub'}},
+      'slip': {
+        'id': 's1',
+        'number': 'HS-2610-0001',
+        'status': 'OPEN',
+        'parcels': 1,
+        'expected': 950,
+        'hub': {'id': 'h', 'name': 'Dhanmondi Hub'},
+      },
     };
     await open(tester);
     expect(find.text('Pickups to do'), findsOneWidget);
@@ -131,12 +146,16 @@ void main() {
     await tester.pageBack();
     await settle(tester);
 
-    await tab(tester, 'Cash');
+    await tab(tester, 'Account');
+    await tester.tap(find.text('My cash'));
     await waitFor(tester, find.text('HS-2610-0001'));
     expect(find.text('HS-2610-0001'), findsOneWidget);
     expect(find.byType(Code128Barcode), findsOneWidget);
+    await tester.pageBack();
+    await settle(tester);
 
     await tab(tester, 'Account');
+    await scrollTo(tester, find.text('Help & support'));
     expect(find.text('Help & support'), findsOneWidget);
     await tester.tap(find.text('Help & support'));
     await waitFor(tester, find.text('New request'));
@@ -190,6 +209,29 @@ void main() {
     expect(savedAt.value, isNotNull);
     expect(find.textContaining('Offline · showing what was saved'), findsOneWidget);
     expect(find.text('Pickups to do'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    Outbox.reset();
+  });
+
+  testWidgets('scan tab: the tasks are listed; a scan starts a delivery once and refuses parcels not on the list', (tester) async {
+    await phone(tester);
+    await open(tester);
+    await tab(tester, 'Scan');
+    for (final t in ['Pickup from merchant', 'Hand over at hub', 'Start deliveries', 'Deliver', 'Could not deliver', 'Return to merchant']) {
+      await scrollTo(tester, find.text(t));
+      expect(find.text(t), findsOneWidget);
+    }
+    final id = '${delivery()['trackingId']}';
+    final ok = (await tester.runAsync(() => startDelivery(id)))!;
+    expect(ok.ok, isTrue);
+    expect(sent.containsKey('POST /rider/parcels/$id/start-delivery'), isTrue);
+    final unknown = (await tester.runAsync(() => startDelivery('EP-000000-NOPE1')))!;
+    expect(unknown.ok, isFalse);
+    expect(unknown.message, contains('not one of your deliveries'));
+    final stop = ((firstPickup()['pickupStop'] as Map)).cast<String, dynamic>();
+    final collected = (await tester.runAsync(() => collectParcel(stop, '${firstPickup()['trackingId']}')))!;
+    expect(collected.ok, isTrue);
+    expect(sent['POST /rider/parcels/${firstPickup()['trackingId']}/pickup']?['expectedStop'], stop['key']);
     await tester.pumpWidget(const SizedBox());
     Outbox.reset();
   });

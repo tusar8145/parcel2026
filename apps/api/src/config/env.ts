@@ -28,6 +28,8 @@ const envSchema = z
     SCAN_AI_URL: z.union([z.url(), z.literal("")]).optional(),
     SCAN_AI_MODEL: z.string().min(1).default("qwen2.5vl:3b"),
     SCAN_AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(600_000),
+    /** Push notifications without the super admin setting (development): the Firebase service account JSON file. */
+    FIREBASE_SERVICE_ACCOUNT_FILE: z.string().optional(),
     TRUST_PROXY: bool.default(false),
     AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(10),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

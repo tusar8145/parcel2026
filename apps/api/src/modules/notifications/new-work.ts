@@ -12,3 +12,14 @@ export async function notifyNewWork(inbox: InboxService, db: Db, input: { hubId:
   if (input.hubId) return inbox.toStaff(db, { roles: ["OPS_MANAGER", "HUB_OPERATOR"], hubIds: [input.hubId] }, item);
   return inbox.toStaff(db, { roles: ["OPS_MANAGER"] }, item);
 }
+
+/**
+ * New work for a rider (a pickup, a delivery, a return run): in their bell and, with the rider app, as a push.
+ * `link` opens the rider panel page the work is on.
+ */
+export async function notifyRider(inbox: InboxService, db: Db, riderId: string | null | undefined, item: { type: string; title: string; body?: string | null; page: string }) {
+  if (!riderId) return 0;
+  const rider = await db.rider.findUnique({ where: { id: riderId }, select: { userId: true } });
+  if (!rider) return 0;
+  return inbox.add(db, [rider.userId], { type: item.type, title: item.title, body: item.body ?? null, link: `/rider?page=${encodeURIComponent(item.page)}` });
+}

@@ -10,6 +10,9 @@ import { PreferencesService } from "./preferences.service";
 import { NotificationPreferencesController, NotificationsAdminController } from "./notifications.controller";
 import { InboxService } from "./inbox.service";
 import { InboxController } from "./inbox.controller";
+import { PushService } from "./push.service";
+import { PushBroadcastService } from "./push-broadcast.service";
+import { PushAdminController, PushDevicesController } from "./push.controller";
 
 /**
  * Notifications: templates and toggles (super admin), user preferences, the transactional
@@ -17,8 +20,8 @@ import { InboxController } from "./inbox.controller";
  */
 @Global()
 @Module({
-  controllers: [NotificationsAdminController, NotificationPreferencesController, InboxController],
-  providers: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, GatewaysService, SmsRateLimiter, PreferencesService, InboxService],
-  exports: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, InboxService],
+  controllers: [NotificationsAdminController, NotificationPreferencesController, InboxController, PushDevicesController, PushAdminController],
+  providers: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, GatewaysService, SmsRateLimiter, PreferencesService, InboxService, PushService, PushBroadcastService],
+  exports: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, InboxService, PushService],
 })
 export class NotificationsModule {}

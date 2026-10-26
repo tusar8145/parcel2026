@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "741068300848",
+    "project_id": "delivery-fast-a0cf8",
+    "storage_bucket": "delivery-fast-a0cf8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:741068300848:android:9e17dcb5f72fcd767c83f5",
+        "android_client_info": {
+          "package_name": "bd.com.deliveryfast.rider"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBh7Qt06YdL8XjSTe04pYzeLOYG5AmgRjE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

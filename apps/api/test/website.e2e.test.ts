@@ -35,7 +35,8 @@ const nominatim: Server = createServer((req, res) => {
 });
 
 const SENDER = "01711000000";
-const CROCKFORD_ID = /^PP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/;
+// Website (customer) parcels: CP-… (system guide: parcel prefixes by line).
+const CROCKFORD_ID = /^CP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/;
 
 describe("public website", () => {
   let ctx: TestContext;
@@ -81,7 +82,7 @@ describe("public website", () => {
     // Typed with spaces, lower case and an O for a zero still finds it.
     const id = [...ids][0];
     const [, date, random] = id.split("-");
-    const typed = ` pp-${date}-${random.toLowerCase().replace(/0/g, "o").replace(/1/g, "l")} `;
+    const typed = ` cp-${date}-${random.toLowerCase().replace(/0/g, "o").replace(/1/g, "l")} `;
     expect((await ctx.api("GET", `/track/${encodeURIComponent(typed)}`)).body.trackingId).toBe(id);
 
     // An older sequential ID stays valid.

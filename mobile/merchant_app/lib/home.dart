@@ -13,16 +13,6 @@ import 'profile.dart';
 /// Bumped after a booking or a cancel, so open lists and the dashboard reload.
 final ordersChanged = ValueNotifier<int>(0);
 
-/// Unread in-app notifications (the bell's badge).
-final unreadCount = ValueNotifier<int>(0);
-
-Future<void> refreshUnread() async {
-  try {
-    final r = await Api.get('/me/notifications/count');
-    unreadCount.value = toNum(r['unread']).toInt();
-  } catch (_) {}
-}
-
 /// Opens the order form; after a booking, the new order's page.
 Future<void> openCreateOrder(BuildContext context) async {
   final trackingId = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const CreateOrderPage()));
@@ -49,6 +39,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     refreshUnread();
     _timer = Timer.periodic(const Duration(seconds: 60), (_) => refreshUnread());
+    // Pushes: a new one refreshes the bell and the lists; a tapped one opens what it is about.
+    Push.onReceive = (_) {
+      refreshUnread();
+      ordersChanged.value++;
+    };
+    Push.onOpen = (data) {
+      final context = navigatorKey.currentContext;
+      if (context == null) return;
+      markNotificationRead(data['notificationId'] as String?);
+      openMerchantNotification(context, data.cast<String, dynamic>());
+    };
+    Push.register('merchant');
   }
 
   @override
@@ -90,7 +92,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 ],
               )
             : Text(titles[_tab], style: const TextStyle(fontWeight: FontWeight.w800)),
-        actions: [const NotificationBell(), const SizedBox(width: 6)],
+        actions: const [
+          NotificationBell(onOpen: openMerchantNotification),
+          SizedBox(width: 6),
+        ],
       ),
       body: IndexedStack(index: _tab, children: tabs),
       floatingActionButton: _tab <= 1
@@ -106,24 +111,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Balance'),
           NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
         ],
-      ),
-    );
-  }
-}
-
-class NotificationBell extends StatelessWidget {
-  const NotificationBell({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: unreadCount,
-      builder: (context, n, _) => IconButton(
-        tooltip: 'Notifications',
-        onPressed: () async {
-          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
-          refreshUnread();
-        },
-        icon: Badge(isLabelVisible: n > 0, label: Text(n > 99 ? '99+' : '$n'), child: const Icon(Icons.notifications_outlined)),
       ),
     );
   }

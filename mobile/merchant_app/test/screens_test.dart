@@ -38,7 +38,15 @@ void main() {
     fixtures['POST /parcels'] = {'trackingId': 'EC-261026-TEST1'};
     fixtures['/support/tickets'] = {
       'items': [
-        {'number': 'DF-SUP-261026-0001', 'subject': 'COD not received', 'category': 'COD / payment', 'status': 'OPEN', 'statusLabel': 'Open', 'lastMessage': {'preview': 'Where is my COD?'}, 'updatedAt': '2026-10-26T08:00:00Z'},
+        {
+          'number': 'DF-SUP-261026-0001',
+          'subject': 'COD not received',
+          'category': 'COD / payment',
+          'status': 'OPEN',
+          'statusLabel': 'Open',
+          'lastMessage': {'preview': 'Where is my COD?'},
+          'updatedAt': '2026-10-26T08:00:00Z',
+        },
       ],
       'nextCursor': null,
     };

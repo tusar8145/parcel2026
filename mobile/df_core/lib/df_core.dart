@@ -5,6 +5,7 @@ library;
 export 'src/api.dart';
 export 'src/auth_pages.dart';
 export 'src/barcode.dart';
+export 'src/push.dart';
 export 'src/scanner.dart';
 export 'src/support.dart';
 export 'src/widgets.dart';

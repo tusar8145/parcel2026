@@ -1,6 +1,7 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
+import 'actions.dart';
 import 'offline.dart';
 import 'phone.dart';
 
@@ -16,27 +17,12 @@ class _ReturnsPageState extends State<ReturnsPage> {
   final Set<String> _returned = {};
 
   Future<ScanFeedback> _return(Map<String, dynamic> run, String code, String source, String receivedBy) async {
-    final codes = ((run['parcels'] as List?) ?? []).map((p) => '${(p as Map)['trackingId']}').toSet();
     if (_returned.contains(code)) return ScanFeedback(false, '$code is already returned.');
-    if (!codes.contains(code)) return ScanFeedback(false, '$code is not on ${run['number']}.');
-    try {
-      final sent = await Outbox.send(
-        Pending(
-          id: Outbox.newId(),
-          path: '/rider/parcels/${Uri.encodeComponent(code)}/return',
-          body: {'runId': run['id'], if (receivedBy.isNotEmpty) 'receivedBy': receivedBy, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'},
-          label: 'Returned to ${(run['merchant'] as Map?)?['name'] ?? 'the merchant'}',
-          trackingId: code,
-          kind: 'return',
-          createdAt: DateTime.now(),
-        ),
-      );
-      setState(() => _returned.add(code));
-      final left = codes.difference(_returned).length;
-      return ScanFeedback(true, '$code returned${sent == Sent.later ? ' · saved, sends when online' : ''}${left > 0 ? ' · $left left' : ' · run complete'}');
-    } on ApiError catch (e) {
-      return ScanFeedback(false, e.message);
-    }
+    final r = await returnParcel(run, code, source, receivedBy);
+    if (!r.ok) return r;
+    setState(() => _returned.add(code));
+    final left = ((run['parcels'] as List?) ?? []).map((p) => '${(p as Map)['trackingId']}').toSet().difference(_returned).length;
+    return ScanFeedback(true, '${r.message}${left > 0 ? ' · $left left' : ' · run complete'}');
   }
 
   Future<void> _scanRun(Map<String, dynamic> run) async {

@@ -1,9 +1,8 @@
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
-import 'api.dart';
 import 'home.dart';
 import 'orders.dart';
-import 'widgets.dart';
 
 /// In-app notifications (newest first): unread ones marked; opening one marks it read.
 class NotificationsPage extends StatefulWidget {
@@ -78,6 +77,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       setState(() => n['readAt'] = DateTime.now().toUtc().toIso8601String());
       if (unreadCount.value > 0) unreadCount.value--;
       Api.post('/me/notifications/${n['id']}/read', {}).catchError((_) => <String, dynamic>{});
+    }
+    // A support reply (DF-SUP-…) opens the request; a parcel's tracking ID opens the order.
+    final ticket = RegExp(r'\bDF-SUP-\d{6}-\d+\b').firstMatch('${n['title']} ${n['body']} ${n['link']}')?.group(0);
+    if (ticket != null) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => TicketPage(number: ticket)));
+      return;
     }
     final id = _trackingIdOf(n);
     if (id != null) await Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailPage(trackingId: id)));

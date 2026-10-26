@@ -1,9 +1,6 @@
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'api.dart';
-import 'main.dart';
-import 'widgets.dart';
 
 /// Account: the merchant's details and code, the pickup address and hub, plan and payment account;
 /// change password and sign out. Details are changed on the merchant panel.
@@ -79,6 +76,16 @@ class ProfilePage extends StatelessWidget {
                 ),
               ),
               Panel(
+                padding: EdgeInsets.zero,
+                child: ListTile(
+                  leading: const Icon(Icons.support_agent, color: brand),
+                  title: const Text('Help & support', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Ask about a parcel, a payment or your account'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportPage())),
+                ),
+              ),
+              Panel(
                 title: 'Contact',
                 child: Column(children: [KeyValue('Name', '${m['contactName'] ?? '—'}'), KeyValue('Phone', phoneText(m['contactPhone'])), KeyValue('Email', '${m['contactEmail'] ?? '—'}')]),
               ),
@@ -139,7 +146,7 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Delivery Fast Merchant 1.1 · ${Uri.parse(apiBase).host}',
+                '${AppConfig.appName} ${AppConfig.version} · ${Uri.parse(apiBase).host}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
               ),
@@ -147,81 +154,6 @@ class ProfilePage extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class ChangePasswordPage extends StatefulWidget {
-  const ChangePasswordPage({super.key});
-  @override
-  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
-}
-
-class _ChangePasswordPageState extends State<ChangePasswordPage> {
-  final _form = GlobalKey<FormState>();
-  final _current = TextEditingController();
-  final _new = TextEditingController();
-  final _again = TextEditingController();
-  bool _hidden = true;
-  bool _busy = false;
-  String? _error;
-
-  Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await Api.post('/auth/password/change', {'currentPassword': _current.text, 'newPassword': _new.text});
-      if (!mounted) return;
-      snack(context, 'Password changed.');
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) setState(() => _error = errorText(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final eye = IconButton(icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined), onPressed: () => setState(() => _hidden = !_hidden));
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Change password', style: TextStyle(fontWeight: FontWeight.w800)),
-      ),
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _current,
-              obscureText: _hidden,
-              decoration: InputDecoration(labelText: 'Current password', suffixIcon: eye),
-              validator: (v) => (v ?? '').isEmpty ? 'Enter your current password' : null,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _new,
-              obscureText: _hidden,
-              decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 10 characters, with a letter and a number'),
-              validator: passwordError,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _again,
-              obscureText: _hidden,
-              decoration: const InputDecoration(labelText: 'New password again'),
-              validator: (v) => v == _new.text ? null : 'The passwords do not match',
-            ),
-            if (_error != null) ...[const SizedBox(height: 14), ErrorBox(_error!)],
-            const SizedBox(height: 20),
-            BusyButton(label: 'Change password', busy: _busy, onPressed: _submit),
-          ],
-        ),
-      ),
     );
   }
 }

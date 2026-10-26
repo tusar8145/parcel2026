@@ -1,7 +1,5 @@
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
-
-import 'api.dart';
-import 'widgets.dart';
 
 /// Balance: E-commerce merchants see their COD on its way (rider → hub → central), ready / being paid / paid,
 /// and their settlements (ST-); Banking & Financial merchants their bills (INV-), payments (PAY-) and due.

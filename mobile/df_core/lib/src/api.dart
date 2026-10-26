@@ -16,6 +16,23 @@ final navigatorKey = GlobalKey<NavigatorState>();
 /// Called when the session can't be renewed (set by main.dart: opens the sign-in page).
 void Function()? onSignedOut;
 
+/// What differs between the apps (set in each app's main()).
+class AppConfig {
+  /// "Merchant", "Rider": the sign-in page's title and messages.
+  static String role = 'Merchant';
+  static String appName = 'Delivery Fast';
+  static String version = '';
+
+  /// Who may use this app (merchant accounts, rider accounts).
+  static bool Function(Map<String, dynamic> user) allows = (_) => true;
+
+  /// Shown when someone else signs in.
+  static String notAllowed = 'This account cannot use this app.';
+
+  /// The page after sign-in.
+  static Widget Function() home = () => const SizedBox.shrink();
+}
+
 /// The signed-in session: the refresh token kept in the phone's secure storage (Android Keystore).
 class Session {
   static const _storage = FlutterSecureStorage();
@@ -23,11 +40,16 @@ class Session {
   static Map<String, dynamic>? user;
   static Future<bool>? _refreshing;
 
+  /// True when the app opened with the saved account but the server couldn't be reached.
+  static bool offline = false;
+
   static Future<void> save(Map<String, dynamic> body) async {
     accessToken = body['accessToken'] as String?;
     user = (body['user'] as Map<String, dynamic>?) ?? user;
+    offline = false;
     final refresh = body['refreshToken'] as String?;
     if (refresh != null) await _storage.write(key: 'refreshToken', value: refresh);
+    if (user != null) await _storage.write(key: 'user', value: jsonEncode(user));
   }
 
   /// Signs in again with the saved refresh token (app restart, expired access token).
@@ -39,11 +61,19 @@ class Session {
     try {
       final body = await Api.post('/auth/refresh', {'refreshToken': refresh}, retry: false);
       await save(body);
-      return isMerchant;
+      return user != null && AppConfig.allows(user!);
     } on ApiError catch (e) {
-      // Only a refused token ends the session; no network keeps it for the next try.
-      if (e.status != null) await _storage.delete(key: 'refreshToken');
-      return false;
+      // Only a refused token ends the session; no network keeps it: the app opens with the saved account.
+      if (e.status != null) {
+        await _storage.delete(key: 'refreshToken');
+        await _storage.delete(key: 'user');
+        return false;
+      }
+      final saved = await _storage.read(key: 'user');
+      if (saved == null) return false;
+      user = (jsonDecode(saved) as Map).cast<String, dynamic>();
+      offline = true;
+      return AppConfig.allows(user!);
     }
   }
 
@@ -55,10 +85,13 @@ class Session {
       } catch (_) {}
     }
     await _storage.delete(key: 'refreshToken');
+    await _storage.delete(key: 'user');
     accessToken = null;
     user = null;
   }
 
+  static String get name => user?['name'] as String? ?? '';
+  static Map<String, dynamic>? get rider => user?['rider'] as Map<String, dynamic>?;
   static Map<String, dynamic>? get merchant => user?['merchant'] as Map<String, dynamic>?;
   static bool get isMerchant => merchant != null;
   static String get merchantName => merchant?['name'] as String? ?? 'Merchant';
@@ -92,6 +125,11 @@ class Api {
     return data is Map<String, dynamic> ? data : {};
   }
 
+  static Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) async {
+    final data = await _send('PATCH', path, body: body);
+    return data is Map<String, dynamic> ? data : {};
+  }
+
   static Future<dynamic> _send(String method, String path, {Map<String, Object?>? query, Object? body, Map<String, String>? headers, bool retry = true}) async {
     final q = {
       for (final e in (query ?? {}).entries)
@@ -101,13 +139,17 @@ class Api {
     http.Response res;
     try {
       final h = {'content-type': 'application/json', 'accept': 'application/json', if (Session.accessToken != null) 'authorization': 'Bearer ${Session.accessToken}', ...?headers};
-      final req = method == 'GET' ? client.get(uri, headers: h) : client.post(uri, headers: h, body: jsonEncode(body));
+      final req = switch (method) {
+        'GET' => client.get(uri, headers: h),
+        'PATCH' => client.patch(uri, headers: h, body: jsonEncode(body)),
+        _ => client.post(uri, headers: h, body: jsonEncode(body)),
+      };
       res = await req.timeout(const Duration(seconds: 25));
     } catch (_) {
       throw ApiError('Could not reach the server. Check the internet connection and try again.');
     }
     // An expired access token: renew it once and repeat the request.
-    if (res.statusCode == 401 && retry && Session.accessToken != null) {
+    if (res.statusCode == 401 && retry && Session.user != null) {
       if (await Session.restore()) return _send(method, path, query: query, body: body, headers: headers, retry: false);
       Session.accessToken = null;
       onSignedOut?.call();

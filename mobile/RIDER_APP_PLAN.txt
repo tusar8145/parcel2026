@@ -1,0 +1,109 @@
+DELIVERY FAST RIDER APP - IMPLEMENTATION PLAN
+=============================================
+
+Android app (Flutter) for riders, next to the merchant app (mobile/merchant_app).
+Status: STEP 0 AND PHASE 1 DONE (26 Oct 2026) - mobile/rider_app, version 1.0.0.
+  APK: E:\delivery-fast\apk\DeliveryFast-Rider-1.0.0.apk; riders download it from the
+  rider panel's sidebar ("Get the rider app", /downloads/delivery-fast-rider.apk).
+  Shared code: mobile/df_core (API, sign-in, scanner, support, barcode) used by both apps.
+  Also in 1.0.0: Help & support (requests with photos; "Report a problem" on a delivery).
+  Decisions taken by default: English only (Bangla stays in Phase 2); APK download only.
+  Not yet tested on a real phone (scanner, GPS in the background, battery savers).
+
+The web rider panel (/rider) already has every feature, including an offline queue.
+A native app adds what a browser can't do well:
+ - GPS that keeps working with the screen off or while another app (Maps) is open.
+ - Fast camera barcode scanning (native ML Kit).
+ - Reliable offline storage: actions and proof photos stay saved even if the phone
+   closes the app.
+ - One-tap call to the recipient, Google Maps navigation, and later push notifications.
+
+Phase 1 needs NO new backend work. Every action already has an API endpoint:
+ - Tasks and parcels: rider/tasks, rider/summary,
+   rider/parcels/:id/pickup | start-delivery | delivery | resend-code | handover | return
+ - Shift and status: rider/shift (check-in / check-out), rider/me/status
+ - GPS: rider/location, rider/location/batch
+ - Cash: rider/my-cash, rider/my-cash/slip, rider/my-cash/slip/cancel
+ - Account: rider/earnings, rider/kyc
+Offline replay is safe: the API accepts an Idempotency-Key, so a repeated
+action is never applied twice.
+
+
+STEP 0 - SHARED CODE  [about 0.5 day]
+-------------------------------------
+Move the common code out of the merchant app into one shared package (mobile/df_core):
+API client, session (secure token storage, refresh), formatting (taka, dates, phones),
+common widgets. Both apps use it, so a fix in one reaches both.
+
+
+PHASE 1 - THE RIDER'S DAILY WORK (MVP)  [about 5-7 days]
+--------------------------------------------------------
+ 1. Sign in with phone and password. The session is saved; the app opens offline with
+    the last data.
+ 2. Shift and status: check in / check out, online / offline. GPS runs only during a
+    shift, as a foreground service with a visible "On shift" notification.
+ 3. Today: summary counts and the task list (pickups and deliveries), grouped by
+    merchant or area.
+ 4. Pickup: choose the merchant's pickup, scan each parcel with the camera; the app shows
+    expected / scanned / missing, then confirms the pickup.
+ 5. Delivery:
+      - start delivery, call the recipient, open the address in Google Maps;
+      - deliver with OTP code, signature or photo (as set by operations), resend code;
+      - COD collected, partial delivery, who received it (receiver relation);
+      - failed attempt with a reason.
+ 6. Offline-first queue: every action and proof photo is saved on the phone first and
+    sent when the connection returns, in the order they happened. Photos are compressed.
+    When the server refuses an action (e.g. "parcel changed"), the rider sees the reason
+    and reviews it.
+ 7. My cash: COD in hand, create a handover slip (HS-) for the hub, cancel a slip.
+ 8. Handover and returns: hand a parcel to another rider or a hub; return runs back to
+    merchants.
+ 9. Download link for the APK (the place in the rider panel is still to be decided).
+
+
+PHASE 2  [about 3-4 days]
+-------------------------
+ 1. Earnings and payouts.
+ 2. KYC document upload (camera).
+ 3. Push notifications for new assignments and changes. Needs Firebase and a small API
+    addition; shared with the merchant app's Phase 2.
+ 4. Vehicle location sharing for linehaul trips (manifest MF-).
+ 5. Performance page, notification settings.
+ 6. Bangla language.
+
+
+NOT IN THE APP
+--------------
+Operations and hub-desk screens, and anything admin-side. Riders don't use these.
+
+
+TECHNICAL
+---------
+ - Packages:
+     mobile_scanner (camera barcode), geolocator + foreground service (GPS),
+     sqflite (offline queue), image_picker + compression (photos),
+     signature (signature pad), url_launcher (call, maps), connectivity_plus.
+ - Testing: screen tests on saved API responses (as in the merchant app). Scanner, GPS
+   and background behaviour need a real Android phone; the emulator can't test them
+   properly, and the development PC is short on RAM.
+ - Distribution: APK download link, like the merchant app. Signed with the Delivery
+   Fast key (E:\delivery-fast\keys - keep it safe).
+
+
+CHALLENGES
+----------
+ - Battery: some brands (Xiaomi, Oppo, Vivo, Realme) close background apps. Riders may
+   need to turn off battery optimisation; the app shows them how.
+ - Play Store: background location needs a policy declaration and a demo video.
+   Not needed for an APK download.
+ - Cheap phones: keep the app light (compressed photos, a limit on stored GPS points).
+ - Offline conflicts: if operations reassign a parcel while the rider is offline, the
+   queued action fails. The app must show this clearly (the API returns the reason).
+
+
+DECISIONS NEEDED BEFORE STARTING
+--------------------------------
+ 1. Bangla in Phase 1? Many riders may prefer it; adding it later costs more.
+ 2. Distribution: APK download link only, or the Play Store as well?
+ 3. A real rider phone for testing, and one rider test account.
+ 4. Any change to the Phase 1 list (e.g. move earnings into Phase 1?).

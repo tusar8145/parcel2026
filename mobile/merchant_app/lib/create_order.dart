@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'api.dart';
-import 'widgets.dart';
 
 /// Create order (E-commerce) / consignment (Banking & Financial), as on the merchant panels:
 /// the optional "paste the customer's message" box (POST /parse-message) fills the empty fields; the full

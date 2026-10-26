@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:merchant_app/api.dart';
+import 'package:df_core/df_core.dart';
 
 void main() {
   test('money is shown in taka with thousands separators', () {

@@ -1,4 +1,5 @@
 import BrandMark from "@/shared/BrandMark";
+import AppDownloadCard from "@/shared/AppDownloadCard";
 
 export default function Sidebar() {
   return (
@@ -96,6 +97,7 @@ export default function Sidebar() {
       </nav>{" "}
       <div className="sidebar-bottom">
         {" "}
+        <AppDownloadCard app="merchant" />
         <div className="help-card">
           <strong>Need a hand?</strong>
           <p>Our merchant success team is here to help you grow.</p>

@@ -1,0 +1,69 @@
+DELIVERY FAST MERCHANT APP - PHASES
+====================================
+
+One Android app (Flutter) for both merchant types. It adapts to the signed-in merchant:
+  - E-commerce merchants (about 80% of users): parcels, COD, weight, products, settlements.
+  - Banking & Financial merchants (about 20%): documents/consignments, bills and payments.
+The app uses the existing API (https://deliveryfast.imagine-design.net/api/v1).
+
+
+PHASE 1 - MVP  [DONE, version 1.2.0, 26 Oct 2026]
+-------------------------------------------------
+APK: E:\delivery-fast\apk\DeliveryFast-Merchant-1.2.0.apk
+
+ 1. Sign in / sign out, forgot password (SMS code).
+ 2. Home dashboard: today's numbers, orders by stage, this month's COD and charges,
+    last 7 days chart, money summary.
+ 3. Create order / consignment:
+      - "AI" paste box: paste the customer's message (English or Bangla) and the form
+        fills name, phone, full address, COD, weight and reference.
+      - Full address picks district / zone / area automatically (can be changed).
+      - Product, weight, COD, open box (e-commerce); service, pickup and delivery options.
+      - Live delivery charge from the merchant's service package.
+ 4. Orders list: search (tracking ID, phone, name), status and date filters, paging.
+ 5. Order detail: tracking timeline, charges, COD, proof of delivery; cancel while pending.
+ 6. Pickup requests: list, request (day, time window, parcel count), cancel.
+ 7. Balance:
+      - E-commerce: COD on the way, ready / being paid / paid, settlements, statement.
+      - Banking & Financial: due, bills, payments, statement.
+ 8. In-app notifications: list, unread badge, mark read.
+ 9. Account: merchant info and code, pickup address, plan, change password.
+
+Needs on the server: the latest API code deployed (AI paste and Balance use
+/parse-message and /my-accounts, which the old server version doesn't have).
+
+Version 1.2.0 (26 Oct 2026) added:
+ - Scan a parcel: camera button beside the order search; scanning a label's barcode opens
+   that order (works for the merchant's own parcels only).
+ - Help & support: support requests (list, new request with photos, conversation and
+   replies) on the Account tab, and "Get help with this order" on every order.
+ - Download: merchant panels' sidebar, "Get the Android app" (/downloads/delivery-fast-merchant.apk).
+
+
+PHASE 2 - AFTER THE MVP WORKS  [PLANNED, about 4-5 days]
+--------------------------------------------------------
+ 1. Push notifications (delivered, failed delivery, settlement paid).
+    The only new backend work: a Firebase project, and the API sends the pushes.
+ 2. Print / share the label and invoice PDF (existing document endpoints).
+ 3. (Done early in 1.2.0: support tickets.)
+ 4. Customers and products: saved recipients and the product list to prefill orders.
+ 5. Scheduled (recurring) pickups.
+ 6. Bangla language option.
+
+
+PHASE 3 - OPTIONAL  [ONLY IF NEEDED]
+------------------------------------
+These are used less often and stay on the merchant website. If wanted later, the app
+can open them as web pages inside the app:
+ - Excel import / export, bulk upload
+ - API keys and webhooks
+ - Reports and downloads
+ - Team members and roles
+ - Package / pricing details, KYC document upload, merchant settings edits
+
+
+PLAY STORE (when ready)
+-----------------------
+ - Google Play developer account ($25, one time).
+ - The app is already signed with the Delivery Fast upload key
+   (E:\delivery-fast\keys - keep it safe; every update must use the same key).

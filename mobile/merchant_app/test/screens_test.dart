@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:merchant_app/api.dart';
+import 'package:df_core/df_core.dart';
 import 'package:merchant_app/create_order.dart';
 import 'package:merchant_app/home.dart';
 
@@ -36,6 +36,12 @@ void main() {
       'nextCursor': null,
     };
     fixtures['POST /parcels'] = {'trackingId': 'EC-261026-TEST1'};
+    fixtures['/support/tickets'] = {
+      'items': [
+        {'number': 'DF-SUP-261026-0001', 'subject': 'COD not received', 'category': 'COD / payment', 'status': 'OPEN', 'statusLabel': 'Open', 'lastMessage': {'preview': 'Where is my COD?'}, 'updatedAt': '2026-10-26T08:00:00Z'},
+      ],
+      'nextCursor': null,
+    };
     final m = fixtures['/merchants/me'] as Map<String, dynamic>;
     Session.accessToken = 'test';
     Session.user = {
@@ -94,6 +100,7 @@ void main() {
     expect(find.text('Your money'), findsOneWidget);
 
     await tab(tester, 'Orders');
+    expect(find.byTooltip('Scan a parcel'), findsOneWidget);
     final parcel = (fixtures['/parcels']['items'] as List).first as Map;
     expect(find.text('${parcel['trackingId']}'), findsWidgets);
     await tester.tap(find.text('${parcel['trackingId']}').first);
@@ -102,6 +109,8 @@ void main() {
     await scrollTo(tester, find.text('Charges'));
     await scrollTo(tester, find.text('Tracking'));
     expect(find.text('Tracking'), findsOneWidget);
+    await scrollTo(tester, find.text('Get help with this order'));
+    expect(find.text('Get help with this order'), findsOneWidget);
     await tester.pageBack();
     await settle(tester);
 
@@ -119,6 +128,12 @@ void main() {
 
     await tab(tester, 'Account');
     expect(find.textContaining('${fixtures['/merchants/me']['code']}'), findsOneWidget);
+    await tester.tap(find.text('Help & support'));
+    await settle(tester);
+    expect(find.text('COD not received'), findsOneWidget);
+    expect(find.text('New request'), findsOneWidget);
+    await tester.pageBack();
+    await settle(tester);
 
     await tester.tap(find.byTooltip('Notifications'));
     await settle(tester);

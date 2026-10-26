@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:merchant_app/main.dart';
+import 'package:df_core/df_core.dart';
 
 void main() {
   testWidgets('the sign-in page checks the phone number and password before calling the server', (tester) async {

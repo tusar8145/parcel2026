@@ -36,7 +36,9 @@ class LoaderState<T> extends State<Loader<T>> {
 
   Future<void> reload() async {
     final f = widget.load();
-    setState(() => _future = f);
+    setState(() {
+      _future = f;
+    });
     try {
       await f;
     } catch (_) {}

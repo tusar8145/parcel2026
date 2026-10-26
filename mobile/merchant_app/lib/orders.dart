@@ -1,11 +1,10 @@
 import 'dart:async';
 
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'api.dart';
 import 'home.dart';
-import 'widgets.dart';
 
 /// Order list filters: the statuses each one covers.
 const orderFilters = <String, (String, String?)>{
@@ -19,6 +18,26 @@ const orderFilters = <String, (String, String?)>{
 };
 
 const _periods = {'any': 'Any time', 'today': 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', 'month': 'This month'};
+
+/// "Scan a parcel": reads the label's barcode and opens that order (a parcel of another merchant, or an
+/// unknown code, is refused under the camera so the next label can be scanned).
+Future<void> scanToOpenOrder(BuildContext context) async {
+  final code = await scanBarcode(
+    context,
+    title: 'Scan a parcel',
+    hint: 'Point the camera at the barcode on the parcel label.',
+    onCode: (code, _) async {
+      try {
+        await Api.get('/parcels/${Uri.encodeComponent(code)}');
+        return ScanFeedback(true, code);
+      } on ApiError catch (e) {
+        return ScanFeedback(false, e.status == 404 || e.status == 403 ? '$code is not one of your parcels.' : e.message);
+      }
+    },
+  );
+  if (code == null || !context.mounted) return;
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => OrderDetailPage(trackingId: code)));
+}
 
 /// Orders: search (tracking ID, phone, name), status and date filters, more as you scroll.
 class OrdersPage extends StatefulWidget {
@@ -129,28 +148,44 @@ class OrdersPageState extends State<OrdersPage> {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
           child: Column(
             children: [
-              TextField(
-                controller: _search,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search),
-                  hintText: 'Tracking ID, phone or name',
-                  suffixIcon: _search.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            _search.clear();
-                            _reload();
-                          },
-                        ),
-                ),
-                onChanged: (_) {
-                  setState(() {});
-                  _debounce?.cancel();
-                  _debounce = Timer(const Duration(milliseconds: 450), _reload);
-                },
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _search,
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: 'Tracking ID, phone or name',
+                        suffixIcon: _search.text.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  _search.clear();
+                                  _reload();
+                                },
+                              ),
+                      ),
+                      onChanged: (_) {
+                        setState(() {});
+                        _debounce?.cancel();
+                        _debounce = Timer(const Duration(milliseconds: 450), _reload);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    tooltip: 'Scan a parcel',
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(46, 46),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => scanToOpenOrder(context),
+                    icon: const Icon(Icons.qr_code_scanner),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               SizedBox(
@@ -465,6 +500,17 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           children: [for (var i = 0; i < events.length; i++) _TimelineRow(event: events[i], first: i == 0, last: i == events.length - 1)],
                         ),
                 ),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NewTicketPage(relatedRef: '${p['trackingId']}', subject: 'Help with ${p['trackingId']}'),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                  icon: const Icon(Icons.support_agent),
+                  label: const Text('Get help with this order'),
+                ),
+                const SizedBox(height: 10),
                 if (p['canCancel'] == true)
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _cancel,

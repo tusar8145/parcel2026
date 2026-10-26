@@ -1,7 +1,5 @@
+import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
-
-import 'api.dart';
-import 'widgets.dart';
 
 /// Pickup requests: the merchant's one-off pickups (and those from recurring schedules); request one, cancel one.
 class PickupsPage extends StatefulWidget {

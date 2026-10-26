@@ -42,6 +42,11 @@ describe("parse a pasted message", () => {
       recipient_phone: "01785412369",
       address: "Bashundhara residential area, F block, House 12, Road 15",
     }); // its place: place-in-text.test.ts (the test catalog has no Vatara)
+    // All on one line, the name running into the address.
+    const line = await parse("Abdul alim Bashundhara residential area, F block, House 12, Road 15 01785412369");
+    expect(line.body.fields).toMatchObject({ recipient_name: "Abdul alim", recipient_phone: "01785412369", address: "Bashundhara residential area, F block, House 12, Road 15" });
+    const withCod = await parse("Abdul alim Bashundhara residential area, F block, House 12, Road 15 01785412369 cod 1200");
+    expect(withCod.body.fields).toMatchObject({ recipient_name: "Abdul alim", address: "Bashundhara residential area, F block, House 12, Road 15", cod_amount: "1200" });
     const two = await parse(["01785412369", "Abdul alim", "Bashundhara R/A, Block F, House 12"].join("\n"));
     expect(two.body.fields).toMatchObject({ recipient_name: "Abdul alim", address: "Bashundhara R/A, Block F, House 12" });
     // A greeting line isn't a name.

@@ -65,6 +65,29 @@ export function unlabelled(text: string, fields: ScanCells): ScanCells {
     const joined = parts.join(", ").replace(/[\s,;.।\-–]+$/u, "").trim();
     if (joined.length >= 6) out.address = tidy(joined);
   }
+  // The address ends where the amount / thanks start ("…, Road 15 cod 1200").
+  if (out.address) {
+    const end = out.address.search(ADDRESS_END);
+    const kept = end > 0 ? out.address.slice(0, end).replace(/[\s,;.।\-–]+$/u, "").trim() : "";
+    if (kept.length >= 6) out.address = tidy(kept);
+  }
+  // The name written into the address line ("Abdul alim Bashundhara residential area, …"): the words before
+  // the first place found in it (its area / zone / district) or the first address word.
+  if (!out.recipient_name && out.address) {
+    const places = [out.area, out.zone, out.district].map(p => (p ?? "").split(/[\s(]/)[0]).filter(w => w.length >= 3);
+    const lower = out.address.toLowerCase();
+    const at = places.map(w => lower.search(new RegExp(`(?:^|\\s)${w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u"))).filter(k => k > 0);
+    // "Bashundhara residential area", "Mirpur road": the place's own name is the word before such a word.
+    const named = out.address.match(/\s(\S+)\s+(?:residential|r\/a|area|road|rd|para|bazar|market|more|mor|lane|avenue|city)\b/iu);
+    const keyword = named ? named.index! + 1 : out.address.search(ADDRESS_LIKE);
+    const cut = at.length ? Math.min(...at) : keyword > 0 ? keyword : -1;
+    const prefix = cut > 0 ? out.address.slice(0, cut).replace(/[\s,;:\-–]+$/, "").trim() : "";
+    const words = prefix.split(/\s+/).filter(Boolean);
+    if (words.length >= (at.length ? 1 : 2) && words.length <= 4 && /^[\p{L}\p{M}.\s'-]+$/u.test(prefix) && !ADDRESS_LIKE.test(prefix) && !NOT_A_NAME.test(prefix)) {
+      out.recipient_name = tidy(prefix);
+      out.address = tidy(out.address.slice(cut).replace(/^[\s,;:\-–]+/, ""));
+    }
+  }
   return out;
 }
 

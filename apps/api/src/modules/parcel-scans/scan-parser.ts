@@ -72,6 +72,8 @@ export const maskedPhonesIn = (line: string) =>
 
 const stripPhones = (s: string) =>
   normalizeText(s)
+    // Numbers written whole first ("Road 15 01785412369": the 15 isn't part of it), then split ones.
+    .replace(/(?<!\d)(?:\+?88)?0?1[3-9]\d{8}(?!\d)/g, "")
     .replace(/(?<=\d)[\s\-–.()]+(?=\d)/g, "")
     .replace(/(?:\+?88)?0?1[3-9]\d{8}/g, "")
     .replace(MASKED_IN_TEXT, m => (m.includes("*") ? "" : m))

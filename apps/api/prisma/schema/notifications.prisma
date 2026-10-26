@@ -91,7 +91,7 @@ model PushDevice {
 }
 
 /// Push notifications through Firebase Cloud Messaging (one row, id "fcm"): the service account, its private
-/// key encrypted at rest (super admin › SMS & Email Integrations › Gateway Settings).
+/// key encrypted at rest (super admin › SMS, Email & Push › Gateway Settings).
 model PushGateway {
   id                  String    @id @default("fcm")
   enabled             Boolean   @default(false)

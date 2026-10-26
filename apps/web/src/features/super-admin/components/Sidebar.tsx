@@ -113,7 +113,7 @@ export default function Sidebar() {
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-plug" />
             </svg>
-            {"SMS & Email Integrations"}
+            {"SMS, Email & Push"}
           </button>{" "}
           <button className="nav-item" data-page={"Pricing & catalogs"}>
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

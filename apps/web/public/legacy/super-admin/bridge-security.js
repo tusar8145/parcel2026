@@ -52,6 +52,7 @@
     staff: async () => (SEC.staff = await all(`/users?roles=${STAFF_ROLES.join(",")}`)),
     roles: async () => (SEC.roles = await DF.api("/admin/roles")),
     changes: async () => {
+      SEC.approval = await DF.api("/admin/changes/settings").catch(() => null);
       SEC.changes = (await DF.api("/admin/changes?status=PENDING&limit=50")).items;
       SEC.recentChanges = (await DF.api("/admin/changes?limit=10")).items.filter(c => c.status !== "PENDING");
     },
@@ -161,7 +162,13 @@
               c.reviewedBy ? `<span class="subcell">${esc(c.reviewedBy.name)}${c.reviewNote ? ` · ${esc(c.reviewNote)}` : ""}</span>` : c.error ? `<span class="subcell">${esc(c.error)}</span>` : ""
             }</td><td>${
               c.status === "PENDING"
-                ? `${c.canApprove ? `<button class="mini-button" data-sec-approve="${esc(c.id)}">Approve</button> <button class="mini-button" data-sec-reject="${esc(c.id)}">Reject</button>` : ""}${
+                ? `${
+                    c.canApprove && c.requestedBy.id === me()?.id
+                      ? `<button class="mini-button" data-sec-approve="${esc(c.id)}">Apply now</button> `
+                      : c.canApprove
+                        ? `<button class="mini-button" data-sec-approve="${esc(c.id)}">Approve</button> <button class="mini-button" data-sec-reject="${esc(c.id)}">Reject</button>`
+                        : ""
+                  }${
                     c.canCancel ? `<button class="mini-button" data-sec-cancel="${esc(c.id)}">Withdraw</button>` : ""
                   }${!c.canApprove && !c.canCancel ? `<span class="subcell">Waiting for another super admin</span>` : ""}`
                 : ""
@@ -169,7 +176,13 @@
           )
           .join("")
       : `<tr><td colspan="4" class="empty-state">No changes waiting for approval.</td></tr>`;
-    return `<section class="panel table-panel" style="margin-top:16px" id="dfChanges"><div class="panel-heading"><div><h2 class="panel-title">Changes waiting for approval</h2><p class="panel-subtitle">Rate cards, merchant tariffs, role permissions and custom roles need a second super admin (maker-checker). ${SEC.changes.length} pending.</p></div></div><div class="table-scroll"><table><thead><tr><th>CHANGE</th><th>REQUESTED BY</th><th>STATUS</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+    // Second super admin approval: off by default (changes apply at once, recorded in the audit log).
+    const on = !!SEC.approval?.enabled;
+    const note = on
+      ? `On: rate cards, merchant tariffs, service plans, role permissions and custom roles wait for a second super admin${SEC.approval?.superAdmins > 1 ? "" : " (with only one super admin they apply at once)"}. Turning it off also needs a second super admin.`
+      : "Off: changes by a super admin apply at once and are recorded in the audit log.";
+    const toggle = `<label style="display:inline-flex;gap:8px;align-items:center;font-weight:650"><input type="checkbox" data-sec-approval ${on ? "checked" : ""}> Second super admin approval</label>`;
+    return `<section class="panel table-panel" style="margin-top:16px" id="dfChanges"><div class="panel-heading" style="flex-wrap:wrap;gap:10px"><div><h2 class="panel-title">Changes waiting for approval</h2><p class="panel-subtitle">${esc(note)} ${SEC.changes.length} pending.</p></div><div class="table-tools">${toggle}</div></div><div class="table-scroll"><table><thead><tr><th>CHANGE</th><th>REQUESTED BY</th><th>STATUS</th><th></th></tr></thead><tbody>${body}</tbody></table></div></section>`;
   }
 
   function matrixPanel() {
@@ -332,6 +345,20 @@
             await refreshAdmins("staff");
           }),
       );
+    }
+
+    const approvalBox = t.closest?.("[data-sec-approval]");
+    if (approvalBox) {
+      const enabled = approvalBox.checked;
+      approvalBox.checked = !enabled; // until the server answers
+      const apply = () =>
+        act(approvalBox, async () => {
+          const result = await DF.api("/admin/changes/settings", { method: "PUT", body: { enabled } });
+          showToast(result.status === "PENDING" ? "Turning it off waits for another super admin's approval." : enabled ? "Second super admin approval is on." : "Second super admin approval is off.");
+          await refreshAdmins("changes");
+        });
+      if (enabled) return void DF.confirm({ title: "Turn on second super admin approval?", message: "Rate cards, tariffs, service plans, role permissions and custom roles will wait for another super admin.", confirm: "Turn on" }).then(ok => ok && apply());
+      return void DF.confirm({ title: "Turn off second super admin approval?", message: "Changes by one super admin will apply at once. While approval is on, this needs another super admin to approve it.", confirm: "Turn off" }).then(ok => ok && apply());
     }
 
     for (const [attr, verb] of [

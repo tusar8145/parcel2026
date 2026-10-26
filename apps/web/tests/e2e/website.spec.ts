@@ -137,7 +137,7 @@ test("guest books with SMS verification, then tracks and cancels with the privat
   await page.fill("#guestCode", (await hint.textContent())!.match(/\d{6}/)![0]);
   await page.click("#requestSubmit");
 
-  await expect(page).toHaveURL(/\/track\/PP-\d{6}-[0-9A-Z]{5}\?t=o\./);
+  await expect(page).toHaveURL(/\/track\/CP-\d{6}-[0-9A-Z]{5}\?t=o\./); // website parcels: CP-
   await expect(page.locator("#trackingResult")).toContainText("Pending operations confirmation");
   await expect(page.locator("#trackingResult")).toContainText("+880 1812000000"); // full details with the link
   await expect(page.locator("[data-pickup-window]")).toBeVisible();

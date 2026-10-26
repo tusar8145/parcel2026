@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { InboxService } from "../notifications/inbox.service";
 import { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -27,8 +27,15 @@ export interface ChangeHandler<P = unknown> {
 }
 
 export type SubmitResult =
-  | { status: "APPLIED"; result: unknown; approval: "sole_super_admin" }
+  | { status: "APPLIED"; result: unknown; approval: "sole_super_admin" | "approval_off" }
   | { status: "PENDING"; changeRequest: ReturnType<typeof changeView> };
+
+/** Super admin › Admin users & roles › Approvals: whether changes wait for a second super admin. */
+export const approvalSettingSchema = z.object({ enabled: z.boolean() });
+
+/** settings row: { enabled } (no row: off, changes apply at once). */
+const SETTING_KEY = "approvals.second_admin";
+const TURN_OFF = "approvals.second_admin";
 
 export const listChangesQuerySchema = pageQuerySchema.extend({
   status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXPIRED", "FAILED"], "Unknown status").optional(),
@@ -54,12 +61,13 @@ export const changeView = (c: ChangeRequest) => ({
 
 /**
  * Maker-checker for sensitive configuration (rate cards, merchant tariffs, role permissions,
- * custom roles). A change by one administrator waits for a different super admin to approve
- * it. While the platform has only one active super admin, changes apply at once (there is no
- * second person) and the audit log records that.
+ * custom roles). When "second super admin approval" is on (off by default), a change by one
+ * administrator waits for a different super admin to approve it; while the platform has only one
+ * active super admin, changes apply at once (there is no second person). Either way the audit log
+ * records how a change was applied. Turning the approval off is itself a change that needs approval.
  */
 @Injectable()
-export class ApprovalsService {
+export class ApprovalsService implements OnModuleInit {
   private readonly handlers = new Map<string, ChangeHandler<any>>();
 
   constructor(
@@ -70,12 +78,43 @@ export class ApprovalsService {
 
   @Inject(InboxService) private readonly inbox!: InboxService;
 
+  onModuleInit() {
+    this.register<{ enabled: boolean }>({
+      kind: TURN_OFF,
+      prepare: async payload => approvalSettingSchema.parse(payload),
+      summary: p => (p.enabled ? "Turn on second super admin approval" : "Turn off second super admin approval"),
+      apply: async (tx, p) => {
+        await tx.setting.upsert({ where: { key: SETTING_KEY }, create: { key: SETTING_KEY, value: { enabled: p.enabled } }, update: { value: { enabled: p.enabled } } });
+        return { enabled: p.enabled };
+      },
+    });
+  }
+
+  /** Whether "second super admin approval" is on (off when never set). */
+  async secondApprovalOn(db: Db = this.prisma): Promise<boolean> {
+    const row = await db.setting.findUnique({ where: { key: SETTING_KEY } });
+    return (row?.value as { enabled?: boolean } | null)?.enabled === true;
+  }
+
+  async setting(actor: Actor) {
+    const superAdmins = await this.prisma.userRole.count({ where: { role: "SUPER_ADMIN", customRoleId: null, user: { status: "ACTIVE" } } });
+    return { enabled: await this.secondApprovalOn(), superAdmins, approvalRequired: await this.approvalRequired(actor) };
+  }
+
+  /** Turning it on applies at once; turning it off is a change like the others (it waits while approval is on). */
+  async saveSetting(actor: Actor, enabled: boolean, meta: RequestMeta) {
+    if (enabled === (await this.secondApprovalOn())) return { status: "APPLIED" as const, setting: await this.setting(actor) };
+    const result = await this.submit(actor, TURN_OFF, { enabled }, meta);
+    return { ...result, setting: await this.setting(actor) };
+  }
+
   register<P>(handler: ChangeHandler<P>) {
     this.handlers.set(handler.kind, handler);
   }
 
   /** Whether a change by this actor must wait for another super admin. */
   async approvalRequired(actor: Actor): Promise<boolean> {
+    if (!(await this.secondApprovalOn())) return false;
     const others = await this.prisma.userRole.count({
       where: {
         role: "SUPER_ADMIN",
@@ -94,13 +133,14 @@ export class ApprovalsService {
     const summary = handler.summary(prepared);
 
     if (!(await this.approvalRequired(actor))) {
+      const approval = (await this.secondApprovalOn()) ? "sole_super_admin" : "approval_off";
       const result = await this.prisma.$transaction(async tx => {
         const out = await handler.apply(tx, prepared, { actor, requestedById: actor.userId, meta });
-        await this.audit.record(actor, { action: "change.applied", entityType: "change", entityId: kind, data: { kind, summary, approval: "sole_super_admin" } }, meta, tx);
+        await this.audit.record(actor, { action: "change.applied", entityType: "change", entityId: kind, data: { kind, summary, approval } }, meta, tx);
         return out;
       });
       await handler.afterCommit?.(prepared, result);
-      return { status: "APPLIED", result, approval: "sole_super_admin" };
+      return { status: "APPLIED", result, approval };
     }
 
     const request = await this.prisma.$transaction(async tx => {
@@ -134,11 +174,13 @@ export class ApprovalsService {
     const rows = await this.prisma.changeRequest.findMany({ where, ...pageArgs(query) });
     const page = toPage(rows, query.limit);
     const me = actor.kind === "user" ? actor.userId : null;
+    // With second approval off, a requester can also apply their own change still waiting from before.
+    const selfOk = !(await this.secondApprovalOn());
     return {
       ...page,
       items: page.items.map(c => {
         const view = changeView(c);
-        return { ...view, canApprove: view.status === "PENDING" && c.requestedById !== me && actor.permissions.has("change:approve"), canCancel: view.status === "PENDING" && c.requestedById === me };
+        return { ...view, canApprove: view.status === "PENDING" && (c.requestedById !== me || selfOk) && actor.permissions.has("change:approve"), canCancel: view.status === "PENDING" && c.requestedById === me };
       }),
     };
   }
@@ -150,7 +192,7 @@ export class ApprovalsService {
   async approve(actor: Actor, id: string, note: string | undefined, meta: RequestMeta) {
     if (actor.kind !== "user") throw forbidden();
     const request = await this.pending(id);
-    if (request.requestedById === actor.userId)
+    if (request.requestedById === actor.userId && (await this.secondApprovalOn()))
       throw new AppError("SELF_APPROVAL", "Another super admin has to approve your own change", HttpStatus.FORBIDDEN);
     const handler = this.handler(request.kind);
     let prepared: unknown;

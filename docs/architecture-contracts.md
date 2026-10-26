@@ -959,7 +959,9 @@ Super admin → Service plans & pricing (`super-admin/bridge-packages.js`): pack
 fields in the owner's groups, version with effective date, default, archive, assignment to merchants, simulator,
 products (list column "Messages: On / Off" with a "Send SMS & email" checkbox that saves at once; the add form has
 the same checkbox, on by default), Hub Pickup hold period. Create / version / default / archive / assign are maker-checker
-(`package.*`). Everything is audited. The merchant lists (super admin, Courier Operations → Merchants:
+(`package.*`) when "Second super admin approval" is on (Admin users & roles › Approvals, `GET/PUT /admin/changes/settings`,
+`settings` key `approvals.second_admin`; off by default: changes apply at once; turning it off needs approval while it is
+on). Everything is audited. The merchant lists (super admin, Courier Operations → Merchants:
 `GET /ops/merchants` `package`) show each merchant's package; the super-admin account dialog shows it read-only
 (`GET /merchants/:id/package`) with "Change", which opens the merchant's row in the assignments table
 (`window.DFPackages.openAssignment(segment, code)`). There is no plan select any more.

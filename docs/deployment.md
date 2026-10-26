@@ -194,7 +194,7 @@ pm2 reload all
 
 The Android apps (`mobile/`) get the users' notifications as pushes through Firebase Cloud Messaging.
 
-1. **Firebase key.** Super admin › SMS & Email Integrations › **Push notifications**: choose the service
+1. **Firebase key.** Super admin › SMS, Email & Push › **Push notifications**: choose the service
    account file (Firebase › Project settings › Service accounts › Generate new private key), tick
    **Send push notifications**, **Save**. The private key is stored encrypted with `ENCRYPTION_KEY`.
    Keep the downloaded file somewhere safe (not on the server, not in git).

@@ -5,10 +5,10 @@
  *   in tabs per group with their counts (GET /notifications/events). Per event × channel on/off
  *   switches and a template editor (variables, live preview, reset to default).
  * - Parcel notifications (Merchant management): the Parcel group's messages, the same list and editor.
- * - SMS & Email Integrations ("Integrations", Platform control), tab "Channels & limits": Notification
+ * - SMS, Email & Push ("Integrations", Platform control), tab "Channels & limits": Notification
  *   channels (SMS / email on or off; the page's own platform-config, saved as before) and the SMS / OTP
  *   limits and message settings (GET/PUT /notifications/settings). More settings go here later.
- * - SMS & Email Integrations, tab "Gateways": real status cards for the SMS (mram) and email (Mailjet) gateways
+ * - SMS, Email & Push, tab "Gateways": real status cards for the SMS (mram) and email (Mailjet) gateways
  *   (GET /notifications/gateways): settings with write-only keys, health, 24 h counts, a
  *   "Send test" action that sends one real message, and the most recent messages.
  */
@@ -40,7 +40,7 @@
   let current = null;
   const PARCEL_GROUP = "Parcel";
   const PARCEL_PAGE = "Parcel notifications";
-  // Old links to the Settings page open SMS & Email Integrations › Channels & limits.
+  // Old links to the Settings page open SMS, Email & Push › Channels & limits.
   const SETTINGS_PAGE = "Settings";
 
   // The base renderer (01.js) draws unknown pages from its `generic` table: give the new pages an empty entry.
@@ -561,7 +561,7 @@
 
   // ───────────────────────────── Integrations ─────────────────────────────
 
-  /** SMS & Email Integrations: Channels & limits (first) · Recent messages · Gateways (status, keys, test). */
+  /** SMS, Email & Push: Channels & limits (first) · Recent messages · Gateways (status, keys, test). */
   const INT_TABS = [
     ["settings", "Channels & limits"],
     ["messages", "Recent messages"],
@@ -573,13 +573,13 @@
     const main = document.getElementById("mainContent");
     const tab = INT_TABS.some(([k]) => k === S.intTab) ? S.intTab : "settings";
     const tabs = INT_TABS;
-    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS & Email Integrations</h1><p class="subtitle">The SMS and email gateways and Firebase push for the mobile apps (keys are stored encrypted and never shown again), which channels are on, the SMS limits and message settings, and push messages to merchants and riders.</p></div></div>
-      <div class="int-tabs" role="tablist" aria-label="SMS and email" style="display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5">${tabs
+    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS, Email & Push</h1><p class="subtitle">The SMS and email gateways and Firebase push for the mobile apps (keys are stored encrypted and never shown again), which channels are on, the SMS limits and message settings, and push messages to merchants and riders.</p></div></div>
+      <div class="int-tabs" role="tablist" aria-label="SMS, email and push" style="display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5">${tabs
         .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${k === tab ? " button-primary" : ""}" data-int-tab="${k}" aria-selected="${k === tab}" style="${k === tab ? "" : "background:transparent;border:0;box-shadow:none;color:#556274"}">${label}</button>`)
         .join("")}</div>
       <div id="intBody"><p class="panel-subtitle">Loading…</p></div>`;
     const crumb = document.getElementById("breadcrumbPage");
-    if (crumb) crumb.textContent = "SMS & Email Integrations";
+    if (crumb) crumb.textContent = "SMS, Email & Push";
     const box = document.getElementById("intBody");
     if (tab === "settings") return settingsTab(box);
     if (tab === "push") return window.DFPushTab ? window.DFPushTab(box, () => still("Integrations")) : void (box.innerHTML = '<p class="panel-subtitle">Push notifications could not load.</p>');

@@ -240,7 +240,7 @@ test.describe.serial("super admin notifications", () => {
     }
   });
 
-  test("validates and saves SMS limits (SMS & Email Integrations › Channels & limits)", async () => {
+  test("validates and saves SMS limits (SMS, Email & Push › Channels & limits)", async () => {
     await nav(page, "Integrations");
     await page.click('[data-int-tab="settings"]');
     const form = page.locator("#notificationLimitsForm");
@@ -258,9 +258,10 @@ test.describe.serial("super admin notifications", () => {
   });
 
   test("shows real gateway status cards on Integrations", async () => {
-    // Tabs: Channels & limits (first) · Recent messages · Gateway Settings.
+    // SMS, Email & Push. Tabs: Channels & limits (first) · Recent messages · Gateway Settings · Push notifications.
     await nav(page, "Integrations");
-    await expect(page.locator("[data-int-tab]")).toHaveText(["Channels & limits", "Recent messages", "Gateway Settings"]);
+    await expect(page.locator("#mainContent .page-heading h1")).toHaveText("SMS, Email & Push");
+    await expect(page.locator("[data-int-tab]")).toHaveText(["Channels & limits", "Recent messages", "Gateway Settings", "Push notifications"]);
     await expect(page.locator("#sysChannelsForm")).toBeVisible();
     await page.click('[data-int-tab="messages"]');
     await expect(page.locator("#outboxTable")).toBeVisible();

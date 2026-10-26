@@ -1,6 +1,6 @@
 import { request as playwrightRequest, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, API_BASE, expect, opsNav, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { Fixtures, apiUrl, API_BASE, expect, opsNav, secondApprovalOn, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 /**
  * Service packages & pricing (spec v2) through the real UI:
@@ -27,8 +27,11 @@ let owner: TempUser;
 let rider: TempRider;
 let hubOperator: TempUser;
 let ops: TempUser;
+let restoreApproval: (() => Promise<void>) | undefined;
 
 test.beforeAll(async () => {
+  // The package changes go through maker-checker: second super admin approval on (off by default).
+  restoreApproval = await secondApprovalOn();
   maker = await fx.user(`E2E-Maker-${fx.stamp} Test`, [{ role: "SUPER_ADMIN" }]);
   checkerUser = await fx.user(`E2E-Checker-${fx.stamp} Test`, [{ role: "SUPER_ADMIN" }]);
   checker = await playwrightRequest.newContext({ baseURL: API_BASE, extraHTTPHeaders: { "x-df-client": "app" } });
@@ -42,6 +45,7 @@ test.beforeAll(async () => {
   ops = await fx.staff("OPS_MANAGER");
 });
 test.afterAll(async () => {
+  await restoreApproval?.();
   await checker?.dispose();
   await fx.cleanup();
   // The package only this test used (its versions cascade; the merchant's assignment went with the merchant).
@@ -180,7 +184,7 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await expect(checklist.locator("[data-svc-notify-off]")).toBeVisible();
   await merchantPage.click('#orderForm button[type="submit"]');
   await expect(toast(merchantPage)).toContainText(/created · delivery charge ৳/);
-  const trackingId = (await toast(merchantPage).textContent())!.match(/PP-\d{6}-[0-9A-Z]{4,5}/)![0];
+  const trackingId = (await toast(merchantPage).textContent())!.match(/[A-Z]{2}-\d{6}-[0-9A-Z]{4,5}/)![0]; // EP- (e-commerce), FD-, CP-, PP-
   const [parcel] = await sql<{ snapshot: { packageName?: string; engine?: string }; productName: string; notifications: string[] }>(
     `SELECT "pricingSnapshot" AS snapshot, "productName", notifications FROM parcels WHERE "trackingId" = $1`,
     [trackingId],

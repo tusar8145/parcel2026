@@ -3,7 +3,7 @@ import { authenticator } from "otplib";
 import { Fixtures, apiUrl, expect, sql, test, type TempRider, type TempUser } from "./support";
 
 /**
- * Super admin › SMS & Email Integrations › Push notifications: the Firebase status card, a message to a chosen
+ * Super admin › SMS, Email & Push › Push notifications: the Firebase status card, a message to a chosen
  * rider (found by rider code), and the message in the history and in the rider's notifications.
  */
 const fx = new Fixtures();

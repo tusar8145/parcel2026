@@ -46,7 +46,7 @@
           ["document", "Banking & Financial template", "banking-and-financial"],
         ],
       },
-      // SMS & Email Integrations (super-admin/bridge-notifications.js).
+      // SMS, Email & Push (super-admin/bridge-notifications.js).
       Integrations: {
         attr: "data-int-tab",
         detect: () => document.querySelector('#mainContent [data-int-tab][aria-selected="true"]')?.dataset.intTab || null,
@@ -54,6 +54,7 @@
           ["settings", "Channels & limits", "channels-and-limits"],
           ["messages", "Recent messages", "recent-messages"],
           ["gateways", "Gateway Settings", "gateway-settings"],
+          ["push", "Push notifications", "push-notifications"],
         ],
       },
       "Service plans": {

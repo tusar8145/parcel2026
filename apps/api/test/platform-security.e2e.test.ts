@@ -174,7 +174,8 @@ describe("platform security (super admin)", () => {
       expect((await ctx.api("GET", "/users", { token: finance.token })).status).toBe(200);
       expect((await ctx.api("GET", "/audit-logs", { token: finance.token })).status).toBe(403);
       expect((await auditOf("role.permissions_update")).length).toBe(1);
-      expect((await auditOf("change.applied"))[0].data).toMatchObject({ kind: "role.permissions", approval: "sole_super_admin" });
+      // Second super admin approval is off by default: the change applied at once.
+      expect((await auditOf("change.applied"))[0].data).toMatchObject({ kind: "role.permissions", approval: "approval_off" });
     });
 
     it("protects super admins from lockout and keeps security permissions for super admins", async () => {
@@ -226,9 +227,40 @@ describe("platform security (super admin)", () => {
   // ───────────── maker-checker ─────────────
 
   describe("maker-checker approvals", () => {
+    it("is off by default; turning it on applies at once, turning it off needs the second super admin", async () => {
+      const a = await admin("Admin A");
+      const b = await admin("Admin B");
+      expect((await ctx.api("GET", "/admin/changes/settings", { token: a.token })).body).toMatchObject({ enabled: false, superAdmins: 2, approvalRequired: false });
+      const catalog = (await ctx.api("GET", "/service-catalog")).body;
+      const services = catalog.services.filter((x: { segments: string[] }) => x.segments.includes("CUSTOMER")).map((x: { code: string }) => x.code);
+      // Off: a change by one of two super admins applies at once.
+      const direct = await ctx.api("POST", "/packages", { token: a.token, body: { segment: "CUSTOMER", name: "Direct", services, prices: {} } });
+      expect(direct.status, JSON.stringify(direct.body)).toBe(201);
+
+      const on = await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: true } });
+      expect(on.body).toMatchObject({ status: "APPLIED", setting: { enabled: true, approvalRequired: true } });
+      const off = await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: false } });
+      expect(off.body).toMatchObject({ status: "PENDING", changeRequest: { kind: "approvals.second_admin" }, setting: { enabled: true } });
+      expect((await ctx.api("POST", `/admin/changes/${off.body.changeRequest.id}/approve`, { token: b.token, body: {} })).status).toBe(200);
+      expect((await ctx.api("GET", "/admin/changes/settings", { token: a.token })).body.enabled).toBe(false);
+
+      // A change still waiting from when approval was on: with it off, the requester can apply it.
+      await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: true } });
+      const waiting = await ctx.api("POST", "/packages", { token: a.token, body: { segment: "CUSTOMER", name: "Waiting", services, prices: {} } });
+      expect(waiting.status).toBe(202);
+      expect((await ctx.api("POST", `/admin/changes/${waiting.body.changeRequest.id}/approve`, { token: a.token, body: {} })).body.error.code).toBe("SELF_APPROVAL");
+      const turnOff = await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: false } });
+      await ctx.api("POST", `/admin/changes/${turnOff.body.changeRequest.id}/approve`, { token: b.token, body: {} });
+      const queue = await ctx.api("GET", "/admin/changes?status=PENDING", { token: a.token });
+      expect(queue.body.items.find((c: { id: string }) => c.id === waiting.body.changeRequest.id)).toMatchObject({ canApprove: true, canCancel: true });
+      expect((await ctx.api("POST", `/admin/changes/${waiting.body.changeRequest.id}/approve`, { token: a.token, body: {} })).status).toBe(200);
+      expect(await ctx.prisma.servicePackage.count({ where: { name: "Waiting" } })).toBe(1);
+    });
+
     it("queues package and role changes for a second super admin", async () => {
       const a = await admin("Admin A");
       const b = await admin("Admin B");
+      expect((await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: true } })).body.status).toBe("APPLIED");
       const catalog = (await ctx.api("GET", "/service-catalog")).body;
       const services = catalog.services.filter((x: { segments: string[] }) => x.segments.includes("CUSTOMER")).map((x: { code: string }) => x.code);
       const body = { segment: "CUSTOMER", name: "Customer v9", services, prices: { sameDistrict: 95 } };
@@ -272,6 +304,7 @@ describe("platform security (super admin)", () => {
     it("closes a change that can no longer be applied as FAILED", async () => {
       const a = await admin("Admin A");
       const b = await admin("Admin B");
+      expect((await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: true } })).body.status).toBe("APPLIED");
       const first = await ctx.api("POST", "/admin/custom-roles", { token: a.token, body: { name: "Dispatch Lead", baseRole: "OPS_MANAGER", permissions: [] } });
       const second = await ctx.api("POST", "/admin/custom-roles", { token: a.token, body: { name: "Dispatch Lead", baseRole: "OPS_MANAGER", permissions: [] } });
       expect((await ctx.api("POST", `/admin/changes/${first.body.changeRequest.id}/approve`, { token: b.token, body: {} })).status).toBe(200);

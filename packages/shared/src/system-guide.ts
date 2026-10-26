@@ -387,7 +387,7 @@ export const SETTING_LOCATIONS: readonly { what: string; where: string }[] = [
   { what: "Excel import columns and defaults", where: "Super admin › Excel Import settings" },
   { what: "Parcel SMS / email texts", where: "Super admin › Parcel notifications" },
   { what: "Other SMS / email texts", where: "Super admin › Global notifications" },
-  { what: "SMS / email on or off, SMS limits, gateways", where: "Super admin › SMS & Email Integrations" },
+  { what: "SMS / email on or off, SMS limits, gateways, push notifications and messages to merchants and riders", where: "Super admin › SMS, Email & Push" },
   { what: "Hubs, delivery zones, routes, the central hub", where: "Super admin › Hubs & zones" },
   { what: "Districts, zones, areas, return reasons", where: "Super admin › Shared catalogs & locations" },
   { what: "Staff accounts, roles, permissions, approvals", where: "Super admin › Admin users & roles" },

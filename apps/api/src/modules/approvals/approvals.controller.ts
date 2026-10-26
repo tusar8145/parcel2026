@@ -1,10 +1,10 @@
-import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import type { z } from "zod";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
-import { ApprovalsService, decideChangeSchema, listChangesQuerySchema, rejectChangeSchema } from "./approvals.service";
+import { ApprovalsService, approvalSettingSchema, decideChangeSchema, listChangesQuerySchema, rejectChangeSchema } from "./approvals.service";
 
 /**
  * Maker-checker queue: rate cards, merchant tariffs, role permissions and custom roles
@@ -28,6 +28,21 @@ export class ApprovalsController {
   @Get("summary")
   async summary(@CurrentActor() actor: Actor) {
     return { pending: await this.approvals.pendingCount(), approvalRequired: await this.approvals.approvalRequired(actor) };
+  }
+
+  /** Second super admin approval: on / off (off by default), how many super admins there are. */
+  @RequirePermissions("config:manage")
+  @Get("settings")
+  setting(@CurrentActor() actor: Actor) {
+    return this.approvals.setting(actor);
+  }
+
+  /** Turn it on (applies at once) or off (waits for a second super admin while it is on). */
+  @RequirePermissions("change:approve")
+  @Put("settings")
+  @ApiZodBody(approvalSettingSchema)
+  saveSetting(@CurrentActor() actor: Actor, @ZBody(approvalSettingSchema) body: z.infer<typeof approvalSettingSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.approvals.saveSetting(actor, body.enabled, meta);
   }
 
   /** Applies the change (another super admin's request only). */

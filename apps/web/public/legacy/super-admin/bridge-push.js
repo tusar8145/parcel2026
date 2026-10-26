@@ -1,5 +1,5 @@
 /*
- * Super admin › SMS & Email Integrations › "Push notifications" (window.DFPushTab, opened by bridge-notifications.js):
+ * Super admin › SMS, Email & Push › "Push notifications" (window.DFPushTab, opened by bridge-notifications.js):
  *
  * - Firebase: the service account file (uploaded or pasted; stored encrypted, never shown again), on / off,
  *   status (project, phones registered per app, last success / error) and a test push to a chosen person

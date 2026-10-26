@@ -3,7 +3,7 @@ import { request as playwrightRequest, type APIRequestContext, type Browser, typ
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
-import { API_BASE, Fixtures, apiUrl, expect, test } from "./support";
+import { API_BASE, Fixtures, apiUrl, expect, secondApprovalOn, test } from "./support";
 
 // Super admins must use two-step verification, and price changes need a second super admin
 // (maker-checker). The seeded super admins belong to the owner, so the tests use two temporary
@@ -141,7 +141,10 @@ async function websitePreview(browser: Browser, errors: Errors) {
 
 test.describe("super admin", () => {
   let errors: Errors;
+  let restoreApproval: (() => Promise<void>) | undefined;
   test.beforeAll(async () => {
+    // These tests check maker-checker: second super admin approval on (off by default).
+    restoreApproval = await secondApprovalOn();
     await createAdmin(MAKER);
     await createAdmin(CHECKER);
     checker = await playwrightRequest.newContext({ baseURL: API_BASE, extraHTTPHeaders: { "x-df-client": "app" } });
@@ -152,6 +155,7 @@ test.describe("super admin", () => {
     expect(checkerToken, JSON.stringify(enabled)).toBeTruthy();
   });
   test.afterAll(async () => {
+    await restoreApproval?.();
     await checker?.dispose();
     await deleteAdmins([MAKER.id, CHECKER.id, ENROLLER.id]);
     await fx.cleanup();
@@ -200,6 +204,7 @@ test.describe("super admin", () => {
     await expect(admin.locator("#adminBody")).toBeHidden();
     await admin.click('[data-admin-tab="approvals"]');
     await expect(admin.locator("#dfChanges")).toContainText("Changes waiting for approval");
+    await expect(admin.locator("#dfChanges [data-sec-approval]")).toBeChecked();
     await expect(admin.locator("#dfChanges")).toBeVisible();
     await admin.click('[data-admin-tab="support"]');
     await expect(admin.locator("#dfSupportForm")).toBeVisible();
@@ -357,7 +362,7 @@ test.describe("super admin", () => {
   test("platform settings persist on the server", async ({ browser }) => {
     const admin = await open(browser, "/", errors);
     await signInAsAdmin(admin);
-    // The notification channels are on SMS & Email Integrations › Channels & limits.
+    // The notification channels are on SMS, Email & Push › Channels & limits.
     const settingsTab = async (who: Page) => {
       await nav(who, "Integrations");
       await who.click('[data-int-tab="settings"]');

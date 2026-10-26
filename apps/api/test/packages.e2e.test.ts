@@ -74,6 +74,8 @@ describe("service packages", () => {
     it("versions, assigns with maker-checker, archives instead of deleting a package in use", async () => {
       const a = await admin("Admin A");
       const b = await admin("Admin B");
+      // Second super admin approval on (off by default).
+      expect((await ctx.api("PUT", "/admin/changes/settings", { token: a.token, body: { enabled: true } })).body.status).toBe("APPLIED");
       const { m, owner } = await merchant();
       const services = await allServices("ECOMMERCE");
       const pending = await ctx.api("POST", "/packages", { token: a.token, body: { segment: "ECOMMERCE", name: "Gold", services, prices: { sameDistrict: 60 } } });

@@ -222,6 +222,19 @@ export async function sql<T = Record<string, unknown>>(text: string, values: unk
   }
 }
 
+/**
+ * Turns "second super admin approval" on for a maker-checker test (it is off by default) and returns a
+ * function that puts the previous value back.
+ */
+export async function secondApprovalOn(): Promise<() => Promise<void>> {
+  const [before] = await sql<{ value: unknown }>(`SELECT value FROM settings WHERE key = 'approvals.second_admin'`);
+  await sql(`INSERT INTO settings (key, value, "updatedAt") VALUES ('approvals.second_admin', '{"enabled": true}', now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()`);
+  return async () => {
+    if (before) await sql(`UPDATE settings SET value = $1, "updatedAt" = now() WHERE key = 'approvals.second_admin'`, [JSON.stringify(before.value)]);
+    else await sql(`DELETE FROM settings WHERE key = 'approvals.second_admin'`);
+  };
+}
+
 export type TempUser = { id: string; name: string; phone: string; /** 01XXXXXXXXX, for the sign-in form */ login: string; password: string };
 export type TempMerchant = { id: string; code: string; name: string; contactPhone: string; type: "ECOMMERCE" | "BANKING_FINANCIAL"; pickupAddress: string; pickupArea: string; pickupDistrict: string; plan: { name: string; discountPct: number } | null };
 export type TempRider = TempUser & { riderId: string; code: string; hub: string };

@@ -1,3 +1,4 @@
+import AppDownloadCard from "@/shared/AppDownloadCard";
 import BrandMark from "@/shared/BrandMark";
 
 /** The original pages (internal names the page scripts use) and their old labels. */
@@ -110,6 +111,7 @@ export default function Sidebar() {
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">
+        <AppDownloadCard app="operations" />
         <div className="support-card">
           <strong>Operations support</strong>
           <p>Need help with a hub, rider, or merchant shipment?</p>

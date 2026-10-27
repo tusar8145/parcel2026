@@ -1,0 +1,130 @@
+DELIVERY FAST COURIER OPERATIONS APP - PLAN
+===========================================
+
+Android app (Flutter) for operations staff, next to the merchant and rider apps (mobile/).
+Status: PHASE 1 BUILT (27 Oct 2026) - mobile/ops_app, package bd.com.deliveryfast.operations,
+  "Delivery Fast Operations" 1.0.0, with push notifications. APK on the Courier Operations sidebar
+  ("Get the operations app", /downloads/delivery-fast-operations.apk).
+Written 26 Oct 2026; updated 26 Oct 2026 with the owner's decisions:
+  - hub operators and operations managers both get the app from Phase 1;
+  - the hubs' internet is reliable (no offline mode needed);
+  - the live map and cash transfers to the central hub are in Phase 1.
+
+WHO USES IT
+ - Hub operators (hub managers / desk staff): the hub floor - scanning parcels in and out,
+   handing parcels to riders, taking riders' cash, the hub pickup counter.
+ - Operations managers: watching the day, assigning riders, sorting out problems, on the move.
+ Each person sees only their own hubs (as in the web panel). Franchise hubs can be added later.
+
+WHY AN APP (the web panel stays for desk work)
+ - Fast scanning on the floor: phone camera, AND handheld scanners (Zebra / Honeywell /
+   Urovo and similar) that type the barcode like a keyboard. One parcel per second.
+ - Beep + vibration + a clear message per scan, then ready for the next parcel
+   (same scanner as the rider app).
+ - Push notifications for new work (new orders, pickup requests, problems, cash waiting).
+ - Managers can follow the day and act from their phone.
+
+WHAT STAYS ON THE WEB PANEL
+ Reports and analytics downloads, Excel imports / bulk updates, Accounts (settlements, bills,
+ rider pay, franchise money), CN stock, merchant administration, settings.
+
+Shared code: mobile/df_core (sign-in, API, scanner, push, support, barcode).
+
+
+PHASE 1 - THE HUB FLOOR, THE DAY, THE MAP AND THE CASH  [about 8-10 days]
+--------------------------------------------------------------------------
+For hub operators AND operations managers from day one. Almost no new backend work: every
+action below already has an API endpoint (hub desk, hub receive, assign rider, linehaul bags /
+trips, rider and vehicle locations, cash slips, cash transfers).
+
+ 1. Sign in (operations manager, hub operator), choose the hub when the person has several.
+    Push notifications on.
+
+ 2. Today: the hub's numbers at a glance - new orders, pickups to assign, at the hub,
+    out for delivery, delivered, failed, problems, SLA late-risk, riders on shift.
+    Each number opens its list.
+
+ 3. SCAN DESK (the heart of the app) - choose the task, set it up once, then scan
+    parcel after parcel (camera or handheld scanner), beep + result + running list:
+      - Receive entry: parcels arriving at the hub (from pickup riders, drop-offs,
+        transfers, failed deliveries coming back).
+      - Out for delivery: choose the rider, scan the parcels they take.
+      - Transfer out: scan parcels into a bag / onto a trip to another hub
+        (manifest MF-); Transfer receive: scan what arrived, see what is missing.
+      - Delivery entry / Failed delivery entry: for riders who report at the desk.
+      - Return rider assign / Return entry: parcels going back to merchants.
+      - Collect from hub (Hub Pickup counter): scan, check the collection code, hand over,
+        take the COD.
+      - Pickup entry: parcels a merchant brings to the hub.
+
+ 4. Assign pickup riders: new orders and pickup requests waiting -> choose a rider
+    (by zone, how busy they are). Assign delivery riders for parcels at the hub.
+
+ 5. Rider cash: scan the rider's handover slip (HS-), count the cash, confirm
+    (short / extra recorded). List of riders still holding cash.
+
+ 6. Find a parcel: scan or type -> full details, tracking timeline, who has it now,
+    call the recipient / merchant / rider, the actions allowed for its status.
+
+ 7. Problems: exceptions, failed deliveries, needs info - see and act (try again,
+    return to merchant, contact).
+
+ 8. Live map: riders on shift and vehicles on the road, on a map (positions the rider app
+    already sends); tap a rider to see their load and call them, tap a vehicle to see its
+    trip and expected arrival.
+
+ 9. Cash to the central hub (HT-): the hub's cash on hand, send a hub transfer to the
+    central hub, follow it until it is received; at the central hub, receive transfers
+    and record short / extra.
+
+10. Support: requests from the app (same as the other apps).
+
+Internet at the hubs is reliable, so actions are sent at once. A scan that fails to send
+(server busy, brief drop) is retried automatically with its Idempotency-Key, so it is never
+applied twice; no offline mode.
+
+
+PHASE 2 - RIDERS AND THE NETWORK  [about 4-5 days]
+--------------------------------------------------
+ 1. Riders: who is on shift / on break / late, attendance, today's load per rider,
+    call a rider, reassign their parcels.
+ 2. Transfers on the road: trips between hubs, expected arrivals, discrepancies.
+ 3. SLA late-risk board with quick reassignment.
+ 4. End of day for the hub: what is still at the hub, cash on hand, close the day.
+ 5. Printing: labels and manifests on a Bluetooth thermal printer.
+ 6. Bangla language.
+
+
+PHASE 3 - OPTIONAL  [about 3-4 days]
+------------------------------------
+ 1. Reports on the phone (read only): rider report, hub transfer report, daily summary.
+ 2. Approvals that operations make (e.g. merchant address change requests).
+ 3. Franchise hub version (franchise staff see only their hub).
+
+
+TECHNICAL
+---------
+ - New app: mobile/ops_app (package bd.com.deliveryfast.operations), signed with the same
+   Delivery Fast key, APK download link in Courier Operations' sidebar.
+ - Roles: OPS_MANAGER and HUB_OPERATOR (custom roles based on them too); the hubs a
+   person can see come from the API, as in the web panel.
+ - Handheld scanners: the scan screen also listens for keyboard-wedge input (scanner
+   types the code + Enter), so a hardware scanner and the camera both work.
+ - Push: the in-app notifications staff already get (new work, problems, cash) also
+   come as pushes (the push system built for the merchant and rider apps).
+ - Built for phones and the emulator (ARM + x86_64), tested with screen tests on saved
+   API responses plus a real run on the emulator.
+
+
+DECIDED
+-------
+ - Hub operators and operations managers both get the app first.
+ - Hub internet is reliable: no offline mode (automatic retry only).
+ - Live map and cash transfers to the central hub are in Phase 1.
+
+STILL TO DECIDE
+---------------
+ 1. Do the hubs use handheld barcode scanners? Which model? (Or phone cameras only?)
+    The app supports both either way; the model helps testing.
+ 2. Bluetooth printers at hubs (Phase 2): which model, if any?
+ 3. Bangla in Phase 1, or later (Phase 2)?

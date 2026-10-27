@@ -78,7 +78,7 @@ model PushDevice {
   id         String   @id @default(uuid(7)) @db.Uuid
   userId     String   @db.Uuid
   token      String   @unique
-  /// "merchant" or "rider"
+  /// "merchant", "rider" or "operations"
   app        String
   platform   String   @default("android")
   createdAt  DateTime @default(now())

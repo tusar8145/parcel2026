@@ -98,6 +98,19 @@ describe("push notifications", () => {
     expect((await ctx.api("POST", "/me/push-devices/remove", { token: rider.token, body: { token: token("rider") } })).body).toEqual({ removed: 1 });
   });
 
+  it("an operations phone gets a push for new work (a merchant's new order)", async () => {
+    await setUp();
+    const { owner } = await merchant();
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    expect((await ctx.api("POST", "/me/push-devices", { token: ops.token, body: { token: token("ops"), app: "operations" } })).status).toBe(200);
+    const booked = await ctx.api("POST", "/parcels", { token: owner.token, body: parcelBody({ codAmount: 0 }) });
+    expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+    await settle();
+    const push = pushes.find(p => p.token === token("ops"));
+    expect(push?.notification.title).toContain("New order");
+    expect(push?.data.type).toBe("staff.merchant_order");
+  });
+
   it("merchants get pushes only when their service plan has Firebase push notifications", async () => {
     const admin = await setUp();
     const { m, owner } = await merchant();

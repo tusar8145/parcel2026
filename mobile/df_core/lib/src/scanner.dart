@@ -81,6 +81,11 @@ class ScannerPage extends StatefulWidget {
 class _ScannerPageState extends State<ScannerPage> {
   final _controller = MobileScannerController(formats: const [BarcodeFormat.code128, BarcodeFormat.code39, BarcodeFormat.qrCode, BarcodeFormat.ean13]);
   bool _busy = false;
+
+  /// Handheld scanners (Zebra, Honeywell…) type the code and Enter like a keyboard: an invisible field takes
+  /// it without opening the phone's keyboard.
+  final _wedge = TextEditingController();
+  final _wedgeFocus = FocusNode();
   ScanFeedback? _last;
 
   /// The scans of this session, newest first (shown under the result).
@@ -91,6 +96,8 @@ class _ScannerPageState extends State<ScannerPage> {
 
   @override
   void dispose() {
+    _wedge.dispose();
+    _wedgeFocus.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -149,6 +156,7 @@ class _ScannerPageState extends State<ScannerPage> {
     if (code != null && code.trim().isNotEmpty) {
       _lastCode = null;
       await _handle(code, 'KEYBOARD');
+      _wedgeFocus.requestFocus();
     }
   }
 
@@ -209,6 +217,30 @@ class _ScannerPageState extends State<ScannerPage> {
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.white, width: 2.5),
                       borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  width: 1,
+                  height: 1,
+                  child: Opacity(
+                    opacity: 0,
+                    child: TextField(
+                      controller: _wedge,
+                      focusNode: _wedgeFocus,
+                      autofocus: true,
+                      keyboardType: TextInputType.none,
+                      showCursor: false,
+                      onSubmitted: (v) {
+                        _wedge.clear();
+                        _wedgeFocus.requestFocus();
+                        if (v.trim().isNotEmpty) {
+                          _lastCode = null;
+                          _handle(v, 'KEYBOARD');
+                        }
+                      },
                     ),
                   ),
                 ),

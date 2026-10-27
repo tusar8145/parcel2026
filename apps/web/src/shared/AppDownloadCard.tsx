@@ -1,6 +1,6 @@
 import { MOBILE_APPS, type MobileApp } from "@/shared/mobileApps";
 
-/** Panels' sidebar: download the Android app (APK) for merchants or riders. */
+/** Panels' sidebar: download the Android app (APK) for merchants, riders or operations staff. */
 export default function AppDownloadCard({ app }: { app: MobileApp }) {
   const a = MOBILE_APPS[app];
   return (
@@ -17,7 +17,7 @@ export default function AppDownloadCard({ app }: { app: MobileApp }) {
         </svg>
       </span>
       <span style={{ minWidth: 0 }}>
-        <strong style={{ display: "block", fontSize: 13 }}>{app === "rider" ? "Get the rider app" : "Get the Android app"}</strong>
+        <strong style={{ display: "block", fontSize: 13 }}>{app === "rider" ? "Get the rider app" : app === "operations" ? "Get the operations app" : "Get the Android app"}</strong>
         <small style={{ color: "#667085", fontSize: 12 }}>{`APK · v${a.version} · ${a.sizeMb} MB`}</small>
       </span>
     </a>

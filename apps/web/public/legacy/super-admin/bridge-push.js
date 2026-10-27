@@ -36,9 +36,9 @@
     const s = S.status;
     const [label, tone] = s.active ? (s.source === "file" ? ["On (development key file)", "blue"] : ["On", "good"]) : s.configured ? ["Off", "warn"] : ["Not set up", "bad"];
     const apps = s.devicesByApp || {};
-    return `<section class="panel" id="pushSettings"><div class="panel-heading"><div><h2 class="panel-title">Firebase push</h2><p class="panel-subtitle">Push notifications for the Delivery Fast Merchant and Rider apps (Firebase Cloud Messaging).</p></div></div>
+    return `<section class="panel" id="pushSettings"><div class="panel-heading"><div><h2 class="panel-title">Firebase push</h2><p class="panel-subtitle">Push notifications for the Delivery Fast Merchant, Rider and Operations apps (Firebase Cloud Messaging).</p></div></div>
       <div style="padding:0 18px 16px;display:grid;gap:12px">
-        <p class="panel-subtitle">${pill(label, tone)} ${pill(s.configured ? "Key saved" : "No key", s.configured ? "good" : "warn")}${s.projectId ? ` · Project <strong>${esc(s.projectId)}</strong>` : ""} · Phones: ${apps.merchant || 0} merchant, ${apps.rider || 0} rider · Last success: ${esc(when(s.lastSuccessAt))} · Last error: ${esc(when(s.lastErrorAt))}${s.lastError ? ` — ${esc(s.lastError)}` : ""}</p>
+        <p class="panel-subtitle">${pill(label, tone)} ${pill(s.configured ? "Key saved" : "No key", s.configured ? "good" : "warn")}${s.projectId ? ` · Project <strong>${esc(s.projectId)}</strong>` : ""} · Phones: ${apps.merchant || 0} merchant, ${apps.rider || 0} rider, ${apps.operations || 0} operations · Last success: ${esc(when(s.lastSuccessAt))} · Last error: ${esc(when(s.lastErrorAt))}${s.lastError ? ` — ${esc(s.lastError)}` : ""}</p>
         <label style="display:grid;gap:6px">Service account file (Firebase › Project settings › Service accounts › Generate new private key)
           <input type="file" id="pushKeyFile" accept=".json,application/json">
           <textarea id="pushKeyText" rows="3" style="${fieldStyle};font-family:monospace;font-size:12px" placeholder="${s.configured ? `Saved for ${esc(s.clientEmail || "")} · choose a new file or paste it only to replace the key` : "…or paste the file's contents here"}"></textarea>

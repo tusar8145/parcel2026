@@ -17,7 +17,7 @@ const PARALLEL = 8;
 /** POST /me/push-devices: the phone's Firebase token, sent by the app after sign-in (and when it changes). */
 export const registerDeviceSchema = z.object({
   token: z.string().trim().min(20).max(4096),
-  app: z.enum(["merchant", "rider"]),
+  app: z.enum(["merchant", "rider", "operations"]),
   platform: z.enum(["android", "ios"]).default("android"),
 });
 export const removeDeviceSchema = z.object({ token: z.string().trim().min(20).max(4096) });

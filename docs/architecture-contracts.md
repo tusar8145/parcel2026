@@ -588,7 +588,7 @@ action uses.
   in the caller's scope with per-hub lists `RD_<n>` following the Hub column; Set zone / area follow Set
   district / zone; all `IF($X2="",all,INDIRECT(…))`, never IFERROR); only the lists the action uses are in
   the hidden Lists sheet. Protected without a password (filter allowed; Review → Unprotect Sheet). The
-  Instructions sheet: title "Delivery Fast · <action> · <page>", the how-to line ("Accept & assign pickup
+  Instructions sheet: title "Paira Express · <action> · <page>", the how-to line ("Accept & assign pickup
   rider: fill Rider for each row …; delete rows you don't want to change"), what it does, which parcels,
   where to upload, the columns and the action's rules.
 - Dry run: `POST /bulk-updates/validate?kind=&action=` (multipart `file`, .xlsx or .csv; `kind` / `action` may
@@ -802,7 +802,7 @@ Cleaned up 2026-10-17: the page keeps only lists that real forms read.
   (default: the contact), pickupTime, handover = RIDER_PICKUP, inviteToken? }`. The old flat pickup fields are no
   longer accepted. The invitation still fixes the type (`INVITE_TYPE_MISMATCH`).
 - Invitations (super admin → Invite a merchant, `POST /merchants/invites`): SMS / email event `merchant.invite`
-  ("You're invited to join Delivery Fast as {{role}}. Create your account and apply here: {{link}}"); the contact
+  ("You're invited to join Paira Express as {{role}}. Create your account and apply here: {{link}}"); the contact
   name may not be a phone number. `POST /merchants/invites/lookup` (public) adds `hasAccount` (the invited phone /
   email already has an account). The website form (`/merchant?invite=…`): the invitation banner, type fixed; a
   signed-out merchant creates the account (SMS code to the contact phone, `SIGNUP`) or signs in (password or SMS
@@ -1014,7 +1014,7 @@ mode or a subset of their sections. The page scripts keep the old internal names
   `forHubIds` (comma list) = parcels that belong to those hubs now: current hub, drop-offs booked to them,
   picked up by their riders, pickups from the zones they serve (delivery zones and the hub's own zone).
 - "My hub": hub operators' lists and counts default to `forHubIds` = their hubs, with a "My hub / All hubs"
-  switch on each table (remembered per browser, `deliveryfast-ops-scope`). UI default only; the API's
+  switch on each table (remembered per browser, `pairaexpress-ops-scope`). UI default only; the API's
   permissions are unchanged.
 - Stage counts (menu badges, Today cards, stage metrics): `GET /ops/stage-counts[?forHubIds=]` (same
   filters as the lists, reloaded after `parcel.*` events): New orders = PENDING_CONFIRMATION; Pickup =
@@ -1171,7 +1171,7 @@ Last month · Custom range. Asia/Dhaka calendar days (UTC+6); weeks start on Sat
   queries use the indexes from migration `dashboard_period_indexes` (parcels createdAt / deliveredAt /
   pickedUpAt / merchantId+deliveredAt, cod_collections collectedAt, merchant_settlements status+paidAt).
 - Web: `DF.period.control(page, { defaultKey, onChange })` → `activate()` (URL when this page owns it, else
-  localStorage `deliveryfast-period:<page>`, else the default), `mount(container)` (a `select-small` plus
+  localStorage `pairaexpress-period:<page>`, else the default), `mount(container)` (a `select-small` plus
   date pickers and Apply for a custom range, `.df-period`), `query()`, `get()` ({ key, from, to, text:
   "This week · 17–18 Oct", words, versus }). URL: `?period=<key>` or `?period=custom&from=…&to=…`; the
   page that last showed its period owns the URL's period (moving between pages never carries it across).
@@ -1207,7 +1207,7 @@ Both merchant panels (2026-10-18), on the merchant view of `GET /parcels/:id` / 
 ## Page addresses (web: `DF.nav` in public/legacy/shared/api.js; courier-operation/bridge-nav.js, shared/panel-nav.js)
 Every page and tab of every panel has its own URL (2026-10-18). One scheme: `/<panel>?page=<slug>[&tab=<slug>]`,
 kebab-case slugs of the menu names (`&` → `and`). Opening the link opens that page / tab; navigating pushes a
-history entry (Back / Forward work), redraws replace it; the title is "Page › Tab · Delivery Fast · Panel".
+history entry (Back / Forward work), redraws replace it; the title is "Page › Tab · Paira Express · Panel".
 - Courier Operations: the views and tabs of "Courier Operations navigation", e.g. `?page=today`,
   `?page=hub-desk&tab=receive`, `?page=problems&tab=sla-late-risk`, `?page=all-parcels&tab=banking-and-financial`,
   `?page=cod-and-settlement`, `?page=support`, `?page=notifications`. Old names (`?page=Hubs`, `?page=Scheduled pickups`,
@@ -1300,7 +1300,7 @@ Per-user notifications behind the bell of every panel (2026-10-18; migration `us
   bell; every page asked for (menu, address, `renderPage`) draws it. It states the status plainly ("Your account isn't
   verified yet" / "Action needed" / "Your application wasn't approved" / "suspended"), the steps to activation, the
   business verification documents (Upload / Replace / View per document, "Submit for review"; owners only; not
-  offered when rejected or suspended), messages from Delivery Fast with the reply form when information was
-  requested, and the business profile read-only (no inputs; corrections are made by Delivery Fast during review).
+  offered when rejected or suspended), messages from Paira Express with the reply form when information was
+  requested, and the business profile read-only (no inputs; corrections are made by Paira Express during review).
   Sign out on the screen. On `merchant.updated` it reloads; once ACTIVE the panel reloads into the full panel.
 - Tests: `test/merchant-inactive.e2e.test.ts`, `test/merchant-plan.e2e.test.ts`, `tests/e2e/merchant-pending.spec.ts`.

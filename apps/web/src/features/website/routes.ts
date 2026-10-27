@@ -20,17 +20,17 @@ export interface WebsiteRoute {
   priority?: number;
 }
 
-export const SITE_NAME = "Delivery Fast";
-export const HOME_TITLE = "Delivery Fast — Delivery that moves with you";
+export const SITE_NAME = "Paira Express";
+export const HOME_TITLE = "Paira Express — Delivery that moves with you";
 export const HOME_DESCRIPTION =
-  "Delivery Fast delivers e-commerce orders, customer parcels, and important documents across Bangladesh. Track a parcel, get a price, or book a pickup.";
+  "Paira Express delivers e-commerce orders, customer parcels, and important documents across Bangladesh. Track a parcel, get a price, or book a pickup.";
 
 export const WEBSITE_ROUTES: WebsiteRoute[] = [
   { legacy: "home", path: "", title: HOME_TITLE, description: HOME_DESCRIPTION, index: true, changeFrequency: "weekly", priority: 1 },
   {
     legacy: "request",
     path: "request",
-    title: "Delivery Fast — Request a pickup",
+    title: "Paira Express — Request a pickup",
     description: "Book a parcel pickup anywhere we deliver in Bangladesh. Choose a pickup time, see the delivery charge before you book, and track it end to end.",
     index: true,
     changeFrequency: "monthly",
@@ -39,8 +39,8 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   {
     legacy: "tracking",
     path: "track",
-    title: "Delivery Fast — Follow your delivery",
-    description: "Track a Delivery Fast parcel with its tracking ID: current status, estimated arrival, route and shipment history. No account needed.",
+    title: "Paira Express — Follow your delivery",
+    description: "Track a Paira Express parcel with its tracking ID: current status, estimated arrival, route and shipment history. No account needed.",
     index: true,
     changeFrequency: "monthly",
     priority: 0.9,
@@ -48,7 +48,7 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   {
     legacy: "pricing",
     path: "pricing",
-    title: "Delivery Fast — A clear estimate, before you book",
+    title: "Paira Express — A clear estimate, before you book",
     description: "Delivery prices for parcels and documents across Bangladesh: same-zone and inter-city rates, weight charges, cash-on-delivery fees and same-day options.",
     index: true,
     changeFrequency: "monthly",
@@ -57,7 +57,7 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   {
     legacy: "services",
     path: "services",
-    title: "Delivery Fast — Courier services in Bangladesh",
+    title: "Paira Express — Courier services in Bangladesh",
     description: "E-commerce deliveries with cash on delivery, customer parcels and secure document delivery for banks and institutions, across Bangladesh.",
     index: true,
     changeFrequency: "monthly",
@@ -66,24 +66,24 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   {
     legacy: "login",
     path: "login",
-    title: "Delivery Fast — Log in to Delivery Fast",
-    description: "Sign in to your Delivery Fast account with your password or an SMS code.",
+    title: "Paira Express — Log in to Paira Express",
+    description: "Sign in to your Paira Express account with your password or an SMS code.",
     index: true,
     priority: 0.4,
   },
   {
     legacy: "signup",
     path: "signup",
-    title: "Delivery Fast — Create your account",
-    description: "Create a free Delivery Fast customer account to book pickups, save addresses and follow your parcels.",
+    title: "Paira Express — Create your account",
+    description: "Create a free Paira Express customer account to book pickups, save addresses and follow your parcels.",
     index: true,
     priority: 0.6,
   },
   {
     legacy: "merchant",
     path: "merchant",
-    title: "Delivery Fast — Choose the right merchant account",
-    description: "Ship your online shop's orders or your institution's documents with Delivery Fast. Apply for an e-commerce or Banking & Financial merchant account.",
+    title: "Paira Express — Choose the right merchant account",
+    description: "Ship your online shop's orders or your institution's documents with Paira Express. Apply for an e-commerce or Banking & Financial merchant account.",
     index: true,
     changeFrequency: "monthly",
     priority: 0.7,
@@ -92,8 +92,8 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
     legacy: "rider",
     // /rider is the riders' app.
     path: "become-a-rider",
-    title: "Delivery Fast — Ride with Delivery Fast",
-    description: "Apply to ride with Delivery Fast: choose your area and vehicle and earn per delivery.",
+    title: "Paira Express — Ride with Paira Express",
+    description: "Apply to ride with Paira Express: choose your area and vehicle and earn per delivery.",
     index: true,
     changeFrequency: "monthly",
     priority: 0.6,
@@ -102,8 +102,8 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
     legacy: "franchise",
     // /franchise is the franchise hubs' panel.
     path: "become-a-franchise",
-    title: "Delivery Fast — Operate a local delivery hub",
-    description: "Run a Delivery Fast franchise: manage a territory, hub, riders, merchants and local parcel operations.",
+    title: "Paira Express — Operate a local delivery hub",
+    description: "Run a Paira Express franchise: manage a territory, hub, riders, merchants and local parcel operations.",
     index: true,
     changeFrequency: "monthly",
     priority: 0.6,
@@ -111,23 +111,23 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
   {
     legacy: "support",
     path: "support",
-    title: "Delivery Fast — Customer support",
-    description: "Ask about a delivery or pickup request and continue the conversation with Delivery Fast support.",
+    title: "Paira Express — Customer support",
+    description: "Ask about a delivery or pickup request and continue the conversation with Paira Express support.",
     index: false,
   },
-  { legacy: "account", path: "account", title: "Delivery Fast — Your deliveries", description: "Your Delivery Fast account.", index: false },
-  { legacy: "orders", path: "account/orders", title: "Delivery Fast — Orders & pickups", description: "Your Delivery Fast orders.", index: false },
-  { legacy: "addresses", path: "account/addresses", title: "Delivery Fast — Address book", description: "Your saved addresses.", index: false },
-  { legacy: "profile", path: "account/profile", title: "Delivery Fast — Your profile", description: "Your Delivery Fast profile.", index: false },
-  { legacy: "verify-email", path: "account/verify-email", title: "Delivery Fast — Verify your email", description: "Confirm your email address.", index: false },
-  { legacy: "submitted", path: "application-received", title: "Delivery Fast — Thanks for getting in touch", description: "Application received.", index: false },
+  { legacy: "account", path: "account", title: "Paira Express — Your deliveries", description: "Your Paira Express account.", index: false },
+  { legacy: "orders", path: "account/orders", title: "Paira Express — Orders & pickups", description: "Your Paira Express orders.", index: false },
+  { legacy: "addresses", path: "account/addresses", title: "Paira Express — Address book", description: "Your saved addresses.", index: false },
+  { legacy: "profile", path: "account/profile", title: "Paira Express — Your profile", description: "Your Paira Express profile.", index: false },
+  { legacy: "verify-email", path: "account/verify-email", title: "Paira Express — Verify your email", description: "Confirm your email address.", index: false },
+  { legacy: "submitted", path: "application-received", title: "Paira Express — Thanks for getting in touch", description: "Application received.", index: false },
 ];
 
 /** Pages rendered by the server on their own (not through the page scripts' router). */
 export const STATIC_PAGES = [
-  { path: "about", title: "Delivery Fast — About us", description: "Delivery Fast: a nationwide courier and logistics service in Bangladesh since 2024 — our story, services, management, mission and how we work." },
-  { path: "privacy", title: "Delivery Fast — Privacy Policy", description: "How Delivery Fast collects, uses and protects personal information of senders, recipients, merchants and riders in Bangladesh." },
-  { path: "terms", title: "Delivery Fast — Terms of Service", description: "The terms for booking, sending, tracking and receiving parcels and documents with Delivery Fast." },
+  { path: "about", title: "Paira Express — About us", description: "Paira Express: a nationwide courier and logistics service in Bangladesh since 2024 — our story, services, management, mission and how we work." },
+  { path: "privacy", title: "Paira Express — Privacy Policy", description: "How Paira Express collects, uses and protects personal information of senders, recipients, merchants and riders in Bangladesh." },
+  { path: "terms", title: "Paira Express — Terms of Service", description: "The terms for booking, sending, tracking and receiving parcels and documents with Paira Express." },
 ];
 
 export function siteUrl(): string {

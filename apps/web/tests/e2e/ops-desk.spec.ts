@@ -102,7 +102,7 @@ test("parcel drawer: add a staff note, the message log with codes masked, and th
   const trackingId = await book(page, `Desk Drawer ${fx.stamp}`);
   // A delivery-code SMS about the parcel (the code must never show in the log).
   await sql(`INSERT INTO outbox_messages (id, channel, "to", template, body, state, "sentAt", provider, "trackingId") VALUES (gen_random_uuid(), 'SMS', '+8801812000000', 'parcel.delivery_code', $1, 'SENT', now(), 'log', $2)`, [
-    `Your Delivery Fast parcel ${trackingId} is on its way. Give code 6831 to the rider only after you receive the parcel.`,
+    `Your Paira Express parcel ${trackingId} is on its way. Give code 6831 to the rider only after you receive the parcel.`,
     trackingId,
   ]);
 

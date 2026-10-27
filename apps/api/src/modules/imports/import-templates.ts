@@ -199,7 +199,7 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     "Each row is booked once: rows already booked (same reference, or the same details without one) are not booked again.",
   ];
   const instructions: Cell[][] = [
-    [{ value: `Delivery Fast · ${TITLE[ctx.kind]}`, style: STYLE.title }],
+    [{ value: `Paira Express · ${TITLE[ctx.kind]}`, style: STYLE.title }],
     // Not wrapped: each line overflows across the empty cells to its right.
     ...intro.map(t => [t]),
     [],
@@ -214,7 +214,7 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     ]),
   ];
   return writeXlsx({
-    title: `Delivery Fast ${TITLE[ctx.kind]}`,
+    title: `Paira Express ${TITLE[ctx.kind]}`,
     sheets: [data, { name: "Instructions", rows: instructions, widths: [24, 16, 40, 24, 26, 60] }, lists.sheet],
     names: lists.names,
   });

@@ -185,7 +185,7 @@ export default function WalkIn({ me }: { me: Me }) {
         <div>
           <p className="fr-eyebrow">{me.hub.name}</p>
           <h1>Walk-in booking</h1>
-          <p>A customer brings a parcel to your counter. Prices are Delivery Fast&apos;s website prices; the customer pays you now.</p>
+          <p>A customer brings a parcel to your counter. Prices are Paira Express&apos;s website prices; the customer pays you now.</p>
         </div>
       </div>
       <form className="fr-split" onSubmit={submit} noValidate id="frWalkInForm">

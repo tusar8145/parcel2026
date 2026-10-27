@@ -7,7 +7,7 @@ export default function Topbar() {
         </svg>
       </button>
       <div className="breadcrumb">
-        {"Delivery Fast "}
+        {"Paira Express "}
         <span style={{ padding: "0 7px", color: "#c0c7d0" }}>/</span>
         <strong id="breadcrumbLabel">Today</strong>
         {/* The page scripts' own page name (internal; bridge-nav.js shows the menu label above). */}

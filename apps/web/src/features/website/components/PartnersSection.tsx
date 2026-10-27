@@ -10,7 +10,7 @@ export default function PartnersSection() {
             <br />
             on the delivery journey.
           </h2>
-          <p>Run a business, ride a route, or build a local delivery operation with Delivery Fast.</p>
+          <p>Run a business, ride a route, or build a local delivery operation with Paira Express.</p>
         </div>
         <div className="partners">
           {" "}

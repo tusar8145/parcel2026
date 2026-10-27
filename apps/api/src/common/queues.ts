@@ -17,7 +17,7 @@ const POLICIES: Record<QueueName, PgBoss.Queue> = {
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger("Queues");
-  readonly boss = new PgBoss({ connectionString: env().DATABASE_URL, schema: "pgboss", application_name: "deliveryfast-queues" });
+  readonly boss = new PgBoss({ connectionString: env().DATABASE_URL, schema: "pgboss", application_name: "pairaexpress-queues" });
   private ready?: Promise<void>;
 
   onModuleInit() {

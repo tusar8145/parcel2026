@@ -35,7 +35,7 @@ export interface EventDefinition {
 
 export const COMMON_VARS = ["appName", "appUrl", "support", "name"] as const;
 
-const track = { trackingId: "PP-261016-4821", trackingUrl: "https://deliveryfast.example/#/tracking/PP-261016-4821" };
+const track = { trackingId: "PP-261016-4821", trackingUrl: "https://pairaexpress.example/#/tracking/PP-261016-4821" };
 
 /**
  * Default texts. Placeholders: {{var}}; sections {{#var}}…{{/var}} render only when var is set
@@ -50,7 +50,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     vars: ["code", "minutes"],
     required: ["code"],
     sample: { code: "482913", minutes: "5" },
-    sms: "{{code}} is your Delivery Fast sign-up code. It expires in {{minutes}} minutes. Never share it.",
+    sms: "{{code}} is your Paira Express sign-up code. It expires in {{minutes}} minutes. Never share it.",
   },
   "auth.otp.login": {
     label: "Sign-in code",
@@ -60,7 +60,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     vars: ["code", "minutes"],
     required: ["code"],
     sample: { code: "482913", minutes: "5" },
-    sms: "{{code}} is your Delivery Fast sign-in code. It expires in {{minutes}} minutes. Never share it.",
+    sms: "{{code}} is your Paira Express sign-in code. It expires in {{minutes}} minutes. Never share it.",
   },
   "auth.otp.password_reset": {
     label: "Password reset code",
@@ -70,7 +70,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     vars: ["code", "minutes"],
     required: ["code"],
     sample: { code: "482913", minutes: "5" },
-    sms: "{{code}} is your Delivery Fast password reset code. It expires in {{minutes}} minutes. Never share it.",
+    sms: "{{code}} is your Paira Express password reset code. It expires in {{minutes}} minutes. Never share it.",
   },
   "auth.password_changed": {
     label: "Password changed",
@@ -79,10 +79,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["at"],
     sample: { at: "16 Oct 2026, 10:24" },
-    sms: "Your Delivery Fast password was changed. If this wasn't you, contact {{support}} now.",
+    sms: "Your Paira Express password was changed. If this wasn't you, contact {{support}} now.",
     email: {
-      subject: "Your Delivery Fast password was changed",
-      text: "Hi {{name}},\n\nThe password for your Delivery Fast account was changed on {{at}}.\n\nIf you didn't do this, reset your password at {{appUrl}} and contact {{support}} right away.",
+      subject: "Your Paira Express password was changed",
+      text: "Hi {{name}},\n\nThe password for your Paira Express account was changed on {{at}}.\n\nIf you didn't do this, reset your password at {{appUrl}} and contact {{support}} right away.",
     },
   },
   "auth.email_verification": {
@@ -92,10 +92,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["link", "code"],
     required: ["link"],
-    sample: { link: "https://deliveryfast.example/account/verify-email?token=abc", code: "482913" },
+    sample: { link: "https://pairaexpress.example/account/verify-email?token=abc", code: "482913" },
     email: {
       subject: "Confirm your email address",
-      text: "Hi {{name}},\n\nConfirm this email address for your Delivery Fast account: {{link}}\n\nOr enter this code on the website: {{code}} (valid for 24 hours).\n\nIf you didn't ask for this, ignore this email.",
+      text: "Hi {{name}},\n\nConfirm this email address for your Paira Express account: {{link}}\n\nOr enter this code on the website: {{code}} (valid for 24 hours).\n\nIf you didn't ask for this, ignore this email.",
     },
   },
   "auth.mfa_enabled": {
@@ -105,10 +105,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["at"],
     sample: { at: "16 Oct 2026, 10:24" },
-    sms: "Two-step verification was turned on for your Delivery Fast account. Not you? Contact {{support}}.",
+    sms: "Two-step verification was turned on for your Paira Express account. Not you? Contact {{support}}.",
     email: {
       subject: "Two-step verification is on",
-      text: "Hi {{name}},\n\nTwo-step verification was turned on for your Delivery Fast account on {{at}}.\n\nIf this wasn't you, contact {{support}} right away.",
+      text: "Hi {{name}},\n\nTwo-step verification was turned on for your Paira Express account on {{at}}.\n\nIf this wasn't you, contact {{support}} right away.",
     },
   },
   "account.invite": {
@@ -117,11 +117,11 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Invited staff / team member",
     mandatory: true,
     vars: ["inviter", "role", "link"],
-    sample: { inviter: "Alex Morgan", role: "Operations Administrator", link: "https://deliveryfast.example/#/login" },
-    sms: "{{inviter}} added you to Delivery Fast as {{role}}. Sign in: {{link}}",
+    sample: { inviter: "Alex Morgan", role: "Operations Administrator", link: "https://pairaexpress.example/#/login" },
+    sms: "{{inviter}} added you to Paira Express as {{role}}. Sign in: {{link}}",
     email: {
-      subject: "You've been invited to Delivery Fast",
-      text: "Hi {{name}},\n\n{{inviter}} added you to Delivery Fast as {{role}}.\n\nSign in here: {{link}}",
+      subject: "You've been invited to Paira Express",
+      text: "Hi {{name}},\n\n{{inviter}} added you to Paira Express as {{role}}.\n\nSign in here: {{link}}",
     },
   },
   "parcel.booked": {
@@ -145,7 +145,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     sms: "A rider is on the way to collect {{trackingId}}. Track: {{trackingUrl}}",
     email: {
       subject: "A rider will collect {{trackingId}}",
-      text: "Hi {{name}},\n\nA Delivery Fast rider has been assigned to collect parcel {{trackingId}}.\n\nTrack it: {{trackingUrl}}",
+      text: "Hi {{name}},\n\nA Paira Express rider has been assigned to collect parcel {{trackingId}}.\n\nTrack it: {{trackingUrl}}",
     },
     defaultOff: ["sms"],
   },
@@ -183,7 +183,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     vars: ["trackingId", "code", "codAmount"],
     required: ["code"],
     sample: { ...track, code: "4821", codAmount: "1,500" },
-    sms: "Your Delivery Fast parcel {{trackingId}} is on its way.{{#codAmount}} Please keep Tk {{codAmount}} ready.{{/codAmount}} Give code {{code}} to the rider only after you receive the parcel.",
+    sms: "Your Paira Express parcel {{trackingId}} is on its way.{{#codAmount}} Please keep Tk {{codAmount}} ready.{{/codAmount}} Give code {{code}} to the rider only after you receive the parcel.",
   },
   "parcel.delivered": {
     label: "Delivered",
@@ -250,8 +250,8 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Parcel",
     audience: "Recipient / sender",
     vars: ["trackingId", "link"],
-    sample: { ...track, link: "https://deliveryfast.example/track/PP-261016-7K3QF?t=f.abc#feedback" },
-    sms: "How was your Delivery Fast delivery {{trackingId}}? Tell us: {{link}}",
+    sample: { ...track, link: "https://pairaexpress.example/track/PP-261016-7K3QF?t=f.abc#feedback" },
+    sms: "How was your Paira Express delivery {{trackingId}}? Tell us: {{link}}",
     email: {
       subject: "How did we do with {{trackingId}}?",
       text: "Hi {{name}},\n\nHow was your delivery of {{trackingId}}? It takes a minute: {{link}}",
@@ -266,7 +266,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     vars: ["code", "minutes"],
     required: ["code"],
     sample: { code: "482913", minutes: "5" },
-    sms: "{{code}} is your Delivery Fast booking code. It expires in {{minutes}} minutes. Never share it.",
+    sms: "{{code}} is your Paira Express booking code. It expires in {{minutes}} minutes. Never share it.",
   },
   "merchant.application_received": {
     label: "Merchant application received",
@@ -274,10 +274,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Applicant",
     vars: ["businessName", "reference"],
     sample: { businessName: "Northstar Store", reference: "MER-10048" },
-    sms: "We received the Delivery Fast merchant application for {{businessName}} (ref {{reference}}). We'll be in touch soon.",
+    sms: "We received the Paira Express merchant application for {{businessName}} (ref {{reference}}). We'll be in touch soon.",
     email: {
       subject: "We received your merchant application",
-      text: "Hi {{name}},\n\nThanks for applying to ship with Delivery Fast. We received the application for {{businessName}} (reference {{reference}}) and will review it shortly.",
+      text: "Hi {{name}},\n\nThanks for applying to ship with Paira Express. We received the application for {{businessName}} (reference {{reference}}) and will review it shortly.",
     },
   },
   "merchant.invite": {
@@ -287,11 +287,11 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["role", "link"],
     required: ["link"],
-    sample: { role: "an E-commerce merchant (Northstar Store)", link: "https://deliveryfast.example/merchant?invite=abc" },
-    sms: "You're invited to join Delivery Fast as {{role}}. Create your account and apply here: {{link}}",
+    sample: { role: "an E-commerce merchant (Northstar Store)", link: "https://pairaexpress.example/merchant?invite=abc" },
+    sms: "You're invited to join Paira Express as {{role}}. Create your account and apply here: {{link}}",
     email: {
-      subject: "Your invitation to join Delivery Fast",
-      text: "Hi {{name}},\n\nYou're invited to join Delivery Fast as {{role}}.\n\nOpen this link to create your account and send your merchant application (the link works once): {{link}}",
+      subject: "Your invitation to join Paira Express",
+      text: "Hi {{name}},\n\nYou're invited to join Paira Express as {{role}}.\n\nOpen this link to create your account and send your merchant application (the link works once): {{link}}",
     },
   },
   "merchant.approved": {
@@ -299,11 +299,11 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Merchant",
     audience: "Merchant owner",
     vars: ["businessName", "link"],
-    sample: { businessName: "Northstar Store", link: "https://deliveryfast.example/#/login" },
-    sms: "{{businessName}} is approved on Delivery Fast. Sign in to start booking: {{link}}",
+    sample: { businessName: "Northstar Store", link: "https://pairaexpress.example/#/login" },
+    sms: "{{businessName}} is approved on Paira Express. Sign in to start booking: {{link}}",
     email: {
       subject: "{{businessName}} is approved",
-      text: "Hi {{name}},\n\nGood news: {{businessName}} is approved on Delivery Fast. Sign in to start booking pickups: {{link}}",
+      text: "Hi {{name}},\n\nGood news: {{businessName}} is approved on Paira Express. Sign in to start booking pickups: {{link}}",
     },
   },
   "merchant.rejected": {
@@ -312,7 +312,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Applicant",
     vars: ["businessName", "reason"],
     sample: { businessName: "Northstar Store", reason: "Trade licence could not be verified" },
-    sms: "Your Delivery Fast merchant application for {{businessName}} was not approved. Contact {{support}} for details.",
+    sms: "Your Paira Express merchant application for {{businessName}} was not approved. Contact {{support}} for details.",
     email: {
       subject: "Your merchant application",
       text: "Hi {{name}},\n\nWe couldn't approve the application for {{businessName}}{{#reason}}: {{reason}}{{/reason}}.\n\nQuestions? Contact {{support}}.",
@@ -323,8 +323,8 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Merchant",
     audience: "Applicant",
     vars: ["businessName", "details", "link"],
-    sample: { businessName: "Northstar Store", details: "A clearer photo of the trade licence", link: "https://deliveryfast.example/#/login" },
-    sms: "Delivery Fast needs more information for {{businessName}}. Details: {{link}}",
+    sample: { businessName: "Northstar Store", details: "A clearer photo of the trade licence", link: "https://pairaexpress.example/#/login" },
+    sms: "Paira Express needs more information for {{businessName}}. Details: {{link}}",
     email: {
       subject: "We need a little more information",
       text: "Hi {{name}},\n\nTo finish reviewing {{businessName}} we need: {{details}}\n\nUpdate your application here: {{link}}",
@@ -335,11 +335,11 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Merchant",
     audience: "Merchant team member",
     vars: ["businessName", "role", "link"],
-    sample: { businessName: "Northstar Store", role: "Staff", link: "https://deliveryfast.example/#/login" },
-    sms: "You were added to {{businessName}} on Delivery Fast as {{role}}. Sign in: {{link}}",
+    sample: { businessName: "Northstar Store", role: "Staff", link: "https://pairaexpress.example/#/login" },
+    sms: "You were added to {{businessName}} on Paira Express as {{role}}. Sign in: {{link}}",
     email: {
       subject: "You were added to {{businessName}}",
-      text: "Hi {{name}},\n\nYou were added to {{businessName}} on Delivery Fast as {{role}}. Sign in: {{link}}",
+      text: "Hi {{name}},\n\nYou were added to {{businessName}} on Paira Express as {{role}}. Sign in: {{link}}",
     },
   },
   "merchant.payout_account_changed": {
@@ -385,7 +385,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Merchant owner",
     vars: ["number", "amount", "reference"],
     sample: { number: "STL-000123", amount: "48,250.00", reference: "BEFTN-99812" },
-    sms: "Delivery Fast: settlement {{number}} of Tk {{amount}} has been paid. Ref: {{reference}}",
+    sms: "Paira Express: settlement {{number}} of Tk {{amount}} has been paid. Ref: {{reference}}",
     email: {
       subject: "Settlement {{number}} paid",
       text: "Hi {{name}},\n\nSettlement {{number}} of Tk {{amount}} has been paid. Reference: {{reference}}.",
@@ -396,8 +396,8 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Finance",
     audience: "Merchant owner",
     vars: ["number", "amount", "dueDate", "link"],
-    sample: { number: "INV-2026-10-0042", amount: "12,400.00", dueDate: "31 Oct 2026", link: "https://deliveryfast.example/ecommerce-merchant" },
-    sms: "Delivery Fast invoice {{number}} for Tk {{amount}} is due {{dueDate}}.",
+    sample: { number: "INV-2026-10-0042", amount: "12,400.00", dueDate: "31 Oct 2026", link: "https://pairaexpress.example/ecommerce-merchant" },
+    sms: "Paira Express invoice {{number}} for Tk {{amount}} is due {{dueDate}}.",
     email: {
       subject: "Invoice {{number}}",
       text: "Hi {{name}},\n\nInvoice {{number}} for Tk {{amount}} is due on {{dueDate}}.\n\nView it: {{link}}",
@@ -409,10 +409,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Rider applicant",
     vars: ["status", "details"],
     sample: { status: "Approved", details: "" },
-    sms: "Your Delivery Fast rider application: {{status}}.{{#details}} {{details}}{{/details}}",
+    sms: "Your Paira Express rider application: {{status}}.{{#details}} {{details}}{{/details}}",
     email: {
       subject: "Your rider application: {{status}}",
-      text: "Hi {{name}},\n\nYour Delivery Fast rider application status: {{status}}.{{#details}}\n\n{{details}}{{/details}}",
+      text: "Hi {{name}},\n\nYour Paira Express rider application status: {{status}}.{{#details}}\n\n{{details}}{{/details}}",
     },
   },
   "rider.kyc_status": {
@@ -421,7 +421,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Rider",
     vars: ["status", "note", "details"],
     sample: { status: "Verified", note: "", details: "" },
-    sms: "Your Delivery Fast rider KYC: {{status}}.{{#note}} {{note}}{{/note}}",
+    sms: "Your Paira Express rider KYC: {{status}}.{{#note}} {{note}}{{/note}}",
     email: {
       subject: "Rider KYC: {{status}}",
       text: "Hi {{name}},\n\nYour rider KYC status: {{status}}.{{#note}}\n\n{{note}}{{/note}}{{#details}}\n\n{{details}}{{/details}}",
@@ -433,7 +433,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Rider",
     vars: ["amount", "number", "method", "reference"],
     sample: { amount: "Tk 6,800", number: "RP-000231", method: "bKash", reference: "BKASH-77120" },
-    sms: "Delivery Fast paid you {{amount}}{{#method}} by {{method}}{{/method}}. Ref: {{reference}}",
+    sms: "Paira Express paid you {{amount}}{{#method}} by {{method}}{{/method}}. Ref: {{reference}}",
     email: {
       subject: "Payout of {{amount}} sent",
       text: "Hi {{name}},\n\nWe paid you {{amount}}{{#method}} by {{method}}{{/method}}{{#number}} (payout {{number}}){{/number}}. Reference: {{reference}}.",
@@ -444,8 +444,8 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Support",
     audience: "Ticket requester",
     vars: ["ticketNumber", "subject", "link"],
-    sample: { ticketNumber: "TKT-1042", subject: "Parcel delayed", link: "https://deliveryfast.example/#/support" },
-    sms: "Delivery Fast replied to ticket {{ticketNumber}}. View: {{link}}",
+    sample: { ticketNumber: "TKT-1042", subject: "Parcel delayed", link: "https://pairaexpress.example/#/support" },
+    sms: "Paira Express replied to ticket {{ticketNumber}}. View: {{link}}",
     email: {
       subject: "Re: {{subject}} [{{ticketNumber}}]",
       text: "Hi {{name}},\n\nWe replied to your ticket {{ticketNumber}} ({{subject}}).\n\nView the reply: {{link}}",
@@ -457,7 +457,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Support",
     audience: "Ticket requester",
     vars: ["ticketNumber", "subject", "status", "link"],
-    sample: { ticketNumber: "TKT-1042", subject: "Parcel delayed", status: "Resolved", link: "https://deliveryfast.example/#/support" },
+    sample: { ticketNumber: "TKT-1042", subject: "Parcel delayed", status: "Resolved", link: "https://pairaexpress.example/#/support" },
     sms: "Ticket {{ticketNumber}} is now {{status}}. View: {{link}}",
     email: {
       subject: "Ticket {{ticketNumber}}: {{status}}",
@@ -470,7 +470,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Support",
     audience: "Ticket requester",
     vars: ["ticketNumber", "link"],
-    sample: { ticketNumber: "TKT-1042", link: "https://deliveryfast.example/#/support" },
+    sample: { ticketNumber: "TKT-1042", link: "https://pairaexpress.example/#/support" },
     sms: "How did we do on ticket {{ticketNumber}}? Rate us: {{link}}",
     email: {
       subject: "How did we do? [{{ticketNumber}}]",
@@ -483,8 +483,8 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Operations",
     audience: "Operations staff",
     vars: ["count", "hub", "link"],
-    sample: { count: "7", hub: "Gulshan hub", link: "https://deliveryfast.example/courier-operation" },
-    sms: "Delivery Fast: {{count}} parcels breached SLA{{#hub}} at {{hub}}{{/hub}}. {{link}}",
+    sample: { count: "7", hub: "Gulshan hub", link: "https://pairaexpress.example/courier-operation" },
+    sms: "Paira Express: {{count}} parcels breached SLA{{#hub}} at {{hub}}{{/hub}}. {{link}}",
     email: {
       subject: "SLA alert: {{count}} parcels{{#hub}} at {{hub}}{{/hub}}",
       text: "Hi {{name}},\n\n{{count}} parcels are past their SLA{{#hub}} at {{hub}}{{/hub}}.\n\nReview them: {{link}}",
@@ -496,7 +496,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Operations",
     audience: "Staff",
     vars: ["report", "period", "link"],
-    sample: { report: "Daily delivery summary", period: "15 Oct 2026", link: "https://deliveryfast.example/courier-operation" },
+    sample: { report: "Daily delivery summary", period: "15 Oct 2026", link: "https://pairaexpress.example/courier-operation" },
     email: {
       subject: "{{report}} · {{period}}",
       text: "Hi {{name}},\n\nYour scheduled report \"{{report}}\" for {{period}} is ready: {{link}}",
@@ -509,7 +509,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: [],
     sample: {},
-    sms: "This number already has a Delivery Fast account. Sign in, or reset your password if you forgot it.",
+    sms: "This number already has a Paira Express account. Sign in, or reset your password if you forgot it.",
   },
   "auth.mfa_disabled": {
     label: "Two-step verification turned off",
@@ -518,10 +518,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["at"],
     sample: { at: "16 Oct 2026, 10:24" },
-    sms: "Two-step verification was turned off for your Delivery Fast account. Not you? Contact {{support}}.",
+    sms: "Two-step verification was turned off for your Paira Express account. Not you? Contact {{support}}.",
     email: {
       subject: "Two-step verification is off",
-      text: "Hi {{name}},\n\nTwo-step verification was turned off for your Delivery Fast account on {{at}}.\n\nIf this wasn't you, change your password and contact {{support}} right away.",
+      text: "Hi {{name}},\n\nTwo-step verification was turned off for your Paira Express account on {{at}}.\n\nIf this wasn't you, change your password and contact {{support}} right away.",
     },
   },
   "auth.mfa_reset": {
@@ -531,10 +531,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     mandatory: true,
     vars: ["admin"],
     sample: { admin: "Alex Morgan" },
-    sms: "A Delivery Fast administrator ({{admin}}) reset two-step verification on your account. Set it up again at your next sign-in.",
+    sms: "A Paira Express administrator ({{admin}}) reset two-step verification on your account. Set it up again at your next sign-in.",
     email: {
       subject: "Your two-step verification was reset",
-      text: "Hi {{name}},\n\n{{admin}} reset two-step verification on your Delivery Fast account, and your devices were signed out. Set it up again the next time you sign in.\n\nIf you didn't ask for this, contact {{support}} right away.",
+      text: "Hi {{name}},\n\n{{admin}} reset two-step verification on your Paira Express account, and your devices were signed out. Set it up again the next time you sign in.\n\nIf you didn't ask for this, contact {{support}} right away.",
     },
   },
   "account.support_access": {
@@ -543,10 +543,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Any user",
     vars: ["admin", "minutes", "mode"],
     sample: { admin: "Alex Morgan", minutes: "15", mode: "view-only" },
-    sms: "Delivery Fast support ({{admin}}) is viewing your account ({{mode}}) for up to {{minutes}} minutes to help with your request.",
+    sms: "Paira Express support ({{admin}}) is viewing your account ({{mode}}) for up to {{minutes}} minutes to help with your request.",
     email: {
-      subject: "Delivery Fast support is viewing your account",
-      text: "Hi {{name}},\n\n{{admin}} from Delivery Fast support opened your account ({{mode}}) for up to {{minutes}} minutes to help with your request. Every action is recorded.\n\nIf you didn't ask for help, contact {{support}}.",
+      subject: "Paira Express support is viewing your account",
+      text: "Hi {{name}},\n\n{{admin}} from Paira Express support opened your account ({{mode}}) for up to {{minutes}} minutes to help with your request. Every action is recorded.\n\nIf you didn't ask for help, contact {{support}}.",
     },
   },
   "support.sla_escalation": {
@@ -554,7 +554,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Support",
     audience: "Support agents and operations managers",
     vars: ["ticketNumber", "subject", "breach", "priority", "link"],
-    sample: { ticketNumber: "DF-SUP-261016-0007", subject: "Parcel delayed", breach: "first response", priority: "High", link: "https://deliveryfast.example/courier-operation" },
+    sample: { ticketNumber: "DF-SUP-261016-0007", subject: "Parcel delayed", breach: "first response", priority: "High", link: "https://pairaexpress.example/courier-operation" },
     sms: "SLA breach ({{breach}}) on ticket {{ticketNumber}} [{{priority}}]. {{link}}",
     email: {
       subject: "SLA breach: {{ticketNumber}} ({{breach}})",
@@ -567,11 +567,11 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Partner",
     audience: "Franchise applicant",
     vars: ["number", "status", "details", "link"],
-    sample: { number: "DF-SUP-261016-0003", status: "Under review", details: "", link: "https://deliveryfast.example/#/support" },
-    sms: "Your Delivery Fast franchise application {{number}}: {{status}}.{{#details}} {{details}}{{/details}}",
+    sample: { number: "DF-SUP-261016-0003", status: "Under review", details: "", link: "https://pairaexpress.example/#/support" },
+    sms: "Your Paira Express franchise application {{number}}: {{status}}.{{#details}} {{details}}{{/details}}",
     email: {
       subject: "Your franchise application: {{status}}",
-      text: "Hi {{name}},\n\nYour Delivery Fast franchise application {{number}} is now: {{status}}.{{#details}}\n\n{{details}}{{/details}}\n\nFollow up: {{link}}",
+      text: "Hi {{name}},\n\nYour Paira Express franchise application {{number}} is now: {{status}}.{{#details}}\n\n{{details}}{{/details}}\n\nFollow up: {{link}}",
     },
   },
   "parcel.drop_off_booked": {
@@ -604,10 +604,10 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Sender",
     vars: ["trackingId", "charge", "trackingUrl"],
     sample: { ...track, charge: "185" },
-    sms: "{{trackingId}}: a Delivery Fast rider will collect the parcel from your pickup address, no need to bring it to a hub. Delivery charge Tk {{charge}}. Track: {{trackingUrl}}",
+    sms: "{{trackingId}}: a Paira Express rider will collect the parcel from your pickup address, no need to bring it to a hub. Delivery charge Tk {{charge}}. Track: {{trackingUrl}}",
     email: {
       subject: "{{trackingId}}: a rider will collect your parcel",
-      text: "Hi {{name}},\n\nYour booking {{trackingId}} is now a rider pickup: a Delivery Fast rider will collect the parcel from your pickup address, so there is no need to bring it to a hub. Delivery charge: Tk {{charge}}.\n\nTrack it any time: {{trackingUrl}}",
+      text: "Hi {{name}},\n\nYour booking {{trackingId}} is now a rider pickup: a Paira Express rider will collect the parcel from your pickup address, so there is no need to bring it to a hub. Delivery charge: Tk {{charge}}.\n\nTrack it any time: {{trackingUrl}}",
     },
   },
   "import.completed": {
@@ -616,7 +616,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     audience: "Person who uploaded the file (merchant or operations)",
     vars: ["number", "fileName", "rows", "created", "incomplete", "notCreated"],
     sample: { number: "IMP-261016-004", fileName: "orders-october.xlsx", rows: "1200", created: "1180", incomplete: "35", notCreated: "20" },
-    sms: "Delivery Fast: import {{number}} finished. {{created}} orders created{{#incomplete}} ({{incomplete}} need info){{/incomplete}}{{#notCreated}}, {{notCreated}} not created{{/notCreated}}.",
+    sms: "Paira Express: import {{number}} finished. {{created}} orders created{{#incomplete}} ({{incomplete}} need info){{/incomplete}}{{#notCreated}}, {{notCreated}} not created{{/notCreated}}.",
     email: {
       subject: "Import {{number}} finished: {{created}} orders created",
       text: "Hi {{name}},\n\nYour import {{number}} ({{fileName}}, {{rows}} rows) has finished.\n\nCreated: {{created}}{{#incomplete}}, of which {{incomplete}} need more information before delivery{{/incomplete}}.\n{{#notCreated}}Not created: {{notCreated}}. Download them from the import history with the reason for each row, fix them and upload again.\n{{/notCreated}}\nPrint the labels of the new orders from the import history.",

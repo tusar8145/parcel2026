@@ -156,7 +156,7 @@ describe("documents (PDF)", () => {
         expect(pdfHas(grid, "generated")).toBe(false);
         expect(pdfHas(grid, "Delivery invoices")).toBe(false);
         expect(pdfHas(grid, "E-commerce invoices")).toBe(false);
-        expect(pdfHas(grid, "Delivery Fast")).toBe(true);
+        expect(pdfHas(grid, "Paira Express")).toBe(true);
         for (const id of ids) expect(pdfHas(grid, id)).toBe(true);
       }
       expect(ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=pos`, s.owner.token)).pages).toBe(5);
@@ -252,7 +252,7 @@ describe("documents (PDF)", () => {
   describe("finance documents", () => {
     it("with VAT off (the default) delivery invoices don't mention VAT, tax or BIN", async () => {
       const s = await setup();
-      await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatRate: 15, seller: { name: "Delivery Fast Ltd.", bin: "000123456-0101", address: "Gulshan 1, Dhaka" } } } });
+      await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatRate: 15, seller: { name: "Paira Express Ltd.", bin: "000123456-0101", address: "Gulshan 1, Dhaka" } } } });
       const ids = await book(s, 1);
       const shipment = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4`, s.ops.token));
       expect(pdfHas(shipment, "Delivery charge")).toBe(true);

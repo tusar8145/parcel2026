@@ -97,13 +97,13 @@
       ready.active?.postMessage({ type: "version" }, [channel.port2]);
       setInterval(() => document.visibilityState === "visible" && navigator.onLine && reg.update().catch(() => undefined), 30 * 60_000);
     } catch (error) {
-      console.warn("Delivery Fast: the offline app could not be installed", error);
+      console.warn("Paira Express: the offline app could not be installed", error);
     }
   }
 
   window.addEventListener("appinstalled", () => {
     app.installed = true;
-    DF.toast("Delivery Fast is installed. Open it from your home screen.");
+    DF.toast("Paira Express is installed. Open it from your home screen.");
     renderSettingsPanel();
   });
 
@@ -202,7 +202,7 @@
     const offline = navigator.onLine === false;
     $("modalDescription").textContent = items.length
       ? `${items.length} update${items.length === 1 ? "" : "s"} saved on this phone. ${offline ? "They sync automatically when you're back online." : sync.stoppedBy === "signin" ? "Sign in again to sync them." : "They're sent in the order you made them."}`
-      : "Everything you did has reached Delivery Fast.";
+      : "Everything you did has reached Paira Express.";
     $("submitAction").textContent = sync.stoppedBy === "signin" ? "Sign in" : offline ? "Close" : "Sync now";
     $("modalFields").innerHTML = `<div class="field full">${
       items
@@ -241,7 +241,7 @@
       if (discard) {
         event.stopImmediatePropagation();
         const queued = Number(discard.dataset.dfQueueDiscard);
-        void DF.confirm({ title: "Discard this update?", message: "It won't be sent to Delivery Fast.", confirm: "Discard", danger: true }).then(ok => ok && Off.discard(queued).then(() => DF.riderRefresh?.().catch(() => undefined)));
+        void DF.confirm({ title: "Discard this update?", message: "It won't be sent to Paira Express.", confirm: "Discard", danger: true }).then(ok => ok && Off.discard(queued).then(() => DF.riderRefresh?.().catch(() => undefined)));
       }
       const syncNow = event.target.closest("[data-df-sync-now]");
       if (syncNow) {
@@ -293,7 +293,7 @@
     main.insertAdjacentHTML(
       "afterbegin",
       `<div id="dfOfflineStrip" role="status" style="margin-bottom:14px;padding:10px 12px;border-radius:9px;background:var(--amber-soft);color:var(--amber);font-size:13px;font-weight:600">${
-        offline ? "You're offline." : "Delivery Fast can't be reached right now."
+        offline ? "You're offline." : "Paira Express can't be reached right now."
       } ${stale ? `Showing your tasks as saved at ${esc(clock(stale))}.` : ""} Pickups, scans and deliveries you record are saved on this phone and sync automatically.</div>`,
     );
   }
@@ -306,7 +306,7 @@
       if (name === "Settings") renderSettingsPanel(true);
       renderLocationLine();
     } catch (error) {
-      console.error("Delivery Fast: offline extras failed", error);
+      console.error("Paira Express: offline extras failed", error);
     }
   };
 
@@ -431,7 +431,7 @@
         if (Off?.isNetworkError(error)) return gps.keep(body).then(() => "saved");
         if (error.code === "RIDER_OFF_SHIFT") return gps.stop(), "refused";
         if (error.status === 401) return gps.keep(body).then(() => "saved");
-        console.warn("Delivery Fast: location not accepted", error);
+        console.warn("Paira Express: location not accepted", error);
         return "refused";
       }
     },
@@ -577,11 +577,11 @@
 
   function showLocationHelp() {
     void DF.alert?.({
-      title: "Allow location for Delivery Fast",
+      title: "Allow location for Paira Express",
       message:
         "Your browser is blocking location for this app, so dispatch and your recipients can't see where you are. " +
         "Chrome on Android: tap the lock icon next to the address (or ⋮ → Settings → Site settings → Location), choose Allow for this site, then reload the app. " +
-        "Installed app: Android Settings → Apps → Chrome (or Delivery Fast) → Permissions → Location → Allow while using the app. " +
+        "Installed app: Android Settings → Apps → Chrome (or Paira Express) → Permissions → Location → Allow while using the app. " +
         "Also check that the phone's Location is switched on.",
     }) ?? DF.toast("Location is blocked. Allow location for this site in your browser settings, then reload the app.");
   }

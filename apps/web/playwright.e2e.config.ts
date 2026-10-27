@@ -12,7 +12,7 @@ import { defineConfig, devices } from "@playwright/test";
  *                     every spec uses `test` from tests/e2e/support.ts, which forwards the pages' /api/v1
  *                     calls there, the live event stream included
  *   E2E_DATABASE_URL  the database the specs create their temporary accounts in and clean up
- *                     (default postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast)
+ *                     (default postgresql://pairaexpress:pairaexpress@localhost:5432/pairaexpress)
  * The specs use no seeded accounts: staff, super admins, merchants, riders and customers are temporary
  * (tests/e2e/support.ts `Fixtures`) and deleted afterwards.
  */
@@ -29,6 +29,6 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     // The cookie choice is already made, so the consent banner doesn't cover buttons (website.spec.ts tests the banner).
-    storageState: { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: "deliveryfast-cookie-consent", value: JSON.stringify({ analytics: false, at: new Date().toISOString() }) }] }] },
+    storageState: { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: "pairaexpress-cookie-consent", value: JSON.stringify({ analytics: false, at: new Date().toISOString() }) }] }] },
   },
 });

@@ -1,5 +1,5 @@
 /**
- * The Delivery Fast logo mark, everywhere (website, panels, rider app): a big pigeon in flight carrying a letter
+ * The Paira Express logo mark, everywhere (website, panels, rider app): a big pigeon in flight carrying a letter
  * in its claws to deliver. `size` is the width in pixels (the height follows the 36:32 drawing).
  */
 export default function BrandMark({ size = 44 }: { size?: number }) {

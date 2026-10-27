@@ -13,7 +13,7 @@ const linkStyle = { color: "var(--green)", fontWeight: 700, cursor: "pointer" } 
 /** A partner application waiting for this sign-in ("merchant", "rider", "franchise"), if any. */
 export function pendingPartnerRoute(): string {
   try {
-    const route = (sessionStorage.getItem("deliveryfast-customer-return-route") || "").split("/")[0];
+    const route = (sessionStorage.getItem("pairaexpress-customer-return-route") || "").split("/")[0];
     return ["merchant", "rider", "franchise"].includes(route) ? route : "";
   } catch {
     return "";
@@ -138,7 +138,7 @@ function PasswordForm({ onSession, onFlow }: { onSession: (r: SessionUser | MfaC
     <form ref={form.formRef} id="loginForm" className="route-card route-form" data-form="login" data-react="1" noValidate onSubmit={submit}>
       {pendingApplication ? (
         <p className="field full route-reassure" id="loginReturnNote" style={{ margin: 0 }}>
-          {`Sign in to send your ${pendingApplication} application. We'll bring you back to it with what you typed. New to Delivery Fast? `}
+          {`Sign in to send your ${pendingApplication} application. We'll bring you back to it with what you typed. New to Paira Express? `}
           <a href="/signup" data-route="signup">
             {"Create an account →"}
           </a>
@@ -165,7 +165,7 @@ function PasswordForm({ onSession, onFlow }: { onSession: (r: SessionUser | MfaC
         </a>
       </p>
       <p className="field full route-reassure">
-        {"New to Delivery Fast? "}
+        {"New to Paira Express? "}
         <a href="/signup" data-route="signup">
           {"Create an account →"}
         </a>
@@ -305,7 +305,7 @@ function MfaForm({ challenge, onBack }: { challenge: MfaChallenge; onBack: () =>
         Two-step verification
       </h3>
       <p className="field full route-note">
-        {useRecovery ? "Enter one of the recovery codes you saved when you turned on two-step verification. Each code works once." : "Open your authenticator app and enter the 6-digit code for Delivery Fast."}
+        {useRecovery ? "Enter one of the recovery codes you saved when you turned on two-step verification. Each code works once." : "Open your authenticator app and enter the 6-digit code for Paira Express."}
       </p>
       <Field label={useRecovery ? "Recovery code" : "Authentication code"} required htmlFor="mfaCode" error={form.error("mfaCode")}>
         <TextInput

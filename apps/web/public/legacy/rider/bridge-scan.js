@@ -129,7 +129,7 @@
         if (!known(id) && navigator.onLine !== false) await DF.rider.reload().catch(() => undefined);
         await handler?.(id, source);
       })
-      .catch(error => console.error("Delivery Fast: scan failed", error));
+      .catch(error => console.error("Paira Express: scan failed", error));
     return chain;
   }
   const known = id => !!(find(pickups(), id) || find(deliveries(), id) || find(carrying(), id));
@@ -592,7 +592,7 @@
       if (S) draw();
       else q("#mainContent .page-heading")?.insertAdjacentHTML("afterend", cardsPanel());
     } catch (error) {
-      console.error("Delivery Fast: scan actions failed", error);
+      console.error("Paira Express: scan actions failed", error);
     }
   };
   // Leaving the page (or tapping "Scan parcel" in the menu again) ends the session.

@@ -456,8 +456,8 @@ describe("merchants", () => {
       await ctx.app.get(WebhooksService).deliver(test.body.id);
       expect(received).toHaveLength(1);
       const { headers, body } = received[0];
-      expect(headers["x-deliveryfast-event"]).toBe("webhook.test");
-      const [, t, v1] = String(headers["x-deliveryfast-signature"]).match(/^t=(\d+),v1=([0-9a-f]{64})$/)!;
+      expect(headers["x-pairaexpress-event"]).toBe("webhook.test");
+      const [, t, v1] = String(headers["x-pairaexpress-signature"]).match(/^t=(\d+),v1=([0-9a-f]{64})$/)!;
       expect(v1).toBe(hmacSha256(secret, `${t}.${body}`));
       expect(Math.abs(Number(t) - Date.now() / 1000)).toBeLessThan(60);
       expect(JSON.parse(body)).toMatchObject({ id: test.body.id, event: "webhook.test", data: { merchantCode: m.code } });
@@ -474,7 +474,7 @@ describe("merchants", () => {
       expect(rotated.body.secret).not.toBe(secret);
       const second = await ctx.api("POST", `/merchants/me/webhooks/${row.id}/test`, { token: owner.token });
       await ctx.app.get(WebhooksService).deliver(second.body.id);
-      const sig = String(received[1].headers["x-deliveryfast-signature"]).match(/^t=(\d+),v1=(\w+)$/)!;
+      const sig = String(received[1].headers["x-pairaexpress-signature"]).match(/^t=(\d+),v1=(\w+)$/)!;
       expect(sig[2]).toBe(hmacSha256(rotated.body.secret, `${sig[1]}.${received[1].body}`));
       expect(await ctx.prisma.auditLog.count({ where: { entityId: row.id, action: { in: ["webhook.create", "webhook.test", "webhook.rotate_secret"] } } })).toBe(4);
     });

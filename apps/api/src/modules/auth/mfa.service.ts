@@ -12,7 +12,7 @@ import type { RequestMeta } from "../../common/auth/decorators";
 
 /** RFC 6238: 30-second steps, 6 digits, SHA-1 (what authenticator apps expect); ±1 step for clock drift. */
 const totp = authenticator.clone({ step: 30, window: 1, digits: 6 });
-const ISSUER = "Delivery Fast";
+const ISSUER = "Paira Express";
 
 const LOGIN_CHALLENGE_TTL_SECONDS = 10 * 60;
 const SETUP_CHALLENGE_TTL_SECONDS = 15 * 60;

@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:741068300848:android:34f44f1fe827a5db7c83f5",
         "android_client_info": {
-          "package_name": "bd.com.deliveryfast.merchant"
+          "package_name": "bd.com.pairaexpress.merchant"
         }
       },
       "oauth_client": [],
@@ -28,7 +28,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:741068300848:android:9e17dcb5f72fcd767c83f5",
         "android_client_info": {
-          "package_name": "bd.com.deliveryfast.rider"
+          "package_name": "bd.com.pairaexpress.rider"
         }
       },
       "oauth_client": [],

@@ -17,11 +17,11 @@ describe("branding (white label)", () => {
   });
   afterAll(() => ctx.app.close());
 
-  it("is public, with Delivery Fast's details and the default tab icon until changed", async () => {
+  it("is public, with Paira Express's details and the default tab icon until changed", async () => {
     const res = await ctx.api("GET", "/branding");
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ companyName: "Delivery Fast", logoUrl: null, iconUrl: "/api/v1/branding/icon?v=default", custom: false });
-    expect(res.body.contact.email).toBe("info@deliveryfast.com.bd");
+    expect(res.body).toMatchObject({ companyName: "Paira Express", logoUrl: null, iconUrl: "/api/v1/branding/icon?v=default", custom: false });
+    expect(res.body.contact.email).toBe("info@pairaexpress.com.bd");
     // The About page's own text, ready to edit.
     expect(res.body.about.body).toContain("## Our Story");
     expect(res.body.about.intro).toContain("nationwide courier");
@@ -73,10 +73,10 @@ describe("branding (white label)", () => {
   it("messages and the notification brand use the company name", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     const renamed = await ctx.api("PUT", "/branding", { token: admin.token, body: { companyName: "Swift Parcel" } });
-    // The About text not written yet: Delivery Fast's, with the new name.
+    // The About text not written yet: Paira Express's, with the new name.
     expect(renamed.body.about.body).toContain("Swift Parcel was incorporated in 2024");
-    expect(renamed.body.about.body).not.toContain("Delivery Fast");
-    const id = await ctx.app.get(OutboxService).queue(ctx.prisma, { channel: "SMS", to: "+8801700000001", template: "test", body: "Delivery Fast: your parcel is on the way." });
+    expect(renamed.body.about.body).not.toContain("Paira Express");
+    const id = await ctx.app.get(OutboxService).queue(ctx.prisma, { channel: "SMS", to: "+8801700000001", template: "test", body: "Paira Express: your parcel is on the way." });
     expect((await ctx.prisma.outboxMessage.findUniqueOrThrow({ where: { id } })).body).toBe("Swift Parcel: your parcel is on the way.");
     const snap = await ctx.app.get(NotificationSettingsService).snapshot();
     expect(snap.brand).toMatchObject({ appName: "Swift Parcel", support: "Swift Parcel support" });

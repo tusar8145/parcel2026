@@ -176,7 +176,7 @@
       periods[current].activate();
       draw();
     } catch (error) {
-      console.error(`Delivery Fast: the ${current} period could not be drawn`, error);
+      console.error(`Paira Express: the ${current} period could not be drawn`, error);
     }
   };
   // The page on screen when this script loads (bridge-nav.js has already drawn it).

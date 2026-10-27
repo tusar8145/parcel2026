@@ -6,9 +6,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'widgets.dart';
 
 /// The scanner's sound: a short beep for a good scan, an error tone for a refused one (the app's
-/// "deliveryfast/beep" channel, Android's tone generator), with a vibration; the system click if missing.
+/// "pairaexpress/beep" channel, Android's tone generator), with a vibration; the system click if missing.
 class Beep {
-  static const _channel = MethodChannel('deliveryfast/beep');
+  static const _channel = MethodChannel('pairaexpress/beep');
 
   static Future<void> ok() async {
     HapticFeedback.mediumImpact();

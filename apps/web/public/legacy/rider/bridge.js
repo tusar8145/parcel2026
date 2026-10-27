@@ -115,7 +115,7 @@
     const [summary, cash, earnings, myCash] = await Promise.all([
       read("summary", "/rider/summary"),
       read("cash", "/rider/cash"),
-      read("earnings", "/rider/earnings").catch(error => (console.error("Delivery Fast: earnings could not be loaded", error), state.earnings)),
+      read("earnings", "/rider/earnings").catch(error => (console.error("Paira Express: earnings could not be loaded", error), state.earnings)),
       read("myCash", "/rider/my-cash").catch(() => state.myCash),
     ]);
     state.summary = summary;
@@ -166,7 +166,7 @@
   window.addEventListener(
     "storage",
     event => {
-      if (event.key !== "deliveryfast-customer-parcels") return;
+      if (event.key !== "pairaexpress-customer-parcels") return;
       event.stopImmediatePropagation();
       syncDeliveries();
       rerender();
@@ -561,12 +561,12 @@
     try {
       enhance[name]?.(name);
     } catch (error) {
-      console.error(`Delivery Fast: ${name} could not be updated`, error);
+      console.error(`Paira Express: ${name} could not be updated`, error);
     }
     try {
       addCallLinks();
     } catch (error) {
-      console.error("Delivery Fast: call buttons could not be added", error);
+      console.error("Paira Express: call buttons could not be added", error);
     }
   };
 
@@ -661,7 +661,7 @@
     try {
       const outcome = await work();
       closeModal();
-      await refresh().catch(error => console.warn("Delivery Fast: refresh after an update failed", error));
+      await refresh().catch(error => console.warn("Paira Express: refresh after an update failed", error));
       showToast(outcome?.queued ? queuedText(activeId) : success);
     } catch (error) {
       const message = DF.describe(error);
@@ -715,7 +715,7 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         closeModal();
-        return void setShift("OFFLINE", "Shift ended. Thanks for riding with Delivery Fast.");
+        return void setShift("OFFLINE", "Shift ended. Thanks for riding with Paira Express.");
       }
       if (type === "arrive") {
         event.preventDefault();
@@ -966,8 +966,8 @@
   render(page());
   DF.bridgeReady = Promise.resolve();
   void Promise.all([
-    DF.rider.reload().catch(error => console.error("Delivery Fast: rider tasks could not be loaded", error)),
-    loadSummary().catch(error => console.error("Delivery Fast: rider summary could not be loaded", error)),
+    DF.rider.reload().catch(error => console.error("Paira Express: rider tasks could not be loaded", error)),
+    loadSummary().catch(error => console.error("Paira Express: rider summary could not be loaded", error)),
   ]).then(() => {
     syncDeliveries();
     render(page());

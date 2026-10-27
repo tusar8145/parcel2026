@@ -9,7 +9,7 @@
  */
 (() => {
   const DF = window.DF;
-  const RETURN_ROUTE_KEY = "deliveryfast-customer-return-route";
+  const RETURN_ROUTE_KEY = "pairaexpress-customer-return-route";
   const PROOF = { SIGNATURE: "Signature", OTP: "OTP", PHOTO: "Photo" };
   const PARTNER_ROUTES = ["merchant", "rider", "franchise"];
   const ACCOUNT_ROUTES = ["account", "orders"];
@@ -21,21 +21,21 @@
   const currentRoute = () => DF.route.path().split("/")[0] || "home";
 
   // Routes the original page didn't have.
-  routeInfo["verify-email"] = ["Email verification", "Verify your email", "Confirm the email address on your Delivery Fast account."];
+  routeInfo["verify-email"] = ["Email verification", "Verify your email", "Confirm the email address on your Paira Express account."];
 
   // Demo shipments from the original page; real tracking comes from the API.
   for (const id of Object.keys(sampleTracking)) delete sampleTracking[id];
   try {
-    sessionStorage.removeItem("deliveryfast-demo-shipments");
+    sessionStorage.removeItem("pairaexpress-demo-shipments");
   } catch {}
 
   // ───────────── after sign-in (called by the React forms) ─────────────
 
   async function refreshAccount() {
     if (!isCustomer()) return false;
-    const before = localStorage.getItem("deliveryfast-customer-address-book");
+    const before = localStorage.getItem("pairaexpress-customer-address-book");
     const [parcelsChanged] = await Promise.all([DF.parcels.reload(), DF.api("/me/addresses").then(DF.setAddressBook)]);
-    return parcelsChanged || before !== localStorage.getItem("deliveryfast-customer-address-book");
+    return parcelsChanged || before !== localStorage.getItem("pairaexpress-customer-address-book");
   }
 
   async function signedIn(user) {
@@ -145,7 +145,7 @@
       if (heading && note && !card.dataset.application) {
         card.dataset.application = "1";
         const intro = view.querySelector(".route-intro p:last-child");
-        if (intro) intro.textContent = "Your application has been sent to the Delivery Fast team.";
+        if (intro) intro.textContent = "Your application has been sent to the Paira Express team.";
         heading.textContent = "Application received";
         note.textContent = `${lastApplication.title} ${lastApplication.message}`;
       }

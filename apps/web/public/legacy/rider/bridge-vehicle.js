@@ -143,7 +143,7 @@
           paint();
         }
       } catch (error) {
-        console.error("Delivery Fast: vehicle panel failed", error);
+        console.error("Paira Express: vehicle panel failed", error);
       }
     };
   }

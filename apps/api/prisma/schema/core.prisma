@@ -1,4 +1,4 @@
-// Delivery Fast — database schema.
+// Paira Express — database schema.
 // Money is stored as Decimal(12,2) in BDT. All timestamps are UTC.
 // Change this file, then run `npm run db:migrate -- --name <change>` to create a migration.
 
@@ -356,7 +356,7 @@ model Hub {
   collectParcels    Parcel[]              @relation("ParcelCollectHub")
   // merchants whose pickups this hub serves (derived from their pickup zone)
   pickupMerchants   Merchant[]            @relation("MerchantPickupHub")
-  /// COMPANY (run by Delivery Fast) or FRANCHISE (run by a partner: franchise.prisma). Shown with a "Franchise" tag.
+  /// COMPANY (run by Paira Express) or FRANCHISE (run by a partner: franchise.prisma). Shown with a "Franchise" tag.
   type              HubType               @default(COMPANY)
   franchise         Franchise?
   pickupParcels     Parcel[]              @relation("ParcelPickupHub")

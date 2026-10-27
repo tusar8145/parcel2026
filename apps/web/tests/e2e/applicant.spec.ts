@@ -93,7 +93,7 @@ test("rider applicant sets a password in the form, waits on the application page
   await signIn(visitor, phone, PASSWORD);
   await expect(visitor).toHaveURL(/\/application$/, { timeout: 20_000 });
 
-  // A message to Delivery Fast goes on the application's conversation.
+  // A message to Paira Express goes on the application's conversation.
   await visitor.fill("#apReply", `I can start next week ${id}`);
   await visitor.click("#apSendReply");
   await expect(visitor.locator("#apMessages")).toContainText(`I can start next week ${id}`);

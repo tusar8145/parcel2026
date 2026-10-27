@@ -7,7 +7,7 @@
  * day of the Bangladeshi week. The API takes the same days as ?from=YYYY-MM-DD&to=YYYY-MM-DD
  * (inclusive; apps/api/src/common/period.ts). The choice is remembered per page: in the URL
  * (?period=this_week, or ?period=custom&from=…&to=…, so a shared link opens the same period) and in
- * localStorage (`deliveryfast-period:<page>`) as the fallback.
+ * localStorage (`pairaexpress-period:<page>`) as the fallback.
  *
  *   const period = DF.period.control("ops-today", { defaultKey: "today", onChange: state => reload() });
  *   period.activate();               // when the page is shown: URL (deep link) → saved choice → default
@@ -101,7 +101,7 @@
   // ───────────── memory: URL (deep link) and localStorage ─────────────
 
   let urlOwner = null;
-  const storageKey = page => `deliveryfast-period:${page}`;
+  const storageKey = page => `pairaexpress-period:${page}`;
   const fromUrl = () => {
     const params = new URLSearchParams(location.search);
     const key = params.get("period");
@@ -197,7 +197,7 @@
         urlOwner = page;
         writeUrl(state);
         self.sync();
-        Promise.resolve(onChange(self.get())).catch(error => console.error("Delivery Fast: period change failed", error));
+        Promise.resolve(onChange(self.get())).catch(error => console.error("Paira Express: period change failed", error));
       },
       /** "from=…&to=…" for the API. */
       query() {

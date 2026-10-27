@@ -64,13 +64,13 @@ function hero(app: Application, phone: string) {
   const role = app.kind === "RIDER" ? "rider" : "franchise";
   switch (app.status) {
     case "INFO_REQUESTED":
-      return { tone: "amber", icon: ICON.alert, badge: "Not approved yet", title: "Action needed: Delivery Fast needs more information", text: "Read the message below and send your reply. Your application goes back to review as soon as you answer." };
+      return { tone: "amber", icon: ICON.alert, badge: "Not approved yet", title: "Action needed: Paira Express needs more information", text: "Read the message below and send your reply. Your application goes back to review as soon as you answer." };
     case "APPROVED":
       return app.kind === "FRANCHISE"
         ? { tone: "green", icon: ICON.check, badge: "Approved", title: "Approved: we're setting up your franchise hub", text: `Your franchise application is approved. We'll text ${phone} when your franchise panel is ready, then sign in again to open it.` }
-        : { tone: "green", icon: ICON.check, badge: "Approved", title: "Approved: welcome to Delivery Fast", text: "Opening the rider app…" };
+        : { tone: "green", icon: ICON.check, badge: "Approved", title: "Approved: welcome to Paira Express", text: "Opening the rider app…" };
     case "REJECTED":
-      return { tone: "red", icon: ICON.x, badge: "Not approved", title: "Your application wasn't approved", text: app.decisionNote || "Delivery Fast couldn't approve this application. You can apply again with updated details." };
+      return { tone: "red", icon: ICON.x, badge: "Not approved", title: "Your application wasn't approved", text: app.decisionNote || "Paira Express couldn't approve this application. You can apply again with updated details." };
     case "WITHDRAWN":
       return { tone: "red", icon: ICON.x, badge: "Withdrawn", title: "You withdrew this application", text: "You can apply again at any time." };
     default:
@@ -79,14 +79,14 @@ function hero(app: Application, phone: string) {
         icon: ICON.clock,
         badge: "Not approved yet",
         title: `Your ${role} application is being reviewed`,
-        text: `Your account isn't active yet. The Delivery Fast team is reviewing your application and will text ${phone} as soon as there's news. Nothing else is needed from you right now.`,
+        text: `Your account isn't active yet. The Paira Express team is reviewing your application and will text ${phone} as soon as there's news. Nothing else is needed from you right now.`,
       };
   }
 }
 
 /**
  * The application page: the only page a rider or franchise applicant sees until they are approved (APPLICANT
- * role, /application). Status, steps, messages with Delivery Fast (the application's support ticket),
+ * role, /application). Status, steps, messages with Paira Express (the application's support ticket),
  * the details as submitted (read-only), withdraw and sign out. Approval opens their real panel.
  */
 export default function ApplicationApp() {
@@ -178,7 +178,7 @@ export default function ApplicationApp() {
     if (!app) return;
     const body = reply.trim();
     if (body.length < 2) return show("Write your reply first.", true);
-    if (await act("reply", () => df().api(`/support/tickets/${encodeURIComponent(app.number)}/messages`, { method: "POST", body: { body } }), "Reply sent to Delivery Fast.")) {
+    if (await act("reply", () => df().api(`/support/tickets/${encodeURIComponent(app.number)}/messages`, { method: "POST", body: { body } }), "Reply sent to Paira Express.")) {
       setReply("");
       await load();
     }
@@ -186,7 +186,7 @@ export default function ApplicationApp() {
 
   const withdraw = async () => {
     if (!app) return;
-    const ok = await (df().confirm?.({ title: "Withdraw your application?", message: "Delivery Fast stops reviewing it. You can apply again later.", confirm: "Withdraw", danger: true }) ?? Promise.resolve(window.confirm("Withdraw your application?")));
+    const ok = await (df().confirm?.({ title: "Withdraw your application?", message: "Paira Express stops reviewing it. You can apply again later.", confirm: "Withdraw", danger: true }) ?? Promise.resolve(window.confirm("Withdraw your application?")));
     if (!ok) return;
     if (await act("withdraw", () => df().api(`/applications/${encodeURIComponent(app.number)}/withdraw`, { method: "POST" }), "Application withdrawn.")) if (!(await followPanel())) await load();
   };
@@ -209,7 +209,7 @@ export default function ApplicationApp() {
     ? [
         { title: "Application received", note: day(app.createdAt), state: "done" },
         {
-          title: "Review by Delivery Fast",
+          title: "Review by Paira Express",
           note: app.status === "INFO_REQUESTED" ? "Waiting for your reply" : app.status === "REJECTED" ? "Not approved" : app.status === "WITHDRAWN" ? "Withdrawn" : app.status === "APPROVED" ? day(app.decidedAt) : reviewing ? "In progress" : "Soon",
           state: app.status === "APPROVED" ? "done" : app.status === "REJECTED" || app.status === "WITHDRAWN" ? "failed" : "current",
         },
@@ -239,7 +239,7 @@ export default function ApplicationApp() {
   return (
     <div className="ap-shell">
       <header className="ap-top">
-        <a className="ap-brand" href="/" aria-label="Delivery Fast">
+        <a className="ap-brand" href="/" aria-label="Paira Express">
           <b>
             {"delivery "}
             <span>{"fast"}</span>
@@ -292,14 +292,14 @@ export default function ApplicationApp() {
                 </span>
                 <h2>{h.title}</h2>
                 <p>{h.text}</p>
-                {open ? <p className="ap-meta">{`Until your application is approved you can't use the ${app.kind === "RIDER" ? "rider app" : "franchise panel"} or other Delivery Fast services from this account.`}</p> : null}
+                {open ? <p className="ap-meta">{`Until your application is approved you can't use the ${app.kind === "RIDER" ? "rider app" : "franchise panel"} or other Paira Express services from this account.`}</p> : null}
                 {app.status === "REJECTED" || app.status === "WITHDRAWN" ? (
                   <div className="ap-actions">
                     <a className="ap-btn primary" id="apApplyAgain" href={app.kind === "RIDER" ? "/become-a-rider" : "/become-a-franchise"}>
                       {"Apply again"}
                     </a>
                     <button type="button" className="ap-btn" id="apLeave" disabled={busy === "leave"} onClick={() => void leave()}>
-                      {"Close and continue to Delivery Fast"}
+                      {"Close and continue to Paira Express"}
                     </button>
                   </div>
                 ) : null}
@@ -324,7 +324,7 @@ export default function ApplicationApp() {
             <section className="ap-card" id="apMessages">
               <div className="ap-card-head">
                 <div>
-                  <h2>{"Messages with Delivery Fast"}</h2>
+                  <h2>{"Messages with Paira Express"}</h2>
                   <p>{"About your application."}</p>
                 </div>
                 {app.status === "INFO_REQUESTED" ? <span className="ap-badge amber">{"Reply needed"}</span> : null}
@@ -336,7 +336,7 @@ export default function ApplicationApp() {
                   messages.map(m => (
                     <div key={m.id} className={`ap-msg ${m.author.kind}`}>
                       <div className="ap-msg-head">
-                        <b>{m.author.kind === "requester" ? "You" : m.author.kind === "system" ? "Delivery Fast" : m.author.label}</b>
+                        <b>{m.author.kind === "requester" ? "You" : m.author.kind === "system" ? "Paira Express" : m.author.label}</b>
                         <small>{when(m.createdAt)}</small>
                       </div>
                       <p>{m.body}</p>
@@ -348,7 +348,7 @@ export default function ApplicationApp() {
               </div>
               {open ? (
                 <form className="ap-reply" onSubmit={e => void sendReply(e)}>
-                  <label htmlFor="apReply">{app.status === "INFO_REQUESTED" ? "Your reply" : "Write to Delivery Fast"}</label>
+                  <label htmlFor="apReply">{app.status === "INFO_REQUESTED" ? "Your reply" : "Write to Paira Express"}</label>
                   <textarea id="apReply" rows={3} value={reply} onChange={e => setReply(e.target.value)} placeholder="Type your message" maxLength={4000} />
                   <div className="ap-actions">
                     <button type="submit" className="ap-btn primary" id="apSendReply" disabled={busy === "reply"}>

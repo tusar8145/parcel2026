@@ -28,7 +28,7 @@
   const TABLE_COLUMNS = ["sender_name", "sender_phone", "pickup_address", "pickup_district", "pickup_zone", "recipient_name", "recipient_phone", "address", "district", "zone", "area", "cod_amount", "weight_kg", "order_ref", "instructions"];
   const WIDE = { address: 220, pickup_address: 200, instructions: 180 };
   const STATUS = { READING: ["Reading…", "status-blue"], READ: ["Read", "status-good"], FAILED: ["Couldn't read", "status-warn"] };
-  const PREF_KEY = "deliveryfast-scan-choice";
+  const PREF_KEY = "pairaexpress-scan-choice";
   const KEEPALIVE_MS = 60_000;
 
   const icon = body => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;

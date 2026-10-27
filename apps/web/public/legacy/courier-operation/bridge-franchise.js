@@ -82,7 +82,7 @@
     if (Ops.can("receiveCash") || Ops.can("financeStaff")) {
       const deposits = Ops.lazy("franchise-deposits", () => DF.api("/franchise-deposits?status=PENDING"), 20000) || [];
       html.push(
-        `<section class="panel table-panel" id="frDepositsPanel"><div class="panel-heading"><div><h2 class="panel-title">Franchise deposits</h2><p class="panel-subtitle">Cash franchise hubs bring to ${Ops.me?.hubIds ? "your hub" : "Delivery Fast hubs"}: count it and confirm the exact amount.</p></div></div><div class="table-scroll"><table><thead><tr><th>DEPOSIT</th><th>FRANCHISE</th><th>TO HUB</th><th>CASH</th><th>COMMISSION KEPT</th><th>TO RECEIVE</th><th></th></tr></thead><tbody>${
+        `<section class="panel table-panel" id="frDepositsPanel"><div class="panel-heading"><div><h2 class="panel-title">Franchise deposits</h2><p class="panel-subtitle">Cash franchise hubs bring to ${Ops.me?.hubIds ? "your hub" : "Paira Express hubs"}: count it and confirm the exact amount.</p></div></div><div class="table-scroll"><table><thead><tr><th>DEPOSIT</th><th>FRANCHISE</th><th>TO HUB</th><th>CASH</th><th>COMMISSION KEPT</th><th>TO RECEIVE</th><th></th></tr></thead><tbody>${
           deposits
             .map(
               d =>

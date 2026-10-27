@@ -1,4 +1,4 @@
-    const generatedCNStorageKey="deliveryfast-generated-cns";
+    const generatedCNStorageKey="pairaexpress-generated-cns";
     const generatedCNStatuses=["CN generated","Order created","Pickup confirmed","At hub","In transit","Out for delivery","Delivered","Exception","Cancelled"];
     function readGeneratedCNs(){
       const raw=localStorage.getItem(generatedCNStorageKey);

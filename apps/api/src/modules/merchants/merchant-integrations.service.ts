@@ -159,7 +159,7 @@ export class MerchantIntegrationsService {
         data: {
           endpointId: id,
           event: "webhook.test",
-          payload: { event: "webhook.test", createdAt: new Date().toISOString(), data: { message: "Test delivery from Delivery Fast", merchantCode: merchant.code, endpointId: id } },
+          payload: { event: "webhook.test", createdAt: new Date().toISOString(), data: { message: "Test delivery from Paira Express", merchantCode: merchant.code, endpointId: id } },
         },
       });
       await this.audit.record(actor, { action: "webhook.test", entityType: "webhook_endpoint", entityId: id, data: { merchantId: merchant.id, deliveryId: created.id } }, meta, tx);

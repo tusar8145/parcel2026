@@ -20,7 +20,7 @@ Test timeout of 420000ms exceeded.
 ```yaml
 - generic [active] [ref=f10e1]:
   - complementary [ref=f10e2]:
-    - generic [ref=f10e3]: delivery fast
+    - generic [ref=f10e3]: paira express
     - generic [ref=f10e20]:
       - generic [ref=f10e21]: ER
       - generic [ref=f10e22]:

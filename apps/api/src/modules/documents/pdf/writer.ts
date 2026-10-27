@@ -133,7 +133,7 @@ export class PdfWriter {
       autoFirstPage: false,
       lang: "en-BD",
       displayTitle: true,
-      info: { Title: opts.title, Subject: opts.subject ?? opts.title, Author: opts.author ?? "Delivery Fast", Creator: "Delivery Fast", Producer: "Delivery Fast documents" },
+      info: { Title: opts.title, Subject: opts.subject ?? opts.title, Author: opts.author ?? "Paira Express", Creator: "Paira Express", Producer: "Paira Express documents" },
     });
     const fonts = loadFonts();
     for (const [key, buf] of Object.entries(fonts)) this.doc.registerFont(key, buf);
@@ -299,7 +299,7 @@ export class PdfWriter {
     this.doc.restore();
   }
 
-  /** The Delivery Fast mark: a pigeon in flight carrying a letter (as on the website and panels), `size` points wide. */
+  /** The Paira Express mark: a pigeon in flight carrying a letter (as on the website and panels), `size` points wide. */
   logo(x: number, y: number, size: number) {
     const d = this.doc;
     const ink = "#344054";

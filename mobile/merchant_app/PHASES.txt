@@ -1,4 +1,4 @@
-DELIVERY FAST MERCHANT APP - PHASES
+PAIRA EXPRESS MERCHANT APP - PHASES
 ====================================
 
 One Android app (Flutter) for both merchant types. It adapts to the signed-in merchant:
@@ -65,5 +65,5 @@ can open them as web pages inside the app:
 PLAY STORE (when ready)
 -----------------------
  - Google Play developer account ($25, one time).
- - The app is already signed with the Delivery Fast upload key
+ - The app is already signed with the Paira Express upload key
    (E:\delivery-fast\keys - keep it safe; every update must use the same key).

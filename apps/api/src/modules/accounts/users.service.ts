@@ -148,7 +148,7 @@ export class UsersService {
           .notifyNow({
             event: "account.invite",
             to: { userId: user.id, phone: input.phone, email: input.email, name: input.name },
-            vars: { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", role: staff.join(" and "), link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
+            vars: { inviter: actor.kind === "user" ? actor.name : "Paira Express", role: staff.join(" and "), link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
           })
           .catch(() => undefined);
       return this.get(user.id);

@@ -1,9 +1,9 @@
-DELIVERY FAST COURIER OPERATIONS APP - PLAN
+PAIRA EXPRESS COURIER OPERATIONS APP - PLAN
 ===========================================
 
 Android app (Flutter) for operations staff, next to the merchant and rider apps (mobile/).
-Status: PHASE 1 BUILT (27 Oct 2026) - mobile/ops_app, package bd.com.deliveryfast.operations,
-  "Delivery Fast Operations" 1.0.0, with push notifications. APK on the Courier Operations sidebar
+Status: PHASE 1 BUILT (27 Oct 2026) - mobile/ops_app, package bd.com.pairaexpress.operations,
+  "Paira Express Operations" 1.0.0, with push notifications. APK on the Courier Operations sidebar
   ("Get the operations app", /downloads/delivery-fast-operations.apk).
 Written 26 Oct 2026; updated 26 Oct 2026 with the owner's decisions:
   - hub operators and operations managers both get the app from Phase 1;
@@ -104,8 +104,8 @@ PHASE 3 - OPTIONAL  [about 3-4 days]
 
 TECHNICAL
 ---------
- - New app: mobile/ops_app (package bd.com.deliveryfast.operations), signed with the same
-   Delivery Fast key, APK download link in Courier Operations' sidebar.
+ - New app: mobile/ops_app (package bd.com.pairaexpress.operations), signed with the same
+   Paira Express key, APK download link in Courier Operations' sidebar.
  - Roles: OPS_MANAGER and HUB_OPERATOR (custom roles based on them too); the hubs a
    person can see come from the API, as in the web panel.
  - Handheld scanners: the scan screen also listens for keyboard-wedge input (scanner

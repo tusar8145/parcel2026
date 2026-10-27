@@ -1,7 +1,7 @@
 /*
  * Connects the super admin panel to the API.
  *
- * - Platform settings: every write the page makes to the "deliveryfast-demo-config" key
+ * - Platform settings: every write the page makes to the "pairaexpress-demo-config" key
  *   (notifications, service plans, rider plans, catalogs…) is saved with
  *   PUT /settings/platform-config, so every page sees it. Nothing is kept in this browser.
  * - Server-owned data replaces the samples: merchants and registrations (/merchants), service
@@ -19,7 +19,7 @@
  */
 (() => {
   const DF = window.DF;
-  const CONFIG_KEY = "deliveryfast-demo-config";
+  const CONFIG_KEY = "pairaexpress-demo-config";
   const plansUI = window.DFServicePlans; // exposed by 03.js
   const STAFF_ROLES = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
   const ROLE_LABEL = {
@@ -1008,7 +1008,7 @@
       if (type === "inviteMerchant" && !window.DFMerchantAdmin) {
         stop(event);
         showToast(
-          "Email invitations aren't available yet. Ask the business to apply from its Delivery Fast account; the application then appears here for review.",
+          "Email invitations aren't available yet. Ask the business to apply from its Paira Express account; the application then appears here for review.",
         );
       }
     },

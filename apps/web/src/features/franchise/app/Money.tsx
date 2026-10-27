@@ -59,7 +59,7 @@ export default function Money({ me }: { me: Me }) {
         <div>
           <p className="fr-eyebrow">{me.hub.name}</p>
           <h1>Money & invoices</h1>
-          <p>{me.settlementMode === "DEDUCT" ? "Deposit the cash you hold at a Delivery Fast hub; you keep your commission from it." : `Deposit all the cash you hold; Delivery Fast pays your commission every ${me.billingPeriodDays} days.`}</p>
+          <p>{me.settlementMode === "DEDUCT" ? "Deposit the cash you hold at a Paira Express hub; you keep your commission from it." : `Deposit all the cash you hold; Paira Express pays your commission every ${me.billingPeriodDays} days.`}</p>
         </div>
         <button type="button" className="fr-btn primary" id="frDeposit" disabled={!c || !(c.onHand > 0) || c.remittances.some(r => r.status === "PENDING")} onClick={() => setDepositing(true)}>
           Deposit cash
@@ -71,7 +71,7 @@ export default function Money({ me }: { me: Me }) {
           <section className="fr-metrics" id="frCash" aria-label="Cash">
             <Metric label="Cash you hold" value={tk(c.onHand)} foot={`COD ${tk(c.codOnHand)} · counter ${tk(c.counterOnHand)}`} tone="warn" />
             <Metric label="Cash with your riders" value={tk(c.withRiders)} foot={c.pendingHandovers ? `${c.pendingHandovers} waiting to hand over` : "Nothing waiting"} />
-            <Metric label="Commission not settled" value={tk(c.unsettledCommission)} foot={c.settlementMode === "DEDUCT" ? "Kept from your next deposit" : "Paid by Delivery Fast"} tone="accent" />
+            <Metric label="Commission not settled" value={tk(c.unsettledCommission)} foot={c.settlementMode === "DEDUCT" ? "Kept from your next deposit" : "Paid by Paira Express"} tone="accent" />
           </section>
 
           <section className="fr-card" aria-label="Rider cash">
@@ -127,7 +127,7 @@ export default function Money({ me }: { me: Me }) {
             <div className="fr-card-head">
               <div>
                 <h2>Deposits</h2>
-                <p>Cash you took to a Delivery Fast hub. The hub confirms it when it counts the cash.</p>
+                <p>Cash you took to a Paira Express hub. The hub confirms it when it counts the cash.</p>
               </div>
             </div>
             {c.remittances.length ? (
@@ -212,7 +212,7 @@ export default function Money({ me }: { me: Me }) {
                   <tr key={i.id} data-invoice={i.number}>
                     <td>
                       <strong>{i.number}</strong>
-                      <small>{i.settlement === "DEDUCTED" ? "Kept from deposits" : "Paid by Delivery Fast"}</small>
+                      <small>{i.settlement === "DEDUCTED" ? "Kept from deposits" : "Paid by Paira Express"}</small>
                     </td>
                     <td>{`${day(i.periodFrom)} – ${day(i.periodTo)}`}</td>
                     <td className="num">{tk(i.amount)}</td>
@@ -289,7 +289,7 @@ function DepositDialog({ me, cash, onClose, onDone }: { me: Me; cash: Cash; onCl
   const d = cash.depositNow;
   return (
     <Dialog title="Deposit cash" subtitle="Take the cash to the hub you choose; the hub counts it and confirms." onClose={onClose}>
-      <Field label="Delivery Fast hub" htmlFor="frDepositHub">
+      <Field label="Paira Express hub" htmlFor="frDepositHub">
         <select id="frDepositHub" value={hubId} onChange={e => setHubId(e.target.value)}>
           {me.depositHubs.map(h => (
             <option key={h.id} value={h.id}>{`${h.name} (${h.district})`}</option>

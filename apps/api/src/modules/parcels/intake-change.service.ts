@@ -141,7 +141,7 @@ export class IntakeChangeService {
     const description = [
       hub
         ? `Bring the parcel to ${hub.name} (${hub.address}). It is on its way once the hub receives it.`
-        : "A Delivery Fast rider will collect the parcel from the pickup address. There is no need to bring it to a hub.",
+        : "A Paira Express rider will collect the parcel from the pickup address. There is no need to bring it to a hub.",
       releasedRiderId ? "The pickup rider assignment was released." : "",
       priceChanged ? `Delivery charge updated from Tk ${money(oldCharge)} to Tk ${money(price.totalCharge)}.` : "",
     ]

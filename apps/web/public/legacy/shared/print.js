@@ -140,7 +140,7 @@
     return open(`/documents/${kind}`, { ...options, method: "POST", body: { ...params, ids: list } });
   }
 
-  const LABEL_FORMAT_KEY = "deliveryfast-label-format";
+  const LABEL_FORMAT_KEY = "pairaexpress-label-format";
   const labelFormat = () => {
     try {
       return localStorage.getItem(LABEL_FORMAT_KEY) === "thermal" ? "thermal" : "a4";

@@ -59,7 +59,7 @@ export class MoneyController {
   @Put("accounts/config")
   @ApiZodBody(updateAccountsConfigSchema)
   async setConfig(@CurrentUser() actor: UserActor, @ZBody(updateAccountsConfigSchema) body: z.infer<typeof updateAccountsConfigSchema>, @ReqMeta() meta: RequestMeta) {
-    if (body.centralHubId && !(await this.prisma.hub.count({ where: { id: body.centralHubId, active: true, type: { not: "FRANCHISE" } } }))) throw forbidden("Choose an active Delivery Fast hub");
+    if (body.centralHubId && !(await this.prisma.hub.count({ where: { id: body.centralHubId, active: true, type: { not: "FRANCHISE" } } }))) throw forbidden("Choose an active Paira Express hub");
     await this.prisma.$transaction(async tx => {
       const before = await readAccountsConfig(tx);
       await tx.setting.upsert({ where: { key: ACCOUNTS_CONFIG_KEY }, create: { key: ACCOUNTS_CONFIG_KEY, value: body }, update: { value: body } });

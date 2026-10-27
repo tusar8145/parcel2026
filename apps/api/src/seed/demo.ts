@@ -37,11 +37,11 @@ const RIDERS = [
 ] as const;
 
 const STAFF: { name: string; phone: string; email: string; role: Role; hub?: string }[] = [
-  { name: "Super Admin", phone: "+8801700000001", email: "admin@deliveryfast.example", role: "SUPER_ADMIN" },
-  { name: "Arif Mahmud", phone: "+8801700000002", email: "ops@deliveryfast.example", role: "OPS_MANAGER" },
-  { name: "Hub Operator Gulshan", phone: "+8801700000003", email: "hub.gulshan@deliveryfast.example", role: "HUB_OPERATOR", hub: "DHK-GUL" },
-  { name: "Finance Desk", phone: "+8801700000004", email: "finance@deliveryfast.example", role: "FINANCE" },
-  { name: "Support Desk", phone: "+8801700000005", email: "support@deliveryfast.example", role: "SUPPORT_AGENT" },
+  { name: "Super Admin", phone: "+8801700000001", email: "admin@pairaexpress.example", role: "SUPER_ADMIN" },
+  { name: "Arif Mahmud", phone: "+8801700000002", email: "ops@pairaexpress.example", role: "OPS_MANAGER" },
+  { name: "Hub Operator Gulshan", phone: "+8801700000003", email: "hub.gulshan@pairaexpress.example", role: "HUB_OPERATOR", hub: "DHK-GUL" },
+  { name: "Finance Desk", phone: "+8801700000004", email: "finance@pairaexpress.example", role: "FINANCE" },
+  { name: "Support Desk", phone: "+8801700000005", email: "support@pairaexpress.example", role: "SUPPORT_AGENT" },
 ];
 
 const MERCHANTS = [
@@ -133,7 +133,7 @@ async function main() {
     await grant(owner.id, "MERCHANT_OWNER", { merchantId: merchant.id });
   }
 
-  const customer = await user({ name: "Rahim Uddin", phone: "+8801711000000", email: "customer@deliveryfast.example" }, passwordHash);
+  const customer = await user({ name: "Rahim Uddin", phone: "+8801711000000", email: "customer@pairaexpress.example" }, passwordHash);
   await grant(customer.id, "CUSTOMER");
 
   for (const [segment, name] of [
@@ -152,7 +152,7 @@ async function main() {
     ...STAFF.map(s => ({ role: s.role, login: s.email, phone: s.phone })),
     ...MERCHANTS.map(m => ({ role: `MERCHANT_OWNER (${m.name})`, login: m.owner.email, phone: m.owner.phone })),
     ...RIDERS.map(r => ({ role: `RIDER ${r.code}`, login: r.phone.replace("+88", ""), phone: r.phone })),
-    { role: "CUSTOMER", login: "customer@deliveryfast.example", phone: "+8801711000000" },
+    { role: "CUSTOMER", login: "customer@pairaexpress.example", phone: "+8801711000000" },
   ]);
 }
 

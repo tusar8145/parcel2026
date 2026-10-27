@@ -14,13 +14,13 @@ type Props = { params: Promise<{ slug?: string[] }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug = [] } = await params;
   const match = routeForSegments(slug);
-  if (!match) return { title: "Delivery Fast — Page not found", robots: { index: false } };
+  if (!match) return { title: "Paira Express — Page not found", robots: { index: false } };
   const { route, param } = match;
   if (route.legacy === "tracking" && param)
     // A tracking result is personal and changes all the time: never indexed.
     return pageMetadata({
       path: `track/${encodeURIComponent(param)}`,
-      title: `Delivery Fast — Track ${param.toUpperCase()}`,
+      title: `Paira Express — Track ${param.toUpperCase()}`,
       description: `Delivery status and history for parcel ${param.toUpperCase()}.`,
       index: false,
     });

@@ -17,7 +17,7 @@ describe("staff invitations", () => {
     const msgs = await ctx.prisma.outboxMessage.findMany({ where: { template: "account.invite", to: { in: [phone, "karim@example.com"] } } });
     expect(msgs.map(m => m.channel).sort()).toEqual(["EMAIL", "SMS"]);
     const sms = msgs.find(m => m.channel === "SMS")!;
-    expect(sms.body).toContain("Ayesha Admin added you to Delivery Fast as Finance Administrator");
+    expect(sms.body).toContain("Ayesha Admin added you to Paira Express as Finance Administrator");
     expect(sms.body).toMatch(/\/login$/);
 
     const customerPhone = nextPhone();

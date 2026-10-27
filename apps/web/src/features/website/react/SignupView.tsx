@@ -21,7 +21,7 @@ function SignupForm() {
   useEffect(() => {
     if (!inviteToken()) return;
     try {
-      sessionStorage.setItem("deliveryfast-customer-return-route", "merchant");
+      sessionStorage.setItem("pairaexpress-customer-return-route", "merchant");
     } catch {}
   }, []);
   const [pendingApplication] = useState(() => pendingPartnerRoute() || (inviteToken() ? "merchant" : ""));
@@ -72,7 +72,7 @@ function SignupForm() {
           password: form.values.signupPassword,
           otp: form.values.signupOtp.trim(),
         });
-        toast("Your Delivery Fast account is ready.");
+        toast("Your Paira Express account is ready.");
         // Ask the new customer to confirm their email address (link + code by email).
         if (email) void df().auth.emailVerification.send().then(r => r.sent && toast(r.message)).catch(() => undefined);
         await site()?.signedIn(user);
@@ -93,7 +93,7 @@ function SignupForm() {
 
   return (
     <div className="route-card">
-      <h2>{pendingApplication ? "Create your Delivery Fast account" : "Join as a customer"}</h2>
+      <h2>{pendingApplication ? "Create your Paira Express account" : "Join as a customer"}</h2>
       {pendingApplication ? (
         <p className="route-note" id="signupReturnNote">
           {`After you confirm your number we'll bring you back to your ${pendingApplication} application with what you typed.`}

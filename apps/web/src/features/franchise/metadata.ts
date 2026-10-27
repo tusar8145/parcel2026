@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Delivery Fast — Franchise panel",
-  applicationName: "Delivery Fast Franchise",
+  title: "Paira Express — Franchise panel",
+  applicationName: "Paira Express Franchise",
   robots: { index: false, follow: false },
 };
 

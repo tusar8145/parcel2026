@@ -20,7 +20,7 @@ export const financeConfigSchema = z.object({
   vatRate: z.number().min(0, "VAT rate can't be negative").max(50, "VAT rate looks too high").multipleOf(0.01).default(15),
   seller: z
     .object({
-      name: z.string().trim().min(2).max(160).default("Delivery Fast Ltd."),
+      name: z.string().trim().min(2).max(160).default("Paira Express Ltd."),
       /** 13-digit e-BIN (9 digits + 4-digit branch suffix accepted, e.g. 000123456-0101). */
       bin: z
         .string()
@@ -29,7 +29,7 @@ export const financeConfigSchema = z.object({
         .default(""),
       address: z.string().trim().max(300).default(""),
     })
-    .default({ name: "Delivery Fast Ltd.", bin: "", address: "" }),
+    .default({ name: "Paira Express Ltd.", bin: "", address: "" }),
   /** Days after issue an invoice is due. */
   invoiceTermDays: z.number().int().min(0).max(120).default(15),
 });

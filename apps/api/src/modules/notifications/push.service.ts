@@ -273,7 +273,7 @@ export class PushService {
             token,
             notification: { title: m.title.slice(0, 160), ...(m.body ? { body: m.body.slice(0, 500) } : {}) },
             data: m.data ?? {},
-            android: { priority: "HIGH", notification: { channel_id: "deliveryfast", icon: "ic_stat_notify", color: "#2F55C9", default_sound: true } },
+            android: { priority: "HIGH", notification: { channel_id: "pairaexpress", icon: "ic_stat_notify", color: "#2F55C9", default_sound: true } },
           },
         }),
         signal: AbortSignal.timeout(FCM_TIMEOUT_MS),

@@ -1,7 +1,7 @@
 /*
  * White label on every page (website and panels; started by <BrandingRuntime/> in the root layout): the company
  * set in Super admin › Branding & company (GET /api/v1/branding) replaces the default one where pages show it -
- * the name ("Delivery Fast" in text, titles and the "delivery fast" wordmark), the logo (the pigeon mark), the
+ * the name ("Paira Express" in text, titles and the "paira express" wordmark), the logo (the pigeon mark), the
  * browser tab icon and the contact details (phone, email, address, also in tel: / mailto: links). Nothing else
  * changes.
  *
@@ -24,10 +24,10 @@ export interface BrandingView {
 }
 
 const DEFAULT = {
-  name: "Delivery Fast",
+  name: "Paira Express",
   phone: "01969 921122",
   tel: "+8801969921122",
-  email: "info@deliveryfast.com.bd",
+  email: "info@pairaexpress.com.bd",
   address: "House-6 Road -2A Banani, Dhaka-1213",
 };
 const KEY = "df.branding.v1";
@@ -117,15 +117,15 @@ function fixElement(el: Element) {
   // The two-tone wordmark: "delivery <span>fast</span>" → the company name, its last word in the accent colour.
   const html = el as HTMLElement;
   if (el.matches(".brand-word, .brand-name") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name) {
-    if ((el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "delivery fast") {
+    if ((el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "paira express") {
       const words = b.companyName.trim().split(/\s+/);
       const last = words.pop();
       el.innerHTML = `${words.length ? `${esc(words.join(" "))} ` : ""}<span>${esc(last)}</span>`;
       html.dataset.brandDone = "1";
     }
   }
-  // The name painted on the van in the website's hero ("delivery fast", lower case), made smaller to fit the van.
-  if (el.matches(".van-logo") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim().toLowerCase() === "delivery fast") {
+  // The name painted on the van in the website's hero ("paira express", lower case), made smaller to fit the van.
+  if (el.matches(".van-logo") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim().toLowerCase() === "paira express") {
     el.textContent = b.companyName.trim().toLowerCase();
     html.style.whiteSpace = "nowrap";
     const room = 92; // the van body is 115px wide, the text starts 18px in

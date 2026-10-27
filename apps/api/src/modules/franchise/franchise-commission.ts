@@ -82,7 +82,7 @@ export async function recordFranchiseCommission(db: Db, ledger: LedgerService | 
   });
 }
 
-/** A franchise rider's pay for a task, from its franchise's rates (outside Delivery Fast payroll). */
+/** A franchise rider's pay for a task, from its franchise's rates (outside Paira Express payroll). */
 export function franchiseRiderRate(f: Pick<FranchiseRates, "riderPickupRate" | "riderDeliveryRate" | "riderReturnRate">, type: CommissionType) {
   return Number(type === "PICKUP" ? f.riderPickupRate : type === "DELIVERY" ? f.riderDeliveryRate : f.riderReturnRate);
 }

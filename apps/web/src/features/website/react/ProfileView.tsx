@@ -64,7 +64,7 @@ export default function ProfileView() {
   return (
     <div className="route-card">
       <h2>Profile details</h2>
-      <p className="route-note">Update the contact information on your Delivery Fast account.</p>
+      <p className="route-note">Update the contact information on your Paira Express account.</p>
       <form ref={form.formRef} id="profileForm" className="route-form customer-profile-form" data-form="profile" data-react="1" noValidate onSubmit={submit}>
         <Field label="Full name" required htmlFor="profileName" error={form.error("profileName")}>
           <TextInput bound={form.bind("profileName")} error={form.error("profileName")} autoComplete="name" />

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
  * (anonymous page views, POST /analytics/pageview) only after the visitor agrees.
  * The choice is kept in this browser for 12 months.
  */
-export const CONSENT_KEY = "deliveryfast-cookie-consent";
+export const CONSENT_KEY = "pairaexpress-cookie-consent";
 const MAX_AGE_MS = 365 * 86_400_000;
 
 type Consent = { analytics: boolean; at: string };

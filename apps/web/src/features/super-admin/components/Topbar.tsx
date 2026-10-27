@@ -7,7 +7,7 @@ export default function Topbar() {
         </svg>
       </button>
       <div className="breadcrumb">
-        {"Delivery Fast platform "}
+        {"Paira Express platform "}
         <span style={{ padding: "0 7px", color: "#c0c7d0" }}>/</span>
         <strong id="breadcrumbPage">Overview</strong>
       </div>

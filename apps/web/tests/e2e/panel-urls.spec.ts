@@ -97,7 +97,7 @@ test("Courier Operations: page and tab links, old names, Back / Forward, titles 
   const page = await signIn(browser, OPS, "/courier-operation?page=hub-desk&tab=end-of-day&period=today", errors);
   await expect(page.locator("#breadcrumbLabel")).toHaveText("Hub desk");
   await expect(page.locator('#mainContent [data-nav-tab="End of day"]')).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveTitle("Hub desk › End of day · Delivery Fast · Courier Operations");
+  await expect(page).toHaveTitle("Hub desk › End of day · Paira Express · Courier Operations");
   expect(query(page)).toMatchObject({ page: "hub-desk", tab: "end-of-day", period: "today" });
 
   // Menu and tabs push history entries.
@@ -105,7 +105,7 @@ test("Courier Operations: page and tab links, old names, Back / Forward, titles 
   await expect.poll(() => query(page)).toMatchObject({ page: "problems", tab: "exceptions" });
   await page.click('#mainContent [data-nav-tab="Failed delivery"]');
   await expect.poll(() => query(page).tab).toBe("failed-delivery");
-  await expect(page).toHaveTitle("Problems › Failed delivery · Delivery Fast · Courier Operations");
+  await expect(page).toHaveTitle("Problems › Failed delivery · Paira Express · Courier Operations");
   await page.goBack();
   await expect(page.locator('#mainContent [data-nav-tab="Exceptions"]')).toHaveAttribute("aria-selected", "true");
   await page.goBack();
@@ -179,7 +179,7 @@ test("merchant panel: page links, Back / Forward, the live bell and the Notifica
   // The old Payments link opens Balance.
   const page = await signIn(browser, OWNER, "/ecommerce-merchant?page=payments", errors);
   await expect(page.locator("#breadcrumbPage")).toHaveText("Balance");
-  await expect(page).toHaveTitle("Balance · Delivery Fast · E-commerce merchant");
+  await expect(page).toHaveTitle("Balance · Paira Express · E-commerce merchant");
   await page.click('#navigation [data-page="Shipments"]');
   await expect.poll(() => query(page).page).toBe("shipments");
   await page.click('#navigation [data-page="Reports"]');
@@ -224,7 +224,7 @@ test("merchant panel: page links, Back / Forward, the live bell and the Notifica
   await page.goto("/ecommerce-merchant?page=notifications");
   await ready(page);
   await expect(page.locator("#breadcrumbPage")).toHaveText("Notifications");
-  await expect(page).toHaveTitle("Notifications · Delivery Fast · E-commerce merchant");
+  await expect(page).toHaveTitle("Notifications · Paira Express · E-commerce merchant");
   await expect(page.locator("#dfnList .dfn-item", { hasText: `${order.trackingId} was cancelled` })).toBeVisible();
   await page.click('[data-dfn-filter="unread"]');
   await expect(page.locator("#dfnList")).toContainText("No unread notifications.");
@@ -239,12 +239,12 @@ test("banking merchant, super admin and rider: page and tab links", async ({ bro
   // The old Billing link opens Balance.
   const banking = await signIn(browser, BANKER, "/banking-merchant?page=billing", errors);
   await expect(banking.locator("#breadcrumbPage")).toHaveText("Balance");
-  await expect(banking).toHaveTitle("Balance · Delivery Fast · Banking & Financial merchant");
+  await expect(banking).toHaveTitle("Balance · Paira Express · Banking & Financial merchant");
   await banking.context().close();
 
   const admin = await signInAdmin(browser, "/super-admin?page=import-settings&tab=e-commerce", errors);
   await expect(admin.locator('#importSettings [data-import-tab="ecommerce"]')).toHaveAttribute("aria-selected", "true");
-  await expect(admin).toHaveTitle("Excel Import settings › E-commerce template · Delivery Fast · Super admin");
+  await expect(admin).toHaveTitle("Excel Import settings › E-commerce template · Paira Express · Super admin");
   await admin.click('#importSettings [data-import-tab="document"]');
   await expect.poll(() => query(admin).tab).toBe("banking-and-financial");
   await admin.goBack();
@@ -252,7 +252,7 @@ test("banking merchant, super admin and rider: page and tab links", async ({ bro
   await admin.goto("/super-admin?page=Approvals");
   await ready(admin);
   await expect.poll(() => query(admin).page).toBe("approval-center");
-  await expect(admin).toHaveTitle("Approval center · Delivery Fast · Super admin");
+  await expect(admin).toHaveTitle("Approval center · Paira Express · Super admin");
   await admin.click("#notifications");
   await expect(admin.locator("#notificationsPanel")).toBeVisible();
   await admin.click("#notificationsPanel [data-dfn-all]");
@@ -262,7 +262,7 @@ test("banking merchant, super admin and rider: page and tab links", async ({ bro
 
   const rider = await signIn(browser, RIDER, "/rider?page=scan-parcel&tab=handover", errors);
   await expect(rider.locator("#dfScanSession")).toHaveAttribute("data-section", "handover");
-  await expect(rider).toHaveTitle("Scan parcel › Hand over at hub · Delivery Fast · Rider");
+  await expect(rider).toHaveTitle("Scan parcel › Hand over at hub · Paira Express · Rider");
   await rider.click("[data-df-scan-back]");
   await expect.poll(() => query(rider).tab).toBeUndefined();
   await rider.goto("/rider?page=Earnings");

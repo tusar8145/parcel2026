@@ -51,7 +51,7 @@ function serviceDetail(code: string, segment: PackageSegment, p: PackagePrices):
     case "first.rider_pickup":
       return { detail: "A rider collects parcels from your pickup address.", price: "No extra charge" };
     case "first.hub_drop":
-      return { detail: "Bring parcels to a Delivery Fast hub yourself.", price: p.hubDropDiscount > 0 ? `You save ${tk(p.hubDropDiscount)} per parcel` : "No extra charge" };
+      return { detail: "Bring parcels to a Paira Express hub yourself.", price: p.hubDropDiscount > 0 ? `You save ${tk(p.hubDropDiscount)} per parcel` : "No extra charge" };
     case "first.on_demand_pickup":
       return { detail: "Urgent pickup, dispatched before regular pickups.", price: fee(p.onDemandPickupFee) };
     case "last.doorstep":
@@ -93,7 +93,7 @@ function serviceDetail(code: string, segment: PackageSegment, p: PackagePrices):
     case "integration.webhooks":
       return { detail: "Status updates sent to your server as they happen." };
     case "integration.push":
-      return { detail: "Your notifications arrive as push messages on your phone in the Delivery Fast Merchant app." };
+      return { detail: "Your notifications arrive as push messages on your phone in the Paira Express Merchant app." };
     default:
       return { detail: "" };
   }

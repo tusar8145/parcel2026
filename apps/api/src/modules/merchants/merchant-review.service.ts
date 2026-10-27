@@ -27,8 +27,8 @@ const noteView = (n: MerchantNote, opts: { staff: boolean }) => ({
   kind: n.kind,
   body: n.body,
   internal: n.internal,
-  // Applicants see "Delivery Fast" for staff messages, never staff names.
-  author: opts.staff || n.kind === "APPLICANT_RESPONSE" ? n.authorName : "Delivery Fast",
+  // Applicants see "Paira Express" for staff messages, never staff names.
+  author: opts.staff || n.kind === "APPLICANT_RESPONSE" ? n.authorName : "Paira Express",
   authorId: opts.staff ? n.authorId : undefined,
   at: n.createdAt,
 });
@@ -116,7 +116,7 @@ export class MerchantReviewService {
 
   // ───────────── applicant side ─────────────
 
-  /** The applicant's view: status, rejection reason and the conversation with Delivery Fast. */
+  /** The applicant's view: status, rejection reason and the conversation with Paira Express. */
   async myReview(actor: Actor, merchantId: string | undefined) {
     const m = await this.merchants.resolveOwn(actor, merchantId, { allowInactive: true });
     const messages = await this.prisma.merchantNote.findMany({ where: { merchantId: m.id, internal: false }, orderBy: { createdAt: "asc" }, take: 200 });
@@ -134,7 +134,7 @@ export class MerchantReviewService {
     const m = await this.merchants.resolveOwn(actor, merchantId, { ownerOnly: true, allowInactive: true });
     await this.prisma.$transaction(async tx => {
       const { count } = await tx.merchant.updateMany({ where: { id: m.id, status: "INFO_REQUESTED" }, data: { status: "PENDING_REVIEW" } });
-      if (!count) throw conflict("NO_INFO_REQUESTED", "Delivery Fast hasn't asked for more information");
+      if (!count) throw conflict("NO_INFO_REQUESTED", "Paira Express hasn't asked for more information");
       await tx.merchantNote.create({ data: { merchantId: m.id, kind: "APPLICANT_RESPONSE", body: input.message, internal: false, authorId: userOf(actor), authorName: actorLabel(actor) } });
       await this.audit.record(actor, { action: "merchant.applicant_response", entityType: "merchant", entityId: m.id, data: {} }, meta, tx);
     });

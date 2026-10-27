@@ -106,7 +106,7 @@ export class GatewaysService {
       return new MramSmsGateway({ apiKey: s.apiKey!, senderId: c.senderId!, baseUrl: c.baseUrl || DEFAULT_MRAM_URL });
     }
     const c = row!.config as EmailConfig;
-    return new MailjetEmailGateway({ apiKey: s.apiKey!, apiSecret: s.apiSecret!, fromEmail: c.fromEmail!, fromName: c.fromName || "Delivery Fast", baseUrl: c.baseUrl || DEFAULT_MAILJET_URL });
+    return new MailjetEmailGateway({ apiKey: s.apiKey!, apiSecret: s.apiSecret!, fromEmail: c.fromEmail!, fromName: c.fromName || "Paira Express", baseUrl: c.baseUrl || DEFAULT_MAILJET_URL });
   }
 
   /**
@@ -183,7 +183,7 @@ export class GatewaysService {
             ? { senderId: config.senderId ?? "", baseUrl: config.baseUrl || DEFAULT_MRAM_URL, apiKey: mask(secrets.apiKey) }
             : {
                 fromEmail: config.fromEmail ?? "",
-                fromName: config.fromName ?? "Delivery Fast",
+                fromName: config.fromName ?? "Paira Express",
                 baseUrl: config.baseUrl || DEFAULT_MAILJET_URL,
                 apiKey: mask(secrets.apiKey),
                 apiSecret: mask(secrets.apiSecret),
@@ -238,7 +238,7 @@ export class GatewaysService {
       result =
         channel === "SMS"
           ? (await this.client("SMS", row).sendSms([{ id: "test", to, body: content.body }]))[0]
-          : (await this.client("EMAIL", row).sendEmail([{ id: "test", to, subject: content.subject ?? "Delivery Fast test email", text: content.body, html: content.html ?? `<p>${content.body}</p>` }]))[0];
+          : (await this.client("EMAIL", row).sendEmail([{ id: "test", to, subject: content.subject ?? "Paira Express test email", text: content.body, html: content.html ?? `<p>${content.body}</p>` }]))[0];
     } catch (error) {
       if (error instanceof AppError) throw error;
       result = { id: "test", ok: false, error: error instanceof GatewayError ? error.message : `Unexpected error: ${(error as Error).message}` };

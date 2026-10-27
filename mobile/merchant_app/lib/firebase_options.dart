@@ -1,6 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 
-/// Firebase settings of this app (bd.com.deliveryfast.merchant), from android/app/google-services.json (project
+/// Firebase settings of this app (bd.com.pairaexpress.merchant), from android/app/google-services.json (project
 /// delivery-fast-a0cf8). Not secret: they identify the app to Firebase; sending needs the server's key.
 const firebaseOptions = FirebaseOptions(
   apiKey: 'AIzaSyBh7Qt06YdL8XjSTe04pYzeLOYG5AmgRjE',

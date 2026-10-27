@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Delivery Fast",
-  "short_name": "Delivery Fast",
-  "description": "Delivery Fast website and workspaces.",
+  "name": "Paira Express",
+  "short_name": "Paira Express",
+  "description": "Paira Express website and workspaces.",
   "start_url": "/login?source=pwa",
   "scope": "/",
   "display": "standalone",

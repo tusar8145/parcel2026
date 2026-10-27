@@ -116,16 +116,16 @@ test("invited new merchant signs up and applies end to end", async ({ browser })
   await adminPage.click("#dfmDialog [data-dfm-close]");
   await expect(adminPage.locator("#dfmDialog")).toHaveCount(0);
 
-  // The SMS: a clear invitation (no "Delivery Fast added you to Delivery Fast"), linking to the application.
+  // The SMS: a clear invitation (no "Paira Express added you to Paira Express"), linking to the application.
   const [sms] = await sql<{ body: string; template: string }>(`SELECT body, template FROM outbox_messages WHERE "to" = $1 AND channel = 'SMS' ORDER BY "createdAt" DESC LIMIT 1`, [`+880${local}`]);
   expect(sms.template).toBe("merchant.invite");
-  expect(sms.body).toBe(`You're invited to join Delivery Fast as an E-commerce merchant (${business}). Create your account and apply here: ${link.href}`);
+  expect(sms.body).toBe(`You're invited to join Paira Express as an E-commerce merchant (${business}). Create your account and apply here: ${link.href}`);
 
   // The merchant opens the link, signed out.
   const page = await open(browser, errors);
   await page.goto(link.pathname + link.search);
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
-  await expect(page.locator("#inviteNotice")).toContainText(`You're invited to join Delivery Fast as an E-commerce merchant (${business})`);
+  await expect(page.locator("#inviteNotice")).toContainText(`You're invited to join Paira Express as an E-commerce merchant (${business})`);
   await expect(page.locator("#merchantAccountType")).toHaveValue("E-commerce merchant");
   await expect(page.locator("#merchantAccountType")).toBeDisabled();
   await expect(page.locator("#partnerName")).toHaveValue(business);

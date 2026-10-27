@@ -173,7 +173,7 @@
     } else {
       const button = (event, channel, c) => {
         const name = channel === "sms" ? "SMS" : "Email";
-        if (!c.available) return `<button type="button" class="button button-sm" disabled title="Switched off for everyone by Delivery Fast">${name} · off</button>`;
+        if (!c.available) return `<button type="button" class="button button-sm" disabled title="Switched off for everyone by Paira Express">${name} · off</button>`;
         if (c.locked) return `<button type="button" class="button button-sm" disabled title="Security messages can't be switched off">${name} · always</button>`;
         return `<button type="button" class="button button-sm${c.enabled ? " button-primary" : ""}" data-df-pref-event="${esc(event)}" data-df-pref-channel="${channel}" aria-pressed="${c.enabled}" ${state.saving ? "disabled" : ""}>${name} · ${c.enabled ? "on" : "off"}</button>`;
       };
@@ -191,7 +191,7 @@
           .join("") || `<p class="panel-subtitle" style="margin-top:12px">There are no notifications to set up for your account.</p>`;
       if (locked.length) body += `<p class="panel-subtitle" style="margin-top:10px">Always sent: ${esc(locked.map(e => e.label).join(", "))}.</p>`;
     }
-    return `<section class="panel" id="dfPrefsPanel" style="margin-top:14px"><div class="panel-heading"><div><h2 class="panel-title">Notification settings</h2><p class="panel-subtitle">Choose which messages Delivery Fast sends you</p></div></div><div style="margin-top:8px">${body}</div></section>`;
+    return `<section class="panel" id="dfPrefsPanel" style="margin-top:14px"><div class="panel-heading"><div><h2 class="panel-title">Notification settings</h2><p class="panel-subtitle">Choose which messages Paira Express sends you</p></div></div><div style="margin-top:8px">${body}</div></section>`;
   }
 
   async function togglePref(event, channel) {
@@ -264,7 +264,7 @@
       if (name === "Settings") renderPanels();
       if (name === "Overview") overviewReminder();
     } catch (error) {
-      console.error("Delivery Fast: settings extras failed", error);
+      console.error("Paira Express: settings extras failed", error);
     }
   };
 

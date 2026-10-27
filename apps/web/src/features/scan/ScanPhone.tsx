@@ -132,7 +132,7 @@ export default function ScanPhone({ token }: { token: string }) {
         />
       ) : null}
       <header>
-        <strong>Delivery Fast</strong>
+        <strong>Paira Express</strong>
         <span>Scan parcels</span>
       </header>
       {expired ? (

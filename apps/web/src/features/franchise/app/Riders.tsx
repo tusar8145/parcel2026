@@ -41,7 +41,7 @@ export default function Riders({ me, onRatesSaved }: { me: Me; onRatesSaved: () 
         <div>
           <p className="fr-eyebrow">{me.hub.name}</p>
           <h1>Riders</h1>
-          <p>Your own riders. They work only for your hub and sign in to the Delivery Fast rider app.</p>
+          <p>Your own riders. They work only for your hub and sign in to the Paira Express rider app.</p>
         </div>
         <button type="button" className="fr-btn primary" id="frAddRider" onClick={() => setAdding(true)}>
           Add rider
@@ -52,7 +52,7 @@ export default function Riders({ me, onRatesSaved }: { me: Me; onRatesSaved: () 
         <div className="fr-card-head">
           <div>
             <h2>What you pay your riders</h2>
-            <p>Per task, for every rider of your hub. You pay them yourself; Delivery Fast shows what each one has earned.</p>
+            <p>Per task, for every rider of your hub. You pay them yourself; Paira Express shows what each one has earned.</p>
           </div>
         </div>
         <form className="fr-form" onSubmit={saveRates} id="frRatesForm">

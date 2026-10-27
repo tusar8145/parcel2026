@@ -1,6 +1,6 @@
 # Production deployment (PM2 + Apache)
 
-How to run Delivery Fast on one Linux server (Ubuntu/Debian commands) with PM2 keeping the
+How to run Paira Express on one Linux server (Ubuntu/Debian commands) with PM2 keeping the
 processes alive and Apache in front for the domain and HTTPS. For Docker, see `docker-compose.yml`
 and `docs/development.md`.
 
@@ -30,15 +30,15 @@ sudo npm i -g pm2
 
 ```bash
 sudo -u postgres psql
-CREATE USER deliveryfast WITH PASSWORD 'strong-password';
-CREATE DATABASE deliveryfast OWNER deliveryfast ENCODING 'UTF8';
+CREATE USER pairaexpress WITH PASSWORD 'strong-password';
+CREATE DATABASE pairaexpress OWNER pairaexpress ENCODING 'UTF8';
 \q
 ```
 
 ## 3. Code and environment
 
 ```bash
-cd /var/www && git clone <repo-url> deliveryfast && cd deliveryfast
+cd /var/www && git clone <repo-url> pairaexpress && cd pairaexpress
 ```
 
 Create `apps/api/.env` (the API and the worker read it from their working directory):
@@ -48,14 +48,14 @@ NODE_ENV=production
 PORT=4000
 APP_URL=https://yourdomain.com
 CORS_ORIGINS=https://yourdomain.com
-DATABASE_URL=postgresql://deliveryfast:strong-password@localhost:5432/deliveryfast
+DATABASE_URL=postgresql://pairaexpress:strong-password@localhost:5432/pairaexpress
 REDIS_URL=redis://localhost:6379
 JWT_ACCESS_SECRET=<output of: openssl rand -base64 48>
 ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 EXPOSE_DEV_OTP=false
 TRUST_PROXY=true
 RUN_WORKERS=false
-FILE_STORAGE_DIR=/var/www/deliveryfast-files
+FILE_STORAGE_DIR=/var/www/pairaexpress-files
 # Optional: the address phones open "Scan with phone" links on (default APP_URL).
 # SCAN_LINK_ORIGIN=https://app.example.com
 # Optional: local AI that reads scanned labels (section 9). Unset = rules only.
@@ -96,7 +96,7 @@ Legacy panel scripts are content-versioned and cached immutably by the browser. 
 website quietly prefetches them when the browser is idle (except on data-saver or slow 2G
 connections); after a deploy, only changed scripts need a new download.
 
-The website and panels share the **Delivery Fast** installable app (`/deliveryfast.webmanifest`).
+The website and panels share the **Paira Express** installable app (`/pairaexpress.webmanifest`).
 The root-scoped service worker caches only static assets; the Rider panel keeps its separate
 offline task/action queue service worker.
 
@@ -132,7 +132,7 @@ curl http://127.0.0.1:4000/api/v1/health/ready       # database + Redis should b
 sudo a2enmod proxy proxy_http headers rewrite ssl
 ```
 
-`/etc/apache2/sites-available/deliveryfast.conf`:
+`/etc/apache2/sites-available/pairaexpress.conf`:
 
 ```apache
 <VirtualHost *:80>
@@ -156,7 +156,7 @@ sudo a2enmod proxy proxy_http headers rewrite ssl
 ```
 
 ```bash
-sudo a2ensite deliveryfast && sudo systemctl reload apache2
+sudo a2ensite pairaexpress && sudo systemctl reload apache2
 sudo certbot --apache -d yourdomain.com              # adds the HTTPS virtual host
 ```
 
@@ -210,12 +210,12 @@ super admin setting takes precedence when it is on.
 ## 9a. Installing for another company (white label)
 
 Super admin › **Branding & company** sets the company the platform runs for. No code changes are needed:
-- the company name (it replaces "Delivery Fast" in headers, page and tab titles, SMS, emails and PDFs);
+- the company name (it replaces "Paira Express" in headers, page and tab titles, SMS, emails and PDFs);
 - the legal name, tagline and website;
 - the logo (it replaces the pigeon mark) and the **browser tab icon**;
 - the phone, email, address and opening hours;
 - social links;
-- the website's **About** page. The editor opens with the current text. It has headings, cards, number tiles and lists (the format is shown under the box). **Restore original About text** brings Delivery Fast's text back, with the new name in it. `/about` is read on every visit.
+- the website's **About** page. The editor opens with the current text. It has headings, cards, number tiles and lists (the format is shown under the box). **Restore original About text** brings Paira Express's text back, with the new name in it. `/about` is read on every visit.
 
 Pages pick up a change within a minute.
 
@@ -282,8 +282,8 @@ The password line from `README.md` is already in a commit on GitHub. Change that
 
 **1. Go to the app folder and back up the database**
 ```bash
-cd /var/www/deliveryfast
-pg_dump -U deliveryfast -h localhost deliveryfast > ~/backup-$(date +%F-%H%M).sql
+cd /var/www/pairaexpress
+pg_dump -U pairaexpress -h localhost pairaexpress > ~/backup-$(date +%F-%H%M).sql
 ```
 
 **2. Get the new code**

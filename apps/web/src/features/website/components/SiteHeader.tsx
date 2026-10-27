@@ -56,7 +56,7 @@ export default function SiteHeader({ legacy = false }: { legacy?: boolean }) {
       {" "}
       <div className="shell nav">
         {" "}
-        <a className="brand" href="/" aria-label="Delivery Fast home">
+        <a className="brand" href="/" aria-label="Paira Express home">
           <span className="brand-mark" style={{ width: 46, height: 46 }}>
             <BrandMark />
           </span>

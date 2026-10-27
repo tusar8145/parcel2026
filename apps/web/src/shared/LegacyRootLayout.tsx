@@ -39,7 +39,7 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
   return (
     <html lang="en">
       <head>
-        <link rel="manifest" href="/deliveryfast.webmanifest" />
+        <link rel="manifest" href="/pairaexpress.webmanifest" />
         {/* The browser tab icon (Super admin › Branding & company; a default icon until one is uploaded). */}
         <link rel="icon" href="/api/v1/branding/icon" />
         <style dangerouslySetInnerHTML={{ __html: BOOT_CSS }} />

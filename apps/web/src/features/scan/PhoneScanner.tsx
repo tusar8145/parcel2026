@@ -236,7 +236,7 @@ export default function PhoneScanner({ token }: { token: string }) {
       <style>{CSS}</style>
       <header className="psc-head">
         <div>
-          <strong>{"Delivery Fast · Phone scanner"}</strong>
+          <strong>{"Paira Express · Phone scanner"}</strong>
           <span>{view ? `${view.panel} · ${view.name}` : "Connecting…"}</span>
         </div>
         <span className="psc-count">{view ? `${view.scans} scan${view.scans === 1 ? "" : "s"}` : ""}</span>

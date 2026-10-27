@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f7fa">
-  <title>Delivery Fast — Super admin</title>
+  <title>Paira Express — Super admin</title>
   <style>
     :root{--ink:#182230;--muted:#7b8796;--line:#e9edf2;--canvas:#f5f7fa;--surface:#fff;--blue:#3766e8;--blue-soft:#edf2ff;--green:#16845b;--green-soft:#e8f7f0;--amber:#b87913;--amber-soft:#fff5df;--red:#c34d4d;--red-soft:#fff0ef;--sidebar:248px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
     *{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--canvas);font-size:14px}button,input,select,textarea{font:inherit}button{cursor:pointer}
@@ -96,7 +96,7 @@
     <div class="sidebar-bottom"><a class="ops-link" href="courier.html"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7"><use href="#i-truck"/></svg> Open courier operations console ↗</a><div class="admin-profile"><div class="avatar">AM</div><div class="profile-meta"><strong>Alex Morgan</strong><small>Super administrator</small></div><span style="color:#98a2ae">···</span></div></div>
   </aside>
   <main class="main">
-    <header class="topbar"><button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-menu"/></svg></button><div class="breadcrumb">Delivery Fast platform <span style="padding:0 7px;color:#c0c7d0">/</span><strong id="breadcrumbPage">Overview</strong></div><div class="top-actions"><span class="environment"><i></i> SUPER ADMIN</span><div class="search-wrap"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-search"/></svg><input class="top-search" id="globalSearch" placeholder="Search merchants..." aria-label="Search merchants"></div><button class="icon-button" id="notifications" aria-label="Notifications"><svg fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-bell"/></svg><i class="notification-dot"></i></button><div class="avatar">AM</div></div></header>
+    <header class="topbar"><button class="mobile-menu" id="mobileMenu" aria-label="Open navigation"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-menu"/></svg></button><div class="breadcrumb">Paira Express platform <span style="padding:0 7px;color:#c0c7d0">/</span><strong id="breadcrumbPage">Overview</strong></div><div class="top-actions"><span class="environment"><i></i> SUPER ADMIN</span><div class="search-wrap"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-search"/></svg><input class="top-search" id="globalSearch" placeholder="Search merchants..." aria-label="Search merchants"></div><button class="icon-button" id="notifications" aria-label="Notifications"><svg fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-bell"/></svg><i class="notification-dot"></i></button><div class="avatar">AM</div></div></header>
     <section class="content" id="mainContent"></section>
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -119,11 +119,11 @@
       {id:"MER-10038",name:"Metro Bank Cards",owner:"Rafi Ahmed",email:"desk@citydocs.example",plan:"Business",type:"Document merchant",services:"Cards · Document express",joined:"May 11, 2025",shipments:"522",status:"Suspended"}
     ];
     const adminUsers=[
-      ["Alex Morgan","alex@deliveryfast.example","Super Administrator","Platform-wide","Active","Today, 8:12 AM"],
-      ["Nadia Chowdhury","nadia@deliveryfast.example","Finance Admin","COD & billing","Active","Today, 9:04 AM"],
-      ["Farid Ahmed","farid@deliveryfast.example","Operations Admin","Courier operations","Active","Today, 7:52 AM"],
-      ["Samira Khan","samira@deliveryfast.example","Merchant Support","Merchant accounts","Active","Yesterday, 5:46 PM"],
-      ["Tanvir Alam","tanvir@deliveryfast.example","Hub Manager","Dhaka Central","Invited","Oct 13, 2026"]
+      ["Alex Morgan","alex@pairaexpress.example","Super Administrator","Platform-wide","Active","Today, 8:12 AM"],
+      ["Nadia Chowdhury","nadia@pairaexpress.example","Finance Admin","COD & billing","Active","Today, 9:04 AM"],
+      ["Farid Ahmed","farid@pairaexpress.example","Operations Admin","Courier operations","Active","Today, 7:52 AM"],
+      ["Samira Khan","samira@pairaexpress.example","Merchant Support","Merchant accounts","Active","Yesterday, 5:46 PM"],
+      ["Tanvir Alam","tanvir@pairaexpress.example","Hub Manager","Dhaka Central","Invited","Oct 13, 2026"]
     ];
     const serviceRows=[
       ["Customer parcel","Public pickup request","Sender-paid delivery · optional COD collection","Enabled","Active"],
@@ -186,7 +186,7 @@
       ["DF-261015-28381","Customer parcel","—","Pending operations confirmation","Website request · Dhaka","Today, 9:42 AM"]
     ];
     function recentCustomerParcelActivity(){
-      try{const rows=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");return Array.isArray(rows)?rows.filter(row=>row&&row.trackingId).map(row=>[row.trackingId,row.sender||"Customer parcel","—",row.status||"Pickup requested",row.destination||"Website request",row.createdAt||"Recently"]):[]}
+      try{const rows=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");return Array.isArray(rows)?rows.filter(row=>row&&row.trackingId).map(row=>[row.trackingId,row.sender||"Customer parcel","—",row.status||"Pickup requested",row.destination||"Website request",row.createdAt||"Recently"]):[]}
       catch(error){console.error("Customer parcel activity could not be loaded.",error);return[]}
     }
     function platformActivityPage(){
@@ -307,13 +307,13 @@
     const serviceLevelFees={Regular:0,"Same day":30,Express:50};
     const documentTypeRates={"B2B Document":60,"Trade Service Document":80,"Corporate Urgent Document":120,Curtout:100};
     const merchantDiscounts=Object.fromEntries(merchants.map(m=>[m.id,m.discount||0]));
-    const sharedConfigKey="deliveryfast-demo-config";
+    const sharedConfigKey="pairaexpress-demo-config";
     const merchantPricing={ecommerce:{sameZone:70,crossZone:120,extraWeight:20,returnPercent:50,serviceFees:{"Same day":30,Express:50}},document:{sameZone:60,crossZone:100,returnPercent:50,documentRates:{"B2B Document":60,"Trade Service Document":80,"Corporate Urgent Document":120,Curtout:100}}};
     const customerParcelPricing={sameZone:70,crossZone:120,extraWeight:20,codFeePercent:1,serviceFees:{Regular:0,"Same day":30,Express:50}};
-    const customerParcelStorageKey="deliveryfast-customer-parcels";
+    const customerParcelStorageKey="pairaexpress-customer-parcels";
     const merchantEventCatalog={ecommerce:["Order confirmation","Pickup SMS","Out for delivery SMS","Delivery SMS","Return SMS"],document:["Document pickup SMS","Secure transit update","Delivery OTP","Recipient signature confirmation","Sender delivery SMS","Return notification"]};
     const merchantSettings={ecommerce:{sms:true,email:true,cod:true,returns:true,events:[...merchantEventCatalog.ecommerce]},document:{sms:true,email:true,deliveryOtp:true,signatureProof:true,events:[...merchantEventCatalog.document]}};
-    function readSharedAdminConfig(){try{const saved=localStorage.getItem(sharedConfigKey);return saved?JSON.parse(saved):{}}catch(error){console.error("Delivery Fast demo configuration could not be loaded.",error);return{}}}
+    function readSharedAdminConfig(){try{const saved=localStorage.getItem(sharedConfigKey);return saved?JSON.parse(saved):{}}catch(error){console.error("Paira Express demo configuration could not be loaded.",error);return{}}}
     const restoredAdminConfig=readSharedAdminConfig();
     if(restoredAdminConfig.channels)Object.assign(adminChannels,restoredAdminConfig.channels);
     if(Array.isArray(restoredAdminConfig.notifications)){notificationEvents.splice(0,notificationEvents.length,...restoredAdminConfig.notifications)}
@@ -335,7 +335,7 @@
     if(restoredAdminConfig.customerParcelPricing)Object.assign(customerParcelPricing,restoredAdminConfig.customerParcelPricing);
     if(restoredAdminConfig.merchantSettings)for(const type of Object.keys(merchantSettings))if(restoredAdminConfig.merchantSettings[type])Object.assign(merchantSettings[type],restoredAdminConfig.merchantSettings[type]);
     if(Array.isArray(restoredAdminConfig.entitlements))for(const saved of restoredAdminConfig.entitlements){const current=serviceEntitlements.find(item=>item.id===saved.id);if(current)for(const key of ["ecommerce","domestic","document","cod"])if(typeof saved[key]==="boolean")current[key]=saved[key]}
-    function persistAdminConfig(){try{const current=readSharedAdminConfig();localStorage.setItem(sharedConfigKey,JSON.stringify({...current,channels:adminChannels,notifications:notificationEvents,deliveryServices,documentTypes,returnReasons,receiverRelations,ecommercePackaging,documentPackaging,ecommerceProducts,documentProducts,geoCatalog,geoHierarchy,deliveryRates,serviceLevelFees,documentTypeRates,merchantDiscounts,merchantPricing,customerParcelPricing:current.customerParcelPricing||customerParcelPricing,merchantSettings,entitlements:serviceEntitlements}));return true}catch(error){console.error("Delivery Fast demo configuration could not be saved.",error);showToast("Configuration was not saved in this browser. Please check browser storage permissions.");return false}}
+    function persistAdminConfig(){try{const current=readSharedAdminConfig();localStorage.setItem(sharedConfigKey,JSON.stringify({...current,channels:adminChannels,notifications:notificationEvents,deliveryServices,documentTypes,returnReasons,receiverRelations,ecommercePackaging,documentPackaging,ecommerceProducts,documentProducts,geoCatalog,geoHierarchy,deliveryRates,serviceLevelFees,documentTypeRates,merchantDiscounts,merchantPricing,customerParcelPricing:current.customerParcelPricing||customerParcelPricing,merchantSettings,entitlements:serviceEntitlements}));return true}catch(error){console.error("Paira Express demo configuration could not be saved.",error);showToast("Configuration was not saved in this browser. Please check browser storage permissions.");return false}}
     const adminEscape=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const priorAdminShow=showPage;
     function configPanel(title,subtitle,body){return `<section class="panel"><div class="panel-heading"><div><h2 class="panel-title">${title}</h2><p class="panel-subtitle">${subtitle}</p></div></div>${body}</section>`}
@@ -447,7 +447,7 @@
   </script>
   <script>
     (() => {
-      const adminPlanConfigKey="deliveryfast-demo-config";
+      const adminPlanConfigKey="pairaexpress-demo-config";
       const planNames=["Starter","Growth","Business","Enterprise"];
       const serviceLabels={
         pickupConfirmedSms:"Pickup confirmed SMS",outForDeliverySms:"Out for delivery SMS",deliverySms:"Delivery SMS",deliveryOtpSms:"Delivery OTP SMS",returnSms:"Return SMS",

@@ -127,7 +127,7 @@ export class NotificationsAdminController {
   @HttpCode(200)
   @ApiZodBody(testSmsSchema)
   testSms(@CurrentActor() actor: Actor, @ZBody(testSmsSchema) body: z.infer<typeof testSmsSchema>, @ReqMeta() meta: RequestMeta) {
-    return this.gateways.sendTest(actor, "SMS", body.phone, { body: body.message ?? "Delivery Fast test message: your SMS gateway works." }, meta);
+    return this.gateways.sendTest(actor, "SMS", body.phone, { body: body.message ?? "Paira Express test message: your SMS gateway works." }, meta);
   }
 
   /** Sends ONE real email through the gateway to the address given (also in development). */
@@ -136,8 +136,8 @@ export class NotificationsAdminController {
   @HttpCode(200)
   @ApiZodBody(testEmailSchema)
   testEmail(@CurrentActor() actor: Actor, @ZBody(testEmailSchema) body: z.infer<typeof testEmailSchema>, @ReqMeta() meta: RequestMeta) {
-    const text = body.message ?? "This is a test email from Delivery Fast. Your email gateway works.";
-    return this.gateways.sendTest(actor, "EMAIL", body.email, { subject: body.subject ?? "Delivery Fast test email", body: text, html: `<p>${text.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</p>` }, meta);
+    const text = body.message ?? "This is a test email from Paira Express. Your email gateway works.";
+    return this.gateways.sendTest(actor, "EMAIL", body.email, { subject: body.subject ?? "Paira Express test email", body: text, html: `<p>${text.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</p>` }, meta);
   }
 
   /** Recent messages (bodies hidden: they can contain codes). */

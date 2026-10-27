@@ -122,7 +122,7 @@ export class FranchisePanelService {
     if (!hubId) throw forbidden("This account doesn't run a franchise");
     const franchise = await this.prisma.franchise.findUnique({ where: { hubId }, include: franchiseInclude });
     if (!franchise) throw forbidden("This account doesn't run a franchise");
-    if (franchise.status !== "ACTIVE") throw new AppError("FRANCHISE_SUSPENDED", "This franchise is suspended. Contact Delivery Fast support.", HttpStatus.FORBIDDEN);
+    if (franchise.status !== "ACTIVE") throw new AppError("FRANCHISE_SUSPENDED", "This franchise is suspended. Contact Paira Express support.", HttpStatus.FORBIDDEN);
     return franchise;
   }
 
@@ -398,7 +398,7 @@ export class FranchisePanelService {
     };
   }
 
-  /** Records the franchise paying its rider all unpaid earnings (no Delivery Fast ledger entry: the franchise pays). */
+  /** Records the franchise paying its rider all unpaid earnings (no Paira Express ledger entry: the franchise pays). */
   async payRider(actor: UserActor, id: string, input: z.infer<typeof riderPaymentSchema>, meta: RequestMeta) {
     const f = await this.context(actor);
     const rider = await this.prisma.rider.findUnique({ where: { id }, select: { hubId: true } });

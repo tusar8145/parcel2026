@@ -268,9 +268,9 @@ export class MerchantsService {
   /** An unexpired, unused invitation for this link token (or a clear error). */
   async validInvite(db: Db, token: string) {
     const invite = await db.merchantInvite.findUnique({ where: { tokenHash: sha256(token) } });
-    if (!invite || invite.revokedAt) throw new AppError("INVITE_INVALID", "This invitation link isn't valid. Ask Delivery Fast for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
-    if (invite.acceptedAt) throw new AppError("INVITE_USED", "This invitation was already used. If you sent the application, sign in to follow it; otherwise ask Delivery Fast for a new link.", HttpStatus.CONFLICT);
-    if (invite.expiresAt < new Date()) throw new AppError("INVITE_EXPIRED", "This invitation has expired. Ask Delivery Fast for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
+    if (!invite || invite.revokedAt) throw new AppError("INVITE_INVALID", "This invitation link isn't valid. Ask Paira Express for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
+    if (invite.acceptedAt) throw new AppError("INVITE_USED", "This invitation was already used. If you sent the application, sign in to follow it; otherwise ask Paira Express for a new link.", HttpStatus.CONFLICT);
+    if (invite.expiresAt < new Date()) throw new AppError("INVITE_EXPIRED", "This invitation has expired. Ask Paira Express for a new one.", HttpStatus.UNPROCESSABLE_ENTITY);
     return invite;
   }
 
@@ -598,7 +598,7 @@ export class MerchantsService {
           ? "Your new address is saved."
           : hub
             ? `Pickups now go through ${hub.name}.`
-            : "No hub serves the new pickup area yet; Delivery Fast will set one up."
+            : "No hub serves the new pickup area yet; Paira Express will set one up."
         : (input.note ?? "");
       outbox.push(
         ...(await this.notify.notify(tx, {

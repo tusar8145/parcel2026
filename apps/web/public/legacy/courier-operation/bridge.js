@@ -16,7 +16,7 @@
  */
 (() => {
   const DF = window.DF;
-  const PARCELS_KEY = "deliveryfast-customer-parcels";
+  const PARCELS_KEY = "pairaexpress-customer-parcels";
   const ROLE_LABEL = { SUPER_ADMIN: "Super admin", OPS_MANAGER: "Operations manager", HUB_OPERATOR: "Hub operator", FINANCE: "Finance", SUPPORT_AGENT: "Support agent" };
   const $ = id => document.getElementById(id);
   const esc = value => courierEscape(value);
@@ -114,7 +114,7 @@
       .catch(error => {
         Ops.cache[key] = { value: entry?.value, at: Date.now(), loading: false, error };
         if (Ops.page() === page) Ops.rerender();
-        if (error?.status !== 403) console.error(`Delivery Fast: ${key} could not be loaded`, error);
+        if (error?.status !== 403) console.error(`Paira Express: ${key} could not be loaded`, error);
       });
     return entry?.value;
   };
@@ -347,7 +347,7 @@
     try {
       Ops.prepare[page]?.(page);
     } catch (error) {
-      console.error(`Delivery Fast: ${page} data could not be prepared`, error);
+      console.error(`Paira Express: ${page} data could not be prepared`, error);
     }
     if (Ops.pages[page]) renderAddedPage(page);
     else baseRender(page);
@@ -355,7 +355,7 @@
       Ops.enhance["*"]?.(page);
       Ops.enhance[page]?.(page);
     } catch (error) {
-      console.error(`Delivery Fast: ${page} could not be updated`, error);
+      console.error(`Paira Express: ${page} could not be updated`, error);
     }
     Ops.rendering = null;
     const again = typing && $(typing.id);

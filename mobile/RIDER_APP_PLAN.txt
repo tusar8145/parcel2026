@@ -1,4 +1,4 @@
-DELIVERY FAST RIDER APP - IMPLEMENTATION PLAN
+PAIRA EXPRESS RIDER APP - IMPLEMENTATION PLAN
 =============================================
 
 Android app (Flutter) for riders, next to the merchant app (mobile/merchant_app).

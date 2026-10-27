@@ -42,7 +42,7 @@ interface Stored extends Partial<Omit<Branding, "contact" | "social" | "about">>
   icon?: string | null;
 }
 
-/** The default browser tab icon: the Delivery Fast pigeon carrying a letter. */
+/** The default browser tab icon: the Paira Express pigeon carrying a letter. */
 const DEFAULT_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 32"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(-1.2 -0.6) scale(1.2)"><path d="M14.2 12.6C12.4 7.4 14.4 2.9 20.4 1.2c-1.2 3.9-.4 7.6 2.4 10.6Z" fill="#2f55c9" opacity=".55"/><path d="M11.6 13.2C9.2 9.4 9.6 5.2 13.4 2.2c.3 3.9 2 7.1 5.4 9.6Z" fill="#2f55c9"/><path d="M2.4 12.4 8 14.6 2.8 17.2Z" fill="#2f55c9"/><path d="M7.2 14.6c2.2-2.6 6.6-3.4 11-2.6 2.2.4 3.8-.2 5-1.3 1.4-1.3 3.6-1 4.3.5l1.8.7-1.8.9c-.3 1.3-.9 2.4-1.9 3.3-1.9 1.9-5 2.9-8.7 2.9-4.3 0-7.6-1.2-9.7-4.4Z" fill="#2f55c9"/><path d="M27.5 11.2 30.4 11.9 27.6 12.8Z" fill="#fcc118"/><circle cx="25.8" cy="11.1" r=".75" fill="#fff"/></g><g transform="rotate(-8 22 27)"><rect x="15.6" y="22.6" width="12.4" height="8.4" rx="1.3" fill="#fff8df" stroke="#fcc118" stroke-width="1.6"/><path d="M16 23.1 21.8 27.4 27.6 23.1" stroke="#fcc118" stroke-width="1.3"/></g></g></svg>`;
 
 const hashOf = (s: string) => createHash("sha1").update(s).digest("hex").slice(0, 12);
@@ -80,7 +80,7 @@ export class BrandingService {
       website: s.website ?? DEFAULT_BRANDING.website,
       contact: { ...DEFAULT_BRANDING.contact, ...(s.contact ?? {}) },
       social: { ...DEFAULT_BRANDING.social, ...(s.social ?? {}) },
-      // Until super admin writes their own, the About page is Delivery Fast's, with the company's name in it.
+      // Until super admin writes their own, the About page is Paira Express's, with the company's name in it.
       about: {
         title: s.about?.title && s.about.title !== DEFAULT_BRANDING.about.title ? s.about.title : `About ${companyName}`,
         intro: s.about?.intro || withCompanyName(DEFAULT_BRANDING.about.intro, companyName),
@@ -97,7 +97,7 @@ export class BrandingService {
       ...b,
       logoUrl: s.logo ? `/api/v1/branding/logo?v=${hashOf(s.logo)}` : null,
       iconUrl: `/api/v1/branding/icon?v=${s.icon ? hashOf(s.icon) : "default"}`,
-      custom: Boolean(s.companyName && s.companyName !== "Delivery Fast"),
+      custom: Boolean(s.companyName && s.companyName !== "Paira Express"),
       defaults: DEFAULT_BRANDING,
     };
   }

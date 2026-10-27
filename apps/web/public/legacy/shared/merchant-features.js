@@ -529,7 +529,7 @@
     dialog(
       "Business verification",
       `${pill(KYC_LABEL[k.status] || k.status)} ${needs.length ? `· Needed for ${esc(needs.join(", "))}` : ""}`,
-      `${k.status === "REJECTED" && k.rejectionReason ? `<p class="panel-subtitle" style="color:#b42318;margin:10px 0">Not approved: ${esc(k.rejectionReason)}. Replace the documents and submit again.</p>` : ""}${k.status === "PENDING" ? `<p class="panel-subtitle" style="margin:10px 0">Your documents are being reviewed. We'll text ${esc(S().merchant.contactPhone)} with the result.</p>` : ""}<div class="table-scroll"><table><thead><tr><th>DOCUMENT</th><th>FILE</th><th>STATUS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${uploadForm}<p class="panel-subtitle" style="margin:10px 0 0">PNG, JPEG, WebP or PDF, up to 3.5 MB each. Files are stored privately and only Delivery Fast reviewers can see them.</p>${
+      `${k.status === "REJECTED" && k.rejectionReason ? `<p class="panel-subtitle" style="color:#b42318;margin:10px 0">Not approved: ${esc(k.rejectionReason)}. Replace the documents and submit again.</p>` : ""}${k.status === "PENDING" ? `<p class="panel-subtitle" style="margin:10px 0">Your documents are being reviewed. We'll text ${esc(S().merchant.contactPhone)} with the result.</p>` : ""}<div class="table-scroll"><table><thead><tr><th>DOCUMENT</th><th>FILE</th><th>STATUS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>${uploadForm}<p class="panel-subtitle" style="margin:10px 0 0">PNG, JPEG, WebP or PDF, up to 3.5 MB each. Files are stored privately and only Paira Express reviewers can see them.</p>${
         k.history.length ? `<h3 style="font-size:13px;margin:14px 0 6px">History</h3><ul style="margin:0;padding-left:18px;color:#536174;font-size:12px;line-height:1.7">${k.history.map(h => `<li>${esc(dateTime(h.at))} · ${esc(h.body)}</li>`).join("")}</ul>` : ""
       }<div class="modal-actions"><button type="button" class="button" data-df-close>Close</button>${owner && k.canSubmit ? `<button type="button" class="button button-primary" data-dff-kyc-submit>Submit for review</button>` : ""}</div>${owner ? "" : `<p class="panel-subtitle">Only workspace owners can upload documents.</p>`}`,
       720,
@@ -598,7 +598,7 @@
       return;
     }
     const r = F.review;
-    const heading = { PENDING_REVIEW: "Your application is being reviewed", INFO_REQUESTED: "Delivery Fast needs more information", REJECTED: "Your application wasn't approved" }[r.status];
+    const heading = { PENDING_REVIEW: "Your application is being reviewed", INFO_REQUESTED: "Paira Express needs more information", REJECTED: "Your application wasn't approved" }[r.status];
     const messages = r.messages
       .slice(-5)
       .map(x => `<div class="activity-item"><span class="activity-icon">${icon(x.kind === "APPLICANT_RESPONSE" ? "users" : "bell")}</span><div class="activity-copy"><strong>${esc(x.author)}</strong> ${esc(x.body)}<small>${esc(dateTime(x.at))}</small></div></div>`)
@@ -644,7 +644,7 @@
       .map(e => `<tr><td><strong>${esc(e.label)}</strong><div class="customer-phone">${esc(e.group)}</div></td>${channels.map(c => {
         const ch = e.channels[c];
         if (!ch) return "<td>—</td>";
-        return `<td><input type="checkbox" data-dff-pref="${esc(e.event)}" data-channel="${esc(c)}" ${ch.enabled ? "checked" : ""} ${ch.locked || !ch.available ? "disabled" : ""} title="${ch.locked ? "Security messages can't be switched off" : ch.available ? "" : "Not offered by Delivery Fast"}"></td>`;
+        return `<td><input type="checkbox" data-dff-pref="${esc(e.event)}" data-channel="${esc(c)}" ${ch.enabled ? "checked" : ""} ${ch.locked || !ch.available ? "disabled" : ""} title="${ch.locked ? "Security messages can't be switched off" : ch.available ? "" : "Not offered by Paira Express"}"></td>`;
       }).join("")}</tr>`)
       .join("");
     dialog(

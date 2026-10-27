@@ -3,7 +3,7 @@ import { Fixtures, expect, sql, test, type TempUser } from "./support";
 
 /**
  * A merchant account that isn't active (2026-10-18): the whole panel is the "Account verification" screen — the
- * status stated plainly ("isn't verified yet"), steps, business verification uploads, messages from Delivery Fast
+ * status stated plainly ("isn't verified yet"), steps, business verification uploads, messages from Paira Express
  * and the business profile read-only. No menu, search or bell; any other page opens the screen. Once active, the
  * full panel. Merchants and members are temporary (support.ts cleanup).
  */
@@ -96,7 +96,7 @@ test("a merchant under review: only the verification screen, uploads documents, 
 test("information requested: the message and a reply; suspended: its own message, no uploads; on a phone", async ({ browser }) => {
   const bank = await fx.merchant({ type: "BANKING_FINANCIAL", label: "Pending Bank" });
   await sql(`UPDATE merchants SET status = 'INFO_REQUESTED' WHERE id = $1`, [bank.id]);
-  await sql(`INSERT INTO merchant_notes (id, "merchantId", kind, body, internal, "authorName", "createdAt") VALUES (gen_random_uuid(), $1, 'INFO_REQUEST', 'Please upload a clearer trade licence.', false, 'Delivery Fast', now())`, [bank.id]);
+  await sql(`INSERT INTO merchant_notes (id, "merchantId", kind, body, internal, "authorName", "createdAt") VALUES (gen_random_uuid(), $1, 'INFO_REQUEST', 'Please upload a clearer trade licence.', false, 'Paira Express', now())`, [bank.id]);
   const owner = await fx.member(bank);
   const { page, errors } = await signIn(browser, owner, /\/banking-merchant/);
   await page.setViewportSize({ width: 390, height: 844 });

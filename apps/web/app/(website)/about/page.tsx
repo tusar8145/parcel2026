@@ -15,7 +15,7 @@ async function about() {
     const res = await fetch(`${process.env.API_ORIGIN ?? "http://localhost:4000"}/api/v1/branding`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
     if (res.ok) return ((await res.json()) as { about: typeof DEFAULT_BRANDING.about }).about;
   } catch {}
-  // The API not reachable: Delivery Fast's own page.
+  // The API not reachable: Paira Express's own page.
   return DEFAULT_BRANDING.about;
 }
 

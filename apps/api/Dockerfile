@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Delivery Fast API. Build from the repo root:  docker build -f apps/api/Dockerfile .
+# Paira Express API. Build from the repo root:  docker build -f apps/api/Dockerfile .
 
 FROM node:20.19-bookworm-slim AS deps
 WORKDIR /repo

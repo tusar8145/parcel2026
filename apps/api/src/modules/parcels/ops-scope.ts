@@ -69,6 +69,6 @@ export async function assertRiderAssignable(db: Db, actor: Actor, riderId: strin
 /** Why a rider can't hand cash to this hub (franchise riders: their own franchise hub only; others: company hubs), or null. */
 export function cashHubProblem(rider: { hubId: string | null; hub?: { type: string; name: string } | null }, hub: { id: string; type: string; name: string }): string | null {
   if (rider.hub?.type === "FRANCHISE") return rider.hubId === hub.id ? null : `Cash from ${rider.hub.name}'s riders is handed over at ${rider.hub.name}`;
-  if (hub.type === "FRANCHISE") return `${hub.name} is a franchise hub: hand your cash to a Delivery Fast hub`;
+  if (hub.type === "FRANCHISE") return `${hub.name} is a franchise hub: hand your cash to a Paira Express hub`;
   return null;
 }

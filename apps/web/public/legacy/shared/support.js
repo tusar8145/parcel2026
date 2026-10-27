@@ -294,7 +294,7 @@
 
   function messageMarkup(message, viewerId) {
     const system = message.author.kind === "system";
-    const name = system ? "Delivery Fast support" : message.author.label;
+    const name = system ? "Paira Express support" : message.author.label;
     return `<article class="st-message ${message.author.id && message.author.id === viewerId ? "mine" : ""} ${message.internal ? "internal" : ""}">
       <div class="st-message-head"><strong>${escapeHtml(name)}${message.internal ? ` <em class="st-internal-tag">Internal note</em>` : ""}</strong><span>${escapeHtml(when(message.createdAt))}</span></div>
       <p>${escapeHtml(message.body)}</p><div class="st-files">${attachmentMarkup(message.attachments)}</div>
@@ -368,7 +368,7 @@
       <div class="st-layout"><section class="st-list panel"><div class="panel-heading"><div><h2 class="panel-title">Tickets</h2><p class="panel-subtitle">${staff ? "All support requests" : "Your support conversations"}</p></div></div>
       ${list}</section>
       <section class="st-thread panel" aria-label="Support conversation">${threadMarkup(selected)}</section></div>
-      <p class="st-demo-note">${staff ? "Replies go to the requester's support page. Internal notes are visible to support staff only." : "Replies from Delivery Fast support appear in this conversation."}</p>`;
+      <p class="st-demo-note">${staff ? "Replies go to the requester's support page. Internal notes are visible to support staff only." : "Replies from Paira Express support appear in this conversation."}</p>`;
   }
 
   // ───────────── rendering ─────────────
@@ -559,7 +559,7 @@
         prefilled = { ...prefilled, subject: `Help with ${reference}`, category: "Delivery issue", relatedRef: reference };
       }
     }
-    document.title = "Delivery Fast — Customer support";
+    document.title = "Paira Express — Customer support";
     document.getElementById("navLinks")?.classList.remove("open");
     document.getElementById("menuButton")?.setAttribute("aria-expanded", "false");
     document.querySelectorAll("main > :not(#pageView)").forEach(node => node.remove());
@@ -568,7 +568,7 @@
     pageView.hidden = false;
     pageView.innerHTML = window.deliveryFastCustomerSession && typeof window.customerAreaShell === "function"
       ? window.customerAreaShell(supportPage(), "support")
-      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Delivery Fast</button>${supportPage()}</div>`;
+      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Paira Express</button>${supportPage()}</div>`;
     afterRender();
   }
 

@@ -55,7 +55,7 @@
       jobs.push(
         DF.api("/routing/map?layer=all&limit=1500")
           .then(m => ((data.map = m), (data.loadedAt = Date.now())))
-          .catch(error => error?.status !== 403 && console.warn("Delivery Fast: map data", error)),
+          .catch(error => error?.status !== 403 && console.warn("Paira Express: map data", error)),
       );
     if (Ops.can("readRiders") && (force || now - data.ridersAt > 60_000))
       jobs.push(

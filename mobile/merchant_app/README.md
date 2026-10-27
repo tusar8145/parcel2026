@@ -1,6 +1,6 @@
 # merchant_app
 
-Delivery Fast Merchant
+Paira Express Merchant
 
 ## Getting Started
 

@@ -6,9 +6,9 @@
 -- the whole script if a kept table references a truncated one.
 --
 -- Take a backup first:
---   pg_dump -h localhost -U deliveryfast -d deliveryfast -Fc -f apps/api/.data/backups/deliveryfast-<ts>-before-reset.dump
+--   pg_dump -h localhost -U pairaexpress -d pairaexpress -Fc -f apps/api/.data/backups/pairaexpress-<ts>-before-reset.dump
 -- Run:
---   psql -h localhost -U deliveryfast -d deliveryfast -v ON_ERROR_STOP=1 -f apps/api/scripts/reset-data-keep-config.sql
+--   psql -h localhost -U pairaexpress -d pairaexpress -v ON_ERROR_STOP=1 -f apps/api/scripts/reset-data-keep-config.sql
 -- Afterwards: delete the uploaded files under apps/api/.data/files and the Redis session / OTP /
 -- rate-limit keys (see the comment at the end).
 --

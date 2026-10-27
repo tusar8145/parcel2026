@@ -1,16 +1,16 @@
 /**
  * The company the platform runs for (white label): its name, logo, browser tab icon, contact details and About
  * text. Super admin › Branding & company edits them (GET/PUT /branding); the website, every panel, PDFs and
- * messages use them. These defaults are Delivery Fast's own details: a new installation changes them there.
+ * messages use them. These defaults are Paira Express's own details: a new installation changes them there.
  */
 export interface Branding {
-  /** "Delivery Fast": shown in headers, page titles, messages, PDFs. */
+  /** "Paira Express": shown in headers, page titles, messages, PDFs. */
   companyName: string;
   /** The registered name on invoices and statements (default: the company name). */
   legalName: string;
   /** One line under the name (website, emails). */
   tagline: string;
-  /** The public website, e.g. https://deliveryfast.com.bd */
+  /** The public website, e.g. https://pairaexpress.com.bd */
   website: string;
   contact: { phone: string; email: string; address: string; hours: string };
   social: { facebook: string; instagram: string; linkedin: string; youtube: string; whatsapp: string };
@@ -22,19 +22,19 @@ export interface Branding {
 export const ABOUT_FORMAT =
   "A blank line starts a new block. “## ” makes a heading; “### Title” with lines under it makes a card (cards next to each other sit side by side); “[2024] Incorporated” makes a number tile; “- ” a bullet and “1. ” a numbered item; other lines are paragraphs.";
 
-/** Delivery Fast's own About page, the text the website shipped with (about-default.ts). */
+/** Paira Express's own About page, the text the website shipped with (about-default.ts). */
 export { DEFAULT_ABOUT_BODY } from "./about-default";
 import { DEFAULT_ABOUT_BODY } from "./about-default";
 
 export const DEFAULT_BRANDING: Branding = {
-  companyName: "Delivery Fast",
-  legalName: "Delivery Fast",
+  companyName: "Paira Express",
+  legalName: "Paira Express",
   tagline: "Fast, tracked parcel delivery across Bangladesh",
-  website: "https://deliveryfast.com.bd",
-  contact: { phone: "01969 921122", email: "info@deliveryfast.com.bd", address: "House-6 Road -2A Banani, Dhaka-1213", hours: "" },
+  website: "https://pairaexpress.com.bd",
+  contact: { phone: "01969 921122", email: "info@pairaexpress.com.bd", address: "House-6 Road -2A Banani, Dhaka-1213", hours: "" },
   social: { facebook: "", instagram: "", linkedin: "", youtube: "", whatsapp: "" },
   about: {
-    title: "About Delivery Fast",
+    title: "About Paira Express",
     intro: "A nationwide courier and logistics service with its own hubs, franchisees, agents and retailers across Bangladesh.",
     body: DEFAULT_ABOUT_BODY,
   },
@@ -86,5 +86,5 @@ export function parseAbout(body: string): AboutBlock[] {
 /** Replaces the default company name in a text (messages, PDFs) when the installation has its own. */
 export function withCompanyName(text: string, companyName: string): string {
   if (!companyName || companyName === DEFAULT_BRANDING.companyName) return text;
-  return text.replace(/Delivery Fast/g, companyName);
+  return text.replace(/Paira Express/g, companyName);
 }

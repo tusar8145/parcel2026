@@ -115,7 +115,7 @@ test("installable: manifest, service worker and the app opening offline", async 
   await context.close();
 });
 
-test("opens with the saved rider and task list when Delivery Fast can't be reached", async ({ browser }) => {
+test("opens with the saved rider and task list when Paira Express can't be reached", async ({ browser }) => {
   const { context, page } = await signedInRider(browser, { serviceWorkers: "block" });
   await page.waitForTimeout(1000); // the session and task list are saved in IndexedDB
   // Every API call now fails as it would without a connection (the page itself still loads).

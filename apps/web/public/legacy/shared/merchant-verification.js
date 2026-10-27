@@ -6,8 +6,8 @@
  *   - The status, stated plainly ("Your account isn't verified yet"), the steps to activation and what to do next.
  *   - Business verification: each document with its status, Upload / Replace / View, "Submit for review"
  *     (GET/POST /merchants/me/kyc…; owners only).
- *   - Messages from Delivery Fast and the reply form when information was requested (/merchants/me/review…).
- *   - The business profile, read-only (GET /merchants/me); changes are made by Delivery Fast during review.
+ *   - Messages from Paira Express and the reply form when information was requested (/merchants/me/review…).
+ *   - The business profile, read-only (GET /merchants/me); changes are made by Paira Express during review.
  *
  * The API refuses everything else for an inactive merchant (MERCHANT_NOT_ACTIVE), see MerchantsService.resolveOwn.
  * Loaded before the merchant bridge: it draws the page through the panel's renderPage.
@@ -128,7 +128,7 @@ body.df-merchant-locked .main{margin-left:0!important}
     const missing = k?.missing?.length || 0;
     const sms = phone(m.contactPhone);
     if (m.status === "SUSPENDED")
-      return { tone: "red", icon: I.lock, badge: ["red", "Suspended"], title: "Your merchant account is suspended", text: "You can't book parcels or use the panel while the account is suspended. Contact Delivery Fast support to resolve it." };
+      return { tone: "red", icon: I.lock, badge: ["red", "Suspended"], title: "Your merchant account is suspended", text: "You can't book parcels or use the panel while the account is suspended. Contact Paira Express support to resolve it." };
     if (m.status === "REJECTED")
       return {
         tone: "red",
@@ -138,7 +138,7 @@ body.df-merchant-locked .main{margin-left:0!important}
         text: `${m.rejectionReason ? `Reason: ${m.rejectionReason}. ` : ""}Your account isn't verified, so the panel stays closed. You can apply again with corrected details from the website.`,
       };
     if (m.status === "INFO_REQUESTED")
-      return { tone: "amber", icon: I.alert, badge: ["amber", "Not verified yet"], title: "Action needed: Delivery Fast needs more information", text: "Your account isn't verified yet. Read the message below, upload anything that's asked for and send your reply. Your application goes back to review straight away." };
+      return { tone: "amber", icon: I.alert, badge: ["amber", "Not verified yet"], title: "Action needed: Paira Express needs more information", text: "Your account isn't verified yet. Read the message below, upload anything that's asked for and send your reply. Your application goes back to review straight away." };
     if (k?.status === "REJECTED")
       return { tone: "amber", icon: I.alert, badge: ["amber", "Not verified yet"], title: "Your documents need another look", text: `${k.rejectionReason ? `${k.rejectionReason}. ` : ""}Replace the documents below and submit them again.` };
     if (k?.status === "PENDING")
@@ -149,7 +149,7 @@ body.df-merchant-locked .main{margin-left:0!important}
       badge: ["amber", "Not verified yet"],
       title: "Your account isn't verified yet",
       text: missing
-        ? `Upload your business documents below and submit them for review. The panel — booking, shipments and payments — opens once Delivery Fast verifies your business.`
+        ? `Upload your business documents below and submit them for review. The panel — booking, shipments and payments — opens once Paira Express verifies your business.`
         : `All required documents are uploaded. Submit them for review to continue.`,
     };
   }
@@ -166,7 +166,7 @@ body.df-merchant-locked .main{margin-left:0!important}
         note: docsDone ? `Submitted ${dateOnly(k.submittedAt)}` : k ? `${k.policy.documentTypes.filter(t => t.required).length - k.missing.length} of ${k.policy.documentTypes.filter(t => t.required).length} required uploaded` : "",
         state: docsDone ? "done" : k?.status === "REJECTED" ? "failed" : "current",
       },
-      { title: "Review by Delivery Fast", note: m.status === "INFO_REQUESTED" ? "Waiting for your reply" : rejected ? (m.status === "SUSPENDED" ? "Account suspended" : "Not approved") : docsDone ? "In progress" : "After you submit", state: rejected ? "failed" : docsDone && m.status !== "INFO_REQUESTED" ? "current" : "todo" },
+      { title: "Review by Paira Express", note: m.status === "INFO_REQUESTED" ? "Waiting for your reply" : rejected ? (m.status === "SUSPENDED" ? "Account suspended" : "Not approved") : docsDone ? "In progress" : "After you submit", state: rejected ? "failed" : docsDone && m.status !== "INFO_REQUESTED" ? "current" : "todo" },
       { title: "Account active", note: "Booking, shipments, payments", state: "todo" },
     ];
     return `<ol class="dfv-steps" aria-label="Steps to activation">${list
@@ -192,11 +192,11 @@ body.df-merchant-locked .main{margin-left:0!important}
       .join("");
     const submit =
       owner && k.canSubmit && canUpload
-        ? `<div class="dfv-submit"><p>All required documents are uploaded. Submit them so Delivery Fast can verify your business.</p><button type="button" class="button button-primary" data-dfv-submit${state.busy === "submit" ? " disabled" : ""}>${state.busy === "submit" ? "Submitting…" : "Submit for review"}</button></div>`
+        ? `<div class="dfv-submit"><p>All required documents are uploaded. Submit them so Paira Express can verify your business.</p><button type="button" class="button button-primary" data-dfv-submit${state.busy === "submit" ? " disabled" : ""}>${state.busy === "submit" ? "Submitting…" : "Submit for review"}</button></div>`
         : k.status === "NOT_SUBMITTED" && k.missing.length && canUpload
           ? `<div class="dfv-submit"><p>Upload ${k.missing.length === 1 ? "the last required document" : `the ${k.missing.length} required documents`} to submit for review.</p><button type="button" class="button button-primary" disabled>Submit for review</button></div>`
           : "";
-    return `<section class="dfv-card" id="dfvDocuments"><div class="dfv-card-head"><div><h2>Business verification</h2><p>Documents that prove your business. Only Delivery Fast reviewers can see them.</p></div><span class="dfv-badge ${badge[0]}" id="dfvKycStatus">${esc(badge[1])}</span></div>
+    return `<section class="dfv-card" id="dfvDocuments"><div class="dfv-card-head"><div><h2>Business verification</h2><p>Documents that prove your business. Only Paira Express reviewers can see them.</p></div><span class="dfv-badge ${badge[0]}" id="dfvKycStatus">${esc(badge[1])}</span></div>
       ${k.status === "REJECTED" && k.rejectionReason ? `<div class="dfv-alert red">${I.alert}<span><b>Not approved:</b> ${esc(k.rejectionReason)}. Replace the documents and submit again.</span></div>` : ""}
       ${k.status === "PENDING" ? `<div class="dfv-alert blue">${I.clock}<span>Submitted ${esc(dateTime(k.submittedAt))}. Your documents are being reviewed.</span></div>` : ""}
       <div class="dfv-docs">${rows}</div>${submit}
@@ -207,13 +207,13 @@ body.df-merchant-locked .main{margin-left:0!important}
     const r = state.review;
     if (!r || (!r.messages.length && !r.canRespond)) return "";
     const thread = r.messages
-      .map(x => `<div class="dfv-msg${x.kind === "APPLICANT_RESPONSE" ? " mine" : ""}"><small>${esc(x.kind === "APPLICANT_RESPONSE" ? "You" : x.author || "Delivery Fast")} · ${esc(dateTime(x.at))}</small>${esc(x.body)}</div>`)
+      .map(x => `<div class="dfv-msg${x.kind === "APPLICANT_RESPONSE" ? " mine" : ""}"><small>${esc(x.kind === "APPLICANT_RESPONSE" ? "You" : x.author || "Paira Express")} · ${esc(dateTime(x.at))}</small>${esc(x.body)}</div>`)
       .join("");
     const reply =
       r.canRespond && isOwner()
         ? `<form class="dfv-reply" id="dfvReplyForm"><label for="dfvReply" style="font-size:13px;font-weight:600">Your reply</label><textarea id="dfvReply" maxlength="2000" placeholder="Answer the question or explain what you uploaded"></textarea><div class="dfv-reply-actions"><button type="submit" class="button button-primary"${state.busy === "reply" ? " disabled" : ""}>${state.busy === "reply" ? "Sending…" : "Send reply"}</button></div></form>`
         : "";
-    return `<section class="dfv-card" id="dfvMessages"><div class="dfv-card-head"><div><h2>Messages from Delivery Fast</h2><p>About your application.</p></div>${r.canRespond ? `<span class="dfv-badge amber">Reply needed</span>` : ""}</div><div class="dfv-thread">${thread || `<p class="dfv-muted">No messages yet.</p>`}</div>${reply}</section>`;
+    return `<section class="dfv-card" id="dfvMessages"><div class="dfv-card-head"><div><h2>Messages from Paira Express</h2><p>About your application.</p></div>${r.canRespond ? `<span class="dfv-badge amber">Reply needed</span>` : ""}</div><div class="dfv-thread">${thread || `<p class="dfv-muted">No messages yet.</p>`}</div>${reply}</section>`;
   }
 
   function profileCard() {
@@ -237,7 +237,7 @@ body.df-merchant-locked .main{margin-left:0!important}
       ["Parcel handover", A?.HANDOVER?.[m.handover] || m.handover],
       ["Serving hub", m.pickupHub ? `${m.pickupHub.name} (${m.pickupHub.code})` : ""],
     ].filter(([, v]) => v);
-    return `<section class="dfv-card" id="dfvProfile"><div class="dfv-card-head"><div><h2>Business profile</h2><p>${m.status === "INFO_REQUESTED" ? "Something to correct? Say so in your reply above and Delivery Fast will update it." : m.status === "SUSPENDED" ? "Your business details on file. They can't be changed while the account is suspended." : "Shown as submitted in your application. It can't be changed until your account is verified."}</p></div><span class="dfv-readonly">${I.lock} Read-only</span></div>
+    return `<section class="dfv-card" id="dfvProfile"><div class="dfv-card-head"><div><h2>Business profile</h2><p>${m.status === "INFO_REQUESTED" ? "Something to correct? Say so in your reply above and Paira Express will update it." : m.status === "SUSPENDED" ? "Your business details on file. They can't be changed while the account is suspended." : "Shown as submitted in your application. It can't be changed until your account is verified."}</p></div><span class="dfv-readonly">${I.lock} Read-only</span></div>
       <dl class="dfv-profile">${rows.map(([k, v, full]) => `<div${full ? ' class="full"' : ""}><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl></section>`;
   }
 
@@ -316,7 +316,7 @@ body.df-merchant-locked .main{margin-left:0!important}
     draw();
     try {
       await DF.api(`/merchants/me/kyc/submit${q()}`, { method: "POST" });
-      toast("Thanks — your documents are with Delivery Fast for review.");
+      toast("Thanks — your documents are with Paira Express for review.");
     } catch (error) {
       fail(error);
     } finally {
@@ -346,7 +346,7 @@ body.df-merchant-locked .main{margin-left:0!important}
     draw();
     try {
       await DF.api(`/merchants/me/review/respond${q()}`, { method: "POST", body: { message } });
-      toast("Thanks — your application is back with Delivery Fast.");
+      toast("Thanks — your application is back with Paira Express.");
     } catch (error) {
       fail(error);
     } finally {

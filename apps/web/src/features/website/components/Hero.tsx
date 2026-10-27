@@ -52,7 +52,7 @@ export default function Hero() {
             </span>
           </div>{" "}
         </div>{" "}
-        <div className="hero-art" aria-label="Illustration of a Delivery Fast delivery van arriving at a home">
+        <div className="hero-art" aria-label="Illustration of a Paira Express delivery van arriving at a home">
           {" "}
           <div className="art-sun" />
           <div className="art-path" />
@@ -66,7 +66,7 @@ export default function Hero() {
             <div className="van-body" />
             <div className="van-nose" />
             <div className="van-window" />
-            <div className="van-logo">delivery fast</div>
+            <div className="van-logo">paira express</div>
             <i className="wheel one" />
             <i className="wheel two" />
           </div>{" "}

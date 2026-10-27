@@ -84,7 +84,7 @@ describe("tables read word by word (sparse OCR of a real photo: labels lost, val
   });
 });
 
-describe("a Delivery Fast sticker photographed with the phone (real OCR text)", () => {
+describe("a Paira Express sticker photographed with the phone (real OCR text)", () => {
   it("name without OCR specks, the address over two lines, the phone beside a stray digit, no guessed COD", () => {
     const fs = require("node:fs") as typeof import("node:fs");
     const path = require("node:path") as typeof import("node:path");

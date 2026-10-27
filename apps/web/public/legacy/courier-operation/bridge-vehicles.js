@@ -95,7 +95,7 @@
     try {
       mount();
     } catch (error) {
-      console.error("Delivery Fast: vehicles panel failed", error);
+      console.error("Paira Express: vehicles panel failed", error);
     }
   };
 

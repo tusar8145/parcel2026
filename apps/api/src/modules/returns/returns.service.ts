@@ -253,7 +253,7 @@ export class ReturnsService {
           status: parcel.status,
           title: "Return requested",
           description: `Return to sender requested: ${input.reason}`,
-          location: "Delivery Fast",
+          location: "Paira Express",
           actorUserId: actor.kind === "user" ? actor.userId : null,
           actorLabel: by,
         },

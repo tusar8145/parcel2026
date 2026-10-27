@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Delivery Fast web. Build from the repo root:  docker build -f apps/web/Dockerfile --build-arg API_ORIGIN=http://api:4000 .
+# Paira Express web. Build from the repo root:  docker build -f apps/web/Dockerfile --build-arg API_ORIGIN=http://api:4000 .
 # API_ORIGIN is baked into the /api proxy at build time.
 
 FROM node:20.19-bookworm-slim AS build

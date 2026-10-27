@@ -358,7 +358,7 @@ function Result({
           <dl>
             <div>
               <dt>Sender</dt>
-              <dd>{item.sender || "Delivery Fast sender"}</dd>
+              <dd>{item.sender || "Paira Express sender"}</dd>
             </div>
             <div>
               <dt>Pickup area</dt>
@@ -455,7 +455,7 @@ function Result({
           <br />
           {"Keep your tracking ID handy when contacting our support team."}
         </p>
-        <a href={`mailto:support@deliveryfast.example?subject=${encodeURIComponent(`Help with ${item.trackingId}`)}`}>{"Contact support →"}</a>
+        <a href={`mailto:support@pairaexpress.example?subject=${encodeURIComponent(`Help with ${item.trackingId}`)}`}>{"Contact support →"}</a>
       </div>
       {item.canCancel && owner ? <CancelButton item={item} owner={owner} token={token} onDone={onChange} /> : null}
     </>

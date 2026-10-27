@@ -43,7 +43,7 @@
       })
       .catch(error => {
         cache.set(url, { value: hit?.value, at: Date.now(), error });
-        if (error?.status !== 403) console.error("Delivery Fast: period figures could not be loaded", error);
+        if (error?.status !== 403) console.error("Paira Express: period figures could not be loaded", error);
       });
     return hit?.value;
   }
@@ -217,7 +217,7 @@
     try {
       draw();
     } catch (error) {
-      console.error(`Delivery Fast: the ${page} period could not be drawn`, error);
+      console.error(`Paira Express: the ${page} period could not be drawn`, error);
     }
   }
   /** Redraws the page on screen (its own bridges first, then the period figures). */

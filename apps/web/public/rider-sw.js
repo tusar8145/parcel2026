@@ -1,5 +1,5 @@
 /*
- * Delivery Fast rider app service worker (scope /rider, registered by legacy/rider/bridge-pwa.js).
+ * Paira Express rider app service worker (scope /rider, registered by legacy/rider/bridge-pwa.js).
  *
  * - App shell (the /rider page, its scripts, styles, icons) is cached so the app opens offline.
  *   Everything is network-first with a short timeout and falls back to the cache, so riders on

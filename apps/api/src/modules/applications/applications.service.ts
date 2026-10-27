@@ -102,7 +102,7 @@ export class ApplicationsService {
     const { number, outboxIds } = await this.prisma.$transaction(async tx => {
       // One open application per person and kind, even when they double-submit.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`partner-application:${input.kind}:${actor.userId}`}))`;
-      if (input.kind === "RIDER" && hasRole(actor, "RIDER")) throw conflict("ALREADY_A_RIDER", "You already ride with Delivery Fast");
+      if (input.kind === "RIDER" && hasRole(actor, "RIDER")) throw conflict("ALREADY_A_RIDER", "You already ride with Paira Express");
       const open = await tx.partnerApplication.findFirst({ where: { applicantId: actor.userId, kind: input.kind, status: { in: [...OPEN_APPLICATION_STATUSES] } }, select: { number: true } });
       if (open) throw conflict("APPLICATION_PENDING", `Your application ${open.number} is still being reviewed`);
 

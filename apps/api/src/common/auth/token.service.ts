@@ -7,8 +7,8 @@ import { unauthorized } from "../errors";
 import { userActor, type ImpersonationInfo, type RoleGrant, type UserActor } from "./actor";
 import { AUTHZ_VERSION_KEY, PermissionService, userVersionKey } from "./permissions.service";
 
-const ISSUER = "deliveryfast-api";
-const AUDIENCE = "deliveryfast";
+const ISSUER = "pairaexpress-api";
+const AUDIENCE = "pairaexpress";
 
 interface AccessClaims {
   sid: string;

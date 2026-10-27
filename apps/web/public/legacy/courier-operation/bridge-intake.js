@@ -21,7 +21,7 @@
   const q = (selector, root = document) => root.querySelector(selector);
   const esc = Ops.esc;
   const ui = Ops.ui;
-  const DESK_HUB_KEY = "deliveryfast-receive-desk-hub";
+  const DESK_HUB_KEY = "pairaexpress-receive-desk-hub";
 
   // ───────────── Code 128 (set B) ─────────────
   // Bar/space widths of the 107 symbols (values 0–105 and the stop symbol), each 11 modules wide.
@@ -244,7 +244,7 @@
       }
       paintDesk();
     } catch (error) {
-      if (error?.status !== 403) console.error("Delivery Fast: import batches could not be loaded", error);
+      if (error?.status !== 403) console.error("Paira Express: import batches could not be loaded", error);
     }
   }
 

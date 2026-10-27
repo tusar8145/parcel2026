@@ -27,7 +27,7 @@ enum FranchiseRemittanceStatus {
 enum FranchiseInvoiceSettlement {
   /// DEDUCT mode: the commission was kept from cash deposits.
   DEDUCTED
-  /// BILL mode: Delivery Fast pays it.
+  /// BILL mode: Paira Express pays it.
   PAYABLE
 }
 
@@ -56,7 +56,7 @@ model Franchise {
   deliveryMin       Decimal                  @default(0) @db.Decimal(12, 2)
   returnPercent     Decimal                  @default(0) @db.Decimal(5, 2)
   returnMin         Decimal                  @default(0) @db.Decimal(12, 2)
-  /// What the franchise pays its own riders per task (set in the franchise panel; outside Delivery Fast payroll).
+  /// What the franchise pays its own riders per task (set in the franchise panel; outside Paira Express payroll).
   riderPickupRate   Decimal                  @default(0) @db.Decimal(12, 2)
   riderDeliveryRate Decimal                  @default(0) @db.Decimal(12, 2)
   riderReturnRate   Decimal                  @default(0) @db.Decimal(12, 2)

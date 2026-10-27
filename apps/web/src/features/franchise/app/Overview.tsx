@@ -75,7 +75,7 @@ export default function Overview({ me, go }: { me: Me; go: (slug: "parcels" | "w
               <div className="fr-card-head">
                 <div>
                   <h2>Cash</h2>
-                  <p>{me.settlementMode === "DEDUCT" ? "You keep your commission when you deposit." : "Deposit everything; Delivery Fast pays your commission."}</p>
+                  <p>{me.settlementMode === "DEDUCT" ? "You keep your commission when you deposit." : "Deposit everything; Paira Express pays your commission."}</p>
                 </div>
                 <button type="button" className="fr-btn sm" onClick={() => go("money")}>
                   Deposit

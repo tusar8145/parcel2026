@@ -4,7 +4,7 @@ import { resetDatabase, startApp, userWithRoles, type TestContext } from "./help
  * A merchant that isn't active (under review, information requested, not approved, suspended) may read only its
  * own account, its business verification and the review conversation, and upload / submit verification
  * documents. Everything else — profile changes, team, products, pickups, stats, quotes, the package — is refused
- * with MERCHANT_NOT_ACTIVE until Delivery Fast approves it.
+ * with MERCHANT_NOT_ACTIVE until Paira Express approves it.
  */
 describe("inactive merchant accounts", () => {
   let ctx: TestContext;

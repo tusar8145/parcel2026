@@ -216,7 +216,7 @@ describe("bulk updates", () => {
           expect(def.columns.map((c: { header: string }) => c.header), label).toEqual(x.header.slice(0, -2));
           // The title names the action and the page; the sheet tab is the action.
           const help = helpOf(x.res.buffer);
-          expect(help[0][0], label).toBe(`Delivery Fast · ${def.label} · ${pages[kind]}`);
+          expect(help[0][0], label).toBe(`Paira Express · ${def.label} · ${pages[kind]}`);
           expect(def.title).toBe(`${def.label} · ${pages[kind]}`);
           expect(help[1][0], label).toBe(def.howTo);
           expect(def.howTo.startsWith(`${def.label}: `)).toBe(true);
@@ -640,7 +640,7 @@ describe("bulk updates", () => {
       expect(back.rows[1][x.col("template")]).toBe("new_orders:accept_pickup");
       expect(back.rows[1].at(-1)).toContain(`Row ${x.rows.filter(r => [a, c].includes(r[0])).findIndex(r => r[0] === c) + 2}: version: ${c} changed since you downloaded it`);
       expect(workbookXml(dl.buffer)).toContain('<sheet name="Accept &amp; assign pickup"');
-      expect(helpOf(dl.buffer)[0][0]).toBe("Delivery Fast · Accept & assign pickup rider · New orders");
+      expect(helpOf(dl.buffer)[0][0]).toBe("Paira Express · Accept & assign pickup rider · New orders");
       expect(sheetXml(dl.buffer)).toContain("<sheetProtection");
       const reupload = await upload(s.ops.token, dl.buffer, { kind: "new_orders", action: "accept_pickup", name: "fixed.xlsx" });
       expect(reupload.status).toBe(201);

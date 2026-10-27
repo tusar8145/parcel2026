@@ -1,4 +1,4 @@
-package bd.com.deliveryfast.ops_app
+package bd.com.pairaexpress.ops_app
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,8 +11,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Adds the scanner's beep (channel "deliveryfast/beep": ok / error) with the phone's tone generator, and the
- * "Delivery Fast" notification channel push messages arrive on (high importance: they pop up).
+ * Adds the scanner's beep (channel "pairaexpress/beep": ok / error) with the phone's tone generator, and the
+ * "Paira Express" notification channel push messages arrive on (high importance: they pop up).
  */
 class MainActivity : FlutterActivity() {
     private var tones: ToneGenerator? = null
@@ -20,15 +20,15 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel("deliveryfast", "Delivery Fast", NotificationManager.IMPORTANCE_HIGH)
-            channel.description = "Parcels, payments, support replies and messages from Delivery Fast"
+            val channel = NotificationChannel("pairaexpress", "Paira Express", NotificationManager.IMPORTANCE_HIGH)
+            channel.description = "Parcels, payments, support replies and messages from Paira Express"
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "deliveryfast/beep").setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "pairaexpress/beep").setMethodCallHandler { call, result ->
             try {
                 val t = tones ?: ToneGenerator(AudioManager.STREAM_MUSIC, 100).also { tones = it }
                 when (call.method) {

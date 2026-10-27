@@ -47,7 +47,7 @@ test("merchants: hub column, change address, and approving a merchant's own addr
   const m = await signIn(browser, owner, /\/ecommerce-merchant/);
   await m.page.click('#navigation [data-page="Settings"]');
   await m.page.locator("#tableBody tr", { hasText: "Store profile" }).locator("button").click();
-  await expect(m.page.locator("#dfAddressRequest")).toContainText("checked by Delivery Fast before they apply");
+  await expect(m.page.locator("#dfAddressRequest")).toContainText("checked by Paira Express before they apply");
   await m.page.uncheck("#dfmaPickupSame");
   await m.page.selectOption("#dfmaPuDistrict", "Dhaka North");
   await m.page.selectOption("#dfmaPuZone", "Uttara");
@@ -55,7 +55,7 @@ test("merchants: hub column, change address, and approving a merchant's own addr
   await m.page.fill("#dfmaPuStreet", "House 3, Road 12, Sector 7");
   await m.page.selectOption("#dfmaPickupTime", "MORNING");
   await m.page.click('#dfProfileForm button[type="submit"]');
-  await expect(toast(m.page)).toContainText("sent to Delivery Fast for approval (pickups would move to Uttara Delivery Hub)");
+  await expect(toast(m.page)).toContainText("sent to Paira Express for approval (pickups would move to Uttara Delivery Hub)");
   expect(await hubOf(other.id)).toBe("Gulshan Sorting Hub");
 
   // Operations: the HUB column and filter, the change to approve, and Change address.
@@ -98,7 +98,7 @@ test("merchants: hub column, change address, and approving a merchant's own addr
   await m.page.locator("#tableBody tr", { hasText: "Store profile" }).locator("button").click();
   await m.page.check("#dfmaPickupSame");
   await m.page.click('#dfProfileForm button[type="submit"]');
-  await expect(toast(m.page)).toContainText("sent to Delivery Fast for approval");
+  await expect(toast(m.page)).toContainText("sent to Paira Express for approval");
   await o.page.reload();
   await o.page.waitForSelector("html.legacy-ready", { state: "attached" });
   const again = o.page.locator("#addressRequestsPanel tr", { hasText: other.name });

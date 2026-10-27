@@ -92,7 +92,7 @@
   //
   // Until the merchant account is active (under review, information requested, not approved, suspended) the panel
   // is a single screen, "Account verification" (shared/merchant-verification.js): the status, business
-  // verification uploads, messages from Delivery Fast and the read-only profile. No menu, search or bell; every
+  // verification uploads, messages from Paira Express and the read-only profile. No menu, search or bell; every
   // page asked for (menu, address, link) opens that screen. The API refuses the rest (MERCHANT_NOT_ACTIVE).
   const VERIFY_PAGE = "Account verification";
   const locked = () => !!S.merchant && S.merchant.status !== "ACTIVE";
@@ -544,7 +544,7 @@
   async function resolveMerchant() {
     let wanted = null;
     try {
-      wanted = new URLSearchParams(location.search).get("merchant") || sessionStorage.getItem("deliveryfast-merchant-workspace");
+      wanted = new URLSearchParams(location.search).get("merchant") || sessionStorage.getItem("pairaexpress-merchant-workspace");
     } catch {}
     try {
       const me = await DF.api(`/merchants/me${wanted ? `?merchantId=${encodeURIComponent(wanted)}` : ""}`);
@@ -553,7 +553,7 @@
     } catch (error) {
       if (wanted && error.status === 403) {
         try {
-          sessionStorage.removeItem("deliveryfast-merchant-workspace");
+          sessionStorage.removeItem("pairaexpress-merchant-workspace");
         } catch {}
         return resolveMerchant();
       }
@@ -569,7 +569,7 @@
   function showIdentity() {
     const m = S.merchant;
     const user = DF.auth.user;
-    DF.showSignedInUser(m ? (m.myRole === "MERCHANT_OWNER" ? S.cfg.ownerLabel : S.cfg.staffLabel) : "Delivery Fast staff");
+    DF.showSignedInUser(m ? (m.myRole === "MERCHANT_OWNER" ? S.cfg.ownerLabel : S.cfg.staffLabel) : "Paira Express staff");
     const userInitials = initials(user?.name);
     for (const avatar of document.querySelectorAll(".user-profile .profile-avatar, .topbar .profile-avatar")) avatar.textContent = userInitials;
     const topAvatar = document.querySelector(".topbar .profile-avatar");
@@ -1556,14 +1556,14 @@
     const body = !isOwner()
       ? `<tr><td colspan="8" class="empty-state">Invoices are visible to workspace owners.</td></tr>`
       : bills.map(bill => `<tr data-document-bill="${esc(bill.id)}"><td><strong>${esc(bill.id)}</strong></td><td>${esc(bill.period)}</td><td>${esc(bill.issued)}</td><td>${esc(bill.due)}</td><td>${bill.shipmentCount}</td><td><strong>${taka(bill.total)}</strong></td><td>${statusPill(bill.status)}</td><td>${actions(bill)}</td></tr>`).join("") ||
-        `<tr><td colspan="8" class="empty-state">No invoices yet. Delivery Fast issues one for each month with delivered consignments.</td></tr>`;
+        `<tr><td colspan="8" class="empty-state">No invoices yet. Paira Express issues one for each month with delivered consignments.</td></tr>`;
     return `<div class="page-heading"><div><p class="eyebrow">Corporate finance · ${esc(m?.name)}</p><h1>Billing & invoices</h1><p class="subtitle">Review delivery charges, preview the charges not yet invoiced, and track invoice settlement.</p></div><div class="heading-actions"><select id="documentBillingPeriod" class="select-small" aria-label="Billing period">${billingMonths().map(month => option(month.value, month.label)).join("")}</select><button class="button button-primary" id="generateDocumentBill">${icon("plus")} Preview unbilled charges</button></div></div>
       <div class="metrics">${metricCard("Outstanding balance", money ? taka(money.invoices.outstanding) : "—", "wallet", money ? `${money.invoices.outstandingCount} unpaid invoice(s)` : "visible to owners", money?.invoices.overdueCount ? `${money.invoices.overdueCount} overdue` : "Due")}${metricCard("Delivered, not billed", String(money?.unbilled.parcels ?? "—"), "box", money ? `${taka(money.unbilled.charges)} in charges` : "visible to owners", "Ready")}${metricCard("Invoices", String(S.invoices.length), "chart", "issued to this account", "")}</div>
       <section class="panel billing-note"><div><strong>Corporate billing account</strong><p>${esc(m?.name)} · ${esc(m?.code)} · Monthly consolidated billing · Due 15 days after issue</p></div></section>
       <section class="panel table-panel page-table-panel"><div class="panel-heading"><div><h2 class="panel-title">Invoices & statements</h2><p class="panel-subtitle">Invoices consolidate delivered document consignments; billed consignments are excluded from future bills.</p></div><div class="table-tools"><input class="table-search" id="documentBillSearch" placeholder="Search invoice ID..." aria-label="Search invoices"><button class="button button-sm" id="exportDocumentBills">${icon("download")} Export</button></div></div>
       <div class="table-scroll"><table><thead><tr><th>INVOICE</th><th>BILLING PERIOD</th><th>ISSUED</th><th>DUE DATE</th><th>DOCUMENTS</th><th>AMOUNT</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody id="documentBillRows">${body}</tbody></table></div>
-      <div class="table-footer"><span>${S.invoices.length} invoice(s) · Live billing data</span><span>Payments are recorded by Delivery Fast finance when your transfer arrives.</span></div></section>
-      <div class="layout billing-lower"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">How monthly billing works</h2><p class="panel-subtitle">A predictable finance workflow for multi-branch institutions</p></div></div><ol class="billing-steps"><li>Delivery Fast issues one invoice per closed month for delivered consignments not previously invoiced.</li><li>Review each tracking ID, document type, origin branch, and internal reference.</li><li>Print or download the statement and route it through your finance approval process.</li><li>Pay by bank transfer quoting the invoice number; the status changes to Paid once finance records it.</li></ol></section><section class="panel"><h2 class="panel-title">Billing controls</h2><div class="billing-controls"><span>Billing frequency<strong>Monthly, consolidated</strong></span><span>Payment terms<strong>Due 15 days from issue</strong></span><span>Invoice currency<strong>BDT · ৳</strong></span><span>Service package<strong>${esc(S.pkg?.package?.name || "Banking & Financial default")}</strong></span></div></section></div>`;
+      <div class="table-footer"><span>${S.invoices.length} invoice(s) · Live billing data</span><span>Payments are recorded by Paira Express finance when your transfer arrives.</span></div></section>
+      <div class="layout billing-lower"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">How monthly billing works</h2><p class="panel-subtitle">A predictable finance workflow for multi-branch institutions</p></div></div><ol class="billing-steps"><li>Paira Express issues one invoice per closed month for delivered consignments not previously invoiced.</li><li>Review each tracking ID, document type, origin branch, and internal reference.</li><li>Print or download the statement and route it through your finance approval process.</li><li>Pay by bank transfer quoting the invoice number; the status changes to Paid once finance records it.</li></ol></section><section class="panel"><h2 class="panel-title">Billing controls</h2><div class="billing-controls"><span>Billing frequency<strong>Monthly, consolidated</strong></span><span>Payment terms<strong>Due 15 days from issue</strong></span><span>Invoice currency<strong>BDT · ৳</strong></span><span>Service package<strong>${esc(S.pkg?.package?.name || "Banking & Financial default")}</strong></span></div></section></div>`;
   }
 
   // ───────────── API & webhooks ─────────────
@@ -1610,7 +1610,7 @@
       ? `<p class="panel-subtitle" style="margin:14px 0 0">Only workspace owners can create and revoke API keys.</p>`
       : S.integrationError
         ? `<p class="panel-subtitle" style="margin:14px 0 0">${esc(S.integrationError)}</p>`
-        : `${secretBox("key")}<form id="dfApiKeyForm" class="form-grid" style="margin-top:14px"><div class="form-field"><label for="dfApiKeyName">Key name</label><input id="dfApiKeyName" required minlength="2" maxlength="80" placeholder="e.g. Shopify production"></div><div class="form-field"><label for="dfApiKeyExpiry">Expires (optional)</label><input id="dfApiKeyExpiry" type="date"></div><fieldset class="form-field full" style="border:0;padding:0;margin:0"><legend style="font-size:13px;font-weight:600;margin-bottom:6px">Permissions</legend>${API_KEY_SCOPES.map(([value, label]) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:4px 14px 4px 0;color:#536174;font-size:13px"><input type="checkbox" name="dfApiKeyScope" value="${value}" ${["parcels:read", "parcels:write"].includes(value) ? "checked" : ""}> ${esc(label)} <code>${value}</code></label>`).join("")}<small style="display:block">Give each integration only what it needs.</small></fieldset>${S.merchant?.kyc?.status !== "APPROVED" ? `<p class="panel-subtitle full" style="margin:0">API keys may need verified business documents. <a href="#" data-df-open-kyc>Business verification</a></p>` : ""}<div class="form-field full" style="flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap"><button type="submit" class="button button-primary">Create API key</button><span class="panel-subtitle">The full key is shown once. Delivery Fast stores only a hash.</span></div></form>
+        : `${secretBox("key")}<form id="dfApiKeyForm" class="form-grid" style="margin-top:14px"><div class="form-field"><label for="dfApiKeyName">Key name</label><input id="dfApiKeyName" required minlength="2" maxlength="80" placeholder="e.g. Shopify production"></div><div class="form-field"><label for="dfApiKeyExpiry">Expires (optional)</label><input id="dfApiKeyExpiry" type="date"></div><fieldset class="form-field full" style="border:0;padding:0;margin:0"><legend style="font-size:13px;font-weight:600;margin-bottom:6px">Permissions</legend>${API_KEY_SCOPES.map(([value, label]) => `<label style="display:inline-flex;gap:6px;align-items:center;margin:4px 14px 4px 0;color:#536174;font-size:13px"><input type="checkbox" name="dfApiKeyScope" value="${value}" ${["parcels:read", "parcels:write"].includes(value) ? "checked" : ""}> ${esc(label)} <code>${value}</code></label>`).join("")}<small style="display:block">Give each integration only what it needs.</small></fieldset>${S.merchant?.kyc?.status !== "APPROVED" ? `<p class="panel-subtitle full" style="margin:0">API keys may need verified business documents. <a href="#" data-df-open-kyc>Business verification</a></p>` : ""}<div class="form-field full" style="flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap"><button type="submit" class="button button-primary">Create API key</button><span class="panel-subtitle">The full key is shown once. Paira Express stores only a hash.</span></div></form>
           <div class="table-scroll" style="margin-top:14px"><table><thead><tr><th>NAME</th><th>KEY</th><th>CREATED</th><th>LAST USED</th><th>EXPIRES</th><th>STATUS</th><th></th></tr></thead><tbody>${keyRows || `<tr><td colspan="7" class="empty-state">No API keys yet.</td></tr>`}</tbody></table></div>`;
     const hooks = S.webhooks || [];
     const hookItems = hooks
@@ -1622,7 +1622,7 @@
     const webhookPanel = !owner
       ? `<p class="panel-subtitle" style="margin:14px 0 0">Only workspace owners can configure webhooks.</p>`
       : `${secretBox("webhook")}${hookItems}<form id="dfWebhookForm" style="margin-top:14px"><div class="form-field"><label for="dfWebhookUrl">${hooks.length ? "Add another endpoint" : "HTTPS endpoint URL"}</label><input id="dfWebhookUrl" type="url" required placeholder="https://your-domain.com/webhooks/delivery-fast"><small>Must be a public HTTPS address in production. Up to 5 endpoints.</small></div><fieldset style="border:0;padding:0;margin:14px 0"><legend style="font-size:13px;font-weight:600;margin-bottom:8px">Subscribe to events</legend>${WEBHOOK_EVENTS.map(name => `<label style="display:flex;gap:8px;align-items:center;margin:8px 0;color:#536174;font-size:13px"><input type="checkbox" name="dfWebhookEvent" value="${name}" ${["pickup.requested", "shipment.status_updated"].includes(name) ? "checked" : ""}> <code>${name}</code></label>`).join("")}</fieldset><button type="submit" class="button button-primary">Save webhook</button></form>`;
-    return `<div class="page-heading"><div><p class="eyebrow">Developer tools</p><h1>API & Webhooks</h1><p class="subtitle">Book parcels and track them from your ${doc ? "business systems" : "store"} with the Delivery Fast API.</p></div>${statusPill(activeKeys.length ? `${activeKeys.length} active API key${activeKeys.length === 1 ? "" : "s"}` : "No API keys yet")}</div>
+    return `<div class="page-heading"><div><p class="eyebrow">Developer tools</p><h1>API & Webhooks</h1><p class="subtitle">Book parcels and track them from your ${doc ? "business systems" : "store"} with the Paira Express API.</p></div>${statusPill(activeKeys.length ? `${activeKeys.length} active API key${activeKeys.length === 1 ? "" : "s"}` : "No API keys yet")}</div>
       <div class="metrics">${metricCard("API version", "v1", "settings", "Versioned REST API", "stable")}${metricCard("Authentication", "Bearer", "users", "API key in Authorization header", "HTTPS")}${metricCard("Webhook signing", "HMAC-SHA256", "bell", "Verify every event signature", "signed")}</div>
       <section class="panel" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">API keys</h2><p class="panel-subtitle">Server-to-server credentials for ${esc(m?.name)} · ${esc(m?.code)}</p></div>${statusPill(m?.status === "ACTIVE" ? "Active" : "Pending account approval")}</div>${keysPanel}</section>
       <div class="api-layout"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">API reference</h2><p class="panel-subtitle">REST over HTTPS · JSON request and response bodies · <a href="/api/docs" target="_blank" rel="noopener">full OpenAPI reference ↗</a></p></div><span class="status status-blue">Base URL · ${esc(base)}</span></div>
@@ -1686,7 +1686,7 @@
     const tone = { PENDING: ["#fff8e6", "#f5d48a"], APPROVED: ["#effaf5", "#bfe3d5"], REJECTED: ["#fff3ee", "#f3b8a0"] };
     const active = S.merchant.status === "ACTIVE";
     if (!r || (r.status !== "PENDING" && r.decidedAt && Date.now() - new Date(r.decidedAt).getTime() > 14 * 864e5)) {
-      box.innerHTML = active ? `<p style="margin:10px 0 0;color:#64748b;font-size:12.5px">Changes to your business or pickup address are checked by Delivery Fast before they apply.</p>` : "";
+      box.innerHTML = active ? `<p style="margin:10px 0 0;color:#64748b;font-size:12.5px">Changes to your business or pickup address are checked by Paira Express before they apply.</p>` : "";
       return;
     }
     const [bg, border] = tone[r.status] || tone.PENDING;
@@ -1749,7 +1749,7 @@
       return void loadIntegrations().then(openTeam);
     }
     if (/api/i.test(name)) return renderPage("API & Webhooks");
-    if (/plan|package/i.test(name)) return showToast("Service packages are assigned by Delivery Fast. Contact your account manager to change your package.");
+    if (/plan|package/i.test(name)) return showToast("Service packages are assigned by Paira Express. Contact your account manager to change your package.");
     if (/verification/i.test(name)) return window.DFMerchantFeatures ? window.DFMerchantFeatures.openKyc() : showToast("Business verification is loading. Try again in a moment.");
     if (/notification/i.test(name)) return window.DFMerchantFeatures ? window.DFMerchantFeatures.openNotifications() : showToast(`Delivery SMS go to ${phone(S.merchant.contactPhone)}.`);
   }
@@ -1785,9 +1785,9 @@
         const pendingBefore = S.addressRequest?.status === "PENDING" ? S.addressRequest.id : null;
         const saved = await DF.api(`/merchants/me${q()}`, { method: "PATCH", body: { contactName: $("dfContactName").value.trim(), contactPhone: $("dfContactPhone").value.trim(), contactEmail: email || null, ...address } });
         S.addressRequest = saved.addressRequest || null;
-        // Active merchants: a changed address waits for Delivery Fast's approval (the hub follows it once approved).
+        // Active merchants: a changed address waits for Paira Express's approval (the hub follows it once approved).
         if (saved.addressRequest?.status === "PENDING" && saved.addressRequest.id !== pendingBefore)
-          return done(async () => {}, `Profile saved. Your address change was sent to Delivery Fast for approval${saved.addressRequest.hubChanges ? ` (pickups would move to ${saved.addressRequest.proposedHub?.name || "another hub"})` : ""}; until then your current address stays.`);
+          return done(async () => {}, `Profile saved. Your address change was sent to Paira Express for approval${saved.addressRequest.hubChanges ? ` (pickups would move to ${saved.addressRequest.proposedHub?.name || "another hub"})` : ""}; until then your current address stays.`);
         const hubNote = (saved.pickupHub?.id || null) !== before ? (saved.pickupHub ? ` Your pickups are now served by ${saved.pickupHub.name}.` : " No hub serves the new pickup area yet; operations will assign one.") : "";
         return done(async () => {}, `Profile saved.${hubNote}`);
       } catch (error) {
@@ -1923,7 +1923,7 @@
         const chosen = S.workspaces.find(w => w.id === id);
         if (!chosen || chosen.id === S.merchant?.id) return;
         try {
-          sessionStorage.setItem("deliveryfast-merchant-workspace", chosen.id);
+          sessionStorage.setItem("pairaexpress-merchant-workspace", chosen.id);
         } catch {}
         location.href = chosen.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant";
       });
@@ -1969,7 +1969,7 @@
     }
     if (hit("[data-bill-paid]")) {
       stop(event);
-      return showToast("Payments are recorded by Delivery Fast finance once your transfer arrives.");
+      return showToast("Payments are recorded by Paira Express finance once your transfer arrives.");
     }
     if (hit("#exportDocumentBills")) {
       stop(event);

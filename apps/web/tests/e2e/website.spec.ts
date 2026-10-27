@@ -40,7 +40,7 @@ test("homepage renders and navigates without the legacy page scripts", async ({ 
 
 test("real URLs: per-route metadata, old hash links redirect, back/forward works", async ({ browser, request }) => {
   const html = await (await request.get("/pricing", { headers: { "user-agent": "Googlebot/2.1" } })).text();
-  expect(html).toContain("<title>Delivery Fast — A clear estimate, before you book</title>");
+  expect(html).toContain("<title>Paira Express — A clear estimate, before you book</title>");
   expect(html).toMatch(/<link rel="canonical" href="[^"]*\/pricing"/);
   const tracking = await (await request.get("/track/PP-261015-ABCDE", { headers: { "user-agent": "Googlebot/2.1" } })).text();
   expect(tracking).toContain('<meta name="robots" content="noindex');

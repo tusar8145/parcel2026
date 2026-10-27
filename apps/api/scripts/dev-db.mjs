@@ -9,8 +9,8 @@ const dataDir = path.resolve(import.meta.dirname, "../.data/postgres");
 const port = Number(process.env.DEV_DB_PORT || 5433);
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
-  user: "deliveryfast",
-  password: "deliveryfast",
+  user: "pairaexpress",
+  password: "pairaexpress",
   port,
   persistent: true,
   // UTF-8 regardless of the OS locale (Windows defaults to WIN1252, which can't store ৳ or Bengali).
@@ -21,14 +21,14 @@ const pg = new EmbeddedPostgres({
 const fresh = !fs.existsSync(path.join(dataDir, "PG_VERSION"));
 if (fresh) await pg.initialise();
 await pg.start();
-for (const name of ["deliveryfast", "deliveryfast_test"]) {
+for (const name of ["pairaexpress", "deliveryfast_test"]) {
   try {
     await pg.createDatabase(name);
   } catch {
     /* already exists */
   }
 }
-console.log(`PostgreSQL ready on postgresql://deliveryfast:deliveryfast@localhost:${port}/deliveryfast`);
+console.log(`PostgreSQL ready on postgresql://pairaexpress:pairaexpress@localhost:${port}/pairaexpress`);
 
 const stop = async () => {
   await pg.stop();

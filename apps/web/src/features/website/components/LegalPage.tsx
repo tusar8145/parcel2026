@@ -23,7 +23,7 @@ function Shell({ eyebrow, title, intro, children }: { eyebrow: string; title: st
             style={{ margin: "0 0 18px", padding: "10px 14px", borderRadius: 10, background: "#fff7e0", border: "1px solid #f3d27a", fontSize: 14 }}
           >
             <strong>{"Draft for legal review. "}</strong>
-            {`This text is a working draft prepared for Delivery Fast and has not yet been approved by counsel. It must be reviewed against the laws of Bangladesh (including the Digital Security / Cyber Security Act, the Postal and courier licensing rules of the Mail Service Licensing Authority, the Consumer Rights Protection Act 2009 and any data-protection law in force) before it is relied on. Last updated ${UPDATED}.`}
+            {`This text is a working draft prepared for Paira Express and has not yet been approved by counsel. It must be reviewed against the laws of Bangladesh (including the Digital Security / Cyber Security Act, the Postal and courier licensing rules of the Mail Service Licensing Authority, the Consumer Rights Protection Act 2009 and any data-protection law in force) before it is relied on. Last updated ${UPDATED}.`}
           </p>
           {children}
         </article>
@@ -40,11 +40,11 @@ const H2 = ({ id, children }: { id?: string; children: ReactNode }) => (
 
 export function PrivacyPolicy() {
   return (
-    <Shell eyebrow="Legal" title="Privacy Policy" intro="How Delivery Fast collects, uses, shares and protects personal information when you send, receive or track a parcel.">
+    <Shell eyebrow="Legal" title="Privacy Policy" intro="How Paira Express collects, uses, shares and protects personal information when you send, receive or track a parcel.">
       <H2>1. Who we are</H2>
       <p>
         {
-          "Delivery Fast (\"we\", \"us\") is a courier service operating in Bangladesh. This policy covers our website, booking and tracking pages, merchant and rider applications, SMS and email messages, and our customer support. Questions: support@deliveryfast.example."
+          "Paira Express (\"we\", \"us\") is a courier service operating in Bangladesh. This policy covers our website, booking and tracking pages, merchant and rider applications, SMS and email messages, and our customer support. Questions: support@pairaexpress.example."
         }
       </p>
       <H2>2. Information we collect</H2>
@@ -109,7 +109,7 @@ export function PrivacyPolicy() {
       <H2>8. Your choices and rights</H2>
       <p>
         {
-          "You can see and correct your profile and saved addresses in your account, ask for a copy of your data, ask us to delete data we are not required to keep, and withdraw consent for analytics or optional messages. Contact support@deliveryfast.example; we answer within 30 days."
+          "You can see and correct your profile and saved addresses in your account, ask for a copy of your data, ask us to delete data we are not required to keep, and withdraw consent for analytics or optional messages. Contact support@pairaexpress.example; we answer within 30 days."
         }
       </p>
       <H2>9. Children</H2>
@@ -122,11 +122,11 @@ export function PrivacyPolicy() {
 
 export function TermsOfService() {
   return (
-    <Shell eyebrow="Legal" title="Terms of Service" intro="The terms for booking, sending, tracking and receiving parcels and documents with Delivery Fast.">
+    <Shell eyebrow="Legal" title="Terms of Service" intro="The terms for booking, sending, tracking and receiving parcels and documents with Paira Express.">
       <H2>1. The service</H2>
       <p>
         {
-          "Delivery Fast collects parcels and documents from senders and delivers them to recipients in the areas we serve in Bangladesh. These terms apply to customers booking on the website, to guests booking without an account, and, together with their merchant agreement, to merchants."
+          "Paira Express collects parcels and documents from senders and delivers them to recipients in the areas we serve in Bangladesh. These terms apply to customers booking on the website, to guests booking without an account, and, together with their merchant agreement, to merchants."
         }
       </p>
       <H2>2. Booking</H2>

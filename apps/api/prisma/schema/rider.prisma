@@ -125,7 +125,7 @@ model RiderPayout {
   note             String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-  /// Paid by a franchise to its own rider (outside Delivery Fast payroll; no ledger entry).
+  /// Paid by a franchise to its own rider (outside Paira Express payroll; no ledger entry).
   franchiseId      String?           @db.Uuid
   rider            Rider             @relation(fields: [riderId], references: [id])
   earnings         RiderEarning[]

@@ -19,13 +19,13 @@
     const serviceLevelFees={Regular:0,"Same day":30,Express:50};
     const documentTypeRates={"B2B Document":60,"Trade Service Document":80,"Corporate Urgent Document":120,Curtout:100};
     const merchantDiscounts=Object.fromEntries(merchants.map(m=>[m.id,m.discount||0]));
-    const sharedConfigKey="deliveryfast-demo-config";
+    const sharedConfigKey="pairaexpress-demo-config";
     const merchantPricing={ecommerce:{sameZone:70,crossZone:120,extraWeight:20,returnPercent:50,serviceFees:{"Same day":30,Express:50}},document:{sameZone:60,crossZone:100,returnPercent:50,documentRates:{"B2B Document":60,"Trade Service Document":80,"Corporate Urgent Document":120,Curtout:100}}};
     const customerParcelPricing={sameZone:70,crossZone:120,extraWeight:20,codFeePercent:1,serviceFees:{Regular:0,"Same day":30,Express:50}};
-    const customerParcelStorageKey="deliveryfast-customer-parcels";
+    const customerParcelStorageKey="pairaexpress-customer-parcels";
     const merchantEventCatalog={ecommerce:["Order confirmation","Pickup SMS","Out for delivery SMS","Delivery SMS","Return SMS"],document:["Document pickup SMS","Secure transit update","Delivery OTP","Recipient signature confirmation","Sender delivery SMS","Return notification"]};
     const merchantSettings={ecommerce:{sms:true,email:true,cod:true,returns:true,events:[...merchantEventCatalog.ecommerce]},document:{sms:true,email:true,deliveryOtp:true,signatureProof:true,events:[...merchantEventCatalog.document]}};
-    function readSharedAdminConfig(){try{const saved=localStorage.getItem(sharedConfigKey);return saved?JSON.parse(saved):{}}catch(error){console.error("Delivery Fast demo configuration could not be loaded.",error);return{}}}
+    function readSharedAdminConfig(){try{const saved=localStorage.getItem(sharedConfigKey);return saved?JSON.parse(saved):{}}catch(error){console.error("Paira Express demo configuration could not be loaded.",error);return{}}}
     const restoredAdminConfig=readSharedAdminConfig();
     if(restoredAdminConfig.channels)Object.assign(adminChannels,restoredAdminConfig.channels);
     if(Array.isArray(restoredAdminConfig.notifications)){notificationEvents.splice(0,notificationEvents.length,...restoredAdminConfig.notifications)}
@@ -42,7 +42,7 @@
     if(restoredAdminConfig.customerParcelPricing)Object.assign(customerParcelPricing,restoredAdminConfig.customerParcelPricing);
     if(restoredAdminConfig.merchantSettings)for(const type of Object.keys(merchantSettings))if(restoredAdminConfig.merchantSettings[type])Object.assign(merchantSettings[type],restoredAdminConfig.merchantSettings[type]);
     if(Array.isArray(restoredAdminConfig.entitlements))for(const saved of restoredAdminConfig.entitlements){const current=serviceEntitlements.find(item=>item.id===saved.id);if(current)for(const key of ["ecommerce","domestic","document","cod"])if(typeof saved[key]==="boolean")current[key]=saved[key]}
-    function persistAdminConfig(){try{const current=readSharedAdminConfig();localStorage.setItem(sharedConfigKey,JSON.stringify({...current,channels:adminChannels,notifications:notificationEvents,returnReasons,receiverRelations,geoCatalog,geoHierarchy,deliveryRates,serviceLevelFees,documentTypeRates,merchantDiscounts,merchantPricing,customerParcelPricing:current.customerParcelPricing||customerParcelPricing,merchantSettings,entitlements:serviceEntitlements}));return true}catch(error){console.error("Delivery Fast demo configuration could not be saved.",error);showToast("Configuration was not saved in this browser. Please check browser storage permissions.");return false}}
+    function persistAdminConfig(){try{const current=readSharedAdminConfig();localStorage.setItem(sharedConfigKey,JSON.stringify({...current,channels:adminChannels,notifications:notificationEvents,returnReasons,receiverRelations,geoCatalog,geoHierarchy,deliveryRates,serviceLevelFees,documentTypeRates,merchantDiscounts,merchantPricing,customerParcelPricing:current.customerParcelPricing||customerParcelPricing,merchantSettings,entitlements:serviceEntitlements}));return true}catch(error){console.error("Paira Express demo configuration could not be saved.",error);showToast("Configuration was not saved in this browser. Please check browser storage permissions.");return false}}
     const adminEscape=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const priorAdminShow=showPage;
     function configPanel(title,subtitle,body){return `<section class="panel"><div class="panel-heading"><div><h2 class="panel-title">${title}</h2><p class="panel-subtitle">${subtitle}</p></div></div>${body}</section>`}

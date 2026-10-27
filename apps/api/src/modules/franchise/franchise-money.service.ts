@@ -145,7 +145,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
     const f = await this.panel.context(actor);
     const hub = await this.prisma.hub.findUnique({ where: { id: input.hubId }, select: { id: true, name: true, active: true, type: true } });
     if (!hub || !hub.active) throw notFound("Hub");
-    if (hub.type !== "COMPANY") throw new AppError("NOT_COMPANY_HUB", "Deposit cash at a Delivery Fast hub", HttpStatus.UNPROCESSABLE_ENTITY);
+    if (hub.type !== "COMPANY") throw new AppError("NOT_COMPANY_HUB", "Deposit cash at a Paira Express hub", HttpStatus.UNPROCESSABLE_ENTITY);
     const config = await readFranchiseConfig(this.prisma);
     const row = await this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM franchises WHERE id = ${f.id}::uuid FOR UPDATE`;

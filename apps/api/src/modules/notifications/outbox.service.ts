@@ -129,7 +129,7 @@ export class OutboxService {
           emails,
           () =>
             gateway.sendEmail(
-              emails.map(m => ({ id: m.id, to: m.to, toName: users.find(u => u.id === m.userId)?.name, subject: m.subject ?? "Delivery Fast", text: m.body, html: m.html ?? m.body })),
+              emails.map(m => ({ id: m.id, to: m.to, toName: users.find(u => u.id === m.userId)?.name, subject: m.subject ?? "Paira Express", text: m.body, html: m.html ?? m.body })),
             ),
           failed,
           finalAttempt,

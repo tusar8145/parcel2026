@@ -8,7 +8,7 @@ import { MerchantPlaceFields, placeBody, placeNames, placePaths, placeRules } fr
 
 export type PartnerKind = "merchant" | "rider" | "franchise";
 
-const INVITE_KEY = "deliveryfast-merchant-invite";
+const INVITE_KEY = "pairaexpress-merchant-invite";
 /** A merchant invitation token from the link (?invite=…), kept while the visitor signs in. */
 export function inviteToken(): string | null {
   try {
@@ -25,7 +25,7 @@ export function inviteToken(): string | null {
  * sent: it survives the sign-in / sign-up pages, a reload and the SMS-code step. Passwords and
  * codes are never kept.
  */
-const DRAFT_KEY = "deliveryfast-partner-draft";
+const DRAFT_KEY = "pairaexpress-partner-draft";
 const SECRET_FIELDS = new Set(["accountPassword", "accountOtp", "accountLoginPassword"]);
 function saveDraft(kind: PartnerKind, values: Record<string, string>) {
   try {
@@ -325,7 +325,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
           return false;
         }
         await df().auth.signup({ name: v[accountName].trim(), phone: target!.phone, password: v.accountPassword, otp: v.accountOtp.trim() });
-        toast("Your Delivery Fast account is ready. Sending your application…");
+        toast("Your Paira Express account is ready. Sending your application…");
       } else {
         let result: SessionUser | MfaChallenge;
         if (v.accountMethod === "otp") {
@@ -345,8 +345,8 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
       if (isApiError(err) && err.code === "PHONE_IN_USE") {
         setOtp(null);
         form.setValues(c => ({ ...c, accountMode: "existing", accountMethod: "password", accountLogin: `0${local10(target!.phone)}`, accountOtp: "" }));
-        setAccountNote("This number already has a Delivery Fast account. Sign in below to send your application.");
-        setSummary({ names: [], extra: ["This number already has a Delivery Fast account. Sign in at the end of the form to send your application."] });
+        setAccountNote("This number already has a Paira Express account. Sign in below to send your application.");
+        setSummary({ names: [], extra: ["This number already has a Paira Express account. Sign in at the end of the form to send your application."] });
         setTimeout(() => focusField("accountLoginPassword"), 50);
         return false;
       }
@@ -503,7 +503,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
       {invite && kind === "merchant" ? (
         invite.ok ? (
           <div className="field full" id="inviteNotice" style={noticeStyle("ok")}>
-            {`You're invited to join Delivery Fast as ${inviteLabel}${invite.info.businessName ? ` (${invite.info.businessName})` : ""}. ${
+            {`You're invited to join Paira Express as ${inviteLabel}${invite.info.businessName ? ` (${invite.info.businessName})` : ""}. ${
               user ? "Check the details and send your application." : invite.info.hasAccount ? "This number already has an account: fill in the form, then sign in at the end to send it." : "Fill in the form; you'll create your account at the end and send it in one step."
             }`}
             {user && invite.info.phone && local10(user.phone) !== local10(invite.info.phone) ? (
@@ -642,14 +642,14 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
       )}
       {inline ? (
         <>
-          <h2 className="field full">{kind === "merchant" ? "5. Your Delivery Fast account" : "Your Delivery Fast account"}</h2>
+          <h2 className="field full">{kind === "merchant" ? "5. Your Paira Express account" : "Your Paira Express account"}</h2>
           {accountNote ? (
             <div className="field full" id="accountNote" role="status" style={noticeStyle("warn")}>
               {accountNote}
             </div>
           ) : null}
           <div className="field full">
-            <div className="address-category-options" role="radiogroup" aria-label="Your Delivery Fast account">
+            <div className="address-category-options" role="radiogroup" aria-label="Your Paira Express account">
               {(
                 [
                   ["new", "I'm new: create my account"],
@@ -720,7 +720,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
       <div className="route-actions">
         <span className="route-note">
           {user
-            ? "Your application goes to the Delivery Fast team. We'll contact you after review."
+            ? "Your application goes to the Paira Express team. We'll contact you after review."
             : "We'll confirm your number by SMS, set up your account and send the application. What you type is kept on this device until it's sent."}
         </span>
         <button className="button button-primary" type="submit" disabled={busy}>

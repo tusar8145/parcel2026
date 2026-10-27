@@ -14,7 +14,7 @@ import pg from "pg";
 // merchant is chosen in the dialog, never per row) and super admin (a required column changes the
 // template and the validation; a download button per template). A temporary merchant, owner and super admin are created in the
 // database and deleted afterwards with everything they booked; the import settings are restored.
-const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
+const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://pairaexpress:pairaexpress@localhost:5432/pairaexpress";
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 /** E2E_API_ORIGIN: an API on another port than the web app's proxy target (support.ts forwards the page's calls). */
 const API = API_BASE;

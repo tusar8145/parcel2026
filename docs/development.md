@@ -1,6 +1,6 @@
 # Development guide
 
-There are two ways to run Delivery Fast: everything in Docker (quickest), or the apps on your
+There are two ways to run Paira Express: everything in Docker (quickest), or the apps on your
 machine for development.
 
 ## Option A: Docker (whole stack)
@@ -18,7 +18,7 @@ screen; read them with `docker compose logs -f api worker`. Data lives in Docker
 Requirements:
 - Node.js 20.19+ (22 LTS recommended).
 - PostgreSQL 14+ with a UTF-8 database. The default `.env.example` expects database
-  `deliveryfast`, user `deliveryfast`, password `deliveryfast` on `localhost:5432`, plus a
+  `pairaexpress`, user `pairaexpress`, password `pairaexpress` on `localhost:5432`, plus a
   `deliveryfast_test` database for the tests.
   - Without a PostgreSQL install, `npm run db:up` runs a private one on port 5433 instead;
     change the port in `apps/api/.env` and `.env.test`.
@@ -64,15 +64,15 @@ Every seeded account uses the password `DeliveryFast2026`. Sign in at
 
 | Role | Sign in with |
 |---|---|
-| Super admin | admin@deliveryfast.example |
-| Operations manager | ops@deliveryfast.example |
-| Hub operator (Gulshan) | hub.gulshan@deliveryfast.example |
-| Finance | finance@deliveryfast.example |
-| Support | support@deliveryfast.example |
+| Super admin | admin@pairaexpress.example |
+| Operations manager | ops@pairaexpress.example |
+| Hub operator (Gulshan) | hub.gulshan@pairaexpress.example |
+| Finance | finance@pairaexpress.example |
+| Support | support@pairaexpress.example |
 | Merchant owner, Northstar Store (e-commerce) | owner@northstar.example |
 | Merchant owner, Meridian Bank PLC (documents) | ops@meridianbank.example |
 | Rider R-2048 Jordan Rivera (also R-2029, R-2030, R-2041, R-2016, R-2051) | 01710002048 |
-| Customer | customer@deliveryfast.example |
+| Customer | customer@pairaexpress.example |
 
 SMS codes (sign-up, SMS sign-in, password reset, delivery codes) are printed in the API log.
 With `EXPOSE_DEV_OTP=true` (development only, refused in production) they also appear in the UI
@@ -84,7 +84,7 @@ npm test                                       # shared unit tests + all API e2e
 cd apps/web && npx playwright test -c playwright.e2e.config.ts   # browser tests (API + web + seeded DB running)
 npm run build -w @delivery-fast/web && npm run test:visual       # parity with design-reference/
 ```
-Browser tests need only the seeded staff accounts (`*@deliveryfast.example`): each spec creates its
+Browser tests need only the seeded staff accounts (`*@pairaexpress.example`): each spec creates its
 own temporary merchants, owners, staff, riders and customers (`apps/web/tests/e2e/support.ts`) and
 deletes them afterwards with everything they produced. `E2E_API_ORIGIN=http://localhost:<port>` points
 them at an API on another port than the web app's proxy target; `E2E_DATABASE_URL` at another database.
@@ -145,30 +145,30 @@ sudo -u postgres psql
 & "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" `
   -h localhost `
   -p 5432 `
-  -U deliveryfast `
-  -d deliveryfast `
+  -U pairaexpress `
+  -d pairaexpress `
   -F c `
-  -f "$HOME\Downloads\deliveryfast.backup"
+  -f "$HOME\Downloads\pairaexpress.backup"
 
 
 
 //ubuntu te 
 
 
-CREATE USER deliveryfast WITH PASSWORD 'deliveryfast';
-CREATE DATABASE deliveryfast OWNER deliveryfast;
+CREATE USER pairaexpress WITH PASSWORD 'pairaexpress';
+CREATE DATABASE pairaexpress OWNER pairaexpress;
 \q
 
 
-PGPASSWORD='deliveryfast' pg_restore \
+PGPASSWORD='pairaexpress' pg_restore \
   -h localhost \
   -p 5432 \
-  -U deliveryfast \
-  -d deliveryfast \
+  -U pairaexpress \
+  -d pairaexpress \
   --no-owner \
   --no-acl \
   --exit-on-error \
-  /root/deliveryfast.backup
+  /root/pairaexpress.backup
 
 email
 

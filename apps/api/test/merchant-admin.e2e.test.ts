@@ -123,7 +123,7 @@ describe("merchant administration", () => {
       expect(ask.body.status).toBe("INFO_REQUESTED");
       const mine = await ctx.api("GET", "/merchants/me/review", { token: owner.token });
       expect(mine.body).toMatchObject({ status: "INFO_REQUESTED", canRespond: true });
-      expect(mine.body.messages[0]).toMatchObject({ kind: "INFO_REQUEST", author: "Delivery Fast", body: "Please upload a clearer trade licence" });
+      expect(mine.body.messages[0]).toMatchObject({ kind: "INFO_REQUEST", author: "Paira Express", body: "Please upload a clearer trade licence" });
 
       const answer = await ctx.api("POST", "/merchants/me/review/respond", { token: owner.token, body: { message: "Uploaded a new scan" } });
       expect(answer.body.status).toBe("PENDING_REVIEW");
@@ -159,9 +159,9 @@ describe("merchant administration", () => {
       expect(invited.body.status).toBe("PENDING");
       const token = new URL(invited.body.link.replace("#/", "")).searchParams.get("invite")!;
       expect((await outboxEvents()).filter(t => t === "merchant.invite")).toHaveLength(1);
-      // A clear invitation text (not "Delivery Fast added you to Delivery Fast"), linking to the application form.
+      // A clear invitation text (not "Paira Express added you to Paira Express"), linking to the application form.
       const sms = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "merchant.invite", channel: "SMS" } });
-      expect(sms.body).toBe(`You're invited to join Delivery Fast as an E-commerce merchant (Karim Gadgets). Create your account and apply here: ${invited.body.link}`);
+      expect(sms.body).toBe(`You're invited to join Paira Express as an E-commerce merchant (Karim Gadgets). Create your account and apply here: ${invited.body.link}`);
       // The contact name must be a name, not the phone number typed into the wrong field.
       const phoneAsName = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "01912345670", phone: "01912345670", type: "ECOMMERCE" } });
       expect(phoneAsName.status).toBe(422);

@@ -1,4 +1,4 @@
-# Delivery Fast
+# Paira Express
 
 npm workspaces monorepo:
 - `apps/api` – NestJS 11 (Fastify) API, Prisma 7 + PostgreSQL, pg-boss jobs (on Postgres), Redis
@@ -85,7 +85,7 @@ Setup and run instructions: `docs/development.md`.
   panels (`shared/merchant-bridge.js` + per-panel `bridge.js`), super admin
   (`super-admin/bridge.js`) and support tickets on every page (`shared/support.js`). Super-admin
   platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
-  the `deliveryfast-demo-config` key for every page. Widgets with no backing data (maps,
+  the `pairaexpress-demo-config` key for every page. Widgets with no backing data (maps,
   traffic charts, some report rows) remain decorative.
 - Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
   merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),

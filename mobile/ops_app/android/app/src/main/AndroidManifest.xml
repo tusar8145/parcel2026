@@ -8,7 +8,7 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- Push messages: the channel, status bar icon and colour when a message names none. -->
-        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="deliveryfast" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="pairaexpress" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_notify" />
         <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/push_color" />
         <activity

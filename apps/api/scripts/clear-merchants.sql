@@ -2,7 +2,7 @@
 -- users who were only merchant members (they would otherwise be logins with no access).
 -- Run clear-shipments-and-tickets.sql first if merchants still have parcels, invoices,
 -- settlements or tickets.
--- Run: psql -h localhost -U deliveryfast -d deliveryfast -f apps/api/scripts/clear-merchants.sql
+-- Run: psql -h localhost -U pairaexpress -d pairaexpress -f apps/api/scripts/clear-merchants.sql
 BEGIN;
 CREATE TEMP TABLE merchant_only_users ON COMMIT DROP AS
   SELECT u.id FROM users u

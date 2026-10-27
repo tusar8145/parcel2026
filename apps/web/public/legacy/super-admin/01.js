@@ -15,11 +15,11 @@
       {id:"MER-10038",name:"Metro Bank Cards",owner:"Rafi Ahmed",email:"desk@citydocs.example",plan:"Business",type:"Banking & Financial merchant",services:"Cards · Document express",joined:"May 11, 2025",shipments:"522",status:"Suspended"}
     ];
     const adminUsers=[
-      ["Alex Morgan","alex@deliveryfast.example","Super Administrator","Platform-wide","Active","Today, 8:12 AM"],
-      ["Nadia Chowdhury","nadia@deliveryfast.example","Finance Admin","COD & billing","Active","Today, 9:04 AM"],
-      ["Farid Ahmed","farid@deliveryfast.example","Operations Admin","Courier operations","Active","Today, 7:52 AM"],
-      ["Samira Khan","samira@deliveryfast.example","Merchant Support","Merchant accounts","Active","Yesterday, 5:46 PM"],
-      ["Tanvir Alam","tanvir@deliveryfast.example","Hub Manager","Dhaka Central","Invited","Oct 13, 2026"]
+      ["Alex Morgan","alex@pairaexpress.example","Super Administrator","Platform-wide","Active","Today, 8:12 AM"],
+      ["Nadia Chowdhury","nadia@pairaexpress.example","Finance Admin","COD & billing","Active","Today, 9:04 AM"],
+      ["Farid Ahmed","farid@pairaexpress.example","Operations Admin","Courier operations","Active","Today, 7:52 AM"],
+      ["Samira Khan","samira@pairaexpress.example","Merchant Support","Merchant accounts","Active","Yesterday, 5:46 PM"],
+      ["Tanvir Alam","tanvir@pairaexpress.example","Hub Manager","Dhaka Central","Invited","Oct 13, 2026"]
     ];
     const serviceRows=[
       ["Customer parcel","Public pickup request","Sender-paid delivery · optional COD collection","Enabled","Active"],
@@ -82,7 +82,7 @@
       ["DF-261015-28381","Customer parcel","—","Pending operations confirmation","Website request · Dhaka","Today, 9:42 AM"]
     ];
     function recentCustomerParcelActivity(){
-      try{const rows=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");return Array.isArray(rows)?rows.filter(row=>row&&row.trackingId).map(row=>[row.trackingId,row.sender||"Customer parcel","—",row.status||"Pickup requested",row.destination||"Website request",row.createdAt||"Recently"]):[]}
+      try{const rows=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");return Array.isArray(rows)?rows.filter(row=>row&&row.trackingId).map(row=>[row.trackingId,row.sender||"Customer parcel","—",row.status||"Pickup requested",row.destination||"Website request",row.createdAt||"Recently"]):[]}
       catch(error){console.error("Customer parcel activity could not be loaded.",error);return[]}
     }
     function platformActivityPage(){

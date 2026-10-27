@@ -1,5 +1,5 @@
 (() => {
-  const storageKey = "deliveryfast-support-tickets";
+  const storageKey = "pairaexpress-support-tickets";
   const statuses = ["Open", "In progress", "Waiting for requester", "Resolved", "Closed"];
   const categories = ["Delivery issue", "Pickup or collection", "COD / payment", "Account / API", "Rider or safety", "Other"];
   const maxAttachmentBytes = 350 * 1024;
@@ -284,7 +284,7 @@
         prefilled = { ...prefilled, subject: `Help with ${reference}`, category: "Delivery issue", relatedRef: reference };
       }
     }
-    document.title = "Delivery Fast — Customer support";
+    document.title = "Paira Express — Customer support";
     document.getElementById("navLinks")?.classList.remove("open");
     document.getElementById("menuButton")?.setAttribute("aria-expanded", "false");
     document.querySelectorAll("main > :not(#pageView)").forEach(node => node.remove());
@@ -293,7 +293,7 @@
     pageView.hidden = false;
     pageView.innerHTML = window.deliveryFastCustomerSession && typeof window.customerAreaShell === "function"
       ? window.customerAreaShell(supportPage(), "support")
-      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Delivery Fast</button>${supportPage()}</div>`;
+      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Paira Express</button>${supportPage()}</div>`;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 

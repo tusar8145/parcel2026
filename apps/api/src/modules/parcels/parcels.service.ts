@@ -273,7 +273,7 @@ export class ParcelsService {
                     location: dropOff.hub.name,
                     metadata: { hubId: dropOff.hub.id, kind: "drop_off_booked" },
                   }
-                : { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Delivery Fast" }),
+                : { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Paira Express" }),
               actorUserId: actor !== "guest" && actor.kind === "user" ? actor.userId : null,
               actorLabel: ctx.actorLabel,
             },

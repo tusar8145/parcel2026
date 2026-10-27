@@ -181,7 +181,7 @@ class _MapPageState extends State<MapPage> {
           mapController: _map,
           options: const MapOptions(initialCenter: _dhaka, initialZoom: 11.5),
           children: [
-            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'bd.com.deliveryfast.operations'),
+            TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'bd.com.pairaexpress.operations'),
             MarkerLayer(
               markers: [
                 for (final v in _vehicles.where((v) => v['lat'] != null))

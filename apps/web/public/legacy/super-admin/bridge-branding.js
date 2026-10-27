@@ -68,7 +68,7 @@
       <div class="config-layout" style="margin:0">
         <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Company</h2><p class="panel-subtitle">Shown in headers, page and tab titles, messages and PDFs</p></div></div>
           <div class="form-grid" style="margin-top:12px">
-            ${field("brName", "Company name", b.companyName, { required: true, hint: "Replaces “Delivery Fast” everywhere it shows." })}
+            ${field("brName", "Company name", b.companyName, { required: true, hint: "Replaces “Paira Express” everywhere it shows." })}
             ${field("brLegal", "Legal name", b.legalName === b.companyName ? "" : b.legalName, { placeholder: "Same as the company name", hint: "On invoices and statements." })}
             ${field("brTagline", "Tagline", b.tagline, { full: true })}
             ${field("brWebsite", "Website", b.website, { type: "url", placeholder: "https://", full: true })}
@@ -120,9 +120,9 @@
     };
   }
 
-  /** Delivery Fast's own About text with the company's name in it. */
+  /** Paira Express's own About text with the company's name in it. */
   function defaultAbout(name = $("brName")?.value.trim() || S.b.companyName) {
-    const named = t => String(t || "").split("Delivery Fast").join(name || "Delivery Fast");
+    const named = t => String(t || "").split("Paira Express").join(name || "Paira Express");
     return { intro: named(S.b.defaults?.about?.intro), body: named(S.b.defaults?.about?.body).trim() };
   }
 
@@ -183,7 +183,7 @@
       event.preventDefault();
       if (check && !check()) return;
       const typed = values();
-      // Delivery Fast's own text is kept as "the default", so it follows a later change of the company name.
+      // Paira Express's own text is kept as "the default", so it follows a later change of the company name.
       const d = defaultAbout(typed.companyName);
       if (typed.about.body === d.body) typed.about.body = "";
       if (typed.about.intro === d.intro) typed.about.intro = "";

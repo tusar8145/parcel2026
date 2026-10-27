@@ -71,7 +71,7 @@ model UserNotification {
   @@map("user_notifications")
 }
 
-/// A phone signed in to a Delivery Fast app (merchant, rider): its Firebase Cloud Messaging token. In-app
+/// A phone signed in to a Paira Express app (merchant, rider): its Firebase Cloud Messaging token. In-app
 /// notifications of the user are also sent to it as a push. Removed at sign-out or when Firebase says the
 /// token is no longer valid.
 model PushDevice {

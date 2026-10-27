@@ -22,7 +22,7 @@ import { pdfHas, readPdf } from "../../../api/test/pdf-text";
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 export const API_ORIGIN = (process.env.E2E_API_ORIGIN ?? "").replace(/\/$/, "");
 export const API_BASE = API_ORIGIN || BASE_URL;
-export const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
+export const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://pairaexpress:pairaexpress@localhost:5432/pairaexpress";
 
 /** An absolute URL on the API (`apiUrl("/api/v1/auth/login")`). */
 export const apiUrl = (path: string) => `${API_BASE}${path}`;

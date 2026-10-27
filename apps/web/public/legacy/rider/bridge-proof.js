@@ -56,7 +56,7 @@
   const dhakaTime = iso =>
     `${new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} (Dhaka)`;
   const place = c => (c?.lat != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)} · ±${Math.round(c.accuracy ?? 0)} m` : "Location unavailable");
-  const stampLines = s => [`Delivery Fast · ${s.trackingId}${s.rider ? ` · ${s.rider}` : ""}`, dhakaTime(s.capture.capturedAt), place(s.capture)];
+  const stampLines = s => [`Paira Express · ${s.trackingId}${s.rider ? ` · ${s.rider}` : ""}`, dhakaTime(s.capture.capturedAt), place(s.capture)];
 
   /** Draws the stamp band at the bottom of ctx's canvas (band already sized). */
   function drawBand(ctx, width, top, height, lines, dark) {
@@ -216,7 +216,7 @@
         for (const note of document.querySelectorAll("#mainContent .panel-subtitle")) if (/^Type the tracking ID/.test(note.textContent)) note.textContent = "Scan the barcode with the camera, or type the tracking ID (keyboard-mode scanners work too).";
       }
     } catch (error) {
-      console.error("Delivery Fast: scan page extras failed", error);
+      console.error("Paira Express: scan page extras failed", error);
     }
   };
 

@@ -41,14 +41,14 @@ interface Person {
   phone: string;
 }
 const STAFF: (Person & { role: Role; hub?: string })[] = [
-  { group: "SUPER_ADMIN", label: "Super admin", role: "SUPER_ADMIN", name: "Tanvir Ahmed", email: "superadmin@deliveryfast.example", phone: "+8801711000101" },
-  { group: "OPS", label: "Operations manager", role: "OPS_MANAGER", name: "Farhana Akter", email: "ops.manager@deliveryfast.example", phone: "+8801711000102" },
-  { group: "HUB", label: "Hub operator · Dhaka Central Sorting Hub", role: "HUB_OPERATOR", hub: "DHK-CSH", name: "Rakibul Hasan", email: "hubop.dhaka.central@deliveryfast.example", phone: "+8801711000103" },
-  { group: "HUB", label: "Hub operator · Gulshan", role: "HUB_OPERATOR", hub: "DHK-GUL", name: "Nusrat Jahan", email: "hubop.gulshan@deliveryfast.example", phone: "+8801711000104" },
-  { group: "HUB", label: "Hub operator · Chattogram", role: "HUB_OPERATOR", hub: "CTG-CEN", name: "Mahmudul Karim", email: "hubop.chattogram@deliveryfast.example", phone: "+8801711000105" },
-  { group: "FINANCE", label: "Finance (maker)", role: "FINANCE", name: "Shahana Parvin", email: "finance.maker@deliveryfast.example", phone: "+8801711000106" },
-  { group: "FINANCE", label: "Finance (checker)", role: "FINANCE", name: "Kamrul Islam", email: "finance.checker@deliveryfast.example", phone: "+8801711000107" },
-  { group: "SUPPORT", label: "Support agent", role: "SUPPORT_AGENT", name: "Sumaiya Rahman", email: "support.agent@deliveryfast.example", phone: "+8801711000108" },
+  { group: "SUPER_ADMIN", label: "Super admin", role: "SUPER_ADMIN", name: "Tanvir Ahmed", email: "superadmin@pairaexpress.example", phone: "+8801711000101" },
+  { group: "OPS", label: "Operations manager", role: "OPS_MANAGER", name: "Farhana Akter", email: "ops.manager@pairaexpress.example", phone: "+8801711000102" },
+  { group: "HUB", label: "Hub operator · Dhaka Central Sorting Hub", role: "HUB_OPERATOR", hub: "DHK-CSH", name: "Rakibul Hasan", email: "hubop.dhaka.central@pairaexpress.example", phone: "+8801711000103" },
+  { group: "HUB", label: "Hub operator · Gulshan", role: "HUB_OPERATOR", hub: "DHK-GUL", name: "Nusrat Jahan", email: "hubop.gulshan@pairaexpress.example", phone: "+8801711000104" },
+  { group: "HUB", label: "Hub operator · Chattogram", role: "HUB_OPERATOR", hub: "CTG-CEN", name: "Mahmudul Karim", email: "hubop.chattogram@pairaexpress.example", phone: "+8801711000105" },
+  { group: "FINANCE", label: "Finance (maker)", role: "FINANCE", name: "Shahana Parvin", email: "finance.maker@pairaexpress.example", phone: "+8801711000106" },
+  { group: "FINANCE", label: "Finance (checker)", role: "FINANCE", name: "Kamrul Islam", email: "finance.checker@pairaexpress.example", phone: "+8801711000107" },
+  { group: "SUPPORT", label: "Support agent", role: "SUPPORT_AGENT", name: "Sumaiya Rahman", email: "support.agent@pairaexpress.example", phone: "+8801711000108" },
 ];
 const RIDERS: (Person & { hub: string; vehicle: VehicleType })[] = [
   ["Abdul Karim", "DHK-GUL", "MOTORBIKE"],
@@ -67,7 +67,7 @@ const RIDERS: (Person & { hub: string; vehicle: VehicleType })[] = [
   name,
   hub,
   vehicle: vehicle as VehicleType,
-  email: `rider.${name.toLowerCase().replace(/\s+/g, ".")}@deliveryfast.example`,
+  email: `rider.${name.toLowerCase().replace(/\s+/g, ".")}@pairaexpress.example`,
   phone: `+88018110002${String(i + 1).padStart(2, "0")}`,
 }));
 const MERCHANTS = [
@@ -77,8 +77,8 @@ const MERCHANTS = [
     plan: "Growth",
     pickup: { address: "House 12, Road 104, Gulshan 2, Dhaka", area: "Gulshan 2", district: "Dhaka North" },
     payout: { method: "BKASH", account: "01911000301" },
-    owner: { group: "MERCHANT" as const, label: "E-commerce merchant · owner", name: "Mehedi Hasan", email: "merchant.ecom.owner@deliveryfast.example", phone: "+8801911000301" },
-    staff: { group: "MERCHANT" as const, label: "E-commerce merchant · staff", name: "Taslima Begum", email: "merchant.ecom.staff@deliveryfast.example", phone: "+8801911000302" },
+    owner: { group: "MERCHANT" as const, label: "E-commerce merchant · owner", name: "Mehedi Hasan", email: "merchant.ecom.owner@pairaexpress.example", phone: "+8801911000301" },
+    staff: { group: "MERCHANT" as const, label: "E-commerce merchant · staff", name: "Taslima Begum", email: "merchant.ecom.staff@pairaexpress.example", phone: "+8801911000302" },
   },
   {
     type: "BANKING_FINANCIAL" as const,
@@ -86,13 +86,13 @@ const MERCHANTS = [
     plan: "Business",
     pickup: { address: "Level 5, 21 Dilkusha C/A, Motijheel, Dhaka", area: "Dilkusha C/A", district: "Dhaka South" },
     payout: { method: "BANK", account: "0011-0200-334455" },
-    owner: { group: "MERCHANT" as const, label: "Banking & Financial merchant · owner", name: "Anisur Rahman", email: "merchant.doc.owner@deliveryfast.example", phone: "+8801911000303" },
+    owner: { group: "MERCHANT" as const, label: "Banking & Financial merchant · owner", name: "Anisur Rahman", email: "merchant.doc.owner@pairaexpress.example", phone: "+8801911000303" },
     staff: null,
   },
 ];
 const CUSTOMERS: (Person & { address: { street: string; area: string; zone: string; district: string } })[] = [
-  { group: "CUSTOMER", label: "Customer", name: "Ayesha Siddiqua", email: "customer.ayesha@deliveryfast.example", phone: "+8801511000401", address: { street: "Flat 4B, House 9, Road 7", area: "Dhanmondi R/A", zone: "Dhanmondi", district: "Dhaka Central" } },
-  { group: "CUSTOMER", label: "Customer", name: "Rafiq Uddin", email: "customer.rafiq@deliveryfast.example", phone: "+8801611000402", address: { street: "House 22, Road 3, Sector 7", area: "Uttara Sector 7", zone: "Uttara", district: "Dhaka North" } },
+  { group: "CUSTOMER", label: "Customer", name: "Ayesha Siddiqua", email: "customer.ayesha@pairaexpress.example", phone: "+8801511000401", address: { street: "Flat 4B, House 9, Road 7", area: "Dhanmondi R/A", zone: "Dhanmondi", district: "Dhaka Central" } },
+  { group: "CUSTOMER", label: "Customer", name: "Rafiq Uddin", email: "customer.rafiq@pairaexpress.example", phone: "+8801611000402", address: { street: "House 22, Road 3, Sector 7", area: "Uttara Sector 7", zone: "Uttara", district: "Dhaka North" } },
 ];
 
 /** 18 characters with upper and lower case letters, digits and symbols (no look-alikes). */
@@ -238,7 +238,7 @@ async function main() {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(
     out,
-    `# Delivery Fast demo accounts\n\nGenerated ${new Date().toISOString()} by \`npm run db:seed:users\`. Sign in with the email or the phone number and the password.\nOne password per role group. Running the seed again sets new passwords and rewrites this file.\n\n${table.join("\n")}\n`,
+    `# Paira Express demo accounts\n\nGenerated ${new Date().toISOString()} by \`npm run db:seed:users\`. Sign in with the email or the phone number and the password.\nOne password per role group. Running the seed again sets new passwords and rewrites this file.\n\n${table.join("\n")}\n`,
   );
   console.log(`${rows.length} accounts ready. Credentials written to ${out}`);
 }

@@ -218,7 +218,7 @@ export const SERVICES: readonly ServiceDef[] = [
     group: "integrations",
     segments: MERCHANTS,
     kind: "entitlement",
-    hint: "The merchant's Delivery Fast app shows their notifications as push messages on the phone.",
+    hint: "The merchant's Paira Express app shows their notifications as push messages on the phone.",
   },
 ];
 export const SERVICE_BY_CODE: ReadonlyMap<string, ServiceDef> = new Map(SERVICES.map(s => [s.code, s]));

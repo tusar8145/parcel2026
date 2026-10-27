@@ -57,7 +57,7 @@ export default function TrackingSection({ legacy = false }: { legacy?: boolean }
           <div className="account-head">
             <div>
               <p className="eyebrow" style={{ marginBottom: "7px" }}>
-                Your Delivery Fast account
+                Your Paira Express account
               </p>
               <h3 id="accountGreeting">Your deliveries</h3>
               <p>Recent demo shipments and their latest delivery updates.</p>

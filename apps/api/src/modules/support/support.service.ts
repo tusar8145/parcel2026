@@ -181,7 +181,7 @@ export class SupportService {
       if (!isSupportStaff(actor)) {
         const pkg = await this.requesterPackage(tx, { merchantId, requesterId: actor.userId });
         if (pkg && !pkg.services.includes("support.tickets"))
-          throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: Support tickets. Your service package doesn't include support tickets; call or email Delivery Fast instead.", HttpStatus.FORBIDDEN, { service: "support.tickets" });
+          throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: Support tickets. Your service package doesn't include support tickets; call or email Paira Express instead.", HttpStatus.FORBIDDEN, { service: "support.tickets" });
       }
       const { ticket, messageId } = await this.openTicket(
         actor,

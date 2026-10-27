@@ -103,7 +103,7 @@ export class AuthGuard implements CanActivate {
     }
     // Service packages: a merchant whose package has no API integration can't use its keys.
     if (!(await merchantHasService(this.prisma, key.merchantId, "integration.api")))
-      throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: API integration. Your service package doesn't include API access; contact Delivery Fast to change it.", 403);
+      throw new AppError("SERVICE_NOT_IN_PACKAGE", "SERVICE_NOT_IN_PACKAGE: API integration. Your service package doesn't include API access; contact Paira Express to change it.", 403);
     // Keys without scopes (created before scopes existed) keep the original access.
     const scopes = key.scopes ?? [];
     const permissions = scopes.length ? scopeToPermissions(scopes) : API_KEY_PERMISSIONS;

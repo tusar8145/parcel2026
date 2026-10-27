@@ -9,7 +9,7 @@ import { API_BASE, Fixtures, apiUrl, expect, secondApprovalOn, test } from "./su
 // (maker-checker). The seeded super admins belong to the owner, so the tests use two temporary
 // super admins of their own (created in the dev database, enrolled with test TOTP secrets,
 // deleted afterwards): "Maker" works in the browser, "Checker" approves through the API.
-const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
+const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://pairaexpress:pairaexpress@localhost:5432/pairaexpress";
 const WEB = { "x-df-client": "web" };
 const tempAdmin = (name: string, n: number) => ({ name, phone: `+88019${String(Date.now() + n).slice(-8)}`, password: `Sa-${randomBytes(9).toString("base64url")}`, id: "" });
 const MAKER = tempAdmin("E2E Maker Admin", 0);

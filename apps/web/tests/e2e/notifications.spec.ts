@@ -9,7 +9,7 @@ import pg from "pg";
 // Runs against the dev database: every change is put back, and no real message is sent.
 // The seeded super admin must enrol two-step verification, so the tests use their own
 // temporary super admin (created in the database, enrolled with a test TOTP secret, deleted after).
-const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://deliveryfast:deliveryfast@localhost:5432/deliveryfast";
+const DATABASE_URL = process.env.E2E_DATABASE_URL ?? "postgresql://pairaexpress:pairaexpress@localhost:5432/pairaexpress";
 const PASSWORD = `Nt-${randomBytes(9).toString("base64url")}`;
 const PHONE = `+88019${String(Date.now()).slice(-8)}`;
 const EXPECTED_ERRORS = [/status of 401/, /status of 404/, /status of 422/];
@@ -186,7 +186,7 @@ test.describe.serial("super admin notifications", () => {
       await expect(editor).toContainText("Sign-in code · SMS");
       await expect(editor).toContainText("must include {{code}}");
       await editor.locator("[data-nt-preview]").click();
-      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Delivery Fast sign-in code");
+      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Paira Express sign-in code");
       await editor.locator("[data-nt-close]").click();
 
       // Parcel notifications: the Parcel group only, with the same filters.

@@ -47,7 +47,7 @@ export const DEFAULT_LIMITS: Limits = {
   sms: { minIntervalSeconds: 20, perRecipientPerHour: 10, perRecipientPerDay: 30, globalPerMinute: 600 },
   otp: { cooldownSeconds: 60, perPhonePerHour: 5, perIpPerHour: 20 },
 };
-export const DEFAULT_BRAND: Brand = { appName: "Delivery Fast", support: "Delivery Fast support" };
+export const DEFAULT_BRAND: Brand = { appName: "Paira Express", support: "Paira Express support" };
 
 interface TemplateOverride {
   enabled: boolean | null;

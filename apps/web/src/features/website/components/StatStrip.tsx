@@ -1,6 +1,6 @@
 export default function StatStrip() {
   return (
-    <section className="stat-strip" aria-label="Delivery Fast at a glance">
+    <section className="stat-strip" aria-label="Paira Express at a glance">
       <div className="shell stats">
         <div className="stat">
           <strong>64</strong>

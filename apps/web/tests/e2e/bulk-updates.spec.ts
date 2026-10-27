@@ -126,7 +126,7 @@ test("New orders → choose Accept & assign → download → 2 riders + 1 invali
   expect(sheet.header.slice(0, 7)).toEqual(["Tracking ID", "Current status", "Suggested rider", "Rider", "Hub", "Priority", "Note"]);
   expect(sheet.rows.map(r => r[sheet.col("Tracking ID")])).toEqual(ids);
   expect(sheet.rows.every(r => r[sheet.col("template")] === "new_orders:accept_pickup")).toBe(true);
-  expect(readXlsx(file.buffer, { maxRows: 100, prefer: ["Instructions"] }).rows[0][0]).toBe("Delivery Fast · Accept & assign pickup rider · New orders");
+  expect(readXlsx(file.buffer, { maxRows: 100, prefer: ["Instructions"] }).rows[0][0]).toBe("Paira Express · Accept & assign pickup rider · New orders");
 
   // ── 3. Fill it in: two rows with the rider, one with a rider that doesn't exist ──
   const label = `${rider.code} · ${rider.name} · Gulshan Sorting Hub`;

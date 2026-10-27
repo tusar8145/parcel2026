@@ -1,6 +1,6 @@
 # Customer Parcel Lifecycle
 
-এই নথিতে Delivery Fast-এর customer parcel বুকিং থেকে চূড়ান্ত ডেলিভারি পর্যন্ত ধাপগুলো বর্ণনা করা হয়েছে। ওয়েবসাইট, Courier Operations এবং Rider workspace-এ দেখানো flow অনুযায়ী parcel-এর status ও tracking history আপডেট হয়।
+এই নথিতে Paira Express-এর customer parcel বুকিং থেকে চূড়ান্ত ডেলিভারি পর্যন্ত ধাপগুলো বর্ণনা করা হয়েছে। ওয়েবসাইট, Courier Operations এবং Rider workspace-এ দেখানো flow অনুযায়ী parcel-এর status ও tracking history আপডেট হয়।
 
 ## Lifecycle-এর ধাপ
 
@@ -97,29 +97,29 @@ Super admin	http://localhost:3000/super-admin
 Your super admin account
 
 Sign-in page: http://localhost:3000/#/login
-Email: superadmin@deliveryfast.example (or phone 01700000099)
+Email: superadmin@pairaexpress.example (or phone 01700000099)
 Password: Admin9fc9308a4eba9
 
 
 1. Super admin (প্রথম login-এ authenticator app লাগবে)
-superadmin@deliveryfast.example
+superadmin@pairaexpress.example
 Gzo9a%37+7m7MRHMx7
 5EKNM-AYJVN
 
 2. Operations manager
-ops.manager@deliveryfast.example
+ops.manager@pairaexpress.example
 aoTT+AwiZWqEKA%c2r
 
 3. Hub operator (Dhaka Central Sorting)
-hubop.dhaka.central@deliveryfast.example
+hubop.dhaka.central@pairaexpress.example
 i6HxcvPHP%gCy%4pzN
 
 4. Hub operator (Gulshan)
-hubop.gulshan@deliveryfast.example
+hubop.gulshan@pairaexpress.example
 i6HxcvPHP%gCy%4pzN
 
 5. Hub operator (Chattogram)
-hubop.chattogram@deliveryfast.example
+hubop.chattogram@pairaexpress.example
 i6HxcvPHP%gCy%4pzN
 
 55. 
@@ -134,35 +134,35 @@ dhanmondi@mail.com
 aCco+6j9Q%?2khoS2Z 
 
 6. Finance (maker)
-finance.maker@deliveryfast.example
+finance.maker@pairaexpress.example
 aCco+6j9Q%?2khoS2Z
 
 7. Finance (checker)
-finance.checker@deliveryfast.example
+finance.checker@pairaexpress.example
 aCco+6j9Q%?2khoS2Z
 
 8. Support agent
-support.agent@deliveryfast.example
+support.agent@pairaexpress.example
 +t6jktBBg+GATB6wAu
 
 9. E-commerce merchant owner (Shopnil Fashion House)
-merchant.ecom.owner@deliveryfast.example
+merchant.ecom.owner@pairaexpress.example
 CP3Gk+UfvShbv=%TEY
 
 10. E-commerce merchant staff (Shopnil Fashion House)
-merchant.ecom.staff@deliveryfast.example
+merchant.ecom.staff@pairaexpress.example
 CP3Gk+UfvShbv=%TEY
 
 11. Document merchant owner (Shapla Corporate Services)
-merchant.doc.owner@deliveryfast.example
+merchant.doc.owner@pairaexpress.example
 CP3Gk+UfvShbv=%TEY
 
 12. Customer (Ayesha Siddiqua)
-customer.ayesha@deliveryfast.example
+customer.ayesha@pairaexpress.example
 EeongQnuknW!gY9g3#
 
 13. Customer (Rafiq Uddin)
-customer.rafiq@deliveryfast.example
+customer.rafiq@pairaexpress.example
 EeongQnuknW!gY9g3#
 
 14. Rider (R-2101, Abdul Karim, Gulshan)
@@ -237,12 +237,12 @@ Find files matching `apps/web/public/legacy/shared/**`
 Search for `select-search\.js|selectSearch|select-search`
 
 "Fetch Web Content" failed
-Completed with input: {"url":"https://deliveryfast.imagine-design.net/legacy/shared/select-search.js"}
-Tool execution failed: Error: Failed to fetch https://deliveryfast.imagine-design.net/legacy/shared/select-search.js - status code 404
+Completed with input: {"url":"https://pairaexpress.imagine-design.net/legacy/shared/select-search.js"}
+Tool execution failed: Error: Failed to fetch https://pairaexpress.imagine-design.net/legacy/shared/select-search.js - status code 404
 
-Fetched [https://deliveryfast.imagine-design.net/](https://deliveryfast.imagine-design.net/)
+Fetched [https://pairaexpress.imagine-design.net/](https://pairaexpress.imagine-design.net/)
 Completed with input: {
-  "url": "https://deliveryfast.imagine-design.net/",
+  "url": "https://pairaexpress.imagine-design.net/",
   "max_length": 6000,
   "raw": true
 }
@@ -265,7 +265,7 @@ curl -sS -o /dev/null -w 'local:  %{http_code}\n' \
   http://127.0.0.1:3001/legacy/shared/select-search.js
 
 curl -sS -o /dev/null -w 'public: %{http_code}\n' \
-  https://deliveryfast.imagine-design.net/legacy/shared/select-search.js
+  https://pairaexpress.imagine-design.net/legacy/shared/select-search.js
 ```
 
 Both should return `200`. This is separate from the earlier `/_next/static` chunk fix: Next.js serves those from `.next/static`, while this script is served from `public`. The deployment guide’s release steps include copying both directories: `deployment.md`.
@@ -294,10 +294,10 @@ pm2 status
 
 # fe-be changed
 
-cd /var/www/deliveryfast
+cd /var/www/pairaexpress
 
 # 1. Back up the database first (this release adds tables)
-pg_dump -U deliveryfast -h localhost deliveryfast > ~/backup-$(date +%F-%H%M).sql
+pg_dump -U pairaexpress -h localhost pairaexpress > ~/backup-$(date +%F-%H%M).sql
 
 # 2. Get the new code
 git fetch origin
@@ -323,3 +323,40 @@ sudo chown $(whoami) /var/www/tesseract
 
 # 8. Restart the API, worker and web
 pm2 reload all
+
+
+
+
+
+//////deployment
+
+On the server (as the user that runs PM2)
+
+cd /var/www/pairaexpress
+
+# 1. Back up the database
+pg_dump -U pairaexpress -h localhost pairaexpress > ~/backup-$(date +%F-%H%M).sql
+
+# 2. New code and packages
+git pull
+npm ci
+
+# 3. Build (shared + API + web); API_ORIGIN must be set at build time
+API_ORIGIN=http://127.0.0.1:4000 npm run build
+
+# 4. Database migrations (only "migrate deploy" in production)
+(cd apps/api && npx prisma migrate deploy)
+
+# 5. Copy the web's static files next to the standalone server
+cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/
+cp -r apps/web/public apps/web/.next/standalone/apps/web/
+
+# 6. Restart
+pm2 reload all
+
+
+
+
+imulator powershel
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Pixel_3a_API_34_extension_level_7_x86_64
+

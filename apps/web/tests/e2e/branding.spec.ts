@@ -67,7 +67,7 @@ test("super admin changes the company; the website shows its name, contact, tab 
   await expect(site.locator(".van-logo")).toHaveText("swift parcel");
   expect(await site.locator(".van-logo").evaluate(el => el.scrollWidth)).toBeLessThanOrEqual(92);
   await expect(site.locator('a[href="mailto:hello@swift.example"]').first()).toBeAttached();
-  await expect(site.locator("body")).not.toContainText("Delivery Fast");
+  await expect(site.locator("body")).not.toContainText("Paira Express");
   await site.goto("/about");
   await expect(site.locator(".about-view h1")).toHaveText("About Swift Parcel", { timeout: 15_000 });
   await expect(site.locator(".about-view h1")).toBeVisible();
@@ -80,12 +80,12 @@ test("super admin changes the company; the website shows its name, contact, tab 
   await expect(site.locator(".brand-word").first()).toHaveText(/Swift\s*Parcel/, { timeout: 15_000 });
   await site.waitForTimeout(1000);
   expect(errors).toEqual([]);
-  // Back to Delivery Fast through the API too (it clears the API's branding cache; afterAll then removes the row).
+  // Back to Paira Express through the API too (it clears the API's branding cache; afterAll then removes the row).
   const reset = await page.evaluate(() =>
     (window as unknown as { DF: { api(path: string, opts: object): Promise<{ companyName: string }> } }).DF.api("/branding", {
       method: "PUT",
-      body: { companyName: "Delivery Fast", legalName: "", contact: { email: "info@deliveryfast.com.bd" }, about: { title: "", body: "" }, icon: null, logo: null },
+      body: { companyName: "Paira Express", legalName: "", contact: { email: "info@pairaexpress.com.bd" }, about: { title: "", body: "" }, icon: null, logo: null },
     }),
   );
-  expect(reset.companyName).toBe("Delivery Fast");
+  expect(reset.companyName).toBe("Paira Express");
 });

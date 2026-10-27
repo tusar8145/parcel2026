@@ -20,7 +20,7 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
 
 1. `shared/api.js` — the API client (`window.DF`). It restores the session from the refresh
    cookie and sends people without the right role to `/#/login`. It also preloads the data the
-   page reads. API-backed storage keys (`deliveryfast-customer-parcels`, `-customer-session`,
+   page reads. API-backed storage keys (`pairaexpress-customer-parcels`, `-customer-session`,
    `-customer-address-book`) are served from memory, so the page scripts keep their synchronous
    reads and nothing personal stays in the browser.
 2. The page's original scripts.

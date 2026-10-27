@@ -104,5 +104,5 @@ export async function merchantHasService(db: Db, merchantId: string, code: strin
 export async function assertMerchantService(db: Db, merchantId: string, code: string) {
   if (await merchantHasService(db, merchantId, code)) return;
   const label = serviceLabel(code);
-  throw new AppError("SERVICE_NOT_IN_PACKAGE", `SERVICE_NOT_IN_PACKAGE: ${label}. Your service package doesn't include it; contact Delivery Fast to change it.`, 403, { service: code });
+  throw new AppError("SERVICE_NOT_IN_PACKAGE", `SERVICE_NOT_IN_PACKAGE: ${label}. Your service package doesn't include it; contact Paira Express to change it.`, 403, { service: code });
 }

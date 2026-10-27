@@ -233,7 +233,7 @@
     const rows = data.items
       .map(p => `<tr><td><strong>${esc(p.number)}</strong>${p.bills.length ? `<span class="sub">${esc(p.bills.map(b => `${b.number} ${tk(b.amount)}`).join(", "))}</span>` : ""}</td><td>${esc(p.paidOn)}</td><td>${esc(methodLabel(p.method))}${p.reference ? `<span class="sub">${esc(p.reference)}</span>` : ""}</td><td class="num"><strong>${tk(p.amount)}</strong></td><td>${pill(PAYMENT, p.status)}${p.rejectReason ? `<span class="sub">${esc(p.rejectReason)}</span>` : ""}</td><td>${p.receipt ? btn("Receipt", `data-mb="file" data-file="${p.receipt.fileId}"`) : ""}</td></tr>`)
       .join("");
-    return `<div class="mb-head"><div><h2>Payments</h2><p>What you paid in these dates. Delivery Fast confirms each one when it arrives.</p></div>${histTools("", "", true)}</div><div class="mb-scroll"><table class="mb-table"><thead><tr><th>Payment</th><th>Paid on</th><th>How</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows || empty(6, "No payments in these dates.")}</tbody></table></div>`;
+    return `<div class="mb-head"><div><h2>Payments</h2><p>What you paid in these dates. Paira Express confirms each one when it arrives.</p></div>${histTools("", "", true)}</div><div class="mb-scroll"><table class="mb-table"><thead><tr><th>Payment</th><th>Paid on</th><th>How</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows || empty(6, "No payments in these dates.")}</tbody></table></div>`;
   }
 
   function statement(a, st) {
@@ -310,7 +310,7 @@
     document.body.insertAdjacentHTML(
       "beforeend",
       `<div class="mb-modal" id="mbModal"><form class="mb-dialog" id="mbPaidForm">
-        <h3>I've paid</h3><p>Tell us about your payment. It shows as waiting until Delivery Fast confirms it arrived. Part payments are welcome.</p>
+        <h3>I've paid</h3><p>Tell us about your payment. It shows as waiting until Paira Express confirms it arrived. Part payments are welcome.</p>
         <div class="row"><label>Amount (৳)<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required value="${a.financial.due > 0 ? esc(String(a.financial.due)) : ""}"></label>
         <label>Paid by<select name="method">${METHODS.filter(m => m[0] !== "CASH").map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label></div>
         <div class="row"><label>Paid on<input name="paidOn" type="date" required value="${today()}"></label><label>Transaction / cheque reference<input name="reference" maxlength="120"></label></div>
@@ -377,7 +377,7 @@
         };
         const p = await DF.api(`/accounts/${S.account.id}/payments`, { method: "POST", body });
         $("mbModal")?.remove();
-        toast(`${p.number} sent: Delivery Fast confirms it when the money arrives.`);
+        toast(`${p.number} sent: Paira Express confirms it when the money arrives.`);
         S.sub = "payments";
         void refresh();
       } catch (error) {

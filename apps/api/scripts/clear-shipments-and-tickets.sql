@@ -2,7 +2,7 @@
 -- (COD records, cash handovers, settlements, invoices, delivery proofs, attachments,
 -- webhook delivery logs, idempotency records).
 -- Keeps users, merchants, riders, hubs, pricing, settings and the audit log.
--- Run: psql -h localhost -U deliveryfast -d deliveryfast -f apps/api/scripts/clear-shipments-and-tickets.sql
+-- Run: psql -h localhost -U pairaexpress -d pairaexpress -f apps/api/scripts/clear-shipments-and-tickets.sql
 BEGIN;
 DELETE FROM cod_collections;
 DELETE FROM cash_handovers;

@@ -181,7 +181,7 @@ describe("franchise hubs", () => {
     expect((await ctx.api("POST", `/franchise-invoices/${bill.body.id}/pay`, { token: finance.token, body: { method: "BANK", reference: "TRX-1" } })).body.status).toBe("PAID");
     expect(await balance("FRANCHISE_PAYABLE", hubId)).toBe(0);
 
-    // The franchise pays its rider all unpaid earnings (no Delivery Fast payroll entry).
+    // The franchise pays its rider all unpaid earnings (no Paira Express payroll entry).
     const earnings = (await ctx.api("GET", `/franchise/riders/${rider.id}/earnings`, { token: s.token })).body;
     expect(earnings.unpaid).toBe(20 + 30 + 20 + 15);
     const paid = await ctx.api("POST", `/franchise/riders/${rider.id}/payments`, { token: s.token, body: { method: "BKASH", reference: "BK-1" } });

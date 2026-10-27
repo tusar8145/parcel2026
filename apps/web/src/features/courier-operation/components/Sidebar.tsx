@@ -58,7 +58,7 @@ export default function Sidebar() {
       <div className="company-switch" id="companySwitch" style={{ cursor: "default" }}>
         <span className="company-avatar">DF</span>
         <span className="company-info">
-          <strong>Delivery Fast</strong>
+          <strong>Paira Express</strong>
           <small>Operations console</small>
         </span>
       </div>{" "}

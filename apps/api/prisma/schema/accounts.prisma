@@ -47,7 +47,7 @@ enum AccountEntryType {
   PAYMENT
 }
 
-/// A statement line. Signed: + = Delivery Fast owes the account, − = the account owes Delivery Fast. Lines are never edited.
+/// A statement line. Signed: + = Paira Express owes the account, − = the account owes Paira Express. Lines are never edited.
 model AccountEntry {
   id          String           @id @default(uuid(7)) @db.Uuid
   accountId   String           @db.Uuid

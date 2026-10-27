@@ -151,7 +151,7 @@ export class PushBroadcastService {
 
   /** One test push to a person's phones. */
   async test(userId: string) {
-    const result = await this.push.toUsers([userId], { title: "Test from Delivery Fast", body: "Push notifications are working.", data: { type: "test" } });
+    const result = await this.push.toUsers([userId], { title: "Test from Paira Express", body: "Push notifications are working.", data: { type: "test" } });
     if (!result.devices) throw new AppError("NO_DEVICES", "This person has no phone with the app signed in (or their merchant plan has no push notifications)", 422);
     return result;
   }

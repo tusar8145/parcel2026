@@ -148,7 +148,7 @@ export class FranchiseAdminService {
       .notifyNow({
         event: "account.invite",
         to: { userId: outcome.owner.id, phone: outcome.owner.phone, email: outcome.owner.email, name: outcome.owner.name },
-        vars: { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", role: `franchise partner (${outcome.franchise.name}, ${outcome.franchise.hub.name})`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
+        vars: { inviter: actor.kind === "user" ? actor.name : "Paira Express", role: `franchise partner (${outcome.franchise.name}, ${outcome.franchise.hub.name})`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
       })
       .catch(() => undefined);
     return franchiseView(outcome.franchise);

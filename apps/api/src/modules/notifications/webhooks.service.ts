@@ -52,7 +52,7 @@ export class WebhooksService {
     try {
       url = new URL(raw);
     } catch {
-      throw new AppError("INVALID_WEBHOOK_URL", "Enter a full URL, e.g. https://example.com/webhooks/deliveryfast", 422);
+      throw new AppError("INVALID_WEBHOOK_URL", "Enter a full URL, e.g. https://example.com/webhooks/pairaexpress", 422);
     }
     if (!isProduction()) return;
     if (url.protocol !== "https:") throw new AppError("INVALID_WEBHOOK_URL", "Webhook URLs must use https", 422);
@@ -105,9 +105,9 @@ export class WebhooksService {
         headers: {
           "content-type": "application/json",
           "user-agent": "DeliveryFast-Webhooks/1.0",
-          "x-deliveryfast-event": delivery.event,
-          "x-deliveryfast-delivery": delivery.id,
-          "x-deliveryfast-signature": `t=${timestamp},v1=${signature}`,
+          "x-pairaexpress-event": delivery.event,
+          "x-pairaexpress-delivery": delivery.id,
+          "x-pairaexpress-signature": `t=${timestamp},v1=${signature}`,
         },
         body,
         redirect: "manual",

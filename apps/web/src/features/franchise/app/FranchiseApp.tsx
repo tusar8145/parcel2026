@@ -52,7 +52,7 @@ export default function FranchiseApp() {
     } catch (e) {
       setBlocked(
         errorCode(e) === "FRANCHISE_SUSPENDED"
-          ? { title: "This franchise is suspended", text: "The franchise panel is closed while the franchise is suspended. Contact Delivery Fast support to resolve it." }
+          ? { title: "This franchise is suspended", text: "The franchise panel is closed while the franchise is suspended. Contact Paira Express support to resolve it." }
           : { title: "The franchise panel couldn't open", text: describe(e) },
       );
     }
@@ -78,7 +78,7 @@ export default function FranchiseApp() {
   };
   const label = PAGES.find(p => p.slug === page)?.label ?? "Overview";
   useEffect(() => {
-    if (me) document.title = `${label} · ${me.name} · Delivery Fast Franchise`;
+    if (me) document.title = `${label} · ${me.name} · Paira Express Franchise`;
   }, [label, me]);
 
   const signOut = async () => {

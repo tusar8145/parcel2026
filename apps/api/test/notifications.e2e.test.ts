@@ -80,7 +80,7 @@ describe("notifications: providers and templates (unit)", () => {
         ],
       }),
     });
-    const gw = new MailjetEmailGateway({ apiKey: "pub", apiSecret: "priv", fromEmail: "no-reply@example.com", fromName: "Delivery Fast", baseUrl: "https://mail.example.test" }, f.fn);
+    const gw = new MailjetEmailGateway({ apiKey: "pub", apiSecret: "priv", fromEmail: "no-reply@example.com", fromName: "Paira Express", baseUrl: "https://mail.example.test" }, f.fn);
     const results = await gw.sendEmail([
       { id: "e1", to: "a@example.com", toName: "A", subject: "Hi", text: "Text", html: "<p>Text</p>" },
       { id: "e2", to: "bad@", subject: "Hi", text: "Text", html: "<p>Text</p>" },
@@ -88,7 +88,7 @@ describe("notifications: providers and templates (unit)", () => {
     expect(f.calls[0].url).toBe("https://mail.example.test/v3.1/send");
     expect((f.calls[0].init.headers as Record<string, string>).authorization).toBe(`Basic ${Buffer.from("pub:priv").toString("base64")}`);
     expect(f.calls[0].json.Messages[0]).toEqual({
-      From: { Email: "no-reply@example.com", Name: "Delivery Fast" },
+      From: { Email: "no-reply@example.com", Name: "Paira Express" },
       To: [{ Email: "a@example.com", Name: "A" }],
       Subject: "Hi",
       TextPart: "Text",
@@ -311,7 +311,7 @@ describe("notifications (e2e)", () => {
       expect(received[0].url).toBe("/smsapimany");
       expect(received[0].body).toMatchObject({ api_key: apiKey, senderid: "DFAST2", messages: [{ to: "8801712345678" }] });
 
-      await ctx.api("PUT", "/notifications/gateways/email", { token: a.token, body: { apiKey: "mj-public", apiSecret: "mj-secret-WXYZ", fromEmail: "no-reply@example.com", fromName: "Delivery Fast", baseUrl } });
+      await ctx.api("PUT", "/notifications/gateways/email", { token: a.token, body: { apiKey: "mj-public", apiSecret: "mj-secret-WXYZ", fromEmail: "no-reply@example.com", fromName: "Paira Express", baseUrl } });
       const emailTest = await ctx.api("POST", "/notifications/gateways/email/test", { token: a.token, body: { email: "ops@example.com" } });
       expect(emailTest.body).toMatchObject({ ok: true, providerMessageId: "42" });
       expect(received[1].headers.authorization).toBe(`Basic ${Buffer.from("mj-public:mj-secret-WXYZ").toString("base64")}`);

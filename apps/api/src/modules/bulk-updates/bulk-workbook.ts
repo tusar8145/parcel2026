@@ -156,7 +156,7 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
     ...(opts.filterText ? [`Downloaded: ${opts.filterText}.`] : []),
   ];
   const instructions: Cell[][] = [
-    [{ value: `Delivery Fast · ${title}`, style: STYLE.title }],
+    [{ value: `Paira Express · ${title}`, style: STYLE.title }],
     ...intro.map(text => [text]),
     [],
     ["Column", "Editable", "Notes"].map(v => ({ value: v, style: STYLE.headerOptional })),
@@ -169,7 +169,7 @@ export function buildBulkWorkbook(opts: BulkWorkbookOptions): Buffer {
   ];
 
   return writeXlsx({
-    title: `Delivery Fast ${title}`,
+    title: `Paira Express ${title}`,
     sheets: [data, { name: "Instructions", rows: instructions, widths: [30, 50, 90] }, listsSheet.sheet],
     names: listsSheet.names,
   });

@@ -76,10 +76,10 @@ async function applyIntendedWebsiteChanges(page: Page, brandMark: string, heroMo
     // The company's contact details under the brand; no "demo" wording in the footer (owner, 2026-10-26).
     document.querySelector(".footer .footer-brand p")?.insertAdjacentHTML(
       "afterend",
-      '<div class="footer-col footer-contact" style="margin-top:18px"><strong>Contact Us</strong><a href="tel:+8801969921122">01969 921122</a><a href="mailto:info@deliveryfast.com.bd">info@deliveryfast.com.bd</a><a href="https://www.google.com/maps/search/?api=1&amp;query=House-6%20Road-2A%20Banani%2C%20Dhaka-1213" target="_blank" rel="noopener">House-6 Road -2A Banani, Dhaka-1213</a></div>',
+      '<div class="footer-col footer-contact" style="margin-top:18px"><strong>Contact Us</strong><a href="tel:+8801969921122">01969 921122</a><a href="mailto:info@pairaexpress.com.bd">info@pairaexpress.com.bd</a><a href="https://www.google.com/maps/search/?api=1&amp;query=House-6%20Road-2A%20Banani%2C%20Dhaka-1213" target="_blank" rel="noopener">House-6 Road -2A Banani, Dhaka-1213</a></div>',
     );
     const bottom = document.querySelector(".footer .footer-bottom");
-    if (bottom) bottom.innerHTML = "<span>© 2026 Delivery Fast. All rights reserved.</span><span>Built for Bangladesh</span>";
+    if (bottom) bottom.innerHTML = "<span>© 2026 Paira Express. All rights reserved.</span><span>Built for Bangladesh</span>";
     // The hero picture's animation (heroMotion.ts): its style and the night / moon / status layers, frozen at frame 0
     // like the new page's (frame 0 is the original picture).
     document.querySelector(".hero-art .art-van")?.insertAdjacentHTML("afterend", motion);
@@ -119,7 +119,7 @@ async function open(browser: Browser, url: string, isNext: boolean, use: Record<
     };
   });
   // The cookie choice is made, so the consent banner (not in the original) stays closed.
-  await page.addInitScript(() => localStorage.setItem("deliveryfast-cookie-consent", JSON.stringify({ analytics: false, at: new Date().toISOString() })));
+  await page.addInitScript(() => localStorage.setItem("pairaexpress-cookie-consent", JSON.stringify({ analytics: false, at: new Date().toISOString() })));
   await page.goto(url, { waitUntil: "load" });
   if (isNext) await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await settle(page);

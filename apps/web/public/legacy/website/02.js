@@ -29,7 +29,7 @@
         }
       }
     }
-    const customerAddressBookKey="deliveryfast-customer-address-book";
+    const customerAddressBookKey="pairaexpress-customer-address-book";
     function readCustomerAddressBook(){
       const value=localStorage.getItem(customerAddressBookKey);
       if(!value)return [];
@@ -39,7 +39,7 @@
     }
     function syncPickupTrackingRecord(code,item){
       try{
-        const rows=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");
+        const rows=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");
         const record=Array.isArray(rows)?rows.find(row=>row?.trackingId===code):null;
         if(!record)return;
         const status=record.status||item.status,detailByStatus={"Pending operations confirmation":"Your pickup request is waiting for operations confirmation. You can cancel while it is pending.","Pickup requested":"Your pickup request is waiting for operations confirmation. You can cancel while it is pending.","Pickup assigned":`Your pickup request was accepted. ${record.rider||"A rider"} is assigned to collect the parcel.`,"Pickup confirmed":"Operations confirmed your pickup request. A rider will collect it.","At hub":"The rider picked up your parcel and handed it to a hub for delivery dispatch.","Assigned":"Your parcel is at a hub and assigned to a rider for delivery.","Out for delivery":"Your parcel is on its way to the recipient.","Delivered":"Your parcel was delivered successfully.","Pickup cancelled":"This pickup request was cancelled.","Exception":"Operations is reviewing a pickup or delivery issue."},locationByStatus={"Pending operations confirmation":"Awaiting operations confirmation","Pickup requested":"Awaiting operations confirmation","Pickup assigned":"Rider assigned for pickup","Pickup confirmed":"Pickup confirmed by operations","At hub":record.hub||"At delivery hub","Assigned":"Assigned from hub for delivery","Out for delivery":"Out for delivery","Delivered":"Delivery address","Pickup cancelled":"Pickup request cancelled","Exception":"Operations review"};Object.assign(item,{status,stage:status==="Delivered"?4:status==="Out for delivery"?3:status==="At hub"||status==="Assigned"?2:0,detail:detailByStatus[status]||item.detail,when:record.updatedAt||item.when,location:locationByStatus[status]||item.location,proof:record.proof||item.proof,deliveredAt:record.deliveredAt||item.deliveredAt,events:Array.isArray(record.events)?record.events:item.events});
@@ -153,9 +153,9 @@
       const pickupAddress=[sender.category,sender.address,sender.zone,sender.district].join(", "),deliveryAddress=[receiver.category,receiver.address,receiver.area,receiver.zone,receiver.district].join(", ");
       let code;do{code=`PP-261014-${String(Math.floor(1000+Math.random()*9000))}`}while(sampleTracking[code]);
       const record={trackingId:code,sender:sender.name,senderPhone:sender.phone,pickupAddress,pickupCategory:sender.category,pickupStreet:sender.address,pickupDistrict:sender.district,pickupZone:sender.zone,recipient:receiver.name,recipientPhone:receiver.phone,destination:deliveryAddress,deliveryCategory:receiver.category,deliveryStreet:receiver.address,deliveryDistrict:receiver.district,deliveryZone:receiver.zone,deliveryArea:receiver.area,service:"Customer parcel",serviceLevel:value("requestServiceLevel"),weight:value("requestWeight"),packaging:value("requestPackaging"),product:value("requestProduct"),baseDeliveryFee:costs.base,weightFee:costs.weightFee,serviceFee:costs.serviceFee,codAmount:costs.codAmount,codFee:costs.codFee,codFeePercent:costs.codFeePercent,deliveryFee:costs.total,status:"Pending operations confirmation",customerCanCancel:true,createdAt:now,createdAtISO:createdAt};
-      const tracking={status:record.status,detail:"Your pickup request is waiting for operations confirmation. You can cancel while it is pending.",location:"Awaiting operations confirmation",when:"Just now",stage:0,steps:["Request received","Pickup confirmed","In transit","Delivered"],service:"Customer parcel",sender:sender.name,senderPhone:sender.phone,senderArea:pickupAddress,pickupAddress,recipient:receiver.name,phone:receiver.phone,recipientPhone:receiver.phone,address:deliveryAddress,destination:deliveryAddress,destinationArea:[receiver.area,receiver.zone,receiver.district].join(", "),contents:record.product,weight:record.weight,packageType:record.packaging,payment:`Sender pays ৳${costs.total}${costs.codAmount?` · COD to collect ৳${costs.codAmount} · fee ৳${costs.codFee}`:" · No COD"}`,deliveryFee:costs.total,codAmount:costs.codAmount,codFee:costs.codFee,events:[{time:"Just now",title:"Pickup request submitted",place:"Delivery Fast",detail:"Waiting for operations to confirm or cancel this pickup request."}]};
+      const tracking={status:record.status,detail:"Your pickup request is waiting for operations confirmation. You can cancel while it is pending.",location:"Awaiting operations confirmation",when:"Just now",stage:0,steps:["Request received","Pickup confirmed","In transit","Delivered"],service:"Customer parcel",sender:sender.name,senderPhone:sender.phone,senderArea:pickupAddress,pickupAddress,recipient:receiver.name,phone:receiver.phone,recipientPhone:receiver.phone,address:deliveryAddress,destination:deliveryAddress,destinationArea:[receiver.area,receiver.zone,receiver.district].join(", "),contents:record.product,weight:record.weight,packageType:record.packaging,payment:`Sender pays ৳${costs.total}${costs.codAmount?` · COD to collect ৳${costs.codAmount} · fee ৳${costs.codFee}`:" · No COD"}`,deliveryFee:costs.total,codAmount:costs.codAmount,codFee:costs.codFee,events:[{time:"Just now",title:"Pickup request submitted",place:"Paira Express",detail:"Waiting for operations to confirm or cancel this pickup request."}]};
       try{
-        const saved=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");
+        const saved=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");
         if(!Array.isArray(saved))throw new Error("Saved customer parcel list has an invalid format.");
         const addressBook=readCustomerAddressBook();
         for(const [role,address] of [["pickup",sender],["receiver",receiver]]){
@@ -163,9 +163,9 @@
         }
         saved.unshift(record);
         localStorage.setItem(customerAddressBookKey,JSON.stringify(addressBook));
-        localStorage.setItem("deliveryfast-customer-parcels",JSON.stringify(saved));
+        localStorage.setItem("pairaexpress-customer-parcels",JSON.stringify(saved));
         sampleTracking[code]=tracking;
-        sessionStorage.setItem("deliveryfast-demo-shipments",JSON.stringify(sampleTracking));
+        sessionStorage.setItem("pairaexpress-demo-shipments",JSON.stringify(sampleTracking));
       }catch(error){console.error("The pickup request and saved address details could not be stored.",error);showToast("This pickup request could not be saved. Check browser storage and try again.");return}
       navigate(`tracking/${encodeURIComponent(code)}`);showToast(`Pickup request submitted · sender delivery charge ৳${costs.total} · Tracking ID: ${code}`);
     },true);
@@ -176,20 +176,20 @@
       if(!cancel)return;
       const code=cancel.dataset.cancelPickup;
       try{
-        const rows=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");
+        const rows=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");
         if(!Array.isArray(rows))throw new Error("Saved customer parcel list has an invalid format.");
         const record=rows.find(row=>row?.trackingId===code);
         if(!record||!["Pending operations confirmation","Pickup requested"].includes(record.status)){showToast("This pickup can no longer be cancelled online. Contact operations for help.");return}
         record.status="Pickup cancelled";record.customerCanCancel=false;record.updatedAt=new Date().toLocaleString();
         record.events=[...(Array.isArray(record.events)?record.events:[]),{time:"Just now",title:"Pickup request cancelled",place:"Customer tracking",detail:"The sender cancelled before operations confirmation."}];
-        localStorage.setItem("deliveryfast-customer-parcels",JSON.stringify(rows));
+        localStorage.setItem("pairaexpress-customer-parcels",JSON.stringify(rows));
         if(sampleTracking[code])syncPickupTrackingRecord(code,sampleTracking[code]);
-        sessionStorage.setItem("deliveryfast-demo-shipments",JSON.stringify(sampleTracking));
+        sessionStorage.setItem("pairaexpress-demo-shipments",JSON.stringify(sampleTracking));
         track(code);showToast("Your pickup request was cancelled.");
       }catch(error){console.error("The pickup request could not be cancelled.",error);showToast("The pickup request could not be cancelled. Please try again.")}
     });
     window.addEventListener("storage",event=>{
-      if(event.key!=="deliveryfast-customer-parcels"||!lastTrackingCode)return;
+      if(event.key!=="pairaexpress-customer-parcels"||!lastTrackingCode)return;
       const item=sampleTracking[lastTrackingCode];
       if(item){syncPickupTrackingRecord(lastTrackingCode,item);track(lastTrackingCode)}
     });

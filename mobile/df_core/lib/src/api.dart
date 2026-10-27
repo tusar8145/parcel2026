@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 
 /// The API's address is set when building:
 ///   flutter build apk --dart-define=API_BASE=https://your-domain/api/v1
-const apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://deliveryfast.imagine-design.net/api/v1');
+const apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://paira-express.imagine-design.net/api/v1');
 
 /// Lets the API client send the user back to sign in when the session has ended.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -20,7 +20,8 @@ void Function()? onSignedOut;
 class AppConfig {
   /// "Merchant", "Rider": the sign-in page's title and messages.
   static String role = 'Merchant';
-  static String appName = 'Delivery Fast';
+  /// The app's own (neutral) name: "Merchant", "Rider", "Operations"; the company's comes from [Branding].
+  static String appName = 'App';
   static String version = '';
 
   /// Who may use this app (merchant accounts, rider accounts).

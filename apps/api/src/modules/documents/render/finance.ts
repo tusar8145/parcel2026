@@ -34,7 +34,7 @@ export function drawFranchiseInvoice(pdf: PdfWriter, brand: Brand, i: FranchiseI
       ["Address", i.franchise.address],
       ["Invoice", i.number],
       ["Period", `${fmtDate(i.periodFrom)} – ${fmtDate(i.periodTo)}`],
-      ["Settlement", i.settlement === "DEDUCTED" ? "Deducted from cash deposits" : "Paid by Delivery Fast"],
+      ["Settlement", i.settlement === "DEDUCTED" ? "Deducted from cash deposits" : `Paid by ${brand.appName}`],
       ["Status", i.paidAt ? `Paid ${fmtDateTime(i.paidAt)}${i.reference ? ` · ${i.reference}` : ""}` : i.status],
     ],
     x,
@@ -60,6 +60,6 @@ export function drawFranchiseInvoice(pdf: PdfWriter, brand: Brand, i: FranchiseI
   });
   y = ensureSpace(pdf, y + 12, 60, newPage);
   y = totals(pdf, [{ label: "Total commission", value: `৳ ${fmtAmount(i.amount)}`, strong: true }], y);
-  signatures(pdf, ["Franchise", "Delivery Fast finance"], ensureSpace(pdf, y + 30, 50, newPage));
+  signatures(pdf, ["Franchise", `${brand.appName} finance`], ensureSpace(pdf, y + 30, 50, newPage));
   footers(pdf, brand, meta);
 }

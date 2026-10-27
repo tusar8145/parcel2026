@@ -133,6 +133,12 @@ export default function Sidebar() {
             </svg>
             System guide
           </button>{" "}
+          <button className="nav-item" data-page={"Branding & company"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-settings" />
+            </svg>
+            {"Branding & company"}
+          </button>{" "}
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('a scanned code becomes the tracking ID the API takes', () {
     expect(normalizeScan(' *ep-261026-abcde* '), 'EP-261026-ABCDE');
-    expect(normalizeScan('https://deliveryfast.imagine-design.net/track/EP-261026-ABCDE?t=x'), 'EP-261026-ABCDE');
+    expect(normalizeScan('https://paira-express.imagine-design.net/track/EP-261026-ABCDE?t=x'), 'EP-261026-ABCDE');
   });
 
   test('Code 128 matches the API encoder: start B, set C for a digit tail, check digit and stop', () {

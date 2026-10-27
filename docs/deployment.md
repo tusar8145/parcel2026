@@ -207,6 +207,24 @@ The Android apps (`mobile/`) get the users' notifications as pushes through Fire
 `FIREBASE_SERVICE_ACCOUNT_FILE` in `apps/api/.env` (a path to the same file) is for development only; the
 super admin setting takes precedence when it is on.
 
+## 9a. Installing for another company (white label)
+
+Super admin › **Branding & company** sets the company the platform runs for. No code changes are needed:
+- the company name (it replaces "Delivery Fast" in headers, page and tab titles, SMS, emails and PDFs);
+- the legal name, tagline and website;
+- the logo (it replaces the pigeon mark) and the **browser tab icon**;
+- the phone, email, address and opening hours;
+- social links;
+- the website's **About** page. The editor opens with the current text. It has headings, cards, number tiles and lists (the format is shown under the box). **Restore original About text** brings Delivery Fast's text back, with the new name in it. `/about` is read on every visit.
+
+Pages pick up a change within a minute.
+
+Not covered there:
+- The SMS / email texts that name the company explicitly: check Parcel notifications and Global notifications.
+- The "Name in messages" field under Global notifications, if it was changed by hand.
+- The Android apps' names and icons, which are set when the apps are built (`mobile/`). Rebuild and sign them
+  for the new company, with its own Firebase project (`google-services.json`) if push notifications are used.
+
 ## 10. Reading parcel photos ("Scan with phone")
 
 Without any AI, the server reads photos with tesseract OCR: it turns the photo the right way up,

@@ -29,6 +29,7 @@ npm install
 cp apps/api/.env.example apps/api/.env   # then set JWT_ACCESS_SECRET and ENCRYPTION_KEY (commands are in the file)
 npm run db:deploy -w @delivery-fast/api   # create the tables
 npm run db:seed:geo -w @delivery-fast/api # Bangladesh districts/zones/areas, 30 hubs, delivery zones (config)
+npm run db:seed:setup -w @delivery-fast/api # service plans, price cards, central hub (settings only; safe on a real install)
 npm run db:seed -w @delivery-fast/api     # demo hubs, riders, merchants and one account per role
 npm run dev:api                           # terminal 1: API on http://localhost:4000 (docs: /api/docs)
 npm run dev                               # terminal 2: website and panels on http://localhost:3000
@@ -48,6 +49,9 @@ npm run dev                               # terminal 2: website and panels on ht
 - Super admin → Shared catalogs & locations edits the geography afterwards (add, rename, deactivate,
   delete when unused; hubs in Courier Operations → Hubs & zones). Places deleted or renamed there are
   remembered (Setting `catalog-meta`), so running `db:seed:geo` again doesn't bring them back.
+- A new company or demo installation: `db:deploy` → `db:seed:geo` → `db:seed:setup` → `db:seed:users -- --out <file>`
+  (no sample parcels; `db:seed` is the older demo with one shared, documented password). Then super admin sets
+  Branding & company, SMS, Email & Push gateways and reviews Service plans & pricing.
 - `npm run db:seed:users -- --out <file outside the repo>` creates one demo account per role on
   that network (generated passwords, or `DEMO_PASSWORD_<GROUP>`), and writes the credentials
   table to the file. The super admin sets up two-step verification at first sign-in.

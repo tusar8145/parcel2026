@@ -5,19 +5,21 @@ import 'firebase_options.dart';
 import 'home.dart';
 import 'offline.dart';
 
-/// Delivery Fast Rider: the rider's day (shift and live location, pickups with scanning, deliveries with
+/// Rider app: the rider's day (shift and live location, pickups with scanning, deliveries with
 /// proof and COD, cash handover, returns) that keeps working without a connection, and support.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   configureRiderApp();
+  // The company's name, logo and contact details (kept copy at once, the server's when it answers).
+  Branding.load();
   await Push.init(firebaseOptions);
   runApp(const RiderApp());
 }
 
 void configureRiderApp() {
   AppConfig.role = 'Rider';
-  AppConfig.appName = 'Delivery Fast Rider';
-  AppConfig.version = '1.2.0';
+  AppConfig.appName = 'Rider';
+  AppConfig.version = '1.3.0';
   AppConfig.allows = (user) => user['rider'] != null;
   AppConfig.notAllowed = 'This app is for riders. Your account is not a rider account.';
   AppConfig.home = () => RiderShell(key: riderShell);

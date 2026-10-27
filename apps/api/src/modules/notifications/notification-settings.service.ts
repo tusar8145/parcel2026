@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
@@ -11,6 +11,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { NOTIFICATION_EVENTS, type NotificationEvent } from "./events";
 import { CHANNEL_OF, COMMON_VARS, EVENT_CATALOG, EVENT_GROUPS, LEGACY_TOGGLE_EVENTS, OUTBOX_CHANNEL, channelsOf, definitionOf, type Channel, type EventDefinition } from "./catalog";
 import { htmlFromText, placeholders, syntaxProblem } from "./render";
+import { BrandingService } from "../branding/branding.service";
 
 export const SETTINGS_KEY = "notification-settings";
 const PLATFORM_CONFIG_KEY = "platform-config";
@@ -96,7 +97,27 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
     await this.migrateLegacyToggles().catch(error => this.logger.warn({ err: error }, "Could not migrate legacy notification toggles"));
   }
 
+  /** The company the platform runs for (Super admin › Branding & company; property injection). */
+  @Inject(BrandingService) private readonly branding!: BrandingService;
+
+  /**
+   * The settings with the company: while "Name in messages" and the support line are still the defaults, they
+   * follow the installation's company name ({{appName}}, {{support}}, the email header, PDF headers).
+   */
   async snapshot(): Promise<Snapshot> {
+    const s = await this.loadSnapshot();
+    const name = (await this.branding.get()).companyName;
+    if (name === DEFAULT_BRAND.appName) return s;
+    return {
+      ...s,
+      brand: {
+        appName: s.brand.appName === DEFAULT_BRAND.appName ? name.slice(0, 40) : s.brand.appName,
+        support: s.brand.support === DEFAULT_BRAND.support ? `${name} support`.slice(0, 60) : s.brand.support,
+      },
+    };
+  }
+
+  private async loadSnapshot(): Promise<Snapshot> {
     const version = await this.redis.get(VERSION_KEY).catch(() => null);
     if (this.cache && this.cache.version === version && Date.now() - this.cache.at < MAX_AGE_MS) return this.cache.snapshot;
     const [rows, setting, platform] = await Promise.all([

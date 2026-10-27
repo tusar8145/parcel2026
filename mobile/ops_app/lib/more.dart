@@ -64,7 +64,7 @@ class MorePage extends StatelessWidget {
         _item(context, Icons.error_outline, 'Problems', 'Exceptions, failed deliveries, needs info, late-risk', () => _open(context, const ProblemsPage())),
         _item(context, Icons.search, 'Find a parcel', 'Scan or type the tracking ID', () => findParcel(context)),
         _item(context, Icons.warehouse_outlined, 'Change hub', 'The hub this phone works at', () => pickHub(context).then((ok) => ok ? opsChanged.value++ : null)),
-        _item(context, Icons.support_agent, 'Help & support', 'Ask the Delivery Fast team', () => _open(context, const SupportPage())),
+        _item(context, Icons.support_agent, 'Help & support', Branding.name.isEmpty ? 'Ask our team' : 'Ask the ${Branding.name} team', () => _open(context, const SupportPage())),
         _item(context, Icons.lock_reset, 'Change password', 'Use a new password to sign in', () => _open(context, const ChangePasswordPage())),
         const SizedBox(height: 6),
         OutlinedButton.icon(
@@ -81,7 +81,7 @@ class MorePage extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Text(
-          '${AppConfig.appName} ${AppConfig.version} · ${Uri.parse(apiBase).host}',
+          '${[Branding.name, AppConfig.appName].where((s) => s.isNotEmpty).join(' ')} ${AppConfig.version} · ${Uri.parse(apiBase).host}',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
         ),

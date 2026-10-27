@@ -4,7 +4,7 @@ DELIVERY FAST MERCHANT APP - PHASES
 One Android app (Flutter) for both merchant types. It adapts to the signed-in merchant:
   - E-commerce merchants (about 80% of users): parcels, COD, weight, products, settlements.
   - Banking & Financial merchants (about 20%): documents/consignments, bills and payments.
-The app uses the existing API (https://deliveryfast.imagine-design.net/api/v1).
+The app uses the existing API (https://paira-express.imagine-design.net/api/v1).
 
 
 PHASE 1 - MVP  [DONE, version 1.3.0, 26 Oct 2026]

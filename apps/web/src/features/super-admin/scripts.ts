@@ -41,6 +41,8 @@ export const scripts = [
   // System guide: numbers, parcel statuses, money flow, roles (GET /guide).
   "/legacy/shared/system-guide.js",
   "/legacy/super-admin/bridge-guide.js",
+  // Branding & company: name, logo, tab icon, contact details, About page (GET/PUT /branding).
+  "/legacy/super-admin/bridge-branding.js",
   // Period filter on Overview and Platform activity.
   "/legacy/super-admin/bridge-period.js",
   // Last: every page (and tab) has its own address: ?page=<slug>[&tab=<slug>], Back / Forward, titles (DF.nav).

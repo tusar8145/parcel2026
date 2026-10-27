@@ -4,19 +4,21 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'home.dart';
 
-/// Delivery Fast Operations: hub operators and operations managers - the day at a glance, the scan desk (camera
+/// Operations app: hub operators and operations managers - the day at a glance, the scan desk (camera
 /// or handheld scanner), assigning riders, the live map, riders' cash and cash to the central hub, problems.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   configureOpsApp();
+  // The company's name, logo and contact details (kept copy at once, the server's when it answers).
+  Branding.load();
   await Push.init(firebaseOptions);
   runApp(const OpsApp());
 }
 
 void configureOpsApp() {
   AppConfig.role = 'Operations';
-  AppConfig.appName = 'Delivery Fast Operations';
-  AppConfig.version = '1.0.0';
+  AppConfig.appName = 'Operations';
+  AppConfig.version = '1.1.0';
   // Courier Operations staff: operations managers and hub operators (and custom roles built on them).
   AppConfig.allows = (user) => user['panel'] == '/courier-operation';
   AppConfig.notAllowed = 'This app is for operations staff (operations managers and hub operators).';

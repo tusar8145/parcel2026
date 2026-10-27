@@ -238,7 +238,7 @@ class Tracker {
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
     if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-      status.value = 'Allow location access for Delivery Fast Rider in the phone settings';
+      status.value = 'Allow location access for the ${AppConfig.appName} app in the phone settings';
       return false;
     }
     return true;
@@ -276,8 +276,8 @@ class Tracker {
         ? AndroidSettings(
             accuracy: LocationAccuracy.high,
             intervalDuration: const Duration(seconds: 30),
-            foregroundNotificationConfig: const ForegroundNotificationConfig(
-              notificationTitle: 'Delivery Fast: on shift',
+            foregroundNotificationConfig: ForegroundNotificationConfig(
+              notificationTitle: Branding.name.isEmpty ? 'On shift' : '${Branding.name}: on shift',
               notificationText: 'Sharing your location with operations while you are on shift.',
               enableWakeLock: true,
               setOngoing: true,

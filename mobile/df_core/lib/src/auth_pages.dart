@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'branding.dart';
 import 'widgets.dart';
 
 /// The app's look: brand colours, white app bars, outlined inputs (both apps).
@@ -286,32 +287,44 @@ String? passwordError(String? v) {
   return null;
 }
 
+/// The company's logo and name (Super admin › Branding & company): the uploaded logo, else a parcel van; the
+/// name with its last word in the accent colour, like the website's wordmark.
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key});
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
+    return BrandingBuilder(
+      builder: (context) {
+        final logo = Branding.logoUrl;
+        final words = Branding.name.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        final mark = Container(
           width: 46,
           height: 46,
           decoration: BoxDecoration(color: brand, borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.local_shipping_outlined, color: Colors.white),
-        ),
-        const SizedBox(width: 12),
-        RichText(
-          text: const TextSpan(
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: ink, letterSpacing: -0.6),
-            children: [
-              TextSpan(text: 'delivery '),
-              TextSpan(
-                text: 'fast',
-                style: TextStyle(color: Color(0xFFF2B705)),
+        );
+        return Row(
+          children: [
+            if (logo != null)
+              SizedBox(width: 46, height: 46, child: Image.network(logo, fit: BoxFit.contain, errorBuilder: (_, _, _) => mark))
+            else
+              mark,
+            const SizedBox(width: 12),
+            Flexible(
+              child: RichText(
+                overflow: TextOverflow.ellipsis,
+                text: TextSpan(
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: ink, letterSpacing: -0.6),
+                  children: [
+                    if (words.length > 1) TextSpan(text: '${words.sublist(0, words.length - 1).join(' ')} '),
+                    TextSpan(text: words.isEmpty ? AppConfig.appName.toLowerCase() : words.last, style: const TextStyle(color: Color(0xFFF2B705))),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }

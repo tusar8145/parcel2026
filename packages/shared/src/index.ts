@@ -7,3 +7,4 @@ export * from "./schemas/auth";
 export * from "./schemas/parcel";
 export * from "./schemas/website";
 export * from "./system-guide";
+export * from "./branding";

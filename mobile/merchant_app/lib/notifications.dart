@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'orders.dart';
 
 /// Opens what a notification is about (from the list or a tapped push): a support reply its request, a
-/// parcel's notification the order, a message from Delivery Fast the full text.
+/// parcel's notification the order, a message from the company the full text.
 Future<void> openMerchantNotification(BuildContext context, Map<String, dynamic> n) async {
   final ticket = ticketIn(n);
   if (ticket != null) {

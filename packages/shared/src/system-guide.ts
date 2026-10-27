@@ -383,6 +383,7 @@ const ROLE_INFO: Record<Role, { label: string; description: string }> = {
 
 /** Where things are changed. */
 export const SETTING_LOCATIONS: readonly { what: string; where: string }[] = [
+  { what: "Company name, logo, browser tab icon, contact details, About page (white label)", where: "Super admin › Branding & company" },
   { what: "Prices, service packages, COD fee", where: "Super admin › Service plans & pricing" },
   { what: "Excel import columns and defaults", where: "Super admin › Excel Import settings" },
   { what: "Parcel SMS / email texts", where: "Super admin › Parcel notifications" },

@@ -67,6 +67,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx src/seed/demo.ts",
     "db:seed:geo": "tsx src/seed/geo-bd.ts",
+    "db:seed:setup": "tsx src/seed/company-setup.ts",
     "db:migrate:geo": "tsx src/seed/geo-bd.ts --migrate-only",
     "db:seed:users": "tsx src/seed/demo-users.ts",
     "db:build:geo": "node scripts/build-geo-bd.mjs",

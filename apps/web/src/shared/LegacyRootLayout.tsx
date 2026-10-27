@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import PwaInstall from "./PwaInstall";
+import BrandingRuntime from "./branding/BrandingRuntime";
 
 // Hide only pages that still require the legacy scripts to finish booting.
 const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]){opacity:0}";
@@ -39,6 +40,8 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
     <html lang="en">
       <head>
         <link rel="manifest" href="/deliveryfast.webmanifest" />
+        {/* The browser tab icon (Super admin › Branding & company; a default icon until one is uploaded). */}
+        <link rel="icon" href="/api/v1/branding/icon" />
         <style dangerouslySetInnerHTML={{ __html: BOOT_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: MODAL_GUARD }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
@@ -49,6 +52,8 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
       <body data-app={app}>
         {children}
         <PwaInstall />
+        {/* White label: the company's name, logo, tab icon and contact details from Super admin › Branding & company. */}
+        <BrandingRuntime />
       </body>
     </html>
   );

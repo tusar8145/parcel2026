@@ -1,4 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { withCompanyName } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { QueueService } from "../../common/queues";
 import { RedisService } from "../../common/redis.service";
@@ -7,6 +8,7 @@ import { GatewaysService } from "./gateways.service";
 import { NotificationSettingsService, isMandatory } from "./notification-settings.service";
 import { SmsRateLimiter } from "./rate-limiter";
 import { GatewayError, type SendResult } from "./providers";
+import { BrandingService } from "../branding/branding.service";
 
 export interface OutboxInput {
   channel: "SMS" | "EMAIL";
@@ -41,10 +43,18 @@ export class OutboxService {
     private readonly limiter: SmsRateLimiter,
   ) {}
 
-  /** Used by NotifyService only: other modules send through NotifyService (templates, switches, preferences). */
+  /** The company the platform runs for (property injection keeps the constructor stable). */
+  @Inject(BrandingService) private readonly branding!: BrandingService;
+
+  /**
+   * Used by NotifyService only: other modules send through NotifyService (templates, switches, preferences).
+   * The default company name in a message becomes the installation's own (Super admin › Branding & company).
+   */
   async queue(db: Db, input: OutboxInput): Promise<string> {
+    const name = (await this.branding.get()).companyName;
+    const brand = (t: string | null | undefined) => (t == null ? null : withCompanyName(t, name));
     const message = await db.outboxMessage.create({
-      data: { channel: input.channel, to: input.to, template: input.template, body: input.body, subject: input.subject ?? null, html: input.html ?? null, userId: input.userId ?? null, trackingId: input.trackingId ?? null },
+      data: { channel: input.channel, to: input.to, template: input.template, body: withCompanyName(input.body, name), subject: brand(input.subject), html: brand(input.html), userId: input.userId ?? null, trackingId: input.trackingId ?? null },
     });
     return message.id;
   }

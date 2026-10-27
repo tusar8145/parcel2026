@@ -147,7 +147,7 @@ class ProfilePage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${AppConfig.appName} ${AppConfig.version} · ${Uri.parse(apiBase).host}',
+                '${[Branding.name, AppConfig.appName].where((s) => s.isNotEmpty).join(' ')} ${AppConfig.version} · ${Uri.parse(apiBase).host}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
               ),

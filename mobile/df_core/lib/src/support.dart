@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'api.dart';
+import 'branding.dart';
 import 'widgets.dart';
 
 /// The categories requesters choose (as the web's support form).
@@ -81,6 +82,24 @@ class _SupportPageState extends State<SupportPage> {
                     ),
                   ],
                 ),
+              ),
+              // The company's phone and email (Super admin › Branding & company), when it has them.
+              BrandingBuilder(
+                builder: (context) {
+                  final phone = '${Branding.contact['phone'] ?? ''}'.trim();
+                  final email = '${Branding.contact['email'] ?? ''}'.trim();
+                  if (phone.isEmpty && email.isEmpty) return const SizedBox.shrink();
+                  return Panel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(Branding.nameOr('Contact us'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                        if (phone.isNotEmpty) ...[const SizedBox(height: 8), Row(children: [const Icon(Icons.call_outlined, size: 18, color: muted), const SizedBox(width: 8), SelectableText(phone)])],
+                        if (email.isNotEmpty) ...[const SizedBox(height: 6), Row(children: [const Icon(Icons.mail_outline, size: 18, color: muted), const SizedBox(width: 8), Expanded(child: SelectableText(email))])],
+                      ],
+                    ),
+                  );
+                },
               ),
               if (items.isEmpty) const EmptyView(icon: Icons.forum_outlined, text: 'No requests yet.'),
               for (final t in items)
@@ -412,7 +431,7 @@ class _Bubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                mine ? 'You' : '${(message['author'] as Map?)?['label'] ?? 'Delivery Fast'}',
+                mine ? 'You' : '${(message['author'] as Map?)?['label'] ?? Branding.nameOr('Support')}',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: muted),
               ),
               const SizedBox(height: 4),

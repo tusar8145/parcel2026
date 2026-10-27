@@ -36,7 +36,7 @@ class Tasks {
 final riderShell = GlobalKey<RiderShellState>();
 
 /// Opens what a notification is about: new pickups / deliveries their tab, a return run the returns, a support
-/// reply its request; a message from Delivery Fast shows its full text.
+/// reply its request; a message from the company shows its full text.
 Future<void> openRiderNotification(BuildContext context, Map<String, dynamic> n) async {
   final link = '${n['link'] ?? ''}';
   final type = '${n['type'] ?? ''}';

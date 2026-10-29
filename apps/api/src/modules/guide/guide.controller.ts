@@ -1,6 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
-import { systemGuide } from "@delivery-fast/shared";
+import { systemGuide } from "@paira-express/shared";
 import { RequirePermissions } from "../../common/auth/decorators";
 
 /** The System guide (super admin › System guide, Courier Operations › Settings): numbers, statuses, money steps, roles. */

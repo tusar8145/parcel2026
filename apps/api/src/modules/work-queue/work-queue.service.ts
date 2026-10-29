@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import { parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { parcelStatusLabel, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import type { Actor } from "../../common/auth/actor";

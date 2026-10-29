@@ -245,7 +245,7 @@ describe("public website", () => {
     expect(first.body.items[0], JSON.stringify(first.body.items[0])).toMatchObject({ label: "Road 11, Banani, Dhaka", lat: 23.7937, lng: 90.4066, street: "42 Road 11", zone: "Banani", district: "Dhaka" });
     await ctx.api("GET", "/geo/search?q=road%2011%20banani");
     expect(nominatimRequests.filter(r => r.url.startsWith("/search"))).toHaveLength(1); // cached
-    expect(nominatimRequests[0].userAgent).toMatch(/DeliveryFast/);
+    expect(nominatimRequests[0].userAgent).toMatch(/PairaExpress/);
     expect(nominatimRequests[0].url).toContain("countrycodes=bd");
 
     const pin = await ctx.api("GET", "/geo/reverse?lat=23.78&lng=90.41");

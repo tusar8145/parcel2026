@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { Permission } from "@delivery-fast/shared";
+import type { Permission } from "@paira-express/shared";
 import type { FastifyRequest } from "fastify";
 import { PrismaService } from "../prisma.service";
 import { sha256 } from "../crypto";

@@ -32,6 +32,11 @@ export const financeConfigSchema = z.object({
     .default({ name: "Paira Express Ltd.", bin: "", address: "" }),
   /** Days after issue an invoice is due. */
   invoiceTermDays: z.number().int().min(0).max(120).default(15),
+  /**
+   * Delivery invoices (shipment PDFs) show the delivery charge (price lines, VAT, total). Off when the charge is
+   * taken out of the COD in practice: the recipient's invoice then shows only the cash to collect.
+   */
+  showDeliveryCharge: z.boolean().default(true),
 });
 
 export type FinanceConfig = z.infer<typeof financeConfigSchema>;
@@ -51,6 +56,7 @@ export const updateFinanceConfigSchema = z.object({
     })
     .optional(),
   invoiceTermDays: z.number().int().min(0).max(120).optional(),
+  showDeliveryCharge: z.boolean().optional(),
 });
 
 /** The settings as saved (the settings form): the VAT rate is kept while VAT is off. */

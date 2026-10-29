@@ -1,4 +1,4 @@
-import { DEFAULT_PACKAGE_PRICES as P, SEED_PRODUCTS } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P, SEED_PRODUCTS } from "@paira-express/shared";
 import { CollectionsService } from "../src/modules/parcels/collections.service";
 import { decrypt } from "../src/common/crypto";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";

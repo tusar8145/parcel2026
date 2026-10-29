@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import type { ParcelStatus, quoteRequestSchema } from "@delivery-fast/shared";
+import type { ParcelStatus, quoteRequestSchema } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { Prisma } from "../../generated/prisma/client";

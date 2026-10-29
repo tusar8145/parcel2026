@@ -1,18 +1,18 @@
 {
-  "name": "delivery-fast",
+  "name": "paira-express",
   "private": true,
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "build:shared": "npm run build -w @delivery-fast/shared",
-    "dev": "npm run build:shared && npm run dev -w @delivery-fast/web",
-    "dev:api": "npm run build:shared && npm run dev -w @delivery-fast/api",
-    "db:up": "npm run db:up -w @delivery-fast/api",
-    "build": "npm run build:shared && npm run build -w @delivery-fast/api && npm run build -w @delivery-fast/web",
-    "start": "npm run start -w @delivery-fast/web",
-    "test": "npm run build:shared && npm test -w @delivery-fast/shared && npm test -w @delivery-fast/api",
-    "test:visual": "npm run test:visual -w @delivery-fast/web"
+    "build:shared": "npm run build -w @paira-express/shared",
+    "dev": "npm run build:shared && npm run dev -w @paira-express/web",
+    "dev:api": "npm run build:shared && npm run dev -w @paira-express/api",
+    "db:up": "npm run db:up -w @paira-express/api",
+    "build": "npm run build:shared && npm run build -w @paira-express/api && npm run build -w @paira-express/web",
+    "start": "npm run start -w @paira-express/web",
+    "test": "npm run build:shared && npm test -w @paira-express/shared && npm test -w @paira-express/api",
+    "test:visual": "npm run test:visual -w @paira-express/web"
   }
 }

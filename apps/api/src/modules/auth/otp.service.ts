@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { OtpPurpose } from "@delivery-fast/shared";
+import type { OtpPurpose } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
 import { NotifyService } from "../notifications/notify.service";

@@ -172,7 +172,7 @@
       const r = Ops.cache[reportKey()]?.value;
       if (!r) return void showToast("The report is still loading.");
       const rows = [["Rider", "Hub", "Scheduled", "Present", "Late", "Absent", "Attendance %", "Hours"], ...r.riders.map(x => [x.rider.label, x.rider.hub?.name || "", x.scheduled, x.present, x.late, x.absent, x.attendanceRate ?? "", x.hoursWorked])];
-      courierCsvDownload(`delivery-fast-attendance-${range.from}-to-${range.to}.csv`, "﻿" + rows.map(row => row.map(v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n"));
+      courierCsvDownload(`paira-express-attendance-${range.from}-to-${range.to}.csv`, "﻿" + rows.map(row => row.map(v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n"));
     },
     true,
   );

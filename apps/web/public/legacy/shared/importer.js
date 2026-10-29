@@ -810,7 +810,7 @@
 
   async function template(cfg) {
     try {
-      const name = await DF.download(q(`/imports/templates/${cfg.kind}`, { merchantId: cfg.merchantId }), `delivery-fast-${cfg.kind}-template.xlsx`);
+      const name = await DF.download(q(`/imports/templates/${cfg.kind}`, { merchantId: cfg.merchantId }), `paira-express-${cfg.kind}-template.xlsx`);
       toast(`${name} downloaded. Required columns have red headers with *; the Instructions sheet explains every column.`);
     } catch (error) {
       toast(describe(error));
@@ -1155,7 +1155,7 @@
       if (!count) {
         ui.exportInfo = `No parcels can take "${bulkAction()?.label}" with these filters.`;
       } else {
-        const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "delivery-fast-bulk-update.xlsx";
+        const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "paira-express-bulk-update.xlsx";
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement("a");
         link.href = url;

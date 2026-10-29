@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
-import { TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
+import { TERMINAL_STATUSES, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";

@@ -173,9 +173,9 @@
     const c = o?.cash || {};
     const v = s => (c[s] ? tk(c[s].amount) : "—");
     const n = s => (c[s] ? `${c[s].count} parcel${c[s].count === 1 ? "" : "s"}` : "");
-    const actions = Ops.can("financeSettings") ? `<button type="button" class="acc-btn" data-acc="settings">Invoice settings</button>` : "";
+    // Invoice settings (VAT, the company on bills, delivery charge on invoices) are in Super admin › Invoice settings.
     return (
-      heading("Accounts", `Where the money is now. Central hub: ${central()?.name || "not set"}.`, actions) +
+      heading("Accounts", `Where the money is now. Central hub: ${central()?.name || "not set"}.`, "") +
       `<div class="acc">${noCentral()}
       <div class="acc-cards">
         ${card("With riders", v("WITH_RIDER"), n("WITH_RIDER"))}
@@ -799,27 +799,6 @@
     });
   }
 
-  async function invoiceSettings() {
-    const cfg = await DF.api("/finance/config").catch(fail);
-    if (!cfg) return;
-    Ops.form({
-      title: "Invoice settings",
-      description: "The company printed on bills, and VAT. With VAT off, charges already include everything and no VAT or BIN is shown anywhere.",
-      submit: "Save settings",
-      fields: [
-        { id: "vatEnabled", label: "VAT", type: "select", value: cfg.vatEnabled ? "on" : "off", options: [{ value: "off", label: "Off: no VAT shown" }, { value: "on", label: "On: show VAT at the rate below" }], required: true, full: true },
-        { id: "vatRate", label: "VAT rate (%)", type: "number", value: String(cfg.vatRate), min: 0, max: 50, step: "0.01", required: true, hint: "Used only while VAT is on." },
-        { id: "bin", label: "Company BIN", value: cfg.seller.bin || "", maxLength: 14, hint: "Printed while VAT is on." },
-        { id: "name", label: "Company name on bills", value: cfg.seller.name || "", required: true, maxLength: 160, full: true },
-        { id: "address", label: "Company address on bills", type: "textarea", value: cfg.seller.address || "", maxLength: 300 },
-      ],
-      onSubmit: async v => {
-        const c = await DF.api("/finance/config", { method: "PUT", body: { vatEnabled: v.vatEnabled === "on", vatRate: Number(v.vatRate), seller: { bin: v.bin, name: v.name, address: v.address } } });
-        return c.vatEnabled ? `Saved: VAT on at ${c.vatRate}%.` : "Saved: VAT off.";
-      },
-    });
-  }
-
   const currentAccount = () => {
     const kind = pageKind();
     const id = kind && S.open[kind];
@@ -939,8 +918,6 @@
           );
         case "transfer-pdf":
           return Ops.printPdf(`/documents/hub-transfer/${encodeURIComponent(d.number)}`, { title: "Preparing the transfer…" });
-        case "settings":
-          return void invoiceSettings();
       }
     },
     true,

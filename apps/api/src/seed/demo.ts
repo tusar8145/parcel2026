@@ -8,7 +8,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hash } from "@node-rs/argon2";
-import { DEFAULT_RATE_CARD } from "@delivery-fast/shared";
+import { DEFAULT_RATE_CARD } from "@paira-express/shared";
 import { PrismaClient, type Role } from "../generated/prisma/client";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
@@ -17,7 +17,7 @@ if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "tr
 }
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
-export const DEMO_PASSWORD = "DeliveryFast2026";
+export const DEMO_PASSWORD = "PairaExpress2026";
 
 const HUBS = [
   { code: "DHK-GUL", name: "Gulshan Sorting Hub", district: "Dhaka North", address: "Road 11, Gulshan 1, Dhaka" },

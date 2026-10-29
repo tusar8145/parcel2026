@@ -117,7 +117,7 @@ export class ReportsController {
     const day = new Date(run.periodStart.getTime() + 6 * 3600_000).toISOString().slice(0, 10);
     reply
       .header("content-type", "text/csv; charset=utf-8")
-      .header("content-disposition", `attachment; filename="delivery-fast-${run.kind.toLowerCase()}-${day}.csv"`)
+      .header("content-disposition", `attachment; filename="paira-express-${run.kind.toLowerCase()}-${day}.csv"`)
       .header("cache-control", "private, no-store");
     return run.csv;
   }

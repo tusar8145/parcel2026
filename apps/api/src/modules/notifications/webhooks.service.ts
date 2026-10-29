@@ -86,7 +86,7 @@ export class WebhooksService {
     );
   }
 
-  /** Called by the worker. Signature: X-DeliveryFast-Signature: t=<unix>,v1=<hex hmac of "t.body"> */
+  /** Called by the worker. Signature: X-PairaExpress-Signature: t=<unix>,v1=<hex hmac of "t.body"> */
   async deliver(id: string) {
     const delivery = await this.prisma.webhookDelivery.findUnique({ where: { id }, include: { endpoint: true } });
     if (!delivery || delivery.state === "SUCCEEDED" || !delivery.endpoint.active) return;
@@ -104,7 +104,7 @@ export class WebhooksService {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "user-agent": "DeliveryFast-Webhooks/1.0",
+          "user-agent": "PairaExpress-Webhooks/1.0",
           "x-pairaexpress-event": delivery.event,
           "x-pairaexpress-delivery": delivery.id,
           "x-pairaexpress-signature": `t=${timestamp},v1=${signature}`,

@@ -2,7 +2,7 @@
  * Demo accounts of every type on the Bangladesh hub network (run `npm run db:seed:geo` first).
  * Idempotent: accounts are found by email and updated, never duplicated.
  *
- *   npm run db:seed:users -w @delivery-fast/api -- --out <file outside the repo>
+ *   npm run db:seed:users -w @paira-express/api -- --out <file outside the repo>
  *
  * Passwords: one per role group, taken from DEMO_PASSWORD_<GROUP> (SUPER_ADMIN, OPS, HUB,
  * FINANCE, SUPPORT, RIDER, MERCHANT, CUSTOMER) or generated (18 characters, mixed). Every run
@@ -15,11 +15,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomInt } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { passwordSchema } from "@delivery-fast/shared";
+import { passwordSchema } from "@paira-express/shared";
 import { PrismaClient, type Prisma, type Role, type VehicleType } from "../generated/prisma/client";
 import { hashPassword } from "../common/crypto";
 import { nextCounter } from "../common/counters";
-import { merchantCodePrefix } from "@delivery-fast/shared";
+import { merchantCodePrefix } from "@paira-express/shared";
 
 type Group = "SUPER_ADMIN" | "OPS" | "HUB" | "FINANCE" | "SUPPORT" | "RIDER" | "MERCHANT" | "CUSTOMER";
 const PANEL: Record<Group, string> = {

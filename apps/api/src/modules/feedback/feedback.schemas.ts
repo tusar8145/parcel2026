@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pageQuerySchema } from "../../common/pagination";
 
-export { feedbackSchema } from "@delivery-fast/shared";
+export { feedbackSchema } from "@paira-express/shared";
 
 /** Staff list: newest first, optionally by rating range or channel source. */
 export const listFeedbackQuerySchema = pageQuerySchema.extend({

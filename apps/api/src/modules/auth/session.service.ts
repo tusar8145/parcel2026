@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { MFA_REQUIRED_ROLES } from "@delivery-fast/shared";
+import { MFA_REQUIRED_ROLES } from "@paira-express/shared";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../common/prisma.service";
 import { TokenService } from "../../common/auth/token.service";

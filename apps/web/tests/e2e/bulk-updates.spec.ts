@@ -118,7 +118,7 @@ test("New orders → choose Accept & assign → download → 2 riders + 1 invali
   // ── 2. Download the "Accept & assign" file for this merchant ──
   await page.selectOption("#dfiBMerchant", shop.id);
   const file = await downloaded(page, () => page.click("#dfiBDownload"));
-  expect(file.name).toMatch(/^delivery-fast-new-orders-accept-pickup-\d{12}\.xlsx$/);
+  expect(file.name).toMatch(/^paira-express-new-orders-accept-pickup-\d{12}\.xlsx$/);
   await expect(page.locator("#dfiExportInfo")).toHaveText("Downloaded 3 parcels. Delete the rows you don't want to change, save, and upload it below.");
   const sheet = sheetOf(file.buffer);
   expect(sheet.name).toBe("Accept & assign pickup");
@@ -296,7 +296,7 @@ test("each page offers its own actions: Delivery refuses the New orders file and
   await page.click('[data-dfi="pick-action"][data-action="cancel"]');
   await page.selectOption("#dfiBMerchant", shop.id);
   const cancelFile = await downloaded(page, () => page.click("#dfiBDownload"));
-  expect(cancelFile.name).toMatch(/^delivery-fast-new-orders-cancel-\d{12}\.xlsx$/);
+  expect(cancelFile.name).toMatch(/^paira-express-new-orders-cancel-\d{12}\.xlsx$/);
   const n = fill(cancelFile.buffer, { [pending]: { Reason: "Merchant cancelled" } }, "kinds-cancel");
   files.push(n.file);
   expect(n.header.slice(0, 3)).toEqual(["Tracking ID", "Current status", "Reason *"]);
@@ -319,7 +319,7 @@ test("each page offers its own actions: Delivery refuses the New orders file and
   await expect(page.locator("#dfiMessage")).toHaveText('This is the "Cancel" file of New orders. Upload it on the New orders page (or All parcels), or download a Delivery file here and fill that in.');
   await page.selectOption("#dfiBMerchant", shop.id);
   const deliveryFile = await downloaded(page, () => page.click("#dfiBDownload"));
-  expect(deliveryFile.name).toMatch(/^delivery-fast-delivery-assign-delivery-\d{12}\.xlsx$/);
+  expect(deliveryFile.name).toMatch(/^paira-express-delivery-assign-delivery-\d{12}\.xlsx$/);
   const d = fill(deliveryFile.buffer, { [hubbed]: { Rider: riderLabel } }, "kinds-delivery");
   files.push(d.file);
   await page.setInputFiles("#dfiFile", d.file);
@@ -339,7 +339,7 @@ test("each page offers its own actions: Delivery refuses the New orders file and
   await expect(page.locator("#dfiActionInfo")).toContainText("Schedule return: write the Reason for each row to return; rows with an empty Reason are skipped.");
   await page.selectOption("#dfiBMerchant", shop.id);
   const returnFile = await downloaded(page, () => page.click("#dfiBDownload"));
-  expect(returnFile.name).toMatch(/^delivery-fast-problems-schedule-return-\d{12}\.xlsx$/);
+  expect(returnFile.name).toMatch(/^paira-express-problems-schedule-return-\d{12}\.xlsx$/);
   const returnSheet = sheetOf(returnFile.buffer);
   expect(returnSheet.header.slice(0, 3)).toEqual(["Tracking ID", "Current status", "Reason *"]);
   expect(returnSheet.rows.map(r => r[0])).toContain(stuck);

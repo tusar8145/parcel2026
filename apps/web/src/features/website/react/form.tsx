@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { bdPhoneProblem, emailSchema, otpCodeSchema, passwordSchema } from "@delivery-fast/shared";
+import { bdPhoneProblem, emailSchema, otpCodeSchema, passwordSchema } from "@paira-express/shared";
 import { fieldErrors, retryAfter } from "./df";
 
 /**

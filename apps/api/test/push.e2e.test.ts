@@ -135,6 +135,12 @@ describe("push notifications", () => {
     await assign(await create("With push", services([])));
     await cancelOne();
     expect(pushes.filter(p => p.token === token("shop"))).toHaveLength(1);
+
+    // The event's push switched off (super admin › notifications › Push): still in the bell, not pushed.
+    expect((await ctx.api("PUT", "/notifications/templates/parcel.cancelled/push", { token: admin.token, body: { enabled: false } })).body.channels.push).toMatchObject({ enabled: false });
+    await cancelOne();
+    expect(await ctx.prisma.userNotification.count({ where: { userId: owner.user.id, type: "parcel.cancelled" } })).toBe(3);
+    expect(pushes.filter(p => p.token === token("shop"))).toHaveLength(1);
   });
 
   it("super admin messages all riders or chosen people: in their notifications, pushed, and kept as history", async () => {

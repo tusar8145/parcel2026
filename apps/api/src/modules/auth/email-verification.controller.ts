@@ -2,7 +2,7 @@ import type { z } from "zod";
 import { Controller, Get, HttpCode, Module, Post } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
-import { emailVerificationConfirmSchema } from "@delivery-fast/shared";
+import { emailVerificationConfirmSchema } from "@paira-express/shared";
 import { CurrentUser, OptionalActor, Public, ReqMeta, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { unauthorized } from "../../common/errors";

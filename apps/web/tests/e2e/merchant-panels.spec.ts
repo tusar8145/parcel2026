@@ -1,5 +1,5 @@
 import { type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { Fixtures, confirmDialog, expect, test, type TempMerchant, type TempRider, type TempUser, openPdf } from "./support";
+import { Fixtures, confirmDialog, expect, sql, test, type TempMerchant, type TempRider, type TempUser, openPdf } from "./support";
 
 /**
  * The two merchant panels on the real API: booking, tracking, cancelling, billing, API keys
@@ -104,6 +104,12 @@ async function deliver(request: APIRequestContext, trackingId: string) {
   const assign = await request.post(`/api/v1/parcels/${trackingId}/assign-pickup`, { headers: auth(ops), data: { riderId: rider.riderId } });
   expect(assign.ok(), await assign.text()).toBeTruthy();
   const riderToken = await token(request, rider.login, rider.password);
+  // "Collect & deliver now" is for parcels the pickup's hub also delivers: the pickup belongs to the delivering hub.
+  await sql(
+    `UPDATE parcels p SET "pickupHubId" = z."hubId" FROM delivery_zones z
+      WHERE p."trackingId" = $1 AND z.active AND z."hubId" IS NOT NULL AND lower(z.district) = lower(p."deliveryDistrict") AND lower(z.name) = lower(p."deliveryZone")`,
+    [trackingId],
+  );
   const pickup = await request.post(`/api/v1/rider/parcels/${trackingId}/pickup`, { headers: auth(riderToken), data: { outcome: "COLLECTED_DELIVER_DIRECT" } });
   expect(pickup.ok(), await pickup.text()).toBeTruthy();
   const delivered = await request.post(`/api/v1/rider/parcels/${trackingId}/delivery`, {

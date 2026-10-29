@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
-import { PANEL_FOR_ROLE, type OtpPurpose, type Role } from "@delivery-fast/shared";
+import { PANEL_FOR_ROLE, type OtpPurpose, type Role } from "@paira-express/shared";
 import type { z } from "zod";
-import type { changePasswordSchema, otpLoginSchema, passwordLoginSchema, resetPasswordSchema, signupSchema } from "@delivery-fast/shared";
+import type { changePasswordSchema, otpLoginSchema, passwordLoginSchema, resetPasswordSchema, signupSchema } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { dummyPasswordHash, hashPassword, verifyPassword } from "../../common/crypto";

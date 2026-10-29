@@ -1,4 +1,4 @@
-import { packagePricesSchema, serviceLabel, type PackagePrices, type PackageSegment } from "@delivery-fast/shared";
+import { packagePricesSchema, serviceLabel, type PackagePrices, type PackageSegment } from "@paira-express/shared";
 import { AppError } from "../../common/errors";
 import type { Db } from "../../common/prisma.service";
 import { env } from "../../config/env";

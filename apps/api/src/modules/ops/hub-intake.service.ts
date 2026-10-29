@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import { SERVICE_LEVEL_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { SERVICE_LEVEL_LABEL, parcelStatusLabel, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import type { Actor } from "../../common/auth/actor";

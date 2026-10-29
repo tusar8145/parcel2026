@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, phoneSchema } from "@delivery-fast/shared";
+import { emailSchema, phoneSchema } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { enumLoose } from "../support/support.schemas";
 

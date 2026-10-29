@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { jwtVerify, SignJWT, errors as joseErrors } from "jose";
-import { ROLES, type Role } from "@delivery-fast/shared";
+import { ROLES, type Role } from "@paira-express/shared";
 import { env } from "../../config/env";
 import { RedisService } from "../redis.service";
 import { unauthorized } from "../errors";

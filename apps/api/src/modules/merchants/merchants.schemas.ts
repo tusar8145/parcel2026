@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, isBdMobile, normalizeBdPhone, phoneSchema } from "@delivery-fast/shared";
+import { emailSchema, isBdMobile, normalizeBdPhone, phoneSchema } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { WEBHOOK_EVENTS } from "../notifications/webhooks.service";
 import { apiKeyScopesSchema } from "./api-key-scopes";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRODUCT_TYPES, packagePricesSchema, PACKAGE_SEGMENTS, quoteRequestSchema } from "@delivery-fast/shared";
+import { PRODUCT_TYPES, packagePricesSchema, PACKAGE_SEGMENTS, quoteRequestSchema } from "@paira-express/shared";
 
 export const segmentSchema = z.enum(PACKAGE_SEGMENTS, "Choose ECOMMERCE, BANKING_FINANCIAL or CUSTOMER");
 const name = z.string().trim().min(2, "Use at least 2 characters").max(80, "Use at most 80 characters");

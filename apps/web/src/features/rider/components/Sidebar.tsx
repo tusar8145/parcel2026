@@ -10,8 +10,8 @@ export default function Sidebar() {
           <BrandMark size={40} />
         </div>
         <div className="brand-name">
-          {"delivery "}
-          <span>fast</span>
+          {"paira "}
+          <span>express</span>
         </div>
       </div>{" "}
       <div className="rider-chip">

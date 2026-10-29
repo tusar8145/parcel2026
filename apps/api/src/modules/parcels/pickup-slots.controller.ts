@@ -2,7 +2,7 @@ import { Controller, Get, Put } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import type { z } from "zod";
-import { pickupSlotConfigSchema, pickupSlotsQuerySchema } from "@delivery-fast/shared";
+import { pickupSlotConfigSchema, pickupSlotsQuerySchema } from "@paira-express/shared";
 import { CurrentActor, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";

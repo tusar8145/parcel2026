@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { addressText } from "../../common/address";
 import type { Readable } from "node:stream";
 import type { z } from "zod";
-import { displayPriceLines, LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { displayPriceLines, LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@paira-express/shared";
 import { env } from "../../config/env";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -147,6 +147,7 @@ export class DocumentsService {
       support: snap.brand.support,
       website,
       vatRate: fin.vatRate,
+      showDeliveryCharge: fin.showDeliveryCharge,
     };
   }
 
@@ -372,7 +373,7 @@ export class DocumentsService {
     await this.record(actor, "labels", { format: input.format, count: labels.length, trackingIds: labels.map(l => l.trackingId).slice(0, 500), missing: missing.length }, meta);
     const pdf = new PdfWriter({ size: LABEL_PAGE[input.format].size as [number, number], title: `${brand.appName} shipping labels (${labels.length})` });
     return {
-      fileName: `delivery-fast-labels-${input.format}-${stamp(now)}.pdf`,
+      fileName: `paira-express-labels-${input.format}-${stamp(now)}.pdf`,
       stream: this.finish(pdf, () => drawLabels(pdf, brand, labels, input.format, now)),
       pages: labelPages(input.format, labels.length),
       count: labels.length,
@@ -392,7 +393,7 @@ export class DocumentsService {
     const docMeta = this.meta(actor, title, { subtitle: `${items.length} shipment(s)` });
     const pdf = new PdfWriter({ size: A4, title: `${brand.appName} ${title.toLowerCase()} (${items.length})`, bufferPages: input.layout === "a4" });
     return {
-      fileName: `delivery-fast-invoices-${input.line}-${input.layout}-${stamp()}.pdf`,
+      fileName: `paira-express-invoices-${input.line}-${input.layout}-${stamp()}.pdf`,
       stream: this.finish(pdf, () => drawShipmentInvoices(pdf, brand, items, input.layout, docMeta)),
       count: items.length,
       missing,
@@ -407,7 +408,7 @@ export class DocumentsService {
     const title = input.title ?? "Shipment list";
     const docMeta = this.meta(actor, title, { subtitle: `${items.length} shipment(s)` });
     const pdf = new PdfWriter({ size: LANDSCAPE, title: `${brand.appName} ${title.toLowerCase()}`, bufferPages: true });
-    return { fileName: `delivery-fast-${safeName(title.toLowerCase())}-${stamp()}.pdf`, stream: this.finish(pdf, () => void drawShipmentList(pdf, brand, items, docMeta)), count: items.length, missing };
+    return { fileName: `paira-express-${safeName(title.toLowerCase())}-${stamp()}.pdf`, stream: this.finish(pdf, () => void drawShipmentList(pdf, brand, items, docMeta)), count: items.length, missing };
   }
 
   // ───────────── linehaul ─────────────
@@ -434,7 +435,7 @@ export class DocumentsService {
       parcels: t.bags.flatMap(b => b.items.map(i => ({ bag: b.number, trackingId: i.parcel.trackingId, recipient: i.parcel.recipient, zone: i.parcel.zone, district: i.parcel.district, weightKg: i.parcel.weightKg, codAmount: i.parcel.codAmount, state: i.state.toLowerCase() }))),
       totals: t.totals,
     };
-    return { fileName: `delivery-fast-manifest-${safeName(t.number)}.pdf`, stream: this.finish(pdf, () => drawManifest(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-manifest-${safeName(t.number)}.pdf`, stream: this.finish(pdf, () => drawManifest(pdf, brand, doc, docMeta)) };
   }
 
   async bagLabel(actor: Actor, bagRef: string, meta: RequestMeta): Promise<PdfFile> {
@@ -443,7 +444,7 @@ export class DocumentsService {
     await this.record(actor, "bag_label", { number: b.number }, meta, b.id, "linehaul_bag");
     const pdf = new PdfWriter({ size: BAG_LABEL_SIZE, title: `Bag ${b.number}` });
     const doc = { number: b.number, originHub: b.originHub, destHub: b.destHub, sealNo: b.sealNo, label: b.label, parcels: b.totals.parcels, weightKg: b.totals.weightKg, codAmount: b.totals.codAmount, trip: b.trip?.number ?? null, sealedAt: b.sealedAt };
-    return { fileName: `delivery-fast-bag-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBagLabel(pdf, brand, doc, new Date())) };
+    return { fileName: `paira-express-bag-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBagLabel(pdf, brand, doc, new Date())) };
   }
 
   // ───────────── rider run sheet ─────────────
@@ -519,7 +520,7 @@ export class DocumentsService {
     await this.record(actor, "run_sheet", { rider: rider.code, date: day, stops: doc.stops.length }, meta, rider.id, "rider");
     const docMeta = this.meta(actor, "Rider run sheet", { number: `${rider.code} · ${day}`, subtitle: `${rider.user.name} · ${doc.stops.length} stop(s)` });
     const pdf = new PdfWriter({ size: LANDSCAPE, title: `Run sheet ${rider.code} ${day}`, bufferPages: true });
-    return { fileName: `delivery-fast-run-sheet-${safeName(rider.code)}-${day}.pdf`, stream: this.finish(pdf, () => drawRunSheet(pdf, brand, doc, docMeta)), count: doc.stops.length };
+    return { fileName: `paira-express-run-sheet-${safeName(rider.code)}-${day}.pdf`, stream: this.finish(pdf, () => drawRunSheet(pdf, brand, doc, docMeta)), count: doc.stops.length };
   }
 
   // ───────────── CN stock ─────────────
@@ -533,7 +534,7 @@ export class DocumentsService {
     const docMeta = this.meta(actor, "CN label sheet", { number: result.batch.number });
     const pdf = new PdfWriter({ size: A4, title: `CN labels ${result.batch.number}` });
     const doc = { number: result.batch.number, hub: result.batch.hub?.name ?? null, merchant: result.batch.merchant?.name ?? null, labels: result.labels.map(l => ({ cn: l.cn, reprint: l.reprint })) };
-    return { fileName: `delivery-fast-cn-${safeName(result.batch.number)}.pdf`, stream: this.finish(pdf, () => drawCnSheet(pdf, brand, doc, docMeta)), count: doc.labels.length };
+    return { fileName: `paira-express-cn-${safeName(result.batch.number)}.pdf`, stream: this.finish(pdf, () => drawCnSheet(pdf, brand, doc, docMeta)), count: doc.labels.length };
   }
 
   // ───────────── returns ─────────────
@@ -561,7 +562,7 @@ export class DocumentsService {
       parcels: (r.parcels ?? []).map(p => ({ trackingId: p.trackingId, recipient: p.recipientName, reason: p.reason, attempts: p.attemptCount, codAmount: p.codAmount, returnCharge: p.returnCharge, status: PARCEL_STATUS_LABEL[p.status as ParcelStatus] ?? p.status })),
       returnCharges: r.returnCharges ?? 0,
     };
-    return { fileName: `delivery-fast-return-run-${safeName(r.number)}.pdf`, stream: this.finish(pdf, () => drawReturnRun(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-return-run-${safeName(r.number)}.pdf`, stream: this.finish(pdf, () => drawReturnRun(pdf, brand, doc, docMeta)) };
   }
 
   // ───────────── finance ─────────────
@@ -572,7 +573,7 @@ export class DocumentsService {
     await this.record(actor, "franchise_invoice", { number: i.number }, meta, i.id, "franchise_invoice");
     const docMeta = this.meta(actor, "Franchise commission invoice", { number: i.number, date: i.createdAt, subtitle: `${i.franchise.name} · ${i.status.toLowerCase()}` });
     const pdf = new PdfWriter({ size: A4, title: `Franchise invoice ${i.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-franchise-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFranchiseInvoice(pdf, brand, i, docMeta)) };
+    return { fileName: `paira-express-franchise-invoice-${safeName(i.number)}.pdf`, stream: this.finish(pdf, () => drawFranchiseInvoice(pdf, brand, i, docMeta)) };
   }
 
   // ───────────── Accounts ─────────────
@@ -603,7 +604,7 @@ export class DocumentsService {
       amount: s.amount,
     };
     const pdf = new PdfWriter({ size: A4, title: `Settlement ${s.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-settlement-${safeName(s.number)}.pdf`, stream: this.finish(pdf, () => drawPayout(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-settlement-${safeName(s.number)}.pdf`, stream: this.finish(pdf, () => drawPayout(pdf, brand, doc, docMeta)) };
   }
 
   /** INV-: a Financial merchant's bill (staff, and the merchant's owner). */
@@ -632,7 +633,7 @@ export class DocumentsService {
       payments: b.payments,
     };
     const pdf = new PdfWriter({ size: A4, title: `Invoice ${b.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-invoice-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBill(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-invoice-${safeName(b.number)}.pdf`, stream: this.finish(pdf, () => drawBill(pdf, brand, doc, docMeta)) };
   }
 
   /** An account's statement for a date range (staff, and the account's owner). */
@@ -643,7 +644,7 @@ export class DocumentsService {
     const docMeta = this.meta(actor, "Account statement", { number: st.account.code ?? undefined, subtitle: `${st.account.name} · ${query.from ?? "start"} to ${query.to ?? dhakaToday()}` });
     const doc = { account: { name: st.account.name, code: st.account.code, kind: st.account.kind }, from: st.from, to: st.to, opening: st.opening, closing: st.closing, lines: st.lines };
     const pdf = new PdfWriter({ size: A4, title: `Statement ${st.account.name}`, bufferPages: true });
-    return { fileName: `delivery-fast-statement-${safeName(st.account.code ?? st.account.name)}-${stamp()}.pdf`, stream: this.finish(pdf, () => drawAccountStatement(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-statement-${safeName(st.account.code ?? st.account.name)}-${stamp()}.pdf`, stream: this.finish(pdf, () => drawAccountStatement(pdf, brand, doc, docMeta)) };
   }
 
   /** HS-: a rider's handover slip (the rider: their own; hub staff: their hubs'). */
@@ -665,7 +666,7 @@ export class DocumentsService {
       parcels: slip.parcels,
     };
     const pdf = new PdfWriter({ size: A4, title: `Slip ${slip.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-slip-${safeName(slip.number)}.pdf`, stream: this.finish(pdf, () => drawCashSlip(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-slip-${safeName(slip.number)}.pdf`, stream: this.finish(pdf, () => drawCashSlip(pdf, brand, doc, docMeta)) };
   }
 
   /** HT-: a hub transfer to the central hub (hub staff of either hub, money staff). */
@@ -691,7 +692,7 @@ export class DocumentsService {
       due: t.due,
     };
     const pdf = new PdfWriter({ size: A4, title: `Transfer ${t.number}`, bufferPages: true });
-    return { fileName: `delivery-fast-transfer-${safeName(t.number)}.pdf`, stream: this.finish(pdf, () => drawHubTransfer(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-transfer-${safeName(t.number)}.pdf`, stream: this.finish(pdf, () => drawHubTransfer(pdf, brand, doc, docMeta)) };
   }
 
   // ───────────── reports ─────────────
@@ -710,7 +711,7 @@ export class DocumentsService {
     const docMeta = this.meta(actor, title, { number: `${from} to ${to}`, date: run.createdAt, subtitle: hub?.name ?? "Whole network" });
     const pdf = new PdfWriter({ size: head.length > 7 ? LANDSCAPE : A4, title: `${title} ${from} to ${to}`, bufferPages: true });
     const doc = { intro: [["Period", `${from} to ${to}`], ["Hub", hub?.name ?? "Whole network"], ["Rows", String(body.length)], ["Run", run.schedule?.name ?? "On demand"]] as [string, string][], sections: [{ header: head, rows: body }] };
-    return { fileName: `delivery-fast-${run.kind.toLowerCase()}-${from}-to-${to}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-${run.kind.toLowerCase()}-${from}-to-${to}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
   }
 
   async slaReport(actor: Actor, query: z.infer<typeof slaReportQuerySchema>, meta: RequestMeta): Promise<PdfFile> {
@@ -735,7 +736,7 @@ export class DocumentsService {
       ],
     };
     const pdf = new PdfWriter({ size: A4, title: `SLA report ${r.from} to ${r.to}`, bufferPages: true });
-    return { fileName: `delivery-fast-sla-${r.from}-to-${r.to}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-sla-${r.from}-to-${r.to}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
   }
 
   /** End-of-day hub reconciliation (the same figures as GET /ops/hub-reconciliation), with signature lines. */
@@ -793,6 +794,6 @@ export class DocumentsService {
     };
     const docMeta = this.meta(actor, "End-of-day hub reconciliation", { number: r.date, subtitle: r.hub.name });
     const pdf = new PdfWriter({ size: A4, title: `Hub reconciliation ${r.hub.code} ${r.date}`, bufferPages: true });
-    return { fileName: `delivery-fast-hub-reconciliation-${r.hub.code.toLowerCase()}-${r.date}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
+    return { fileName: `paira-express-hub-reconciliation-${r.hub.code.toLowerCase()}-${r.date}.pdf`, stream: this.finish(pdf, () => drawTableDoc(pdf, brand, doc, docMeta)) };
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PRODUCT_TYPE_LABEL } from "@delivery-fast/shared";
+import { PRODUCT_TYPE_LABEL } from "@paira-express/shared";
 import { df, describe, isApiError, site, toast, type MfaChallenge, type SessionUser } from "./df";
 import { FieldError, PhoneInput, Select, TextInput, cooldownFrom, e164, rules, useBusy, useCountdown, useForm, local10 } from "./form";
 import { MerchantPlaceFields, placeBody, placeNames, placePaths, placeRules } from "./MerchantPlaceFields";

@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { PackagesService } from "../packages/packages.service";
 import { createHmac } from "node:crypto";
-import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
+import { isCustomerCancellable, type CreateParcelInput, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
 import { randomDigits, safeEqual, sha256 } from "../../common/crypto";

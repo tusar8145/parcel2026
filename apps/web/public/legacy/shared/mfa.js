@@ -94,7 +94,7 @@
     box.querySelector("[data-download]").addEventListener("click", () => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      a.download = "delivery-fast-recovery-codes.txt";
+      a.download = "paira-express-recovery-codes.txt";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });

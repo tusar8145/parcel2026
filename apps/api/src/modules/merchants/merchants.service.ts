@@ -4,7 +4,7 @@ import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { nextCounter } from "../../common/counters";
-import { merchantCodePrefix } from "@delivery-fast/shared";
+import { merchantCodePrefix } from "@paira-express/shared";
 import { sha256 } from "../../common/crypto";
 import { AppError, conflict, forbidden, notFound } from "../../common/errors";
 import { merchantNotActive } from "./merchant-status";

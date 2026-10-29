@@ -179,12 +179,12 @@
     render: () =>
       `${STYLE}<div class="page-heading"><div><p class="eyebrow">Network operations · next steps</p><h1>Parcel queue</h1><p class="subtitle">Every parcel's next step, worked out by the system. Open a step, choose a group, then scan parcels to do it.</p></div><div class="heading-actions" id="wqActions"></div></div><div class="wq-layout"><section class="panel wq-steps" id="wqSteps" aria-label="Next steps"></section><div id="wqDetail"></div></div>`,
   };
+  // Every time the page is drawn (e.g. back from another page, where live events are skipped): reload the
+  // counts, the open step and the list, keeping the last ones on screen until the new ones arrive.
   Ops.enhance[PAGE] = () => {
     paint();
-    if (!state.overview && !state.loading) {
-      state.loading = true;
-      void loadOverview().finally(() => (state.loading = false));
-    }
+    if (!state.overview) void loadOverview();
+    else refresh();
   };
 
   function paint() {

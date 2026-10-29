@@ -3,8 +3,8 @@ PAIRA EXPRESS RIDER APP - IMPLEMENTATION PLAN
 
 Android app (Flutter) for riders, next to the merchant app (mobile/merchant_app).
 Status: STEP 0 AND PHASE 1 DONE (26 Oct 2026) - mobile/rider_app, version 1.2.0 (Scan tab, push).
-  APK: E:\delivery-fast\apk\DeliveryFast-Rider-1.2.0.apk (phones and the emulator); riders download it from the
-  rider panel's sidebar ("Get the rider app", /downloads/delivery-fast-rider.apk).
+  APK: E:\delivery-fast\apk\PairaExpress-Rider-1.2.0.apk (phones and the emulator); riders download it from the
+  rider panel's sidebar ("Get the rider app", /downloads/paira-express-rider.apk).
   Shared code: mobile/df_core (API, sign-in, scanner, support, barcode) used by both apps.
   Also in 1.0.0: Help & support (requests with photos; "Report a problem" on a delivery).
   Decisions taken by default: English only (Bangla stays in Phase 2); APK download only.
@@ -86,8 +86,8 @@ TECHNICAL
  - Testing: screen tests on saved API responses (as in the merchant app). Scanner, GPS
    and background behaviour need a real Android phone; the emulator can't test them
    properly, and the development PC is short on RAM.
- - Distribution: APK download link, like the merchant app. Signed with the Delivery
-   Fast key (E:\delivery-fast\keys - keep it safe).
+ - Distribution: APK download link, like the merchant app. Signed with the Paira
+   Express key (E:\delivery-fast\keys - keep it safe).
 
 
 CHALLENGES

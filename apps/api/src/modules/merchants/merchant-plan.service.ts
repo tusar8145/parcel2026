@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { PARCEL_NOTIFICATIONS, isBanking, packageOptions } from "@delivery-fast/shared";
+import { PARCEL_NOTIFICATIONS, isBanking, packageOptions } from "@paira-express/shared";
 import type { Actor } from "../../common/auth/actor";
 import { PackagesService } from "../packages/packages.service";
 import { PricingService } from "../pricing/pricing.service";

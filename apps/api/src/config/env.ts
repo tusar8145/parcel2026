@@ -39,7 +39,7 @@ const envSchema = z
     /** Place search (OpenStreetMap Nominatim). The public server allows at most 1 request/second; self-host for volume. */
     NOMINATIM_URL: z.url().default("https://nominatim.openstreetmap.org"),
     /** Identifies the app to Nominatim, as its usage policy requires. */
-    NOMINATIM_USER_AGENT: z.string().min(3).default("DeliveryFast/1.0 (+https://pairaexpress.example)"),
+    NOMINATIM_USER_AGENT: z.string().min(3).default("PairaExpress/1.0 (+https://pairaexpress.example)"),
     NOMINATIM_EMAIL: z.email().optional(),
     NOMINATIM_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(5000),
     /** Minimum milliseconds between upstream requests across all API instances. */

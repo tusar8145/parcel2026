@@ -9,7 +9,7 @@ The app uses the existing API (https://paira-express.imagine-design.net/api/v1).
 
 PHASE 1 - MVP  [DONE, version 1.3.0, 26 Oct 2026]
 -------------------------------------------------
-APK: E:\delivery-fast\apk\DeliveryFast-Merchant-1.3.0.apk (phones and the emulator)
+APK: E:\delivery-fast\apk\PairaExpress-Merchant-1.3.0.apk (phones and the emulator)
 
  1. Sign in / sign out, forgot password (SMS code).
  2. Home dashboard: today's numbers, orders by stage, this month's COD and charges,
@@ -37,7 +37,7 @@ Version 1.2.0 (26 Oct 2026) added:
    that order (works for the merchant's own parcels only).
  - Help & support: support requests (list, new request with photos, conversation and
    replies) on the Account tab, and "Get help with this order" on every order.
- - Download: merchant panels' sidebar, "Get the Android app" (/downloads/delivery-fast-merchant.apk).
+ - Download: merchant panels' sidebar, "Get the Android app" (/downloads/paira-express-merchant.apk).
 
 
 PHASE 2 - AFTER THE MVP WORKS  [PLANNED, about 4-5 days]

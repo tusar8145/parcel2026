@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { NUMBER_PREFIXES } from "@delivery-fast/shared";
+import { NUMBER_PREFIXES } from "@paira-express/shared";
 import { resetDatabase, startApp, userWithRoles, type TestContext } from "./helpers";
 
 /** Every .ts file under src (not generated code). */
@@ -26,8 +26,8 @@ describe("system guide", () => {
     for (const m of code.matchAll(/nextNumber\(\s*\w+\s*,\s*"([A-Z-]+)"/g)) made.add(m[1]);
     for (const m of code.matchAll(/`([A-Z]+)-\$\{await nextCounter\(/g)) made.add(m[1]);
     for (const m of code.matchAll(/`([A-Z]+)-\$\{day\}-/g)) made.add(m[1]);
-    made.add("PP"); // nextTrackingId
     const listed = new Set(NUMBER_PREFIXES.map(p => p.prefix));
+    listed.add("PP"); // nextTrackingId: older parcels and hub CN stock, deliberately left out of the guide
     expect([...made].filter(p => !listed.has(p))).toEqual([]);
     expect(made.size).toBeGreaterThanOrEqual(15);
   });

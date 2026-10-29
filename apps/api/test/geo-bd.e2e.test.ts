@@ -1,4 +1,4 @@
-import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P } from "@paira-express/shared";
 import { DEFAULT_CATALOG, type Catalog } from "../src/modules/pricing/pricing.service";
 import { readZip } from "../src/modules/imports/xlsx/zip";
 import { HUBS, seedGeo } from "../src/seed/geo-bd";

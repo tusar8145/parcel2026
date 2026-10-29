@@ -1,4 +1,4 @@
-import { DEFAULT_BRANDING } from "@delivery-fast/shared";
+import { DEFAULT_BRANDING } from "@paira-express/shared";
 import WebsitePage from "@/features/website/WebsitePage";
 import { AboutPage } from "@/features/website/components/AboutPage";
 import { pageMetadata } from "@/features/website/seo";

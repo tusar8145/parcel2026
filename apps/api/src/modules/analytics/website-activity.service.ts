@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
-import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@delivery-fast/shared";
+import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
 import { Prisma } from "../../generated/prisma/client";

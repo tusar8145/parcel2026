@@ -38,7 +38,7 @@ describe("platform security (super admin)", () => {
 
       const setup = await ctx.api("POST", "/auth/mfa/setup", { body: { mfaToken: first.body.mfaToken } });
       expect(setup.status).toBe(200);
-      expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\/Delivery%20Fast:/);
+      expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\/Paira%20Express:/);
       expect(setup.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
       const secret = setup.body.secret as string;
 

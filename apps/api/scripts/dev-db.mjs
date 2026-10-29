@@ -21,7 +21,7 @@ const pg = new EmbeddedPostgres({
 const fresh = !fs.existsSync(path.join(dataDir, "PG_VERSION"));
 if (fresh) await pg.initialise();
 await pg.start();
-for (const name of ["pairaexpress", "deliveryfast_test"]) {
+for (const name of ["pairaexpress", "pairaexpress_test"]) {
   try {
     await pg.createDatabase(name);
   } catch {

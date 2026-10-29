@@ -241,8 +241,8 @@ export default function ApplicationApp() {
       <header className="ap-top">
         <a className="ap-brand" href="/" aria-label="Paira Express">
           <b>
-            {"delivery "}
-            <span>{"fast"}</span>
+            {"paira "}
+            <span>{"express"}</span>
           </b>
         </a>
         <div className="ap-who">

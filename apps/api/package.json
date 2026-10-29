@@ -1,5 +1,5 @@
 {
-  "name": "@delivery-fast/api",
+  "name": "@paira-express/api",
   "private": true,
   "version": "0.1.0",
   "devDependencies": {
@@ -22,7 +22,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@delivery-fast/shared": "*",
+    "@paira-express/shared": "*",
     "@fastify/cookie": "^11.1.3",
     "@fastify/cors": "^11.3.1",
     "@fastify/helmet": "^13.2.0",

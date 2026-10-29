@@ -43,7 +43,7 @@ const digits = (p: string) => String(p || "").replace(/[^\d+]/g, "").replace(/^0
 export function initials(name: string) {
   const words = name.trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w));
   const letters = words.length > 1 ? words.slice(0, 2).map(w => [...w.replace(/[^\p{L}\p{N}]/gu, "")][0] ?? "") : [...(words[0] ?? "").replace(/[^\p{L}\p{N}]/gu, "")].slice(0, 2);
-  return letters.join("").toUpperCase() || "DF";
+  return letters.join("").toUpperCase() || "PE";
 }
 
 function readStored() {
@@ -132,8 +132,8 @@ function fixElement(el: Element) {
     if (html.scrollWidth > room) html.style.fontSize = `${Math.max(8, Math.floor((13 * room) / html.scrollWidth))}px`;
     html.dataset.brandDone = "1";
   }
-  // The workspace badge ("DF" in the super admin sidebar): the company's initials.
-  if (el.matches(".workspace-icon") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim() === "DF") {
+  // The workspace badge ("PE" in the super admin sidebar): the company's initials.
+  if (el.matches(".workspace-icon") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim() === "PE") {
     el.textContent = initials(b.companyName);
     html.dataset.brandDone = "1";
   }

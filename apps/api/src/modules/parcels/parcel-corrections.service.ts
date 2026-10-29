@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { PRODUCT_TYPE_LABEL, PRODUCT_TYPES, type ParcelStatus, type ProductType } from "@delivery-fast/shared";
+import { PRODUCT_TYPE_LABEL, PRODUCT_TYPES, type ParcelStatus, type ProductType } from "@paira-express/shared";
 import { AuditService } from "../../common/audit.service";
 import { actorLabel, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";

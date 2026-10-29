@@ -10,7 +10,7 @@ import {
   deliveryOutcomeSchema,
   pickupOutcomeSchema,
   updateStatusSchema,
-} from "@delivery-fast/shared";
+} from "@paira-express/shared";
 import { AllowApiKey, CurrentActor, CurrentUser, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";

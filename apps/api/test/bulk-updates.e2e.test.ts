@@ -222,7 +222,7 @@ describe("bulk updates", () => {
           expect(def.howTo.startsWith(`${def.label}: `)).toBe(true);
           expect(listOf(x.res.buffer, "Actions"), label).toBeNull();
           expect(sheetXml(x.res.buffer)).not.toContain("IFERROR");
-          expect(String(x.res.headers["content-disposition"])).toMatch(new RegExp(`delivery-fast-${kind === "all" ? "all-parcels" : kind.replace("_", "-")}-${action.replace(/_/g, "-")}-\\d{12}\\.xlsx`));
+          expect(String(x.res.headers["content-disposition"])).toMatch(new RegExp(`paira-express-${kind === "all" ? "all-parcels" : kind.replace("_", "-")}-${action.replace(/_/g, "-")}-\\d{12}\\.xlsx`));
         }
       }
 

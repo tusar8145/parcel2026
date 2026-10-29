@@ -11,8 +11,8 @@ export default function SiteFooter() {
                 <BrandMark />
               </span>
               <span className="brand-word">
-                {"delivery "}
-                <span>fast</span>
+                {"paira "}
+                <span>express</span>
               </span>
             </a>
             <p>Getting the things that matter where they need to be, across Bangladesh.</p>

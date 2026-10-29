@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { phoneSchema } from "@delivery-fast/shared";
+import { phoneSchema } from "@paira-express/shared";
 import { NOTIFICATION_EVENTS } from "./events";
 import { brandSchema, limitsSchema } from "./notification-settings.service";
 

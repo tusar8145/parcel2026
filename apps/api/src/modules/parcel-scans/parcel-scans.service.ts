@@ -226,7 +226,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
     const scans = await this.prisma.parcelScan.findMany({ where: { sessionId: id, parcelId: null }, orderBy: { number: "asc" } });
     const buffer = await this.imports.scanWorkbook(actor, kind, session.merchantId ?? undefined, scans.map(s => ({ scanId: s.id, cells: s.cells as ScanCells })));
     const day = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
-    return { buffer, fileName: `delivery-fast-scanned-${kind}-${day}.xlsx` };
+    return { buffer, fileName: `paira-express-scanned-${kind}-${day}.xlsx` };
   }
 
   /**

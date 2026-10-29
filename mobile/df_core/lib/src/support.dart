@@ -40,6 +40,9 @@ Future<_Photo?> _pickPhoto(BuildContext context) async {
   return _Photo(file.name.isEmpty ? 'photo.jpg' : file.name, bytes);
 }
 
+/// A photo (camera or gallery) as a JPEG data URL, e.g. a signed delivery slip; null when cancelled.
+Future<String?> pickPhotoDataUrl(BuildContext context) async => (await _pickPhoto(context))?.json['dataUrl'];
+
 /// Support: the user's requests (newest first) and "New request".
 class SupportPage extends StatefulWidget {
   const SupportPage({super.key});

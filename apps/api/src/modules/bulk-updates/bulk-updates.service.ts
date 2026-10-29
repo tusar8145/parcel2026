@@ -2,7 +2,7 @@ import { HttpStatus, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/
 import { addressText } from "../../common/address";
 import { createHash } from "node:crypto";
 import type { z } from "zod";
-import { PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@delivery-fast/shared";
+import { PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService, withAuditContext } from "../../common/audit.service";
 import { QueueService } from "../../common/queues";
@@ -426,7 +426,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     const buffer = buildBulkWorkbook({ kind: query.kind, action: t.id, rows, lists, maxRows: limits.maxRows, maxFileMb: limits.maxFileMb, filterText, matched });
     await this.audit.record(actor, { action: "bulk_update.export", entityType: "bulk_update", data: { kind: query.kind, action: t.id, rows: rows.length, matched, filter: filterText } }, meta);
     const stamp = dhaka(new Date()).replace(/[-: ]/g, "").slice(0, 12);
-    const prefix = `delivery-fast-${query.kind === "all" ? "all-parcels" : query.kind.replace(/_/g, "-")}-${t.id.replace(/_/g, "-")}`;
+    const prefix = `paira-express-${query.kind === "all" ? "all-parcels" : query.kind.replace(/_/g, "-")}-${t.id.replace(/_/g, "-")}`;
     return { buffer, fileName: `${prefix}-${stamp}.xlsx`, count: rows.length, matched, maxRows: limits.maxRows };
   }
 

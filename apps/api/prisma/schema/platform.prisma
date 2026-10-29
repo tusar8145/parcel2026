@@ -43,7 +43,7 @@ model CustomRole {
   name        String     @unique
   description String     @default("")
   baseRole    Role
-  /// Permission keys from @delivery-fast/shared PERMISSIONS.
+  /// Permission keys from @paira-express/shared PERMISSIONS.
   permissions String[]
   active      Boolean    @default(true)
   createdById String?    @db.Uuid
@@ -121,7 +121,7 @@ model ImpersonationSession {
 /// A merchant's own tariff on top of its segment's rate card (partial rate card config).
 model MerchantRateOverride {
   merchantId  String   @id @db.Uuid
-  /// Validated by rateCardOverrideSchema in @delivery-fast/shared.
+  /// Validated by rateCardOverrideSchema in @paira-express/shared.
   config      Json
   note        String?
   updatedById String?  @db.Uuid

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PARCEL_INTAKES } from "@delivery-fast/shared";
+import { PARCEL_INTAKES } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { optionalText, scanSourceSchema } from "./ops-common";
 

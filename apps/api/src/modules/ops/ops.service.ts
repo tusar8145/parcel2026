@@ -2,7 +2,7 @@ import { merchantPickupArea } from "../merchants/merchant-address";
 import { addressText } from "../../common/address";
 import { Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus, parseLastMile } from "@delivery-fast/shared";
+import { createParcelSchema, PARCEL_STATUS_LABEL, PARCEL_STATUSES, SERVICE_LEVEL_LABEL, TERMINAL_STATUSES, type ParcelStatus, parseLastMile } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";

@@ -58,6 +58,8 @@ export const scripts = [
   "/legacy/courier-operation/bridge-scan.js",
   // Top bar › Phone scanner: a phone (QR link) becomes this tab's barcode scanner; codes go into the open scan box.
   "/legacy/courier-operation/bridge-phone-scanner.js",
+  // Top bar › Share files: a QR link another device drops files into; they show here until the dialog closes.
+  "/legacy/courier-operation/bridge-share.js",
   // Partial delivery: the drawer section, More › Change product type / Return charge.
   "/legacy/courier-operation/bridge-partial.js",
   // Server-paged parcel tables, the "my hub" scope, stage counts and bulk Accept & assign.

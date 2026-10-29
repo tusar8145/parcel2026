@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import type { updateProfileSchema } from "@delivery-fast/shared";
+import type { updateProfileSchema } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError, conflict, notFound } from "../../common/errors";

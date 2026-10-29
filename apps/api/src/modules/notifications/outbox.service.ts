@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { withCompanyName } from "@delivery-fast/shared";
+import { withCompanyName } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { QueueService } from "../../common/queues";
 import { RedisService } from "../../common/redis.service";

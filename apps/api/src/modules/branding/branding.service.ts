@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { DEFAULT_BRANDING, withCompanyName, type Branding } from "@delivery-fast/shared";
+import { DEFAULT_BRANDING, withCompanyName, type Branding } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError } from "../../common/errors";

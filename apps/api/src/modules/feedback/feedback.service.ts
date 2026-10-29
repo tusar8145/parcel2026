@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import type { feedbackSchema } from "@delivery-fast/shared";
+import type { feedbackSchema } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";

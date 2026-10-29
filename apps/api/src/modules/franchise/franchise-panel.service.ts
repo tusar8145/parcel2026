@@ -8,7 +8,7 @@ import type { RequestMeta } from "../../common/auth/decorators";
 import { nextNumber } from "../../common/counters";
 import { env } from "../../config/env";
 import { Prisma, type ParcelStatus } from "../../generated/prisma/client";
-import { parcelStatusLabel } from "@delivery-fast/shared";
+import { parcelStatusLabel } from "@paira-express/shared";
 import { ParcelsService } from "../parcels/parcels.service";
 import { OpsService } from "../ops/ops.service";
 import { HubIntakeService } from "../ops/hub-intake.service";

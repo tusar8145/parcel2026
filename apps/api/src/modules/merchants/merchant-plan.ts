@@ -17,7 +17,7 @@ import {
   type PackageSegment,
   type RouteTier,
   type SpeedOption,
-} from "@delivery-fast/shared";
+} from "@paira-express/shared";
 
 /**
  * "Services & pricing" in the merchant panels (GET /merchants/me/plan): the merchant's package told in

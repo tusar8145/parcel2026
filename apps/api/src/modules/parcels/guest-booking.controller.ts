@@ -2,7 +2,7 @@ import { Controller, Get, Headers, HttpCode, Param, Post, Query } from "@nestjs/
 import { ApiHeader, ApiQuery, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { z } from "zod";
-import { createParcelSchema, guestCancelSchema, guestVerificationConfirmSchema, guestVerificationRequestSchema } from "@delivery-fast/shared";
+import { createParcelSchema, guestCancelSchema, guestVerificationConfirmSchema, guestVerificationRequestSchema } from "@paira-express/shared";
 import { Public, ReqMeta, type RequestMeta } from "../../common/auth/decorators";
 import { ApiZodBody, ZBody } from "../../common/zod";
 import { PrismaService } from "../../common/prisma.service";

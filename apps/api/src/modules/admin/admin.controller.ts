@@ -1,7 +1,7 @@
 import { Controller, Delete, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Res } from "@nestjs/common";
 import type { FastifyReply } from "fastify";
 import type { z } from "zod";
-import { ROLES, type Role } from "@delivery-fast/shared";
+import { ROLES, type Role } from "@paira-express/shared";
 import { ApiNotFoundResponse, ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import { CurrentActor, CurrentUser, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";

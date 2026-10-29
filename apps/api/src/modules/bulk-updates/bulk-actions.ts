@@ -1,4 +1,4 @@
-import { canTransition, INTAKE_CHANGEABLE_STATUSES, PARCEL_INTAKES, PARCEL_STATUSES, TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
+import { canTransition, INTAKE_CHANGEABLE_STATUSES, PARCEL_INTAKES, PARCEL_STATUSES, TERMINAL_STATUSES, type ParcelStatus } from "@paira-express/shared";
 import type { Prisma } from "../../generated/prisma/client";
 import { BULK_COLUMNS, DETAIL_KEYS, OPS_SETTABLE, type BulkAction, type BulkColumn, type BulkColumnKey } from "./bulk-columns";
 

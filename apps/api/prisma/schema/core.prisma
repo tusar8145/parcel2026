@@ -419,7 +419,7 @@ model Rider {
 
 // ───────────────────────────── Parcels ─────────────────────────────
 
-/// Labels shown in the UI live in @delivery-fast/shared (PARCEL_STATUS_LABEL), with the
+/// Labels shown in the UI live in @paira-express/shared (PARCEL_STATUS_LABEL), with the
 /// allowed transitions between them.
 enum ParcelStatus {
   PENDING_CONFIRMATION
@@ -901,7 +901,7 @@ model RateCard {
   id            String   @id @default(uuid(7)) @db.Uuid
   segment       Segment
   name          String
-  /// Validated by rateCardConfigSchema in @delivery-fast/shared.
+  /// Validated by rateCardConfigSchema in @paira-express/shared.
   config        Json
   active        Boolean  @default(true)
   effectiveFrom DateTime @default(now())

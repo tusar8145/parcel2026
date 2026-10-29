@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ADDRESS_CATEGORIES, emailSchema, latitudeSchema, longitudeSchema, passwordSchema, phoneSchema, ROLES } from "@delivery-fast/shared";
+import { ADDRESS_CATEGORIES, emailSchema, latitudeSchema, longitudeSchema, passwordSchema, phoneSchema, ROLES } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 
 const text = (max: number, label: string) =>

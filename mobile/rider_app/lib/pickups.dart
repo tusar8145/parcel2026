@@ -249,10 +249,11 @@ class _PickupStopPageState extends State<PickupStopPage> {
                   await _problem(id);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'collect', child: Text('Collected (no scan)')),
-                PopupMenuItem(value: 'direct', child: Text('Collect & deliver now')),
-                PopupMenuItem(value: 'problem', child: Text('Report a problem')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'collect', child: Text('Collected (no scan)')),
+                // Only parcels your hub also delivers (another hub's go through the hub on a transfer).
+                if (p['canDeliverDirect'] != false) const PopupMenuItem(value: 'direct', child: Text('Collect & deliver now')),
+                const PopupMenuItem(value: 'problem', child: Text('Report a problem')),
               ],
             ),
         ],

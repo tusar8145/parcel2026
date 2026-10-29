@@ -594,6 +594,12 @@
   window.openModal = function (type, id) {
     document.querySelectorAll("[data-parcel-flags]").forEach(el => el.remove());
     originalOpenModal(type, id);
+    // "Deliver directly" only for parcels this rider's hub also delivers (GET /rider/tasks canDeliverDirect).
+    const pickupOutcome = $("pickupOutcome");
+    if (type === "pickup" && pickupOutcome && apiParcel(id)?.canDeliverDirect === false) {
+      for (const option of [...pickupOutcome.options]) if (option.textContent.includes("deliver directly")) option.remove();
+      pickupOutcome.dispatchEvent(new Event("change"));
+    }
     const hubSelect = $("pickupHub");
     if (hubSelect && DF.state.hubs.length) {
       hubSelect.innerHTML = DF.state.hubs.map(h => `<option value="${h.id}">${esc(h.name)}</option>`).join("");
@@ -736,8 +742,10 @@
           const hub = DF.state.hubs.find(h => h.id === hubId);
           return void submit(() => post(id, "pickup", { outcome: "COLLECTED_TO_HUB", hubId, note }), `${id}: pickup completed and handed to ${hub?.name ?? "the hub"}.`);
         }
-        if (outcome === "Pickup exception")
-          return void submit(() => post(id, "pickup", { outcome: "EXCEPTION", note: note || "Pickup could not be completed." }), `${id}: pickup exception sent to dispatch.`);
+        if (outcome === "Pickup exception" || outcome === "Merchant not ready" || outcome === "Pickup location issue")
+          return void submit(() => post(id, "pickup", { outcome: "EXCEPTION", note: note || (outcome === "Pickup exception" ? "Pickup could not be completed." : outcome) }), `${id}: pickup exception sent to dispatch.`);
+        // Collected: straight to the recipient when this rider's hub delivers it, else it stays with the rider for the hub.
+        if (parcel.canDeliverDirect === false) return void submit(() => post(id, "pickup", { outcome: "COLLECTED", note }), `${id}: picked up. Hand it to the hub.`);
         return void submit(() => post(id, "pickup", { outcome: "COLLECTED_DELIVER_DIRECT", note }), `${id}: picked up and out for delivery.`);
       }
 

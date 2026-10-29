@@ -7,7 +7,7 @@ import { AppError } from "../../common/errors";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
 import { returnChargeFor } from "../returns/return-charge";
 import { parcelEvent, type AfterCommit } from "./parcel-workflow.service";
-import { parcelPrefixOfMerchant } from "@delivery-fast/shared";
+import { parcelPrefixOfMerchant } from "@paira-express/shared";
 
 /**
  * Partial delivery (docs/architecture-contracts.md "Partial delivery"): at delivery the recipient keeps

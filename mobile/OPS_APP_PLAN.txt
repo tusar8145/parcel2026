@@ -4,7 +4,7 @@ PAIRA EXPRESS COURIER OPERATIONS APP - PLAN
 Android app (Flutter) for operations staff, next to the merchant and rider apps (mobile/).
 Status: PHASE 1 BUILT (27 Oct 2026) - mobile/ops_app, package bd.com.pairaexpress.operations,
   "Paira Express Operations" 1.0.0, with push notifications. APK on the Courier Operations sidebar
-  ("Get the operations app", /downloads/delivery-fast-operations.apk).
+  ("Get the operations app", /downloads/paira-express-operations.apk).
 Written 26 Oct 2026; updated 26 Oct 2026 with the owner's decisions:
   - hub operators and operations managers both get the app from Phase 1;
   - the hubs' internet is reliable (no offline mode needed);

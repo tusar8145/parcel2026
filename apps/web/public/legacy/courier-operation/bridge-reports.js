@@ -165,7 +165,7 @@
   async function downloadRun(id) {
     try {
       const r = await DF.api(`/reports/runs/${id}`);
-      courierCsvDownload(`delivery-fast-${r.kind.toLowerCase()}-${Ops.dayKey(r.periodStart)}.csv`, r.csv.replace(/^﻿/, "﻿"));
+      courierCsvDownload(`paira-express-${r.kind.toLowerCase()}-${Ops.dayKey(r.periodStart)}.csv`, r.csv.replace(/^﻿/, "﻿"));
     } catch (error) {
       showToast(DF.describe(error));
     }
@@ -230,7 +230,7 @@
           return paint();
         case "csv": {
           const t = state.result.table;
-          return courierCsvDownload(`delivery-fast-${t.kind.toLowerCase()}-${t.from}-to-${t.to}.csv`, csvText(t.header, t.rows));
+          return courierCsvDownload(`paira-express-${t.kind.toLowerCase()}-${t.from}-to-${t.to}.csv`, csvText(t.header, t.rows));
         }
         case "print":
           // The stored run as a PDF table (GET /documents/report/:runId) in a new tab.

@@ -547,7 +547,7 @@
     if (action === "excel") {
       await flushEdits();
       try {
-        await DF.download(`/parcel-scans/sessions/${s.session.id}/workbook`, "delivery-fast-scanned.xlsx");
+        await DF.download(`/parcel-scans/sessions/${s.session.id}/workbook`, "paira-express-scanned.xlsx");
         showToast("Excel downloaded. Keep the Scan ID column, then use Import Excel here to bring your changes back.");
       } catch (e) {
         showToast(DF.describe(e));

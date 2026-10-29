@@ -7,7 +7,7 @@ import { RequireApiKeyScope } from "./api-key-scopes";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { forbidden } from "../../common/errors";
-import { quoteRequestSchema } from "@delivery-fast/shared";
+import { quoteRequestSchema } from "@paira-express/shared";
 import {
   addMemberSchema,
   addressRequestQuerySchema,

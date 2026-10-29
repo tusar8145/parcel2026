@@ -97,5 +97,5 @@ Setup and run instructions: `docs/development.md`.
 - `npm test` – shared unit tests + API e2e tests
 - `npx playwright test -c playwright.e2e.config.ts` (in apps/web) – full-stack browser tests;
   needs the API, web and a seeded database running
-- `npm run build -w @delivery-fast/web && npm run test:visual` – pixel/DOM parity of the
+- `npm run build -w @paira-express/web && npm run test:visual` – pixel/DOM parity of the
   unchanged website views against `design-reference/`

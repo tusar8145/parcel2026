@@ -536,7 +536,7 @@
     if (!user) return void memory.delete(SESSION_KEY);
     const session = { name: user.name, phone: localPhone(user.phone), email: user.email || "", updatedAt: new Date().toLocaleString() };
     memory.set(SESSION_KEY, JSON.stringify(session));
-    window.deliveryFastCustomerSession = session;
+    window.pairaExpressCustomerSession = session;
   }
 
   function setAddressBook(addresses) {

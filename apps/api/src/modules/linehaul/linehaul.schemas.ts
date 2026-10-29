@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { phoneSchema } from "@delivery-fast/shared";
+import { phoneSchema } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { boolQuery, optionalText, scanSourceSchema } from "../ops/ops-common";
 

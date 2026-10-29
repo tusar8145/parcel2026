@@ -111,9 +111,10 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   );
   y += 4;
 
-  // Charges with VAT
+  // Charges with VAT (left out when Invoice settings › "Show delivery charge on invoice" is off)
+  const charge = brand.showDeliveryCharge !== false;
   const newPage = () => compactHeader(pdf, brand, m);
-  y = table(pdf, {
+  if (charge) y = table(pdf, {
     y,
     newPage,
     columns: [
@@ -124,13 +125,13 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
     rows: s.chargeLines.map((l, i) => [String(i + 1), l.label, fmtAmount(l.amount)]),
     empty: "No charges",
   });
-  y += 6;
+  if (charge) y += 6;
   // VAT lines only while VAT is on (finance settings); otherwise the charge is simply the charge.
-  const vat = brand.vatRate > 0;
+  const vat = charge && brand.vatRate > 0;
   y = totals(
     pdf,
     [
-      ...(vat
+      ...(!charge ? [] : vat
         ? [
             { label: "Taxable value", value: fmtAmount(s.taxable) },
             { label: `VAT ${brand.vatRate}% (included)`, value: fmtAmount(s.vat) },
@@ -143,7 +144,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   );
   y += 10;
   pill(pdf, s.payment, x, y, cod ? COLOR.ink : COLOR.ok);
-  pdf.text(s.deliveryCharge, x, y + 20, { size: 8, color: COLOR.muted, width: w * 0.6 });
+  if (charge) pdf.text(s.deliveryCharge, x, y + 20, { size: 8, color: COLOR.muted, width: w * 0.6 });
   if (vat) pdf.text(brand.bin ? `Seller BIN ${brand.bin}. Prices include VAT at ${brand.vatRate}%.` : `Prices include VAT at ${brand.vatRate}%.`, x, y + 32, { size: 7.5, color: COLOR.faint, width: w * 0.6 });
   if (s.instructions) pdf.text(`Instructions: ${s.instructions}`, x, y + 44, { size: 8, width: w * 0.6, maxLines: 3 });
   signatures(pdf, ["Received by (recipient name & signature)", "Delivered by (rider)"], Math.min(Math.max(y + 70, 0), pdf.height - 120));
@@ -151,6 +152,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
 
 /** A compact invoice in a grid cell (4 or 8 per A4 page). */
 function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y: number, w: number, h: number, dense: boolean) {
+  const charge = brand.showDeliveryCharge !== false;
   const pad = dense ? 6 : 9;
   const ix = x + pad;
   const iw = w - pad * 2;
@@ -178,8 +180,8 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
     ["Service", s.service],
     ["Weight", `${s.weightKg} kg`],
     ["COD", s.codAmount > 0 ? taka(s.codAmount) : "Prepaid"],
-    ["Charge", taka(s.total)],
-    ...(dense ? [] : ((brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] : [["Status", s.statusLabel]]) as [string, string][])),
+    ...((charge ? [["Charge", taka(s.total)]] : []) as [string, string][]),
+    ...(dense ? [] : ((charge && brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] : [["Status", s.statusLabel]]) as [string, string][])),
   ];
   const cols = dense ? 4 : 3;
   const cw = iw / cols;
@@ -198,7 +200,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   if (!dense) {
     // Price lines while there is room above the QR code.
     const room = y + h - pad - 58;
-    for (const l of s.chargeLines) {
+    for (const l of charge ? s.chargeLines : []) {
       if (cy + 10 > room) break;
       pdf.text(l.label, ix, cy, { size: 6.8, color: COLOR.muted, width: iw * 0.7, maxLines: 1 });
       pdf.text(fmtAmount(l.amount), ix + iw * 0.7, cy, { size: 6.8, width: iw * 0.3, align: "right" });
@@ -219,6 +221,7 @@ const POS_W = 80 * MM;
 
 /** Height of a POS receipt (measured with the same rules it is drawn with). */
 function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean): number {
+  const charge = brand.showDeliveryCharge !== false;
   const pad = 10;
   const iw = POS_W - pad * 2;
   let y = pad;
@@ -249,7 +252,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
   }
   if (draw) pdf.line(pad, y + 2, pad + iw, y + 2, { dash: 2, color: COLOR.muted });
   y += 6;
-  for (const l of s.chargeLines) {
+  for (const l of charge ? s.chargeLines : []) {
     if (draw) {
       pdf.text(l.label, pad, y, { size: 7.5, width: iw - 60, maxLines: 2 });
       pdf.text(fmtAmount(l.amount), pad + iw - 60, y, { size: 7.5, width: 60, align: "right" });
@@ -257,8 +260,8 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
     y += pdf.measure(l.label, { size: 7.5, width: iw - 60, maxLines: 2 });
   }
   const sum: [string, string, boolean][] = [
-    ...(brand.vatRate > 0 ? ([[`VAT ${brand.vatRate}% (included)`, fmtAmount(s.vat), false]] as [string, string, boolean][]) : []),
-    ["Delivery charge", `৳ ${fmtAmount(s.total)}`, true],
+    ...(charge && brand.vatRate > 0 ? ([[`VAT ${brand.vatRate}% (included)`, fmtAmount(s.vat), false]] as [string, string, boolean][]) : []),
+    ...(charge ? ([["Delivery charge", `৳ ${fmtAmount(s.total)}`, true]] as [string, string, boolean][]) : []),
     ["COD to collect", `৳ ${fmtAmount(s.codAmount)}`, true],
   ];
   y += 3;

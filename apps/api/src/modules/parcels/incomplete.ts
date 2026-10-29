@@ -1,5 +1,5 @@
 import { HttpStatus } from "@nestjs/common";
-import type { ParcelStatus } from "@delivery-fast/shared";
+import type { ParcelStatus } from "@paira-express/shared";
 import { AppError } from "../../common/errors";
 
 /**

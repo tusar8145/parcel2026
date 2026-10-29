@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { authenticator } from "otplib";
 import QRCode from "qrcode";
 import { randomInt } from "node:crypto";
-import { MFA_REQUIRED_ROLES, type Role } from "@delivery-fast/shared";
+import { MFA_REQUIRED_ROLES, type Role } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
 import { AuditService } from "../../common/audit.service";

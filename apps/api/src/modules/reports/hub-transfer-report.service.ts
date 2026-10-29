@@ -4,7 +4,7 @@ import { PrismaService } from "../../common/prisma.service";
 import { forbidden } from "../../common/errors";
 import type { Actor } from "../../common/auth/actor";
 import { Prisma } from "../../generated/prisma/client";
-import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@delivery-fast/shared";
+import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@paira-express/shared";
 import { addDays, dhakaDateRange, opsHubScope } from "../parcels/ops-scope";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-25");

@@ -1,4 +1,4 @@
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext, sameHubDelivery } from "./helpers";
 import { RiderLocationService } from "../src/modules/rider/location.service";
 import { planFromConfig } from "../src/modules/rider/earnings";
 import { salaryFor } from "../src/modules/rider/pay.service";
@@ -28,10 +28,34 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
   const outForDelivery = async (s: Awaited<ReturnType<typeof setup>>, overrides: Record<string, unknown> = {}) => {
     const { trackingId } = (await ctx.api("POST", "/parcels", { token: s.customer.token, body: parcelBody(overrides) })).body;
     await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+    await sameHubDelivery(ctx, trackingId);
     const out = await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
     expect(out.body.status, JSON.stringify(out.body)).toBe("OUT_FOR_DELIVERY");
     return trackingId as string;
   };
+
+  it("Collect & deliver now: only parcels the rider's hub also delivers", async () => {
+    const s = await setup();
+    const other = await hub(ctx, "HUB-T2");
+    // Dhanmondi (the default delivery zone) is served by another hub.
+    await ctx.prisma.deliveryZone.create({ data: { code: "DC-DHA", name: "Dhanmondi", district: "Dhaka Central", hubId: other.id } });
+    const book = async (overrides: Record<string, unknown> = {}) => {
+      const { trackingId } = (await ctx.api("POST", "/parcels", { token: s.customer.token, body: parcelBody(overrides) })).body;
+      await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      return trackingId as string;
+    };
+    const far = await book();
+    await ctx.prisma.deliveryZone.create({ data: { code: "DN-GUL", name: "Gulshan", district: "Dhaka North", hubId: s.h.id } });
+    const near = await book({ delivery: { category: "Office", street: "Road 11 House 4", area: "Gulshan 1", zone: "Gulshan", district: "Dhaka North" } });
+
+    const tasks = (await ctx.api("GET", "/rider/tasks", { token: s.rider.token })).body.pickups as { trackingId: string; canDeliverDirect: boolean }[];
+    expect(tasks.find(p => p.trackingId === far)?.canDeliverDirect).toBe(false);
+    expect(tasks.find(p => p.trackingId === near)?.canDeliverDirect).toBe(true);
+    const refused = await ctx.api("POST", `/rider/parcels/${far}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe("DIRECT_DELIVERY_OTHER_HUB");
+    expect((await ctx.api("POST", `/rider/parcels/${near}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } })).body.status).toBe("OUT_FOR_DELIVERY");
+  });
 
   describe("live location", () => {
     it("records fixes on shift, publishes the latest position and keeps history", async () => {
@@ -259,6 +283,7 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       expect(booked.status, JSON.stringify(booked.body)).toBe(201);
       const trackingId = booked.body.trackingId as string;
       await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      await sameHubDelivery(ctx, trackingId);
       expect((await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } })).body.status).toBe("OUT_FOR_DELIVERY");
       const deliver = (body: Record<string, unknown>) => ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "Nabila", proof: { method: "SIGNATURE", image: PNG }, ...body } });
       expect((await deliver({ codCollected: 400 })).body.error.code).toBe("COD_MISMATCH");

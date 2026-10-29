@@ -1,4 +1,4 @@
-import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P } from "@paira-express/shared";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
 /** Merchants and walk-in senders bringing parcels to a hub: drop-off booking, receipt and labels. */

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createParcelSchema, PARCEL_INTAKES } from "@delivery-fast/shared";
+import { createParcelSchema, PARCEL_INTAKES } from "@paira-express/shared";
 
 const MAX_RANGE_DAYS = 92;
 const day = z.iso.date();

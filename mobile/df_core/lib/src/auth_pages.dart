@@ -311,9 +311,9 @@ class BrandMark extends StatelessWidget {
               mark,
             const SizedBox(width: 12),
             Flexible(
-              child: RichText(
+              child: Text.rich(
                 overflow: TextOverflow.ellipsis,
-                text: TextSpan(
+                TextSpan(
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: ink, letterSpacing: -0.6),
                   children: [
                     if (words.length > 1) TextSpan(text: '${words.sublist(0, words.length - 1).join(' ')} '),

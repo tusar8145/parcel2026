@@ -9,12 +9,12 @@ export default function Sidebar() {
           <BrandMark size={40} />
         </div>
         <div className="brand-name">
-          {"delivery "}
-          <span>fast</span>
+          {"paira "}
+          <span>express</span>
         </div>
       </div>{" "}
       <button className="workspace" id="workspace">
-        <span className="workspace-icon">DF</span>
+        <span className="workspace-icon">PE</span>
         <span className="workspace-info">
           <strong>Platform administration</strong>
           <small>Super admin workspace</small>
@@ -138,6 +138,12 @@ export default function Sidebar() {
               <use href="#i-settings" />
             </svg>
             {"Branding & company"}
+          </button>{" "}
+          <button className="nav-item" data-page="Invoice settings">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-clipboard" />
+            </svg>
+            {"Invoice settings"}
           </button>{" "}
         </div>{" "}
       </nav>{" "}

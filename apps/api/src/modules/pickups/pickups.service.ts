@@ -3,7 +3,7 @@ import { InboxService } from "../notifications/inbox.service";
 import { notifyNewWork } from "../notifications/new-work";
 import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { z } from "zod";
-import { phoneSchema } from "@delivery-fast/shared";
+import { phoneSchema } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";

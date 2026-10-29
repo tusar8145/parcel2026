@@ -1,5 +1,5 @@
 import type { Prisma } from "../../generated/prisma/client";
-import { TERMINAL_STATUSES } from "@delivery-fast/shared";
+import { TERMINAL_STATUSES } from "@paira-express/shared";
 
 /**
  * The work queue: every parcel's next operational step, derived from what the system already knows

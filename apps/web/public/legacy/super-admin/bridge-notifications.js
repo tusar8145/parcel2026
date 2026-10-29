@@ -20,7 +20,7 @@
     String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const toast = message => (typeof showToast === "function" ? showToast(message) : DF.toast?.(message));
   const fail = error => toast(DF.describe(error));
-  const CHANNEL_NAME = { sms: "SMS", email: "Email" };
+  const CHANNEL_NAME = { sms: "SMS", email: "Email", push: "Push" };
   const when = value =>
     value ? new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never";
   const pill = (text, tone) => `<span class="status status-${tone}">${esc(text)}</span>`;
@@ -175,6 +175,8 @@
       const c = e.channels[channel];
       if (!c) return `<td><span class="panel-subtitle">No ${CHANNEL_NAME[channel].toLowerCase()}</span></td>`;
       const checkbox = `<label class="config-check"><input type="checkbox" data-nt-toggle="${esc(e.event)}|${channel}" ${c.enabledByAdmin || c.locked ? "checked" : ""} ${c.locked ? "disabled" : ""}> ${c.locked ? "Always on" : "On"}</label>`;
+      // Push: to the apps (merchant, rider, operations) with the in-app notification's text; nothing to edit.
+      if (channel === "push") return `<td>${checkbox}<span class="subcell" title="The push shows the same title and text as the in-app notification">Bell text</span></td>`;
       const edit = `<button class="button button-sm" type="button" data-nt-edit="${esc(e.event)}|${channel}">Edit${c.customized ? " · customised" : ""}</button>`;
       return `<td>${checkbox}${edit}</td>`;
     };
@@ -190,11 +192,11 @@
     const rows = shownGroups
       .map(
         g =>
-          `<tr data-nt-group="${esc(g.name)}"><td colspan="4" style="background:#f6f8fb"><strong>${esc(g.name)}</strong> <span class="panel-subtitle" data-nt-group-count>${g.events.length} message${g.events.length === 1 ? "" : "s"}</span></td></tr>` +
+          `<tr data-nt-group="${esc(g.name)}"><td colspan="5" style="background:#f6f8fb"><strong>${esc(g.name)}</strong> <span class="panel-subtitle" data-nt-group-count>${g.events.length} message${g.events.length === 1 ? "" : "s"}</span></td></tr>` +
           g.events
             .map(
               e =>
-                `<tr data-nt-event="${esc(e.event)}" data-nt-row-group="${esc(g.name)}" data-nt-channels="${esc(Object.keys(e.channels).join(" "))}" data-nt-search="${esc(`${e.label} ${e.event} ${e.audience} ${g.name}`.toLowerCase())}"><td><div class="primary-cell" data-nt-hover="${esc(e.event)}" tabindex="0" aria-describedby="ntTemplateCard" style="cursor:help"><strong>${esc(e.label)}</strong> ${badges(e)}<span class="subcell">${esc(e.event)} · ${esc(channelList(e))}</span></div></td><td>${esc(e.audience)}</td>${cell(e, "sms")}${cell(e, "email")}</tr>`,
+                `<tr data-nt-event="${esc(e.event)}" data-nt-row-group="${esc(g.name)}" data-nt-channels="${esc(Object.keys(e.channels).join(" "))}" data-nt-search="${esc(`${e.label} ${e.event} ${e.audience} ${g.name}`.toLowerCase())}"><td><div class="primary-cell" data-nt-hover="${esc(e.event)}" tabindex="0" aria-describedby="ntTemplateCard" style="cursor:help"><strong>${esc(e.label)}</strong> ${badges(e)}<span class="subcell">${esc(e.event)} · ${esc(channelList(e))}</span></div></td><td>${esc(e.audience)}</td>${cell(e, "sms")}${cell(e, "email")}${cell(e, "push")}</tr>`,
             )
             .join(""),
       )
@@ -202,12 +204,12 @@
     const off = ["sms", "email"].filter(c => !S.catalog.channels[c]).map(c => CHANNEL_NAME[c]);
     const note = off.length
       ? `${off.join(" and ")} notifications are switched off in Settings: only security messages (codes, alerts) are sent.`
-      : `${S.scope === "parcel" ? `The parcel messages (${scoped})` : `${F.group} messages (${scoped})`}. Switch them on or off per channel and edit their texts. Security messages (codes, alerts) are always sent.`;
+      : `${S.scope === "parcel" ? `The parcel messages (${scoped})` : `${F.group} messages (${scoped})`}. Switch them on or off per channel (SMS, email, push to the apps) and edit their texts. Push uses the in-app notification's text; codes are never pushed. Security messages (codes, alerts) are always sent.`;
     const option = (value, label, current) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(label)}</option>`;
     const tools = `<input class="table-search" id="ntSearch" type="search" placeholder="Search messages..." aria-label="Search notification messages" value="${esc(F.q)}" style="width:190px">
-      <select class="select-small" id="ntChannelFilter" aria-label="Filter by channel">${option("", "SMS and email", F.channel)}${option("sms", "Has SMS", F.channel)}${option("email", "Has email", F.channel)}</select>
+      <select class="select-small" id="ntChannelFilter" aria-label="Filter by channel">${option("", "All channels", F.channel)}${option("sms", "Has SMS", F.channel)}${option("email", "Has email", F.channel)}${option("push", "Has push", F.channel)}</select>
       <select class="select-small" id="ntStateFilter" aria-label="Filter by state">${option("", "All messages", F.state)}${option("customised", "Customised", F.state)}${option("disabled", "Switched off", F.state)}${option("security", "Security messages", F.state)}</select>`;
-    return `<section class="panel table-panel" id="notificationEventsPanel"><div class="panel-heading" style="flex-wrap:wrap;gap:10px"><div><h2 class="panel-title">Notification messages</h2><p class="panel-subtitle">${esc(note)}</p></div><div class="table-tools" style="flex-wrap:wrap">${tools}</div></div>${tabs}<div class="table-scroll"><table id="notificationEventsTable"><thead><tr><th>MESSAGE</th><th>RECIPIENT</th><th>SMS</th><th>EMAIL</th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer" style="padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px"><span id="ntShowing"></span></div></section>`;
+    return `<section class="panel table-panel" id="notificationEventsPanel"><div class="panel-heading" style="flex-wrap:wrap;gap:10px"><div><h2 class="panel-title">Notification messages</h2><p class="panel-subtitle">${esc(note)}</p></div><div class="table-tools" style="flex-wrap:wrap">${tools}</div></div>${tabs}<div class="table-scroll"><table id="notificationEventsTable"><thead><tr><th>MESSAGE</th><th>RECIPIENT</th><th>SMS</th><th>EMAIL</th><th>PUSH</th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-footer" style="padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px"><span id="ntShowing"></span></div></section>`;
   }
 
   /** Shows the rows matching the search box and filters; hides group headers left empty. */
@@ -351,6 +353,7 @@
     if (e.channels.sms) sections.push(block("SMS", e.channels.sms, text(e.channels.sms.body)));
     if (e.channels.email)
       sections.push(block("Email", e.channels.email, `<div style="font-size:13px"><span class="panel-subtitle">Subject:</span> ${esc(e.channels.email.subject || "")}</div>${text(e.channels.email.body)}`));
+    if (e.channels.push) sections.push(block("Push", e.channels.push, text("To the apps of signed-in recipients, with the in-app notification's title and text.")));
     return `<div style="font-size:13px;font-weight:700">${esc(e.label)}</div>${sections.join('<hr style="border:0;border-top:1px solid var(--line,#e4e8ee);margin:2px 0">') || '<p class="panel-subtitle">No template.</p>'}`;
   }
   function templateCard() {

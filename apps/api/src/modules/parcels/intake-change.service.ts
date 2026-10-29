@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
-import { INTAKE_CHANGEABLE_STATUSES, PARCEL_INTAKES, PARCEL_STATUS_LABEL, quoteParcel, rateCardConfigSchema, type ParcelStatus, type ServiceLevel } from "@delivery-fast/shared";
+import { INTAKE_CHANGEABLE_STATUSES, PARCEL_INTAKES, PARCEL_STATUS_LABEL, quoteParcel, rateCardConfigSchema, type ParcelStatus, type ServiceLevel } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { actorLabel, type Actor } from "../../common/auth/actor";

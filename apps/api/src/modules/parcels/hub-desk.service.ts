@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { cashFor, createPartialReturn, partialData, partialDeliveryFields } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
-import { FAILURE_REASONS, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { FAILURE_REASONS, parcelStatusLabel, type ParcelStatus } from "@paira-express/shared";
 import { AuditService } from "../../common/audit.service";
 import { PrismaService } from "../../common/prisma.service";
 import { StorageService } from "../../common/storage.service";

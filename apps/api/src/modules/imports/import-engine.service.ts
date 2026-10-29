@@ -23,7 +23,7 @@ import {
   type PriceLine,
   type ProductType,
   type SpeedOption,
-} from "@delivery-fast/shared";
+} from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AppError } from "../../common/errors";
 import type { MerchantType, ParcelProduct } from "../../generated/prisma/client";

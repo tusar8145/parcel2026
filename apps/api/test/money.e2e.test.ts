@@ -1,5 +1,5 @@
 import { decrypt } from "../src/common/crypto";
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext, sameHubDelivery } from "./helpers";
 
 // 1x1 PNG: a receipt photo.
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -58,6 +58,7 @@ describe("accounts: cash slips, transfers, settlements, bills and payments", () 
     expect(booked.status, JSON.stringify(booked.body)).toBe(201);
     const { trackingId } = booked.body;
     await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: rider.rider.id } });
+    await sameHubDelivery(ctx, trackingId);
     await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
     const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId } });
     const cod = Number(parcel.codAmount);
@@ -276,10 +277,11 @@ describe("accounts: cash slips, transfers, settlements, bills and payments", () 
     expect((await ctx.api("GET", "/my-accounts", { token: s.owner.token })).body.map((a: { id: string }) => a.id)).toEqual([accountId]);
     // Only super admins choose the central hub.
     expect((await ctx.api("PUT", "/accounts/config", { token: s.finance.token, body: { centralHubId: s.branch.id } })).status).toBe(403);
-    // VAT is off by default; finance switches it on.
-    expect((await ctx.api("GET", "/finance/config", { token: s.finance.token })).body).toMatchObject({ vatEnabled: false });
-    expect((await ctx.api("PUT", "/finance/config", { token: s.finance.token, body: { vatEnabled: true } })).body).toMatchObject({ vatEnabled: true, vatRate: 15 });
-    expect((await ctx.api("PUT", "/finance/config", { token: s.ops.token, body: { vatEnabled: false } })).status).toBe(403);
+    // VAT is off by default; the super admin switches it on (Super admin › Invoice settings). Finance reads it.
+    expect((await ctx.api("GET", "/finance/config", { token: s.finance.token })).body).toMatchObject({ vatEnabled: false, showDeliveryCharge: true });
+    expect((await ctx.api("PUT", "/finance/config", { token: s.admin.token, body: { showDeliveryCharge: false } })).body).toMatchObject({ showDeliveryCharge: false, vatEnabled: false });
+    expect((await ctx.api("PUT", "/finance/config", { token: s.admin.token, body: { vatEnabled: true } })).body).toMatchObject({ vatEnabled: true, vatRate: 15 });
+    for (const who of [s.finance, s.ops]) expect((await ctx.api("PUT", "/finance/config", { token: who.token, body: { vatEnabled: false } })).status).toBe(403);
   });
 
   it("switching over: existing delivered parcels get their lines once; old hub cash is placed", async () => {

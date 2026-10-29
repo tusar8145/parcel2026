@@ -1,4 +1,4 @@
-import { isBdMobile, isMaskedBdMobile } from "@delivery-fast/shared";
+import { isBdMobile, isMaskedBdMobile } from "@paira-express/shared";
 import { COLUMNS, matchHeaders, normalizeHeader, type ColumnKey, type ImportKindKey } from "./columns";
 import { parseNumber } from "./import-engine.service";
 

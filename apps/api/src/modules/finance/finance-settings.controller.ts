@@ -11,7 +11,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { canChangeFinanceSettings, isFinanceStaff } from "./finance.scope";
 import { FINANCE_CONFIG_KEY, financeConfigSchema, readStoredFinanceConfig, updateFinanceConfigSchema } from "./finance-config";
 
-/** Invoice settings (Accounts › Settings): VAT on / off and rate, the company printed on bills, payment term. */
+/** Invoice settings (Super admin › Invoice settings): VAT on / off and rate, the company printed on bills, payment term, delivery charge on invoices. */
 @ApiTags("finance")
 @Controller("finance")
 export class FinanceSettingsController {
@@ -31,7 +31,7 @@ export class FinanceSettingsController {
   @Put("config")
   @ApiZodBody(updateFinanceConfigSchema)
   async updateConfig(@CurrentUser() actor: UserActor, @ZBody(updateFinanceConfigSchema) body: z.infer<typeof updateFinanceConfigSchema>, @ReqMeta() meta: RequestMeta) {
-    if (!canChangeFinanceSettings(actor)) throw forbidden("Only finance users and super admins can change finance settings");
+    if (!canChangeFinanceSettings(actor)) throw forbidden("Only super admins can change the invoice settings");
     const current = await readStoredFinanceConfig(this.prisma);
     const next = financeConfigSchema.parse({ ...current, ...body, seller: { ...current.seller, ...(body.seller ?? {}) } });
     await this.prisma.$transaction(async tx => {

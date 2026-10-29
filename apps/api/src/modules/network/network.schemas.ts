@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, passwordSchema, phoneSchema } from "@delivery-fast/shared";
+import { emailSchema, passwordSchema, phoneSchema } from "@paira-express/shared";
 
 export const hubSchema = z.object({
   code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{2,20}$/, "Use 2–20 letters, digits or dashes"),

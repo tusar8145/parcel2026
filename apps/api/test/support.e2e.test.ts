@@ -1,4 +1,4 @@
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext, sameHubDelivery } from "./helpers";
 
 // 1x1 transparent PNG
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -377,6 +377,7 @@ describe("support tickets", () => {
     const rider = await riderUser(ctx, "R-2048", h.id);
     const { trackingId } = (await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody({ codAmount: 0 }) })).body;
     await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } });
+    await sameHubDelivery(ctx, trackingId);
     await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
     const signed = await ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, {
       token: rider.token,

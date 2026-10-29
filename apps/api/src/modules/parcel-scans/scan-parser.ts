@@ -1,6 +1,6 @@
 import type { Catalog } from "../pricing/pricing.service";
 import { COLUMNS, type ColumnKey, type ImportKindKey } from "../imports/columns";
-import { isMaskedBdMobile, normalizeMaskedBdPhone } from "@delivery-fast/shared";
+import { isMaskedBdMobile, normalizeMaskedBdPhone } from "@paira-express/shared";
 import { placeIn } from "../geography/place-in-text";
 
 /** Order fields read from a parcel photo, by import column key. */

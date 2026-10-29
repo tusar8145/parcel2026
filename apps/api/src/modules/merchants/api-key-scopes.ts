@@ -1,5 +1,5 @@
 import { SetMetadata } from "@nestjs/common";
-import type { Permission } from "@delivery-fast/shared";
+import type { Permission } from "@paira-express/shared";
 import { z } from "zod";
 
 /**

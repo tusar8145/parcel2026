@@ -61,8 +61,8 @@ export default function SiteHeader({ legacy = false }: { legacy?: boolean }) {
             <BrandMark />
           </span>
           <span className="brand-word">
-            {"delivery "}
-            <span>fast</span>
+            {"paira "}
+            <span>express</span>
           </span>
         </a>{" "}
         <nav className={`nav-links${!legacy && menuOpen ? " open" : ""}`} id="navLinks" aria-label="Main navigation" onClick={closeMenu}>

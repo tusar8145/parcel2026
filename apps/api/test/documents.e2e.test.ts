@@ -73,7 +73,7 @@ describe("documents (PDF)", () => {
       expect(info.pages).toBe(2);
       expect(a4.headers["x-document-count"]).toBe("6");
       expect(a4.headers["x-document-pages"]).toBe("2");
-      expect(String(a4.headers["content-disposition"])).toMatch(/^inline; filename="delivery-fast-labels-a4-\d{8}-\d{4}\.pdf"$/);
+      expect(String(a4.headers["content-disposition"])).toMatch(/^inline; filename="paira-express-labels-a4-\d{8}-\d{4}\.pdf"$/);
       for (const id of all) expect(pdfHas(info, id), id).toBe(true);
       expect(pdfHas(info, "COLLECT COD")).toBe(true);
       expect(pdfHas(info, "Northstar Test")).toBe(true);
@@ -257,6 +257,18 @@ describe("documents (PDF)", () => {
       const shipment = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4`, s.ops.token));
       expect(pdfHas(shipment, "Delivery charge")).toBe(true);
       for (const t of ["VAT", "Taxable", "BIN"]) expect(pdfHas(shipment, t), t).toBe(false);
+    });
+
+    it("Show delivery charge on invoice off: delivery invoices show only the COD to collect", async () => {
+      const s = await setup();
+      const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+      expect((await ctx.api("PUT", "/finance/config", { token: admin.token, body: { showDeliveryCharge: false, vatEnabled: true } })).body.showDeliveryCharge).toBe(false);
+      const ids = await book(s, 1);
+      for (const layout of ["a4", "a4-4", "pos"]) {
+        const shipment = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=${layout}`, s.ops.token));
+        expect(pdfHas(shipment, "COD to collect") || pdfHas(shipment, "COD"), layout).toBe(true);
+        for (const t of ["Delivery charge", "Taxable", "VAT"]) expect(pdfHas(shipment, t), `${layout}: ${t}`).toBe(false);
+      }
     });
 
   });

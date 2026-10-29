@@ -3,7 +3,7 @@ import { cashFor, createPartialReturn, partialData } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { addressText } from "../../common/address";
 import type { z } from "zod";
-import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@delivery-fast/shared";
+import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@paira-express/shared";
 import { AuditService } from "../../common/audit.service";
 import { actorLabel } from "../../common/auth/actor";
 import { PrismaService, type Db } from "../../common/prisma.service";
@@ -20,6 +20,25 @@ import { addDays, dhakaDayStart, dhakaMonthStart, dhakaWeekStart, opsHubScope } 
 import { recordTaskEarning } from "../rider/earnings";
 import { LedgerService } from "../finance/ledger.service";
 import { recordFranchiseReturn } from "../franchise/franchise-commission";
+import { deliveryHubsOf } from "./delivery-hub";
+
+type HubPlace = Pick<Parcel, "id" | "pickupHubId" | "deliveryDistrict" | "deliveryZone" | "lastMile" | "collectHubId">;
+
+/**
+ * "Collect & deliver now" (the rider takes a pickup straight to the recipient) only when the hub the pickup belongs
+ * to (the parcel's pickup hub, else the rider's hub) is also the hub that delivers it: no transfer between hubs is
+ * skipped. Each parcel id → allowed.
+ */
+export async function directDeliveryAllowed(db: Db, parcels: HubPlace[], riderHubId: string | null): Promise<Map<string, boolean>> {
+  const delivering = await deliveryHubsOf(db, parcels);
+  return new Map(
+    parcels.map(p => {
+      const from = p.pickupHubId ?? riderHubId;
+      const to = delivering.get(p.id)?.id ?? null;
+      return [p.id, !!from && from === to];
+    }),
+  );
+}
 
 /** Service lines riders are paid for (rider plans in the platform settings use these keys). */
 type ServiceLine = "ecommerce" | "document" | "parcel";
@@ -75,20 +94,23 @@ export class RiderTasksService {
   /** Pickup queue and delivery run for the signed-in rider. */
   async tasks(actor: UserActor) {
     const riderId = this.riderId(actor);
-    const [pickups, deliveries, carrying] = await Promise.all([
+    const [pickups, deliveries, carrying, rider] = await Promise.all([
       // On-demand pickups / deliveries first (service packages), then oldest first.
       this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: { in: [...PICKUP_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
       this.prisma.parcel.findMany({ where: { deliveryRiderId: riderId, status: { in: [...DELIVERY_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
       // Collected and still with the rider ("Pickup from merchant" scans) until a hub scans them in.
       this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: "PICKED_UP" }, include: parcelInclude, orderBy: [{ pickedUpAt: "asc" }] }),
+      this.prisma.rider.findUnique({ where: { id: riderId }, select: { hubId: true } }),
     ]);
+    const direct = await directDeliveryAllowed(this.prisma, pickups, rider?.hubId ?? null);
     const stop = (p: ParcelWithRelations) => ({
       key: pickupStopKey(p),
       name: p.merchant?.name ?? p.senderName,
       address: addressText(p.pickupStreet, p.pickupArea, p.pickupZone),
     });
     return {
-      pickups: pickups.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p) })),
+      // canDeliverDirect: "Collect & deliver now" is offered (the same hub picks it up and delivers it).
+      pickups: pickups.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p), canDeliverDirect: direct.get(p.id) ?? false })),
       // deliveryCodeSent: the recipient holds a valid code (sent when the delivery started), so OTP proof works.
       deliveries: deliveries.map(p => ({ ...parcelView(p, { internal: false }), deliveryCodeSent: Boolean(p.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(p) })),
       carrying: carrying.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p), handover: currentHandover(p.events) })),
@@ -120,6 +142,12 @@ export class RiderTasksService {
         );
         await recordTaskEarning(tx, { riderId, type: "PICKUP", parcel }, this.ledger);
       } else if (input.outcome === "COLLECTED_DELIVER_DIRECT") {
+        if (!(await directDeliveryAllowed(tx, [parcel], rider.hubId)).get(parcel.id))
+          throw new AppError(
+            "DIRECT_DELIVERY_OTHER_HUB",
+            `${parcel.trackingId} is delivered by another hub: collect it and hand it to the hub (it goes on a transfer). "Collect & deliver now" is only for parcels your hub delivers.`,
+            HttpStatus.CONFLICT,
+          );
         await this.workflow.transition(
           tx,
           parcel,

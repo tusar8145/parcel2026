@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { TokenService } from "../../common/auth/token.service";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import { pageArgs, pageQuerySchema, toPage } from "../../common/pagination";
-import type { Role } from "@delivery-fast/shared";
+import type { Role } from "@paira-express/shared";
 import type { RoleGrant, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { NotifyService } from "../notifications/notify.service";

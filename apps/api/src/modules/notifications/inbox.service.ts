@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
-import type { Role } from "@delivery-fast/shared";
+import type { Role } from "@paira-express/shared";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -96,7 +96,8 @@ export class InboxService implements OnModuleDestroy {
     const roles = await db.userRole.findMany({ where: { userId }, select: { role: true, merchant: { select: { type: true } } } });
     const panel = panelOf(roles);
     const copy = build(vars, panel);
-    await this.add(db, [userId], { type: event, title: copy.title, body: copy.body, target: copy.target ?? {}, panel });
+    // To the phone too while the event's push switch is on (Super admin › notifications › Push).
+    await this.add(db, [userId], { type: event, title: copy.title, body: copy.body, target: copy.target ?? {}, panel, push: await this.settings.pushEnabled(event) });
   }
 
   /** Staff alerts: active users holding one of the roles (hub roles: only those hubs when given). */
@@ -123,6 +124,7 @@ export class InboxService implements OnModuleDestroy {
    */
   async toMerchant(db: Db, merchantId: string, item: InboxItem & { event?: NotificationEvent }, opts: { ownersOnly?: boolean } = {}): Promise<number> {
     if (item.event && !(await this.eventOn(item.event))) return 0;
+    if (item.event && item.push !== false && !(await this.settings.pushEnabled(item.event))) item = { ...item, push: false };
     const [merchant, members] = await Promise.all([
       db.merchant.findUnique({ where: { id: merchantId }, select: { type: true } }),
       db.userRole.findMany({
@@ -192,12 +194,12 @@ export class InboxService implements OnModuleDestroy {
     return this.prisma.userNotification.count({ where: { userId, readAt: null } });
   }
 
-  /** On for at least one channel in super admin → Global notifications. */
+  /** On for at least one channel (SMS, email or push) in super admin → Parcel / Global notifications. */
   private async eventOn(event: NotificationEvent) {
     const def = EVENT_CATALOG[event];
     if (!def) return false;
     const snapshot = await this.settings.snapshot();
-    return channelsOf(def).some(c => this.settings.resolve(snapshot, event, c)?.enabled);
+    return channelsOf(def).some(c => this.settings.resolve(snapshot, event, c)?.enabled) || !!this.settings.pushOf(snapshot, event)?.enabled;
   }
 
   private async panelsOf(db: Db, userIds: string[]) {
@@ -219,7 +221,7 @@ export class InboxService implements OnModuleDestroy {
       for (const [userId, list] of byUser) {
         const latest = list[0];
         // What a tapped push opens (the app reads the tracking ID / request number like its notifications list).
-        const data = { notificationId: latest.id, type: latest.type, link: latest.link ?? "", title: latest.title, body: latest.body ?? "", count: String(list.length) };
+        const data = { notificationId: latest.id, type: latest.type, link: latest.link ?? "", trackingId: parcelOfLink(latest.link), title: latest.title, body: latest.body ?? "", count: String(list.length) };
         const message =
           list.length === 1
             ? { title: latest.title, body: latest.body, data }
@@ -262,6 +264,17 @@ export class InboxService implements OnModuleDestroy {
       this.timers.add(timer);
     };
     schedule(0);
+  }
+}
+
+/** The parcel a notification opens (`?parcel=<tracking ID>` in a panel link, `/track/<id>` on the website), or "". */
+export function parcelOfLink(link: string | null | undefined): string {
+  if (!link) return "";
+  try {
+    const url = new URL(link, "http://x");
+    return (url.searchParams.get("parcel") || url.pathname.match(/^\/track\/([^/]+)/)?.[1] || "").slice(0, 40);
+  } catch {
+    return "";
   }
 }
 

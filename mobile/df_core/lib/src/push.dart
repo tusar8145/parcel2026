@@ -44,14 +44,17 @@ class Push {
   static Future<void> register(String app) async {
     if (!_ready) return;
     _app = app;
+    final m = FirebaseMessaging.instance;
+    // The notification the app was started from: opened even when registering below fails (offline).
     try {
-      final m = FirebaseMessaging.instance;
+      final initial = await m.getInitialMessage();
+      if (initial != null) onOpen?.call(initial.data);
+    } catch (_) {}
+    try {
       await m.requestPermission();
       final token = await m.getToken();
       if (token != null) await _send(token);
       _refresh ??= m.onTokenRefresh.listen(_send);
-      final initial = await m.getInitialMessage();
-      if (initial != null) onOpen?.call(initial.data);
     } catch (_) {
       // No push this time (offline, no Play services); the next start tries again.
     }
@@ -298,6 +301,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
 /// A support request number (DF-SUP-…) or a parcel tracking ID in a notification's text or link.
 String? ticketIn(Map<String, dynamic> n) => RegExp(r'\bDF-SUP-\d{6}-\d+\b').firstMatch('${n['title']} ${n['body']} ${n['link']}')?.group(0);
 String? trackingIdIn(Map<String, dynamic> n) {
+  // Pushes carry it (data.trackingId); list items have it in the link (?parcel=…) or the title.
+  final given = '${n['trackingId'] ?? ''}'.trim();
+  if (given.isNotEmpty) return given;
   final text = '${n['title']} ${n['body']} ${n['link']}'.replaceAll(RegExp(r'\bDF-SUP-\d{6}-\d+\b'), '');
   return RegExp(r'\b[A-Z]{2,4}-\d{6}-[0-9A-Z]{4,8}\b').firstMatch(text)?.group(0);
 }

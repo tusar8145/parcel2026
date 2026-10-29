@@ -31,13 +31,19 @@ Future<void> openOpsNotification(BuildContext context, Map<String, dynamic> n) a
     opsShell.currentState?.openTab(3);
     return;
   }
-  if (type == 'staff.merchant_order' || type == 'staff.pickup_request') {
+  // A pickup request (PR-… is not a parcel): the assignment list.
+  if (type == 'staff.pickup_request') {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AssignPage(mode: AssignMode.pickup)));
     return;
   }
+  // About one parcel: its details (a new order included). New orders without one (several at once): the assignment list.
   final id = trackingIdIn(n);
   if (id != null) {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ParcelPage(trackingId: id)));
+    return;
+  }
+  if (type == 'staff.merchant_order') {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AssignPage(mode: AssignMode.pickup)));
     return;
   }
   final title = '${n['title'] ?? ''}';

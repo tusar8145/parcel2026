@@ -1,5 +1,5 @@
 import { decrypt } from "../src/common/crypto";
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext, sameHubDelivery } from "./helpers";
 
 describe("courier operations console", () => {
   let ctx: TestContext;
@@ -175,6 +175,7 @@ describe("courier operations console", () => {
       const cod = await book(s, s.shop.id, { codAmount: 1200 });
       await toHub(s, docs.trackingId);
       await ctx.api("POST", `/parcels/${cod.trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+      await sameHubDelivery(ctx, cod.trackingId);
       await ctx.api("POST", `/rider/parcels/${cod.trackingId}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
       await deliverWithOtp(s, cod.trackingId, 1200);
 
@@ -233,6 +234,7 @@ describe("courier operations console", () => {
       const b = await book(s, s.bank.id, { type: "DOCUMENT", codAmount: 0 });
       for (const p of [a, b]) {
         await ctx.api("POST", `/parcels/${p.trackingId}/assign-pickup`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
+        await sameHubDelivery(ctx, p.trackingId);
         await ctx.api("POST", `/rider/parcels/${p.trackingId}/pickup`, { token: s.rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
       }
       await deliverWithOtp(s, a.trackingId, 750);

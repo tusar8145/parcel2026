@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { effectiveRolePermissions, isPermission, ROLES, SUPER_ADMIN_ONLY_PERMISSIONS, type Permission, type Role } from "@delivery-fast/shared";
+import { effectiveRolePermissions, isPermission, ROLES, SUPER_ADMIN_ONLY_PERMISSIONS, type Permission, type Role } from "@paira-express/shared";
 import { PrismaService } from "../prisma.service";
 import { RedisService } from "../redis.service";
 import type { RoleGrant } from "./actor";

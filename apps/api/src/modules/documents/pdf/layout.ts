@@ -9,6 +9,8 @@ export interface Brand {
   support: string;
   website: string;
   vatRate: number;
+  /** Delivery invoices print the delivery charge (Accounts › Invoice settings); off, only the COD. */
+  showDeliveryCharge?: boolean;
 }
 
 export interface DocMeta {

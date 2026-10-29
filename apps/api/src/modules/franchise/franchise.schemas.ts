@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addressPartsSchema, createParcelSchema, emailSchema, phoneSchema, quoteRequestSchema } from "@delivery-fast/shared";
+import { addressPartsSchema, createParcelSchema, emailSchema, phoneSchema, quoteRequestSchema } from "@paira-express/shared";
 import { franchiseConfigSchema } from "./franchise-config";
 
 const money = z.coerce.number().min(0, "Can't be negative").max(1_000_000, "Too large");

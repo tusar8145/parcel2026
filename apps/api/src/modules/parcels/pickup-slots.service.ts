@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { pickupSlotConfigSchema, type PickupSlotConfig } from "@delivery-fast/shared";
+import { pickupSlotConfigSchema, type PickupSlotConfig } from "@paira-express/shared";
 import type { z } from "zod";
-import type { pickupSlotsQuerySchema } from "@delivery-fast/shared";
+import type { pickupSlotsQuerySchema } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import type { Actor } from "../../common/auth/actor";

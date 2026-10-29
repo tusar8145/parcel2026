@@ -1,7 +1,7 @@
 /**
  * Bangladesh geography and hub network (configuration). Idempotent: run it as often as you like.
  *
- *   npm run db:seed:geo -w @delivery-fast/api
+ *   npm run db:seed:geo -w @paira-express/api
  *
  * 1. Service catalog (Setting "catalog"): every district, zone (upazila / city thana) and area
  *    (union / neighbourhood) from prisma/data/bd-geo.json is merged in. Nothing already in the

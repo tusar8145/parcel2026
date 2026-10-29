@@ -180,6 +180,19 @@ describe("notifications (e2e)", () => {
     expect(locked.body.error.code).toBe("NOTIFICATION_LOCKED");
   });
 
+  it("push: an on/off switch for events with an in-app copy; codes have none", async () => {
+    const a = await admin();
+    const events = (await ctx.api("GET", "/notifications/events", { token: a.token })).body.events as { event: string; channels: Record<string, { enabled: boolean }> }[];
+    const of = (event: string) => events.find(e => e.event === event)!;
+    expect(of("parcel.delivered").channels.push).toMatchObject({ enabled: true, locked: false });
+    for (const code of ["auth.otp.signup", "auth.otp.login", "parcel.delivery_code"]) expect(of(code).channels.push).toBeUndefined();
+    const off = await ctx.api("PUT", "/notifications/templates/parcel.delivered/push", { token: a.token, body: { enabled: false } });
+    expect(off.body.channels.push).toMatchObject({ enabled: false });
+    expect(off.body.channels.sms.enabled).toBe(true);
+    expect((await ctx.api("PUT", "/notifications/templates/auth.otp.signup/push", { token: a.token, body: { enabled: true } })).status).toBe(422);
+    expect((await ctx.api("PUT", "/notifications/templates/parcel.delivered/push", { token: a.token, body: { body: "Hi" } })).status).toBe(422);
+  });
+
   it("sends a parcel message only when the global switch is on, it is in the parcel's stored list and the recipient didn't opt out", async () => {
     const notify = ctx.app.get(NotifyService);
     const c = await customer();

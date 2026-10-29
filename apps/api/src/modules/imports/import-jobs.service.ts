@@ -25,7 +25,7 @@ import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, me
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
 import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
-import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
+import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@paira-express/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
 import type { analyzeOptionsSchema, importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
@@ -64,9 +64,9 @@ const STATUS_FILTER: Record<string, ImportRowStatus[] | undefined> = {
 };
 
 const TEMPLATE_FILE: Record<ImportKindKey, string> = {
-  ecommerce: "delivery-fast-ecommerce-orders-template.xlsx",
-  document: "delivery-fast-banking-financial-template.xlsx",
-  customer: "delivery-fast-customer-parcels-template.xlsx",
+  ecommerce: "paira-express-ecommerce-orders-template.xlsx",
+  document: "paira-express-banking-financial-template.xlsx",
+  customer: "paira-express-customer-parcels-template.xlsx",
 };
 
 const describeErrors = (errors: { column: string; message: string }[], headerOf: (key: string) => string) => errors.map(e => `${headerOf(e.column)}: ${e.message}`).join("; ");

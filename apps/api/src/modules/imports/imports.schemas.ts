@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { firstMileSchema, lastMileSchema, PARCEL_INTAKES } from "@delivery-fast/shared";
+import { firstMileSchema, lastMileSchema, PARCEL_INTAKES } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { IMPORT_KINDS } from "./columns";
 

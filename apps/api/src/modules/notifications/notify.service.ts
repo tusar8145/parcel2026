@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { isMaskedPhone, NOTIFICATION_SERVICE_OF_EVENT } from "@delivery-fast/shared";
+import { isMaskedPhone, NOTIFICATION_SERVICE_OF_EVENT } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { env } from "../../config/env";
 import { OutboxService } from "./outbox.service";
@@ -7,6 +7,7 @@ import type { NotificationEvent } from "./events";
 import { CHANNEL_OF, EVENT_CATALOG, OUTBOX_CHANNEL, channelsOf, type Channel } from "./catalog";
 import { NotificationSettingsService, type Snapshot } from "./notification-settings.service";
 import { emailLayout, escapeHtml, render, type Vars } from "./render";
+import { IN_APP } from "./in-app";
 import { InboxService } from "./inbox.service";
 
 export interface NotifyInput {
@@ -62,8 +63,15 @@ export class NotifyService {
     const service = NOTIFICATION_SERVICE_OF_EVENT[input.event];
     if (service && input.parcel?.packageVersionId && !input.parcel.notifications.includes(service)) return [];
     if (service && input.pkg && !input.pkg.services.includes(service)) return [];
-    // In-app copy (the bell) for a known recipient: docs "In-app notifications" (in-app.ts has the rule).
-    if (input.to.userId) await this.inbox.copyOf(db, input.event, input.to.userId, input.vars ?? {});
+    // In-app copy (the bell, and its push to the apps) for a known recipient: docs "In-app notifications" (in-app.ts
+    // has the rule). Sent to a phone only: the active account with that number gets it too, except merchant users for
+    // parcel events (their team gets the final outcomes from ParcelWorkflowService, toMerchant).
+    let inAppUser = input.to.userId ?? null;
+    if (!inAppUser && !def.mandatory && input.to.phone && IN_APP[input.event]) {
+      const byPhone = await db.user.findFirst({ where: { phone: input.to.phone, status: "ACTIVE" }, select: { id: true, roles: { select: { role: true } } } });
+      if (byPhone && !(def.group === "Parcel" && byPhone.roles.some(r => r.role === "MERCHANT_OWNER" || r.role === "MERCHANT_STAFF"))) inAppUser = byPhone.id;
+    }
+    if (inAppUser) await this.inbox.copyOf(db, input.event, inAppUser, input.vars ?? {});
     const snapshot = await this.settings.snapshot();
     const wanted = channelsOf(def).filter(c => (!input.channels || input.channels.includes(c)) && this.settings.resolve(snapshot, input.event, c)?.enabled);
     if (!wanted.length) return [];

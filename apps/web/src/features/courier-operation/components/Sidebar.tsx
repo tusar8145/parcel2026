@@ -1,5 +1,6 @@
 import AppDownloadCard from "@/shared/AppDownloadCard";
 import BrandMark from "@/shared/BrandMark";
+import { InstallAppButton } from "@/shared/PwaInstall";
 
 /** The original pages (internal names the page scripts use) and their old labels. */
 const LEGACY_PAGES: [string, string][] = [
@@ -50,13 +51,13 @@ export default function Sidebar() {
           <BrandMark size={40} />
         </div>
         <div className="brand-name">
-          {"delivery "}
-          <span>fast</span>
+          {"paira "}
+          <span>express</span>
         </div>
       </div>{" "}
       {/* A brand label (there is one company to show; nothing to switch). */}
       <div className="company-switch" id="companySwitch" style={{ cursor: "default" }}>
-        <span className="company-avatar">DF</span>
+        <span className="company-avatar">PE</span>
         <span className="company-info">
           <strong>Paira Express</strong>
           <small>Operations console</small>
@@ -111,7 +112,8 @@ export default function Sidebar() {
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">
-        <AppDownloadCard app="operations" />
+        <AppDownloadCard app="all" />
+        <InstallAppButton />
         <div className="support-card">
           <strong>Operations support</strong>
           <p>Need help with a hub, rider, or merchant shipment?</p>

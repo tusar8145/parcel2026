@@ -1,4 +1,4 @@
-import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P } from "@paira-express/shared";
 import { vi } from "vitest";
 import { RealtimeService, type RealtimeEvent } from "../src/common/realtime.service";
 import { ImportJobsService } from "../src/modules/imports/import-jobs.service";
@@ -132,7 +132,7 @@ describe("imports", () => {
       const { owner } = await merchant();
       const t = await template(owner.token, "/imports/templates/ecommerce");
       expect(t.res.headers["content-type"]).toBe(XLSX);
-      expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-ecommerce-orders-template.xlsx");
+      expect(String(t.res.headers["content-disposition"])).toContain("paira-express-ecommerce-orders-template.xlsx");
       expect(t.workbook).toMatch(/<sheet name="Orders"[^>]*\/>/);
       expect(t.workbook).toMatch(/<sheet name="Instructions"[^>]*\/>/);
       expect(t.workbook).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
@@ -184,7 +184,7 @@ describe("imports", () => {
       const bank = await merchant("BANKING_FINANCIAL");
       for (const url of ["/imports/templates/document", "/imports/templates/banking"]) {
         const t = await template(bank.owner.token, url);
-        expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
+        expect(String(t.res.headers["content-disposition"])).toContain("paira-express-banking-financial-template.xlsx");
         expect(t.workbook).toContain('<sheet name="Consignments"');
         expect(t.header).toEqual(["Recipient name", "Recipient phone *", "Delivery address", "Product", "Service", "Reference no.", "Delivery instructions"]);
         for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
@@ -235,7 +235,7 @@ describe("imports", () => {
     it("Customer parcel: sender and pickup columns, the Customer package's services, no open box", async () => {
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
       const t = await template(ops.token, "/imports/templates/customer");
-      expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-customer-parcels-template.xlsx");
+      expect(String(t.res.headers["content-disposition"])).toContain("paira-express-customer-parcels-template.xlsx");
       expect(t.workbook).toContain('<sheet name="Parcels"');
       expect(t.header).toEqual([
         "Sender name *",

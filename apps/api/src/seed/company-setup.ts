@@ -4,11 +4,11 @@
  * Settings only (no people, parcels or money), so it is safe on a real installation. Idempotent: what
  * already exists is kept. Super admin changes all of it later (Service plans & pricing, Accounts).
  *
- *   npm run db:seed:setup -w @delivery-fast/api
+ *   npm run db:seed:setup -w @paira-express/api
  */
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { DEFAULT_RATE_CARD } from "@delivery-fast/shared";
+import { DEFAULT_RATE_CARD } from "@paira-express/shared";
 import { PrismaClient, type Prisma } from "../generated/prisma/client";
 import { ACCOUNTS_CONFIG_KEY } from "../modules/money/accounts-config";
 

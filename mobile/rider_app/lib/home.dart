@@ -51,6 +51,23 @@ Future<void> openRiderNotification(BuildContext context, Map<String, dynamic> n)
     Tasks.load();
   }
 
+  // About one parcel (e.g. "New pickup: PP-…"): open it — its delivery, or its pickup stop — when it is the rider's.
+  final trackingId = trackingIdIn(n);
+  if (trackingId != null) {
+    await Tasks.load();
+    if (!context.mounted) return;
+    if (Tasks.list('deliveries').any((p) => p['trackingId'] == trackingId)) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeliveryPage(trackingId: trackingId)));
+      return;
+    }
+    final pickup = Tasks.list('pickups').where((p) => p['trackingId'] == trackingId).firstOrNull;
+    final stopKey = (pickup?['pickupStop'] as Map?)?['key'];
+    if (stopKey != null) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PickupStopPage(stopKey: '$stopKey')));
+      return;
+    }
+  }
+
   if (type == 'rider.pickup_assigned' || link.contains('Pickup')) return tab(1);
   if (type == 'rider.delivery_assigned' || link.contains('Deliveries')) return tab(3);
   if (type == 'rider.return_run') {

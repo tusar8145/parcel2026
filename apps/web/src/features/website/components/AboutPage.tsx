@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DEFAULT_BRANDING, parseAbout, type AboutBlock } from "@delivery-fast/shared";
+import { DEFAULT_BRANDING, parseAbout, type AboutBlock } from "@paira-express/shared";
 
 /**
  * /about: the company profile. Its text is edited in Super admin › Branding & company (GET /branding,

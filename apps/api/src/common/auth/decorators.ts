@@ -1,6 +1,6 @@
 import { applyDecorators, createParamDecorator, ExecutionContext, SetMetadata } from "@nestjs/common";
 import { ApiBearerAuth, ApiForbiddenResponse, ApiUnauthorizedResponse } from "@nestjs/swagger";
-import type { Permission } from "@delivery-fast/shared";
+import type { Permission } from "@paira-express/shared";
 import type { Actor, UserActor } from "./actor";
 import { unauthorized } from "../errors";
 

@@ -1,6 +1,6 @@
 import { HttpStatus } from "@nestjs/common";
 import { z } from "zod";
-import { phoneSchema } from "@delivery-fast/shared";
+import { phoneSchema } from "@paira-express/shared";
 import { AppError } from "../../common/errors";
 import type { Db } from "../../common/prisma.service";
 import type { Catalog } from "../pricing/pricing.service";

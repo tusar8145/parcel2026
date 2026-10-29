@@ -275,7 +275,7 @@
 
   function composerMarkup() {
     if (!composerOpen) return "";
-    const customerProfile = window.deliveryFastCustomerSession || {};
+    const customerProfile = window.pairaExpressCustomerSession || {};
     const customerFields = role === "customer" ? `<label>Your name<input name="requesterName" required maxlength="80" value="${escapeHtml(prefilled.requesterName || customerProfile.name || "")}" autocomplete="name"></label>
       <label>Phone number<input name="requesterPhone" required maxlength="32" value="${escapeHtml(prefilled.requesterPhone || customerProfile.phone || "")}" autocomplete="tel"></label>` : "";
     return `<form class="st-composer" data-support-ticket-form>
@@ -541,7 +541,7 @@
 
   function renderCustomerSupport() {
     if (role !== "customer" || !routeHash().startsWith("#/support")) return;
-    if (!window.deliveryFastCustomerSession) {
+    if (!window.pairaExpressCustomerSession) {
       window.requireCustomerLogin?.(routeHash().slice(2));
       return;
     }
@@ -566,7 +566,7 @@
     const pageView = document.getElementById("pageView");
     if (!pageView) return;
     pageView.hidden = false;
-    pageView.innerHTML = window.deliveryFastCustomerSession && typeof window.customerAreaShell === "function"
+    pageView.innerHTML = window.pairaExpressCustomerSession && typeof window.customerAreaShell === "function"
       ? window.customerAreaShell(supportPage(), "support")
       : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Paira Express</button>${supportPage()}</div>`;
     afterRender();
@@ -702,7 +702,7 @@
         composerOpen = true;
         prefilled = { subject: `Help with ${ref}`, category: "Delivery issue", relatedRef: ref.toUpperCase() };
       }
-      if (!window.deliveryFastCustomerSession) {
+      if (!window.pairaExpressCustomerSession) {
         window.requireCustomerLogin?.(route);
         return;
       }

@@ -37,9 +37,9 @@
         const page=document.getElementById("breadcrumbPage").textContent;render(page);showToast(`${id}: ${status.toLowerCase()}.`);return;
       }
       const track=event.target.closest("[data-track]");if(track){courierTrackingHistory(track.dataset.track);return}
-      if(event.target.closest("#courierTemplate")){courierCsvDownload("delivery-fast-bulk-shipment-sample.csv",courierBulkTemplate);showToast("Sample Excel-compatible shipment template downloaded.");return}
+      if(event.target.closest("#courierTemplate")){courierCsvDownload("paira-express-bulk-shipment-sample.csv",courierBulkTemplate);showToast("Sample Excel-compatible shipment template downloaded.");return}
       if(event.target.closest("#courierImport")){document.getElementById("courierBulkFile").click();return}
-      if(event.target.closest("#courierDownload")){const page=document.getElementById("breadcrumbPage").textContent,rows=visibleOrSelectedShipments(page),name=page==="E-commerce operations"?"e-commerce-orders":page==="Banking & Financial operations"?"document-shipments":page==="Customer parcels"?"customer-parcels":"orders-and-shipments";if(!rows.length){showToast("No filtered or selected orders / shipments are available to download.");return}courierCsvDownload(`delivery-fast-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected order / shipment record(s) downloaded as CSV.`);return}
+      if(event.target.closest("#courierDownload")){const page=document.getElementById("breadcrumbPage").textContent,rows=visibleOrSelectedShipments(page),name=page==="E-commerce operations"?"e-commerce-orders":page==="Banking & Financial operations"?"document-shipments":page==="Customer parcels"?"customer-parcels":"orders-and-shipments";if(!rows.length){showToast("No filtered or selected orders / shipments are available to download.");return}courierCsvDownload(`paira-express-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected order / shipment record(s) downloaded as CSV.`);return}
       if(event.target.closest("#courierPrint")){courierPrint(document.getElementById("courierPrintFormat").value,document.getElementById("breadcrumbPage").textContent);return}
     });
     document.getElementById("mainContent").addEventListener("change",async event=>{

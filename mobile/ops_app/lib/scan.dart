@@ -71,12 +71,8 @@ class ScanPage extends StatelessWidget {
   }
 
   Future<void> _delivered(BuildContext context) async {
-    await _session(
-      context,
-      title: 'Delivery entry',
-      hint: 'The rider hands in signed slips: scan each one. The COD stays with the rider for the cash handover.',
-      action: (code, source) => deskScan('/hub-desk/deliver', {'code': code, 'source': source}),
-    );
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DeliveryEntryPage()));
+    opsChanged.value++;
   }
 
   Future<void> _failed(BuildContext context) async {
@@ -235,6 +231,168 @@ class _Task extends StatelessWidget {
               const Icon(Icons.qr_code_scanner, color: Color(0xFF98A2B3)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Delivery entry: the rider hands in signed slips. For each slip: who received it (and their relation to the
+/// recipient), a note, partial delivery with the cash collected, a photo of the slip, then scan it. The details go
+/// with that one scan (like Courier Operations › Scan desk › Delivery entry); the form is then ready for the next.
+class DeliveryEntryPage extends StatefulWidget {
+  const DeliveryEntryPage({super.key});
+  @override
+  State<DeliveryEntryPage> createState() => _DeliveryEntryPageState();
+}
+
+class _DeliveryEntryPageState extends State<DeliveryEntryPage> {
+  final _receivedBy = TextEditingController();
+  final _note = TextEditingController();
+  final _cash = TextEditingController();
+  List<String> _relations = const ['Self'];
+  String _relation = 'Self';
+  bool _partial = false;
+  String? _photo;
+  bool _busy = false;
+  int _done = 0;
+  final _log = <ScanFeedback>[];
+
+  @override
+  void initState() {
+    super.initState();
+    Api.get('/delivery/receiver-relations')
+        .then((r) {
+          final list = ((r as Map)['relations'] as List?)?.map((x) => '$x').toList();
+          if (list != null && list.isNotEmpty && mounted) setState(() => _relations = list.contains('Self') ? list : ['Self', ...list]);
+        })
+        .catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    _receivedBy.dispose();
+    _note.dispose();
+    _cash.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePhoto() async {
+    final photo = await pickPhotoDataUrl(context);
+    if (photo != null && mounted) setState(() => _photo = photo);
+  }
+
+  Future<void> _scan() async {
+    final cash = num.tryParse(_cash.text.trim());
+    if (_partial && cash == null) {
+      setState(() => _log.insert(0, ScanFeedback(false, 'Enter the cash collected for the partial delivery, then scan.')));
+      return;
+    }
+    final code = await scanBarcode(context, title: 'Scan the slip', hint: 'Scan the tracking ID on the signed slip.');
+    if (code == null || code.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    final r = await deskScan('/hub-desk/deliver', {
+      'code': code,
+      'source': 'CAMERA',
+      if (_receivedBy.text.trim().isNotEmpty) 'receivedBy': _receivedBy.text.trim(),
+      'receiverRelation': _relation,
+      if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
+      if (_photo != null) 'photo': _photo,
+      if (_partial) ...{'partial': true, 'codCollected': cash},
+    });
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _log.insert(0, r);
+      if (r.ok) {
+        _done++;
+        // The details went with this slip: the form is ready for the next one.
+        _receivedBy.clear();
+        _note.clear();
+        _cash.clear();
+        _relation = 'Self';
+        _partial = false;
+        _photo = null;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(_done == 0 ? 'Delivery entry' : 'Delivery entry · $_done done')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('The rider hands in signed slips. Fill in what the slip says, then scan it. The COD stays with the rider for the cash handover.', style: TextStyle(color: muted)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _receivedBy,
+              maxLength: 120,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Received by (optional)', hintText: 'Name on the slip; empty = the recipient', counterText: ''),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey('relation-$_relation-${_relations.length}'),
+              initialValue: _relations.contains(_relation) ? _relation : 'Self',
+              decoration: const InputDecoration(labelText: 'Relation to the recipient'),
+              items: [for (final r in _relations) DropdownMenuItem(value: r, child: Text(r == 'Self' ? 'Self (the recipient)' : r))],
+              onChanged: (v) => setState(() => _relation = v ?? 'Self'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _note,
+              maxLength: 500,
+              decoration: InputDecoration(labelText: 'Note (optional)', hintText: _partial ? 'What came back, e.g. Kept the shirt, returned the jeans' : 'e.g. Signed by the guard', counterText: ''),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Partial delivery'),
+              subtitle: const Text('The recipient kept only part of the order'),
+              value: _partial,
+              onChanged: (v) => setState(() => _partial = v),
+            ),
+            if (_partial)
+              TextField(
+                controller: _cash,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Cash collected (Tk)', hintText: 'What the recipient paid'),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                OutlinedButton.icon(onPressed: _busy ? null : _takePhoto, icon: const Icon(Icons.photo_camera_outlined), label: Text(_photo == null ? 'Photo of the slip' : 'Retake photo')),
+                if (_photo != null) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.check_circle, color: good, size: 18),
+                  const Text(' Photo added', style: TextStyle(color: good)),
+                  IconButton(tooltip: 'Remove photo', onPressed: () => setState(() => _photo = null), icon: const Icon(Icons.close)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _busy ? null : _scan,
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: Text(_busy ? 'Saving…' : 'Scan the slip', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(height: 16),
+            for (final r in _log)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(r.ok ? Icons.check_circle : Icons.error_outline, color: r.ok ? good : bad, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(r.message)),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );

@@ -576,7 +576,7 @@ action uses.
 - Export: `GET /bulk-updates/export?kind=&action=` (action required; an action not on the page →
   `BULK_ACTION_NOT_ON_PAGE` 422) `&preset=pending_review|at_hub_unassigned|needs_info&status=&merchantId=
   &hubId=&dropOffHubId=&intake=&incomplete=&sla=AWAITING_REVIEW|ON_TRACK|AT_RISK|BREACHED&line=ecommerce|
-  document|customer&from=&to=&q=` → .xlsx named `delivery-fast-<page>-<action>-<stamp>.xlsx` (headers
+  document|customer&from=&to=&q=` → .xlsx named `paira-express-<page>-<action>-<stamp>.xlsx` (headers
   `X-Row-Count`, `X-Matched`, `X-Row-Limit`; at most the operations import row limit, oldest first; the
   Instructions sheet says when the file was cut; 60 downloads a minute). Hub operators get their hubs' work
   only: parcels at / bound for / to be dropped off at their hubs, with their hubs' riders, and pickup requests
@@ -1238,10 +1238,14 @@ Per-user notifications behind the bell of every panel (2026-10-18; migration `us
   hubIds?, except? }, item)`, `toMerchant(db, merchantId, item)`; links are built with `panelUrl(panel, { page, tab,
   parcel, ticket })` (the "Page addresses" scheme), per recipient's panel unless given.
 - What writes them (the rule for the toggles):
-  - NotifyService: an event sent with an explicit `to.userId` gets an in-app copy for that user when the event has an
-    entry in `in-app.ts` and is switched on for at least one channel in super admin → Global notifications (the same
-    per-event switch; package message choices apply too). A person's SMS / email opt-outs don't remove it. Events with
-    codes (sign-in / sign-up / reset codes, delivery code, guest and email verification) never get one; copies never
+  - NotifyService: an event sent with an explicit `to.userId` (or only to a phone that belongs to an active account;
+    not merchant users for parcel events, see "Merchant teams" below) gets an in-app copy for that user when the event has an
+    entry in `in-app.ts` and is switched on for at least one channel (SMS, email or push) in super admin → Parcel /
+    Global notifications (the same per-event switches; package message choices apply too). A person's SMS / email
+    opt-outs don't remove it. The copy is pushed to the person's apps only while the event's **Push** switch is on
+    (Setting `notification-push`, `NotificationSettingsService.pushOf`; on by default; text = the in-app copy's, not
+    editable); merchant team copies (`toMerchant`) follow the same switch. Events with codes (sign-in / sign-up / reset
+    codes, delivery code, guest and email verification) never get one, so they have no Push switch; copies never
     contain codes. Customers: their parcel updates, tickets, account security; riders: KYC, payouts, tickets;
     merchants: approval, KYC, payout account, settlements, invoices, claims, imports, tickets; staff: SLA breaches
     (operations managers and the hub's operators), support SLA escalations.

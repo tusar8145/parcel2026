@@ -155,7 +155,7 @@ test.describe.serial("spreadsheet imports", () => {
 
     // ── The template is a real .xlsx with red required headers, dropdowns and instructions ──
     const template = await downloaded(page, () => page.click("#merchantBulkTemplate"));
-    expect(template.name).toBe("delivery-fast-ecommerce-orders-template.xlsx");
+    expect(template.name).toBe("paira-express-ecommerce-orders-template.xlsx");
     const parts = unzip(template.buffer);
     expect(parts.get("xl/workbook.xml")).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
     expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Customer phone *");
@@ -296,7 +296,7 @@ test.describe.serial("spreadsheet imports", () => {
     await opsDialog(page, MERCHANT);
     // The template follows the merchant's package: no Merchant column, its services only.
     const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
-    expect(template.name).toBe("delivery-fast-ecommerce-orders-template.xlsx");
+    expect(template.name).toBe("paira-express-ecommerce-orders-template.xlsx");
     const sheet = unzip(template.buffer).get("xl/worksheets/sheet1.xml")!;
     for (const gone of [">Merchant<", "Parcel type", "Packaging", "Receiver relationship"]) expect(sheet).not.toContain(gone);
     expect(unzip(template.buffer).get("xl/worksheets/sheet2.xml")).toContain("chosen on the upload screen");
@@ -378,7 +378,7 @@ test.describe.serial("spreadsheet imports", () => {
     await expect(page.locator(`#dfiMerchant option[value="${MERCHANT.id}"]`)).toHaveCount(0);
     await expect(page.locator(`#dfiMerchant option[value="${bank.id}"]`)).toHaveCount(1);
     const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
-    expect(template.name).toBe("delivery-fast-banking-financial-template.xlsx");
+    expect(template.name).toBe("paira-express-banking-financial-template.xlsx");
     const parts = unzip(template.buffer);
     expect(parts.get("xl/workbook.xml")).toContain('<sheet name="Consignments"');
     expect(parts.get("xl/worksheets/sheet1.xml")).not.toMatch(/COD|Weight|Open box/);
@@ -419,7 +419,7 @@ test.describe.serial("spreadsheet imports", () => {
     // The pickup district / zone are found from the pickup address: not template columns.
     await expect(page.locator("#dfiLimits")).toContainText("Sender name, Sender phone, Pickup address, Recipient phone");
     const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
-    expect(template.name).toBe("delivery-fast-customer-parcels-template.xlsx");
+    expect(template.name).toBe("paira-express-customer-parcels-template.xlsx");
     expect(unzip(template.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>Sender phone *</t>");
 
     const tag = `${stamp.slice(-5)}C`;
@@ -489,7 +489,7 @@ test.describe.serial("spreadsheet imports", () => {
     await panel.locator('[data-import-tab="customer"]').click();
     await expect(panel.locator('[data-import-column="sender_phone"]')).toContainText("Always required");
     const customer = await downloaded(page, () => panel.locator('[data-import-template="customer"]').click());
-    expect(customer.name).toBe("delivery-fast-customer-parcels-template.xlsx");
+    expect(customer.name).toBe("paira-express-customer-parcels-template.xlsx");
     expect(unzip(customer.buffer).get("xl/worksheets/sheet1.xml")).toContain("<t>Sender phone *</t>");
     const banking = await downloaded(page, () => panel.locator('[data-import-template="document"]').click());
     expect(unzip(banking.buffer).get("xl/worksheets/sheet1.xml")).not.toContain("Weight");

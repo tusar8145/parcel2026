@@ -1,4 +1,4 @@
-import { PARCEL_STATUS_LABEL, type ParcelStatus, type Permission } from "@delivery-fast/shared";
+import { PARCEL_STATUS_LABEL, type ParcelStatus, type Permission } from "@paira-express/shared";
 import type { Prisma } from "../../generated/prisma/client";
 import { ACTIONS, BULK_ACTION_IDS, type ActionTemplate, type BulkActionId } from "./bulk-actions";
 import { BULK_ACTIONS, type BulkAction } from "./bulk-columns";

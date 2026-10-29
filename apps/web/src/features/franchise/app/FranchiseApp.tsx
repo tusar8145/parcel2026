@@ -107,8 +107,8 @@ export default function FranchiseApp() {
         <div className="fr-brand">
           <Logo />
           <b>
-            {"delivery "}
-            <span>fast</span>
+            {"paira "}
+            <span>express</span>
           </b>
         </div>
         <div className="fr-workspace">

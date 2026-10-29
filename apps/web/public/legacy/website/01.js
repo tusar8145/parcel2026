@@ -9,7 +9,7 @@
     const customerSessionKey="pairaexpress-customer-session";
     function readCustomerSession(){try{const value=JSON.parse(localStorage.getItem(customerSessionKey)||"null");return value&&typeof value==="object"?value:null}catch(error){console.error("Customer demo profile could not be loaded.",error);return null}}
     let toastTimer,routeBeforeAuth="home",customerSession=readCustomerSession(),customerName=customerSession?.name||"",lastTrackingCode="";
-    window.deliveryFastCustomerSession=customerSession;
+    window.pairaExpressCustomerSession=customerSession;
     function requireCustomerLogin(returnTo){
       routeBeforeAuth=returnTo||"support";
       try{sessionStorage.setItem("pairaexpress-customer-return-route",routeBeforeAuth)}
@@ -80,7 +80,7 @@
       }
     }
     function saveCustomerSession(session){
-      try{localStorage.setItem(customerSessionKey,JSON.stringify(session));customerSession=session;customerName=session.name;window.deliveryFastCustomerSession=session;updateCustomerHeader();return true}
+      try{localStorage.setItem(customerSessionKey,JSON.stringify(session));customerSession=session;customerName=session.name;window.pairaExpressCustomerSession=session;updateCustomerHeader();return true}
       catch(error){console.error("Customer demo profile could not be saved.",error);showToast("Your customer profile could not be saved. Check browser storage and try again.");return false}
     }
     function pricingMarkup(){return `<div class="calculator route-calculator"><div class="calculator-top"><div><h3>Quick price estimate</h3><p>Adjust the options to see an estimate.</p></div><span class="price-label">৳ BDT</span></div><div class="form-grid"><div class="field"><label for="priceService">Delivery type</label><select id="priceService"><option value="customer">Customer parcel</option></select></div><div class="field"><label for="priceZone">Delivery area</label><select id="priceZone"><option value="city">Same city</option><option value="intercity">Inter-city</option></select></div><div class="field"><label for="priceWeight">Parcel weight</label><select id="priceWeight"><option value="0.5">Up to 0.5 kg</option><option value="1" selected>Up to 1 kg</option><option value="2">Up to 2 kg</option><option value="5">Up to 5 kg</option></select></div><div class="field"><span>Cash on delivery</span><label class="checkline"><input id="priceCod" type="checkbox"> Collect payment from recipient</label></div><div class="field" id="priceCodAmountField" hidden><label for="priceCodAmount">Cash to collect (৳)</label><input id="priceCodAmount" type="number" min="0" step="1" value="0" inputmode="numeric" placeholder="Enter COD amount"></div><div class="field full"><label class="checkline"><input id="pricePriority" type="checkbox"> Add priority handling where available</label></div></div><div class="price-result"><div><small>Estimated delivery charge</small><strong id="priceTotal">৳ 70</strong></div><span id="priceBreakdown">Base ৳70 · Weight ৳0 · COD fee ৳0 · Priority ৳0</span></div><p class="route-reassure">Demo estimate only. Final rates may vary by location and service. <a href="#/request" data-route="request">Request a pickup →</a></p></div>`}
@@ -167,7 +167,7 @@
       const anchor=event.target.closest('a[href^="#"]');if(anchor&&!anchor.hash.startsWith("#/")){const target=anchor.hash.slice(1);if(target==="tracking"||target==="pricing"){event.preventDefault();navigate(target);return}if(!homeContent.every(node=>node.parentElement===main)){event.preventDefault();navigate("home");requestAnimationFrame(()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth"}))}else if(location.hash.startsWith("#/")){event.preventDefault();navigate("home");requestAnimationFrame(()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth"}))}}
       const sample=event.target.closest("[data-track-sample]");if(sample){const input=document.getElementById("trackingInput");input.value=sample.dataset.trackSample;track(sample.dataset.trackSample)}
       const accountTrack=event.target.closest("[data-account-track]");if(accountTrack)navigate(`tracking/${encodeURIComponent(accountTrack.dataset.accountTrack)}`);
-      const logout=event.target.closest("#accountLogout");if(logout){try{localStorage.removeItem(customerSessionKey)}catch(error){console.error("Customer demo session could not be cleared.",error);showToast("Your saved demo session could not be cleared.")}customerSession=null;customerName="";window.deliveryFastCustomerSession=null;updateCustomerHeader();navigate("home");showToast("You have been logged out of the customer demo.")}
+      const logout=event.target.closest("#accountLogout");if(logout){try{localStorage.removeItem(customerSessionKey)}catch(error){console.error("Customer demo session could not be cleared.",error);showToast("Your saved demo session could not be cleared.")}customerSession=null;customerName="";window.pairaExpressCustomerSession=null;updateCustomerHeader();navigate("home");showToast("You have been logged out of the customer demo.")}
     }
     document.addEventListener("click",onMainClick);
     document.getElementById("menuButton").addEventListener("click",()=>{const nav=document.getElementById("navLinks"),open=nav.classList.toggle("open");document.getElementById("menuButton").setAttribute("aria-expanded",String(open))});

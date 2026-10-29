@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { listParcelsQuerySchema } from "@delivery-fast/shared";
+import { listParcelsQuerySchema } from "@paira-express/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { BULK_KINDS } from "./bulk-kinds";
 import { BULK_ACTION_IDS } from "./bulk-actions";

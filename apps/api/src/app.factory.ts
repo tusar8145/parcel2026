@@ -35,6 +35,8 @@ export async function createApp(options: { logger?: boolean } = {}) {
     .getInstance()
     .addHook("onRoute", route => {
       if (route.url.startsWith("/api/v1/support/tickets")) route.bodyLimit = SUPPORT_BODY_LIMIT;
+      // Share files (Courier Operations): one file of up to 25 MB per request.
+      if (route.url.startsWith("/api/v1/file-shares/public/")) route.bodyLimit = 26 * 1024 * 1024;
     });
   app.setGlobalPrefix("api/v1");
   app.enableShutdownHooks();

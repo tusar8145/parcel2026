@@ -9,7 +9,7 @@ import {
   type QuoteInput,
   type RateCardConfig,
   type RateCardOverride,
-} from "@delivery-fast/shared";
+} from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError, notFound } from "../../common/errors";

@@ -220,7 +220,7 @@
     for (const h of r.byHub) rows.push(["Hub", h.hub?.name || "No hub", h.total, h.onTime, h.rate ?? ""]);
     for (const d of r.byDay) rows.push(["Day", d.day, d.total, d.onTime, d.rate ?? ""]);
     const csv = "﻿" + rows.map(row => row.map(v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n");
-    courierCsvDownload(`delivery-fast-sla-${r.from}-to-${r.to}.csv`, csv);
+    courierCsvDownload(`paira-express-sla-${r.from}-to-${r.to}.csv`, csv);
   }
   /** The SLA report as a PDF in a new tab (same dates and hub as on screen). */
   function printReport() {

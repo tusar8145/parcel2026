@@ -41,14 +41,11 @@ test("finance: Accounts overview, merchants' accounts, invoice settings; the old
   const main = page.locator("#mainContent");
   await expect(main.locator("h1")).toHaveText("Accounts");
   for (const label of ["With riders", "At hubs", "In transit", "At central hub", "Settlements to pay"]) await expect(main.locator(".acc-card", { hasText: label })).toBeVisible();
-  await expect(main.locator('[data-acc="settings"]')).toBeVisible();
+  // Invoice settings are in Super admin › Invoice settings, not here.
+  await expect(main.locator('[data-acc="settings"]')).toHaveCount(0);
   for (const tab of ["Overview", "E-commerce", "Financial", "Customer", "Rider cash", "Hub transfers", "Rider pay"]) await expect(main.locator(`[data-nav-tab="${tab}"]`)).toBeVisible();
   await opsNav(page, "accountsFinancial");
   await expect(main.locator(".acc-table thead")).toContainText("Not billed");
-  // Invoice settings: VAT off by default.
-  await opsNav(page, "accounts");
-  await main.locator('[data-acc="settings"]').click();
-  await expect(page.locator("#of_vatEnabled")).toHaveValue("off");
   expect(errors).toEqual([]);
   await page.context().close();
 });

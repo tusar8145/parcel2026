@@ -11,7 +11,7 @@ import {
   TERMINAL_STATUSES,
   type ParcelStatus,
   type ServiceLevel,
-} from "@delivery-fast/shared";
+} from "@paira-express/shared";
 import { createHash } from "node:crypto";
 import type { Hub, Parcel, Prisma, Rider } from "../../generated/prisma/client";
 import type { Catalog } from "../pricing/pricing.service";

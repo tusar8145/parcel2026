@@ -93,3 +93,20 @@ export const parcelBody = (overrides: Record<string, unknown> = {}) => ({
   codAmount: 1500,
   ...overrides,
 });
+
+let directHubs = 0;
+/**
+ * "Collect & deliver now" needs the hub the pickup belongs to to also deliver the parcel (rider-tasks.service.ts
+ * directDeliveryAllowed): the parcel's pickup hub becomes the hub serving its delivery zone (made when missing).
+ */
+export async function sameHubDelivery(ctx: TestContext, trackingId: string) {
+  const p = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId }, select: { id: true, deliveryDistrict: true, deliveryZone: true, pickupHubId: true, pickupRider: { select: { hubId: true } } } });
+  const district = p.deliveryDistrict ?? "Dhaka Central";
+  const name = p.deliveryZone ?? "Dhanmondi";
+  const zone = await ctx.prisma.deliveryZone.findFirst({ where: { district: { equals: district, mode: "insensitive" }, name: { equals: name, mode: "insensitive" }, active: true } });
+  let hubId = zone?.hubId ?? p.pickupHubId ?? p.pickupRider?.hubId ?? null;
+  if (!hubId) hubId = (await hub(ctx, `HUB-DD${++directHubs}`)).id;
+  if (!zone) await ctx.prisma.deliveryZone.create({ data: { code: `DD-${++directHubs}-${Date.now() % 100000}`, name, district, hubId } });
+  else if (!zone.hubId) await ctx.prisma.deliveryZone.update({ where: { id: zone.id }, data: { hubId } });
+  await ctx.prisma.parcel.update({ where: { id: p.id }, data: { pickupHubId: hubId } });
+}

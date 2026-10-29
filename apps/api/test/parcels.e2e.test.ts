@@ -1,5 +1,5 @@
 import { decrypt } from "../src/common/crypto";
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
+import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext, sameHubDelivery } from "./helpers";
 
 // 1x1 transparent PNG
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -108,6 +108,7 @@ describe("parcel lifecycle", () => {
 
     const direct = await book();
     await ctx.api("POST", `/parcels/${direct}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } });
+    await sameHubDelivery(ctx, direct);
     const out = await ctx.api("POST", `/rider/parcels/${direct}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
     expect(out.body).toMatchObject({ status: "OUT_FOR_DELIVERY", deliveryRider: { id: rider.rider.id } });
     const signed = await ctx.api("POST", `/rider/parcels/${direct}/delivery`, {
@@ -118,6 +119,7 @@ describe("parcel lifecycle", () => {
 
     const failing = await book();
     await ctx.api("POST", `/parcels/${failing}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } });
+    await sameHubDelivery(ctx, failing);
     await ctx.api("POST", `/rider/parcels/${failing}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_DELIVER_DIRECT" } });
     const retry = await ctx.api("POST", `/rider/parcels/${failing}/delivery`, {
       token: rider.token,

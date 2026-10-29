@@ -101,7 +101,7 @@ describe("in-app notifications", () => {
 
   it("follows the event's switch in Global notifications", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
-    for (const channel of ["sms", "email"]) {
+    for (const channel of ["sms", "email", "push"]) {
       const off = await ctx.api("PUT", `/notifications/templates/parcel.cancelled/${channel}`, { token: admin.token, body: { enabled: false } });
       expect([200, 404]).toContain(off.status); // 404: the event has no template on that channel
     }

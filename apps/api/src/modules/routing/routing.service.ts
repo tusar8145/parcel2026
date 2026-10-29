@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { addressText } from "../../common/address";
 import type { z } from "zod";
-import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@delivery-fast/shared";
+import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import type { Actor } from "../../common/auth/actor";
@@ -200,7 +200,7 @@ export class RoutingService {
     const coords = [start, ...stops].map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(";");
     const url = `${env().OSRM_URL.replace(/\/$/, "")}/trip/v1/driving/${coords}?source=first&roundtrip=false&destination=any&geometries=geojson&overview=full`;
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(env().OSRM_TIMEOUT_MS), headers: { "user-agent": "DeliveryFast/1.0 (route planning)" } });
+      const response = await fetch(url, { signal: AbortSignal.timeout(env().OSRM_TIMEOUT_MS), headers: { "user-agent": "PairaExpress/1.0 (route planning)" } });
       if (!response.ok) throw new Error(`OSRM ${response.status}`);
       const body = (await response.json()) as {
         code: string;

@@ -2,7 +2,7 @@ import type { z } from "zod";
 import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
-import { geoReverseQuerySchema, geoSearchQuerySchema } from "@delivery-fast/shared";
+import { geoReverseQuerySchema, geoSearchQuerySchema } from "@paira-express/shared";
 import { Public } from "../../common/auth/decorators";
 import { ApiZodQuery, ZQuery } from "../../common/zod";
 import { GeoService } from "./geo.service";

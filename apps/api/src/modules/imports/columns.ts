@@ -8,7 +8,7 @@
  * There is no Merchant column: the merchant is chosen in the upload modal (operations) or is the
  * signed-in merchant. First / last mile, the drop hub and the messages are chosen there too.
  */
-import type { PackageSegment } from "@delivery-fast/shared";
+import type { PackageSegment } from "@paira-express/shared";
 
 /** API kinds: `document` is Banking & Financial (the name is kept; `banking` is accepted as an alias). */
 export const IMPORT_KINDS = ["ecommerce", "document", "customer"] as const;

@@ -12,8 +12,11 @@ import { NOTIFICATION_EVENTS, type NotificationEvent } from "./events";
 import { CHANNEL_OF, COMMON_VARS, EVENT_CATALOG, EVENT_GROUPS, LEGACY_TOGGLE_EVENTS, OUTBOX_CHANNEL, channelsOf, definitionOf, type Channel, type EventDefinition } from "./catalog";
 import { htmlFromText, placeholders, syntaxProblem } from "./render";
 import { BrandingService } from "../branding/branding.service";
+import { IN_APP } from "./in-app";
 
 export const SETTINGS_KEY = "notification-settings";
+/** Per-event push switches (Super admin › Parcel / Global notifications › Push): { events: { [event]: boolean } }. */
+export const PUSH_SETTINGS_KEY = "notification-push";
 const PLATFORM_CONFIG_KEY = "platform-config";
 const VERSION_KEY = "notifications:config:version";
 const MAX_AGE_MS = 30_000;
@@ -63,6 +66,16 @@ export interface Snapshot {
   brand: Brand;
   /** Global channel switches from the super admin "Global notifications" page (platform-config.channels). */
   channels: { sms: boolean; email: boolean };
+  /** Push switches set by an admin (event → on/off); events not listed are on. */
+  push: Map<string, { enabled: boolean; updatedAt: string | null }>;
+}
+
+/** An event's push to the apps: the text of its in-app copy (in-app.ts), sent to signed-in recipients' phones. */
+export interface PushSwitch {
+  enabled: boolean;
+  locked: false;
+  enabledByAdmin: boolean;
+  updatedAt: string | null;
 }
 
 export interface ResolvedTemplate {
@@ -120,11 +133,13 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
   private async loadSnapshot(): Promise<Snapshot> {
     const version = await this.redis.get(VERSION_KEY).catch(() => null);
     if (this.cache && this.cache.version === version && Date.now() - this.cache.at < MAX_AGE_MS) return this.cache.snapshot;
-    const [rows, setting, platform] = await Promise.all([
+    const [rows, setting, platform, pushSetting] = await Promise.all([
       this.prisma.notificationTemplate.findMany(),
       this.prisma.setting.findUnique({ where: { key: SETTINGS_KEY } }),
       this.prisma.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } }),
+      this.prisma.setting.findUnique({ where: { key: PUSH_SETTINGS_KEY } }),
     ]);
+    const pushEvents = isObject(pushSetting?.value) && isObject(pushSetting.value.events) ? pushSetting.value.events : {};
     const stored = isObject(setting?.value) ? setting.value : {};
     const limits = limitsSchema.safeParse(stored.limits);
     const brand = brandSchema.safeParse(stored.brand);
@@ -134,6 +149,11 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
       limits: limits.success ? limits.data : DEFAULT_LIMITS,
       brand: brand.success ? brand.data : DEFAULT_BRAND,
       channels: { sms: channels.sms !== false, email: channels.email !== false },
+      push: new Map(
+        Object.entries(pushEvents)
+          .filter(([, v]) => isObject(v) && typeof v.enabled === "boolean")
+          .map(([event, v]) => [event, { enabled: (v as { enabled: boolean }).enabled, updatedAt: typeof (v as { at?: unknown }).at === "string" ? ((v as { at: string }).at) : null }]),
+      ),
     };
     this.cache = { version, at: Date.now(), snapshot };
     return snapshot;
@@ -166,6 +186,37 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
     };
   }
 
+  /**
+   * The event's push switch, or undefined when the event has no push: only events with an in-app copy
+   * (in-app.ts) for a signed-in person do. Codes (sign-up, sign-in, delivery…) never have one.
+   */
+  pushOf(snapshot: Snapshot, event: string): PushSwitch | undefined {
+    if (!(IN_APP as Record<string, unknown>)[event] || !definitionOf(event)) return undefined;
+    const o = snapshot.push.get(event);
+    const enabled = o?.enabled ?? true;
+    return { enabled, locked: false, enabledByAdmin: enabled, updatedAt: o?.updatedAt ?? null };
+  }
+
+  async pushEnabled(event: string) {
+    return !!this.pushOf(await this.snapshot(), event)?.enabled;
+  }
+
+  /** Switches an event's push on or off (its text is the in-app copy's, not editable here). */
+  async setPush(actor: Actor, event: string, enabled: boolean, meta: RequestMeta) {
+    const def = definitionOf(event);
+    if (!def) throw notFound("Notification event");
+    if (!this.pushOf(await this.snapshot(), event)) throw new AppError("CHANNEL_NOT_AVAILABLE", `"${def.label}" has no push notification`, 422);
+    await this.prisma.$transaction(async tx => {
+      const previous = await tx.setting.findUnique({ where: { key: PUSH_SETTINGS_KEY } });
+      const events = isObject(previous?.value) && isObject(previous.value.events) ? previous.value.events : {};
+      const value = { events: { ...events, [event]: { enabled, at: new Date().toISOString() } } } as Prisma.InputJsonObject;
+      await tx.setting.upsert({ where: { key: PUSH_SETTINGS_KEY }, create: { key: PUSH_SETTINGS_KEY, value }, update: { value } });
+      await this.audit.record(actor, { action: "notification_template.update", entityType: "notification_template", entityId: `${event}:push`, data: { fields: ["enabled"], enabled } }, meta, tx);
+    });
+    await this.invalidate();
+    return this.eventView(event);
+  }
+
   // ───────────── admin views ─────────────
 
   async catalog() {
@@ -186,13 +237,17 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
           vars: def.vars,
           required: def.required ?? [],
           sample: def.sample,
-          channels: Object.fromEntries(
-            channelsOf(def).map(channel => {
-              const t = this.resolve(snapshot, event, channel)!;
-              const o = snapshot.overrides.get(key(event, channel));
-              return [channel, { ...t, enabledByAdmin: o?.enabled ?? !def.defaultOff?.includes(channel), default: defaultTemplate(def, channel), updatedAt: o?.updatedAt ?? null }];
-            }),
-          ),
+          channels: {
+            ...Object.fromEntries(
+              channelsOf(def).map(channel => {
+                const t = this.resolve(snapshot, event, channel)!;
+                const o = snapshot.overrides.get(key(event, channel));
+                return [channel, { ...t, enabledByAdmin: o?.enabled ?? !def.defaultOff?.includes(channel), default: defaultTemplate(def, channel), updatedAt: o?.updatedAt ?? null }];
+              }),
+            ),
+            // Push: an on/off switch only; the text is the in-app notification's.
+            ...(this.pushOf(snapshot, event) ? { push: this.pushOf(snapshot, event) } : {}),
+          },
         };
       }),
     };

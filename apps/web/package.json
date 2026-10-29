@@ -1,5 +1,5 @@
 {
-  "name": "@delivery-fast/web",
+  "name": "@paira-express/web",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,7 +11,7 @@
     "postinstall": "node scripts/vendor.mjs"
   },
   "dependencies": {
-    "@delivery-fast/shared": "0.1.0",
+    "@paira-express/shared": "0.1.0",
     "@zxing/browser": "^0.2.1",
     "leaflet": "^1.9.4",
     "next": "^16.4.1",

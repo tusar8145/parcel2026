@@ -6,7 +6,7 @@ import { CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMet
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { PrismaService } from "../../common/prisma.service";
-import { notFound } from "../../common/errors";
+import { AppError, notFound } from "../../common/errors";
 import { EVENT_CATALOG, type Channel } from "./catalog";
 import type { NotificationEvent } from "./events";
 import {
@@ -56,7 +56,7 @@ export class NotificationsAdminController {
     return this.settings.catalog();
   }
 
-  /** Edit a template and/or switch it on or off. null fields go back to the default text. */
+  /** Edit a template and/or switch it on or off. null fields go back to the default text. Push (`/push`): on / off only. */
   @Put("templates/:event/:channel")
   @ApiZodBody(updateTemplateSchema)
   updateTemplate(
@@ -66,6 +66,13 @@ export class NotificationsAdminController {
     @ZBody(updateTemplateSchema) body: z.infer<typeof updateTemplateSchema>,
     @ReqMeta() meta: RequestMeta,
   ) {
+    if (channel === "push") {
+      const e = eventSchema.safeParse(event);
+      if (!e.success) throw notFound("Notification template");
+      if (body.enabled === undefined || body.subject !== undefined || body.body !== undefined || body.html !== undefined)
+        throw new AppError("VALIDATION_FAILED", "Push notifications use the in-app notification's text: only switch them on or off", 422);
+      return this.settings.setPush(actor, e.data, body.enabled, meta);
+    }
     const t = parseTarget(event, channel);
     return this.settings.updateTemplate(actor, t.event, t.channel, body, meta);
   }

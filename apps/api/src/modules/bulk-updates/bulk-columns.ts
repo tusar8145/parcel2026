@@ -1,4 +1,4 @@
-import { parseParcelStatus, type ParcelStatus } from "@delivery-fast/shared";
+import { parseParcelStatus, type ParcelStatus } from "@paira-express/shared";
 
 /**
  * The columns of the bulk update sheets: read-only data columns (greyed, locked) describing each

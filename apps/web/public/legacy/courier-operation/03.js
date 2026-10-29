@@ -29,7 +29,7 @@
       if(!["Customer parcels","E-commerce operations","Banking & Financial operations"].includes(page))return baseCourierExportCurrentData();
       const category=page==="Customer parcels"?"Customer parcels":page==="Banking & Financial operations"?"Documents":"E-commerce",rows=visibleOrSelectedShipments(page),name=page==="Customer parcels"?"customer-parcels":page==="Banking & Financial operations"?"document-shipments":"e-commerce-orders";
       if(!rows.length){showToast("No filtered or selected shipments are available to export.");return}
-      courierCsvDownload(`delivery-fast-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected ${category.toLowerCase()} shipment(s) exported.`);
+      courierCsvDownload(`paira-express-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected ${category.toLowerCase()} shipment(s) exported.`);
     };
     const baseCourierPageTable=pageTable;
     const riderReportState={from:new Date().toISOString().slice(0,10),to:new Date().toISOString().slice(0,10),rider:""};
@@ -67,12 +67,12 @@
       const rows=riderReportData().map(rider=>[rider.id,rider.name,rider.zone,rider.picked,Object.entries(rider.counts).filter(([,count])=>count).map(([status,count])=>`${status}: ${count}`).join(" · ")]);
       if(!rows.length){showToast("No rider data is available for export.");return}
       const csv=[["Pickup date from","Pickup date to","Rider ID","Rider name","Zone","Parcels picked up","Status counts"],...rows.map(row=>[riderReportState.from,riderReportState.to,...row])].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n");
-      courierCsvDownload("delivery-fast-rider-report.csv",csv);showToast(`${rows.length} rider report row(s) downloaded.`);
+      courierCsvDownload("paira-express-rider-report.csv",csv);showToast(`${rows.length} rider report row(s) downloaded.`);
     }
     function exportHubTransferReport(){
       const events=filteredHubTransfers();if(!events.length){showToast("No hub transfers are available for this date range.");return}
       const rows=events.map(event=>[hubTransferDate(event.date),event.trackingId,event.fromHub,event.toHub,event.rider||"",event.status]),csv=[["Transfer date","Tracking ID","From hub","To hub","Rider","Status"],...rows].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n");
-      courierCsvDownload("delivery-fast-hub-transfer-report.csv",csv);showToast(`${events.length} hub transfer(s) downloaded.`);
+      courierCsvDownload("paira-express-hub-transfer-report.csv",csv);showToast(`${events.length} hub transfer(s) downloaded.`);
     }
     function hubOperationsPage(){
       const pending=shipments.filter(s=>s.status==="At hub"||s.status==="Assigned"||s.status==="In transit");

@@ -3,7 +3,7 @@ import type { FastifyReply } from "fastify";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { z } from "zod";
-import { quoteRequestSchema, SERVICE_LEVEL_LABEL } from "@delivery-fast/shared";
+import { quoteRequestSchema, SERVICE_LEVEL_LABEL } from "@paira-express/shared";
 import { CurrentActor, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";

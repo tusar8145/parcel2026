@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { listParcelsQuerySchema, PARCEL_STATUSES, TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
+import { listParcelsQuerySchema, PARCEL_STATUSES, TERMINAL_STATUSES, type ParcelStatus } from "@paira-express/shared";
 import type { Prisma } from "../../generated/prisma/client";
 import type { Db } from "../../common/prisma.service";
 

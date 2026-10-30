@@ -1,3 +1,4 @@
+import AppVersion from "@/shared/AppVersion";
 import AppDownloadCard from "@/shared/AppDownloadCard";
 import BrandMark from "@/shared/BrandMark";
 import { InstallAppButton } from "@/shared/PwaInstall";
@@ -127,6 +128,7 @@ export default function Sidebar() {
           </div>
           <span style={{ color: "#98a2ae" }}>···</span>
         </div>
+        <AppVersion />
       </div>{" "}
     </aside>
   );

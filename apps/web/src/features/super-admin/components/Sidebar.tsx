@@ -1,3 +1,4 @@
+import AppVersion from "@/shared/AppVersion";
 import BrandMark from "@/shared/BrandMark";
 
 export default function Sidebar() {
@@ -162,6 +163,7 @@ export default function Sidebar() {
           </div>
           <span style={{ color: "#98a2ae" }}>···</span>
         </div>
+        <AppVersion />
       </div>{" "}
     </aside>
   );

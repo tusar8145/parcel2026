@@ -13,6 +13,8 @@ RUN --mount=type=cache,target=/root/.npm npm ci -w @paira-express/web -w @paira-
 COPY packages/shared packages/shared
 RUN npm run build -w @paira-express/shared
 COPY apps/web apps/web
+# The version and "What's new" notes in the panels.
+COPY CHANGELOG.md ./
 ARG API_ORIGIN=http://api:4000
 ENV API_ORIGIN=${API_ORIGIN}
 RUN npm run vendor -w @paira-express/web && npm run build -w @paira-express/web

@@ -35,6 +35,24 @@ function legacyAssetVersions(root: string, directory = root): Record<string, str
 }
 
 /**
+ * CHANGELOG.md (repo root): "## 1.2.0 — 2026-11-02" headings, newest first, each followed by "- change"
+ * lines. The panels show the newest version and these notes (AppVersion).
+ */
+function releases(file: string) {
+  const list: { version: string; date: string; changes: string[] }[] = [];
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const head = /^##\s+v?(\d+\.\d+\.\d+)\s*(?:[—–-]\s*(\S+))?/.exec(line);
+    const release = list[list.length - 1];
+    const plain = (text: string) => text.replace(/`|\*\*/g, "").trim();
+    if (head) list.push({ version: head[1], date: head[2] ?? "", changes: [] });
+    else if (release && /^\s*[-*]\s+/.test(line)) release.changes.push(plain(line.replace(/^\s*[-*]\s+/, "")));
+    else if (release?.changes.length && /^\s+\S/.test(line)) release.changes[release.changes.length - 1] += ` ${plain(line)}`;
+  }
+  if (!list.length) throw new Error(`${file} has no release heading ("## 1.0.0 — 2026-10-30")`);
+  return list;
+}
+
+/**
  * This computer's network (LAN) addresses. Phones open the dev server through one of them ("Scan
  * with phone" links); Next.js blocks its dev scripts for any other host than localhost unless listed,
  * so the page would load without its JavaScript and never connect.
@@ -51,8 +69,13 @@ export default function nextConfig(phase: string): NextConfig {
   // version hashes (they would be the ones from start-up) and no long-lived caching there.
   const dev = phase === PHASE_DEVELOPMENT_SERVER;
   const legacyVersions = dev ? {} : legacyAssetVersions(path.join(__dirname, "public", "legacy"));
+  const changelog = releases(path.join(__dirname, "../../CHANGELOG.md"));
   return {
-    env: { LEGACY_ASSET_VERSIONS: JSON.stringify(legacyVersions) },
+    env: {
+      LEGACY_ASSET_VERSIONS: JSON.stringify(legacyVersions),
+      APP_VERSION: changelog[0].version,
+      APP_RELEASES: JSON.stringify(changelog.slice(0, 10)),
+    },
     // Development only: phones on the same Wi-Fi may use the dev server (e.g. the Scan with phone page).
     ...(dev ? { allowedDevOrigins: lanAddresses() } : {}),
     // Self-contained server for the Docker image (apps/web/Dockerfile). Dependencies are

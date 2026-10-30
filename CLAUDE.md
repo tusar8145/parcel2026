@@ -12,6 +12,16 @@ npm workspaces monorepo:
 
 Setup and run instructions: `docs/development.md`.
 
+## Versions and CHANGELOG.md
+- Every fix or new feature adds a new version at the top of `CHANGELOG.md`:
+  `## x.y.z — YYYY-MM-DD` (today), then one short `- …` line per change, in plain words for the people
+  who use the panels (what changed for them, not file names). Several changes in one task share one version.
+- Fix → raise the last number (1.0.0 → 1.0.1); new feature → the middle one, last back to 0
+  (1.0.1 → 1.1.0); big change → the first one (1.1.0 → 2.0.0).
+- The top version is the app version: every panel's sidebar shows it with "What's new"
+  (`src/shared/AppVersion.tsx`, read at build time in `apps/web/next.config.ts`; restart `npm run dev`
+  to see a new one). The Android apps keep their own versions (`mobile/*/pubspec.yaml`).
+
 ## API conventions (apps/api/src)
 - One folder per module in `modules/` (schemas → service → controller → module). `modules/network`
   is the simplest complete example; copy its style.

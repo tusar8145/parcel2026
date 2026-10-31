@@ -1,5 +1,5 @@
 /*
- * Super admin › System guide: what the platform's numbers, parcel statuses, money steps and roles mean, and where
+ * Super admin › System guide: what the platform's numbers mean, the parcel lifecycle and its notifications, money steps, roles, and where
  * things are changed (shared/system-guide.js, GET /guide).
  */
 (() => {
@@ -15,7 +15,7 @@
     baseShowPage(page);
     if (page !== PAGE) return;
     const main = document.getElementById("mainContent");
-    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform control · reference</p><h1>System guide</h1><p class="subtitle">What the numbers (PP, MR, HS…), parcel statuses, money steps and roles mean, and where each setting is changed.</p></div></div><div id="sgHost"></div>`;
+    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform control · reference</p><h1>System guide</h1><p class="subtitle">What the numbers (PP, MR, HS…) mean, the parcel lifecycle and its SMS / email / push, money steps, roles, and where each setting is changed.</p></div></div><div id="sgHost"></div>`;
     void DF.systemGuide.mount(document.getElementById("sgHost"));
   };
 })();

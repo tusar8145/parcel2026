@@ -570,8 +570,7 @@ select:not([multiple]):not([size])::-ms-expand{display:none}
     const cards = JOURNEY.filter(stage => allowed.has(stage))
       .map((stage, i) => {
         const [ico, hint] = STAGE_HINT[stage];
-        const n = JOURNEY.indexOf(stage) + 1;
-        return metric(`${n} · ${stage}`, `<span data-stage-count="${esc(stage)}">${Ops.num(counts[stage])}</span>`, ico, hint, "Open ›").replace(
+        return metric(stage,`<span data-stage-count="${esc(stage)}">${Ops.num(counts[stage])}</span>`, ico, hint, "Open ›").replace(
           '<article class="metric"',
           `<article class="metric" role="button" tabindex="0" data-stage-open="${esc(stage)}" aria-label="${esc(`Open ${stage}`)}" style="--i:${i}"`,
         );

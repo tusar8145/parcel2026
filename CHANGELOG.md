@@ -7,6 +7,13 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.1.1 — 2026-10-30
+- Courier Operations › Today: the stage cards show only their names (New orders, Pickup…), without the 1, 2, 3… numbers.
+
+## 1.1.0 — 2026-10-30
+- System guide: "Parcel lifecycle" replaces "Parcel statuses". It shows the First, Middle and Last mile in Bangla, who does each step (Rider App or Operations) and where.
+- System guide: new "Notifications" tab in Bangla. It shows which SMS, email and push each panel and app gets at each step of the parcel.
+
 ## 1.0.0 — 2026-10-30
 - Version number and "What's new" at the bottom of every panel.
 - New name: Paira Express everywhere (screens, PDFs, documents, apps). Merchant webhooks now send X-PairaExpress-* headers.

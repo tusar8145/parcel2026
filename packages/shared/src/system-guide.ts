@@ -1,10 +1,9 @@
 /**
- * System guide (super admin › System guide, Courier Operations › Settings): what the numbers, parcel statuses,
- * money steps and roles of the platform mean. Shown as is by the panels (GET /guide). When a new numbered
+ * System guide (super admin › System guide, Courier Operations › Settings): what the numbers mean, the parcel
+ * lifecycle and its notifications (in Bangla, for staff and clients), the money steps and roles of the platform. Shown as is by the panels (GET /guide). When a new numbered
  * document is added (nextNumber / nextCounter in the API), add its prefix here: an API test checks that every
  * prefix the code generates is listed.
  */
-import { PARCEL_STATUSES, PARCEL_STATUS_LABEL, TERMINAL_STATUSES, allowedNextStatuses, type ParcelStatus } from "./parcel-status";
 import { PANEL_FOR_ROLE, PERMISSION_INFO, ROLE_PERMISSIONS, ROLES, type Role } from "./roles";
 
 /**
@@ -328,23 +327,187 @@ export const NUMBER_PREFIXES: readonly NumberPrefix[] = [
   },
 ];
 
-/** What each parcel status means. */
-export const PARCEL_STATUS_INFO: Record<ParcelStatus, string> = {
-  PENDING_CONFIRMATION: "Booked; operations still have to accept it (and assign a pickup rider, or wait for a hub drop-off).",
-  PICKUP_ASSIGNED: "A pickup rider is assigned to collect it.",
-  PICKUP_CONFIRMED: "The pickup rider confirmed the pickup.",
-  PICKED_UP: "Collected from the sender; on the way to the hub.",
-  PICKUP_CANCELLED: "Cancelled before pickup. Final.",
-  AT_HUB: "At a hub, waiting for a delivery rider or a transfer.",
-  ASSIGNED: "A delivery rider is assigned.",
-  IN_TRANSIT: "Travelling between hubs (on a linehaul trip or moved by hand).",
-  OUT_FOR_DELIVERY: "With the delivery rider on the way to the recipient.",
-  DELIVERED: "Handed to the recipient (COD collected, proof taken). Final; its account lines are posted.",
-  RETRY_SCHEDULED: "A delivery attempt failed; it will be tried again.",
-  RETURN_SCHEDULED: "Going back to the sender (a return run).",
-  RETURNED: "Back with the sender. Final; its account lines are posted.",
-  EXCEPTION: "Needs attention (damaged, address problem, missing details…).",
-  READY_FOR_COLLECTION: "Waiting at the hub for the recipient to collect it.",
+/** Who does a step (System guide › Parcel lifecycle and Notifications). */
+export type GuideActor = "MERCHANT" | "OPERATIONS" | "RIDER" | "SYSTEM" | "CUSTOMER";
+
+export const GUIDE_ACTORS: Record<GuideActor, { label: string; where: string }> = {
+  MERCHANT: { label: "Merchant", where: "Merchant panel ও Merchant App (পার্সেল তৈরি)" },
+  OPERATIONS: { label: "Operations", where: "Courier Operations-এর **Parcel queue** (কাজের তালিকা) ও **Scan desk** (স্ক্যান করে গ্রহণ ও হস্তান্তর), Ops App" },
+  RIDER: { label: "Rider", where: "মোবাইলের **Rider App**" },
+  SYSTEM: { label: "System", where: "নিজে থেকেই হয়, কাউকে কিছু করতে হয় না" },
+  CUSTOMER: { label: "Customer", where: "প্রাপক (গ্রাহক): SMS ও email পান, কোনো অ্যাপ লাগে না" },
+};
+
+export interface LifecycleStep {
+  /** Several: any one of them does it. */
+  actors: GuideActor[];
+  /** The screen and option (option names in **bold**, as on screen). */
+  where: string;
+  what: string;
+  /** The parcel's status afterwards. */
+  status?: string;
+}
+
+/**
+ * The parcel's journey for staff and clients, in Bangla with the option names as they appear on screen:
+ * First mile → Middle mile → Last mile, each with its ways, who does each step and where.
+ */
+export const PARCEL_LIFECYCLE: {
+  stages: { key: string; title: string; summary: string; ways: { title: string; steps: LifecycleStep[]; notes?: string[] }[]; notes?: string[] }[];
+  journeys: { name: string; first: string; middle: string; last: string }[];
+  tasks: { actor: GuideActor; items: [string, string][] }[];
+  bottomLine: string;
+} = {
+  stages: [
+    {
+      key: "first",
+      title: "First mile",
+      summary: "মার্চেন্টের কাছ থেকে পার্সেল প্রথম হাবে পৌঁছানো পর্যন্ত।",
+      ways: [
+        {
+          title: "উপায় ১: রাইডার মার্চেন্টের কাছ থেকে পিকআপ করেন",
+          steps: [
+            { actors: ["MERCHANT"], where: "পার্সেল তৈরি", what: "পিকআপের অনুরোধ যায়", status: "Pickup request submitted" },
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Pickups to assign**", what: "একজন রাইডার বেছে নিয়ে পিকআপের দায়িত্ব দেন", status: "Pickup accepted" },
+            { actors: ["RIDER"], where: "Rider App › **Pickups to do**", what: "মার্চেন্টের কাছে গিয়ে পার্সেল নেন", status: "Picked up" },
+            { actors: ["RIDER"], where: "Rider App › **Carrying (to hand over)**", what: "হাবে পার্সেল জমা দেন", status: "Handed over at Dhanmondi Hub" },
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Picked up · to receive at hub**", what: "স্ক্যান করে হাবে গ্রহণ করেন", status: "At hub" },
+          ],
+          notes: [
+            "বিকল্প: রাইডার অ্যাপে পিকআপ চিহ্নিত না করে সরাসরি হাবে পার্সেল নিয়ে এলে, অপারেশন টিম **Out for pickup** থেকে স্ক্যান করে গ্রহণ করে (স্ট্যাটাস **At hub**)। সেখানে রাইডারের নাম আর হাব আগে থেকেই দেখা যায়।",
+          ],
+        },
+        {
+          title: "উপায় ২: মার্চেন্ট নিজে হাবে জমা দেন (Drop-off)",
+          steps: [
+            { actors: ["MERCHANT"], where: "পার্সেল তৈরির সময় হাবে জমা দেওয়ার অপশন", what: "হাবে আনার জন্য বুক হয়", status: "Booked for drop-off at Badda Delivery Hub" },
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Drop-offs to receive**", what: "মার্চেন্ট পার্সেল আনলে স্ক্যান করে গ্রহণ করেন", status: "Received at Badda Delivery Hub (drop-off)" },
+          ],
+          notes: ["এখানে রাইডারের কোনো কাজ নেই।"],
+        },
+      ],
+    },
+    {
+      key: "middle",
+      title: "Middle mile",
+      summary: "এক হাব থেকে ডেলিভারি এলাকার হাবে পাঠানো। এই ধাপটি শুধু অপারেশন টিম করে, রাইডারের কোনো কাজ নেই।",
+      ways: [
+        {
+          title: "হাব থেকে হাবে",
+          steps: [
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Transfers to dispatch** (পাঠানো হাব)", what: "রুট দেখায় (যেমন Dhanmondi Hub → Rajshahi Hub), স্ক্যান করে পাঠান", status: "In transit to Rajshahi Hub" },
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Transfers to receive** (গন্তব্য হাব)", what: "পার্সেল পৌঁছালে স্ক্যান করে গ্রহণ করেন", status: "At hub" },
+          ],
+        },
+      ],
+      notes: ["প্রথম হাবই যদি ডেলিভারি এলাকার হাব হয়, Middle mile লাগে না। পার্সেল সরাসরি Last mile-এ যায়।"],
+    },
+    {
+      key: "last",
+      title: "Last mile",
+      summary: "ডেলিভারি হাব থেকে গ্রাহকের হাতে পৌঁছানো।",
+      ways: [
+        {
+          title: "উপায় ১: রাইডার গ্রাহকের বাসায় দেন (Home delivery)",
+          steps: [
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Deliveries to assign**", what: "ডেলিভারি রাইডার বেছে নিয়ে স্ক্যান করেন", status: "Assigned to delivery rider" },
+            { actors: ["RIDER"], where: "Rider App › **Deliveries to do**", what: "রাইডার তাঁর ডেলিভারি তালিকা দেখেন" },
+            {
+              actors: ["OPERATIONS", "RIDER"],
+              where: "Parcel queue › **Assigned · ready to go out** (রাইডার বের হওয়ার সময় স্ক্যান), অথবা Rider App › পার্সেল খুলে **Start delivery**",
+              what: "রাইডার ডেলিভারির জন্য বের হন। গ্রাহক SMS-এ OTP (ডেলিভারি কোড) পান",
+              status: "Out for delivery",
+            },
+            { actors: ["RIDER"], where: "Rider App › **Delivered**", what: "গ্রাহকের কাছ থেকে OTP নিয়ে ডেলিভারি সম্পন্ন করেন", status: "Delivered" },
+          ],
+          notes: ["প্রয়োজনে হাব থেকেও **Scan desk**-এ ডেলিভারি সম্পন্ন করা যায়।"],
+        },
+        {
+          title: "উপায় ২: গ্রাহক নিজে হাব থেকে নেন (Hub collection)",
+          steps: [
+            { actors: ["SYSTEM"], where: "নিজে থেকেই", what: "গন্তব্য হাবে পৌঁছালে সংগ্রহের জন্য প্রস্তুত হয়। গ্রাহক SMS-এ Collection code পান", status: "Ready for collection at Rajshahi Hub" },
+            { actors: ["OPERATIONS"], where: "Parcel queue › **Waiting for collection at hub**", what: "কতগুলো পার্সেল অপেক্ষায় আছে, শুধু সংখ্যা দেখায়। কোনো কাজ নেই" },
+            { actors: ["OPERATIONS"], where: "Scan desk › **Collect from hub**", what: "গ্রাহক এলে অপেক্ষমাণ পার্সেল দেখা যায়। Collection code মিলিয়ে হস্তান্তর করেন", status: "Delivered" },
+          ],
+          notes: ["এখানে রাইডারের কোনো কাজ নেই।"],
+        },
+      ],
+    },
+  ],
+  journeys: [
+    { name: "A: পিকআপ, তারপর বাসায় ডেলিভারি", first: "উপায় ১ (রাইডার পিকআপ)", middle: "দরকার হলে", last: "উপায় ১ (বাসায় ডেলিভারি)" },
+    { name: "B: হাবে জমা, তারপর বাসায় ডেলিভারি", first: "উপায় ২ (Drop-off)", middle: "দরকার হলে", last: "উপায় ১ (বাসায় ডেলিভারি)" },
+    { name: "C: হাবে জমা, তারপর হাব থেকে সংগ্রহ", first: "উপায় ২ (Drop-off)", middle: "দরকার হলে", last: "উপায় ২ (হাব থেকে সংগ্রহ)" },
+  ],
+  tasks: [
+    {
+      actor: "RIDER",
+      items: [
+        ["Pickups to do", "মার্চেন্টের কাছ থেকে পার্সেল নেওয়া"],
+        ["Carrying (to hand over)", "হাবে পার্সেল জমা দেওয়া"],
+        ["Deliveries to do", "তাঁর ডেলিভারি তালিকা দেখা"],
+        ["Start delivery", "ডেলিভারির জন্য বের হওয়া"],
+        ["Delivered", "OTP নিয়ে ডেলিভারি সম্পন্ন করা"],
+      ],
+    },
+    {
+      actor: "OPERATIONS",
+      items: [
+        ["Pickups to assign", "পিকআপ রাইডার নির্ধারণ"],
+        ["Picked up · to receive at hub / Out for pickup", "রাইডারের আনা পার্সেল গ্রহণ"],
+        ["Drop-offs to receive", "মার্চেন্টের জমা দেওয়া পার্সেল গ্রহণ"],
+        ["Transfers to dispatch / Transfers to receive", "হাব থেকে হাবে পাঠানো ও গ্রহণ"],
+        ["Deliveries to assign", "ডেলিভারি রাইডার নির্ধারণ"],
+        ["Assigned · ready to go out", "রাইডার বের হওয়ার সময় স্ক্যান"],
+        ["Collect from hub", "হাবে আসা গ্রাহককে পার্সেল হস্তান্তর"],
+      ],
+    },
+  ],
+  bottomLine:
+    "রাইডার শুধু রাস্তার কাজ করেন (পার্সেল আনা ও পৌঁছে দেওয়া)। হাবের সব কাজ (রাইডার নির্ধারণ, স্ক্যান করে গ্রহণ, হাব থেকে হাবে পাঠানো, হাবে হস্তান্তর) অপারেশন টিম করে।",
+};
+
+/**
+ * How SMS, email and push reach each panel and app along the parcel's journey (Bangla). Mirrors the API:
+ * modules/notifications (catalog.ts defaults, in-app.ts, new-work.ts) and docs/architecture-contracts.md.
+ */
+export const NOTIFICATION_GUIDE: {
+  channels: { name: string; to: string; detail: string }[];
+  moments: { stage: string; moment: string; sms: string; email: string; push: string }[];
+  apps: { app: string; gets: string }[];
+  rules: string[];
+} = {
+  channels: [
+    { name: "SMS", to: "প্রেরক (মার্চেন্ট/গ্রাহক) ও প্রাপক", detail: "ফোন নম্বরে যায়। সাইন-ইন কোড (OTP) আর Delivery code শুধু SMS-এই যায়।" },
+    { name: "Email", to: "যাঁর email আছে", detail: "SMS-এর মতোই, তবে বিস্তারিত। OTP ও Delivery code email-এ যায় না; Collection code যায়।" },
+    { name: "Push", to: "Merchant App, Rider App, Ops App", detail: "যে ফোনে অ্যাপে সাইন ইন করা আছে সেখানে আসে। ট্যাপ করলে পার্সেলটি খোলে।" },
+    { name: "Bell (in-app)", to: "প্রতিটি প্যানেল", detail: "প্যানেলের ঘণ্টা আইকনে জমা থাকে। Push-এর লেখা আর Bell-এর লেখা একই।" },
+  ],
+  moments: [
+    { stage: "First mile", moment: "Pickup request submitted / Booked for drop-off", sms: "প্রেরক: বুকিং পাওয়া গেছে", email: "প্রেরক: বুকিং পাওয়া গেছে", push: "Operations: নতুন অর্ডার বা পিকআপ অনুরোধ (Ops manager ও ওই হাবের অপারেটর)" },
+    { stage: "First mile", moment: "Pickup accepted", sms: "— (চালু করা যায়)", email: "প্রেরক: রাইডার আসছেন", push: "Rider: New pickup" },
+    { stage: "First mile", moment: "Picked up", sms: "— (চালু করা যায়)", email: "প্রেরক: পার্সেল নেওয়া হয়েছে", push: "—" },
+    { stage: "Middle mile", moment: "In transit / At hub", sms: "—", email: "—", push: "—" },
+    { stage: "Last mile", moment: "Assigned to delivery rider", sms: "—", email: "—", push: "Rider: New delivery" },
+    { stage: "Last mile", moment: "Out for delivery", sms: "প্রাপক: Delivery code (OTP), সবসময় যায়, বন্ধ করা যায় না", email: "প্রাপক: ডেলিভারিতে বের হয়েছে", push: "—" },
+    { stage: "Last mile", moment: "Delivered", sms: "প্রেরক: ডেলিভারি হয়েছে", email: "প্রেরক: ডেলিভারি হয়েছে", push: "Merchant: Delivered" },
+    { stage: "Last mile", moment: "Ready for collection", sms: "প্রাপক: Collection code ও হাবের নাম; পরে মনে করিয়ে দেওয়া হয়", email: "প্রাপক: Collection code ও হাবের ঠিকানা", push: "—" },
+    { stage: "সমস্যা হলে", moment: "Delivery attempt failed", sms: "প্রেরক", email: "প্রেরক", push: "—" },
+    { stage: "সমস্যা হলে", moment: "Pickup cancelled / Return scheduled / Returned", sms: "প্রেরক", email: "প্রেরক", push: "Merchant: পার্সেলের ফল" },
+  ],
+  apps: [
+    { app: "Merchant panel ও Merchant App", gets: "Bell ও Push: পার্সেলের চূড়ান্ত ফল (Delivered, Cancelled, Return scheduled, Returned), অনুমোদন, KYC, Settlement, Invoice, Excel import শেষ, Support reply। SMS ও email: প্যাকেজে চালু থাকা পার্সেল মেসেজ।" },
+    { app: "Rider panel ও Rider App", gets: "Bell ও Push: New pickup, New delivery, Return run, KYC, Payout। ট্যাপ করলে পার্সেল বা পিকআপ খোলে।" },
+    { app: "Courier Operations ও Ops App", gets: "Bell ও Push: নতুন অর্ডার ও পিকআপ অনুরোধ (Ops manager ও ওই হাবের অপারেটর), SLA breach, রাইডারের ক্যাশ জমার অনুরোধ, Support ticket। স্টাফের কাছে SMS যায় না।" },
+    { app: "Super admin", gets: "Bell: নতুন মার্চেন্ট রেজিস্ট্রেশন, KYC জমা, দ্বিতীয় অনুমোদনের অপেক্ষায় থাকা পরিবর্তন।" },
+    { app: "Website গ্রাহক ও প্রাপক", gets: "অ্যাপ নেই, তাই শুধু SMS ও email। Delivery code শুধু SMS-এ; Collection code SMS ও email দুটোতেই।" },
+  ],
+  rules: [
+    "চালু/বন্ধ: Super admin › **Parcel notifications** (পার্সেল) ও **Global notifications** (অন্যান্য)। প্রতিটি মেসেজে SMS, Email ও Push আলাদা সুইচ। SMS ও email-এর লেখা বদলানো যায়।",
+    "কোড (Sign-up, Sign-in, Password reset, Delivery code, Collection code) কখনো Push বা Bell-এ যায় না। Collection code ছাড়া বাকি সব কোড শুধু SMS-এ যায়।",
+    "মার্চেন্টের সার্ভিস প্যাকেজ ঠিক করে তাঁর পার্সেলে কোন SMS/email যাবে (Super admin › **Service plans & pricing**)।",
+    "SMS যায় mram দিয়ে, email যায় Mailjet দিয়ে (Super admin › **SMS, Email & Push**)। সবাইকে একসাথে Push মেসেজও সেখান থেকে পাঠানো যায়।",
+  ],
 };
 
 /** The money steps (Accounts). */
@@ -392,16 +555,9 @@ export const SETTING_LOCATIONS: readonly { what: string; where: string }[] = [
 export function systemGuide() {
   return {
     numbers: NUMBER_PREFIXES,
-    statuses: PARCEL_STATUSES.map(status => ({
-      status,
-      label: PARCEL_STATUS_LABEL[status],
-      meaning: PARCEL_STATUS_INFO[status],
-      final: TERMINAL_STATUSES.includes(status),
-      next: {
-        operations: allowedNextStatuses(status, "ops").filter(s => s !== status).map(s => PARCEL_STATUS_LABEL[s]),
-        rider: allowedNextStatuses(status, "rider").filter(s => s !== status).map(s => PARCEL_STATUS_LABEL[s]),
-      },
-    })),
+    actors: GUIDE_ACTORS,
+    lifecycle: PARCEL_LIFECYCLE,
+    notifications: NOTIFICATION_GUIDE,
     money: MONEY_FLOW,
     roles: ROLES.map(role => ({
       role,

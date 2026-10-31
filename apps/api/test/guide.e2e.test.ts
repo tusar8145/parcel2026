@@ -32,13 +32,19 @@ describe("system guide", () => {
     expect(made.size).toBeGreaterThanOrEqual(15);
   });
 
-  it("is for staff: numbers, statuses with their next steps, money steps, roles and where to change things", async () => {
+  it("is for staff: numbers, the parcel lifecycle and its notifications, money steps, roles and where to change things", async () => {
     const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }]);
     const res = await ctx.api("GET", "/guide", { token: ops.token });
     expect(res.status).toBe(200);
     expect(res.body.numbers.find((n: { prefix: string }) => n.prefix === "HS")).toMatchObject({ name: "Cash handover slip", area: "Money" });
-    expect(res.body.statuses.find((s: { status: string }) => s.status === "DELIVERED")).toMatchObject({ final: true, next: { operations: [], rider: [] } });
-    expect(res.body.statuses.find((s: { status: string }) => s.status === "OUT_FOR_DELIVERY").next.rider).toContain("Delivered");
+    type Stage = { title: string; ways: { steps: { actors: string[]; where: string }[] }[] };
+    expect(res.body.lifecycle.stages.map((s: Stage) => s.title)).toEqual(["First mile", "Middle mile", "Last mile"]);
+    // Every step says who does it, with a known actor.
+    const steps = res.body.lifecycle.stages.flatMap((s: Stage) => s.ways.flatMap(w => w.steps));
+    expect(steps.every((st: { actors: string[] }) => st.actors.length > 0 && st.actors.every(a => a in res.body.actors))).toBe(true);
+    expect(steps.some((st: { where: string }) => st.where.includes("**Pickups to assign**"))).toBe(true);
+    expect(res.body.notifications.channels.map((c: { name: string }) => c.name)).toEqual(["SMS", "Email", "Push", "Bell (in-app)"]);
+    expect(res.body.notifications.moments.find((m: { moment: string }) => m.moment === "Out for delivery").sms).toContain("Delivery code");
     expect(res.body.roles.find((r: { role: string }) => r.role === "RIDER")).toMatchObject({ panel: "/rider" });
     expect(res.body.money.length).toBeGreaterThan(3);
     expect(res.body.settings.length).toBeGreaterThan(5);

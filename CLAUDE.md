@@ -100,7 +100,8 @@ Setup and run instructions: `docs/development.md`.
 - Merchant New orders / All orders (`shared/merchant-orders.js`): server-paged, filters by merchant type, and
   `GET /merchants/me/parcels/export` (merchantExportColumns: nothing internal, charges for owners only). The
   `Orders` page name is All orders; `Shipments` opens it. Reports come from `GET /merchants/me/reports`.
-- Buttons doing slow or bulk work: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy).
+- Buttons doing slow or bulk work: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy). Courier
+  Operations does this for every `.button` that starts API work (`trackButtons` in shared/api.js).
 - Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
   merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),
   website customer › Payments (`website/customer-payments.js`).

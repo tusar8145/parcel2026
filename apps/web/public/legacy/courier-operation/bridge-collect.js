@@ -111,11 +111,13 @@
     }
   };
   let liveTimer = null;
-  DF.events?.on?.("parcel.updated", () => {
+  /** Live updates wait while a handover is open: a redraw would clear the typed code and the chosen photo. */
+  function liveLoad() {
     if (!$("collectCounter")) return;
     clearTimeout(liveTimer);
-    liveTimer = setTimeout(() => void load(), 800);
-  });
+    liveTimer = setTimeout(() => ($("collectForm") ? liveLoad() : void load()), 800);
+  }
+  DF.events?.on?.("parcel.updated", liveLoad);
 
   const photo = file =>
     new Promise((resolve, reject) => {

@@ -272,6 +272,50 @@ test("every All parcels tab has the last month by default, Date field, every sta
   expect(errors).toEqual([]);
 });
 
+test("a button that starts slow work shows it until the work ends, through every request of a bulk action; quick clicks and menus don't", async ({ browser }) => {
+  const errors: string[] = [];
+  const page = await signedIn(browser, OPS, errors);
+  const ids = [await book(page, shop, `Busy ${fx.stamp} 1`), await book(page, shop, `Busy ${fx.stamp} 2`)];
+  // Slow answers, as on a real network.
+  await page.route("**/api/v1/parcels/*/assign-pickup", async route => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await page.reload();
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await opsNav(page, "newOrders");
+  const row = (id: string) => page.locator(`tr[data-shipment-id="${id}"]`);
+  await expect(row(ids[1])).toBeVisible({ timeout: 20_000 });
+  for (const id of ids) await row(id).locator("[data-shipment-select]").check();
+  await page.click("#bulkAccept");
+  await page.selectOption("#bulkRider", rider.riderId);
+  await page.click("#modalSubmit");
+  // Through both orders: busy and disabled, not clickable twice.
+  await expect(page.locator("#modalSubmit.df-busy")).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator("#modalSubmit")).toBeDisabled();
+  await expect(page.locator("#bulkResult")).toContainText("2 assigned", { timeout: 20_000 });
+  await expect(page.locator("#modalSubmit.df-busy")).toHaveCount(0, { timeout: 5_000 });
+  await expect(page.locator("#modalSubmit")).toBeEnabled();
+  await page.click("#modalSubmit");
+
+  // A button with no submit handler of its own: the tracker shows it.
+  await page.route("**/api/v1/bulk-updates/actions**", async route => {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    await route.continue();
+  });
+  await opsNav(page, "allParcels");
+  await page.click("#courierBulkUpdate");
+  await expect(page.locator("#courierBulkUpdate")).toHaveAttribute("aria-busy", "true", { timeout: 5_000 });
+  await expect(page.locator('#dfiActions [data-dfi="pick-action"]').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("#courierBulkUpdate[aria-busy]")).toHaveCount(0, { timeout: 5_000 });
+  await page.keyboard.press("Escape");
+
+  // Menus and tabs never spin.
+  await page.click('[data-nav-tab="E-commerce"]');
+  await expect(page.locator("[data-nav-tab].df-busy, #navigation .df-busy")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("hub operators see their own hub's parcels by default and can switch to all hubs", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];

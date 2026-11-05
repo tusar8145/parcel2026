@@ -167,11 +167,15 @@
    * Shows a button is working: spinner, disabled, aria-busy, until `work` ends (text: its words meanwhile).
    * A second click while it runs does nothing. Returns what `work` returns.
    */
+  function busyCss() {
+    if (!document.getElementById("dfBusyCss"))
+      document.head.insertAdjacentHTML("beforeend", `<style id="dfBusyCss">.df-busy{position:relative;cursor:progress!important;opacity:.85}.df-busy::before{content:"";display:inline-block;flex:none;width:12px;height:12px;margin-right:6px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:dfBusySpin .7s linear infinite}@keyframes dfBusySpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.df-busy::before{animation-duration:2.4s}}</style>`);
+  }
+
   async function busy(button, work, text) {
     if (!button) return work();
     if (button.classList.contains("df-busy")) return undefined;
-    if (!document.getElementById("dfBusyCss"))
-      document.head.insertAdjacentHTML("beforeend", `<style id="dfBusyCss">.df-busy{position:relative;cursor:progress!important;opacity:.85}.df-busy::before{content:"";display:inline-block;flex:none;width:12px;height:12px;margin-right:6px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:dfBusySpin .7s linear infinite}@keyframes dfBusySpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.df-busy::before{animation-duration:2.4s}}</style>`);
+    busyCss();
     const html = button.innerHTML;
     const disabled = button.disabled;
     button.classList.add("df-busy");
@@ -185,6 +189,82 @@
       button.removeAttribute("aria-busy");
       button.disabled = disabled;
       if (text) button.innerHTML = html;
+    }
+  }
+
+  /**
+   * Courier Operations: every button that starts API work shows it. A click on a .button, then a request
+   * within CLICK_MS, ties that request to the button; work over SHOW_MS shows the spinner (quick answers don't
+   * flicker). Requests that follow within GRACE_MS (one per parcel in a bulk action) keep it going. Menus, tabs
+   * and background refreshes stay out of it; DF.busy buttons keep their own state.
+   *
+   * The button is never `disabled`: a disabled default button stops Enter submitting its form, and a barcode
+   * scanner sends Enter after every code (Scan desk). Second mouse clicks are refused while a request runs.
+   */
+  function trackButtons() {
+    const CLICK_MS = 600;
+    const SHOW_MS = 150;
+    const GRACE_MS = 300;
+    const BACKGROUND = /^\/(events|notifications|ops\/stage-counts|ops\/overview|auth\/)/;
+    const tracked = new Map();
+    let last = null;
+    let latest = null;
+    window.addEventListener(
+      "click",
+      event => {
+        const el = event.target.closest?.(".button, .page-btn");
+        // event.detail is 0 for Enter in a form (scanners), which always goes through.
+        const running = el && tracked.get(el);
+        if (running?.marked && running.count > 0 && event.detail > 0) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        last = el && !el.disabled && !el.closest("#navigation, [data-nav-tab]") ? { el, at: Date.now() } : null;
+      },
+      true,
+    );
+    const show = t => {
+      if (t.el.classList.contains("df-busy")) return;
+      busyCss();
+      t.marked = true;
+      t.el.classList.add("df-busy");
+      t.el.setAttribute("aria-busy", "true");
+    };
+    const finish = t => {
+      clearTimeout(t.showTimer);
+      tracked.delete(t.el);
+      if (latest === t) latest = null;
+      if (!t.marked) return;
+      t.el.classList.remove("df-busy");
+      t.el.removeAttribute("aria-busy");
+    };
+    const begin = path => {
+      if (BACKGROUND.test(path)) return null;
+      const clicked = last && Date.now() - last.at <= CLICK_MS ? last.el : null;
+      let t = clicked ? tracked.get(clicked) : latest;
+      if (!t && clicked) {
+        t = { el: clicked, count: 0 };
+        tracked.set(clicked, t);
+        t.showTimer = setTimeout(() => show(t), SHOW_MS);
+      }
+      if (!t) return null;
+      latest = t;
+      clearTimeout(t.release);
+      t.count++;
+      return t;
+    };
+    const end = t => {
+      if (--t.count === 0) t.release = setTimeout(() => finish(t), GRACE_MS);
+    };
+    for (const name of ["api", "apiRaw", "download"]) {
+      const call = DF[name];
+      DF[name] = (path, ...rest) => {
+        const t = begin(String(path));
+        const result = call(path, ...rest);
+        if (t) Promise.resolve(result).then(() => end(t), () => end(t));
+        return result;
+      };
     }
   }
 
@@ -1402,5 +1482,6 @@
   DF.ready = boot().catch(error => {
     console.error("Paira Express could not start", error);
   });
+  if (state.app === "courier-operation") trackButtons();
   window.DF = DF;
 })();

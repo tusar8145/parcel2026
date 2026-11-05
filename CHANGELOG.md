@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.3.1 — 2026-11-05
+- Courier Operations: every button that takes time now shows a loading spinner until the work is done, and can't be clicked twice meanwhile.
+- Collect from hub: a live parcel update no longer clears the collection code or the ID photo while you are handing a parcel over.
+
 ## 1.3.0 — 2026-11-05
 - Merchant panels: new menus "New orders" and "All orders" (Banking & Financial: "New requests" and "All requests") replace Orders and Shipments / Delivery requests and Delivery tracking.
 - Merchant lists: numbered pages and filters for your merchant type (status, dates, product, payment, document, branch, district) that cover all your orders.

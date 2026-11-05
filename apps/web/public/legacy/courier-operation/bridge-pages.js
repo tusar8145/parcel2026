@@ -92,7 +92,7 @@
   Ops.enhance.Shipments = () => {
     const s = Ops.overview?.shipments;
     if (s) qa("#mainContent .stats-mini .mini-card strong").forEach((el, i) => setText(el, Ops.num([s.inTransit + s.outForDelivery, s.atHub, s.exceptions][i])));
-    setText(q("#mainContent .table-panel .panel-subtitle"), "Every parcel, newest first · 100 a page · search and filters run on the server");
+    setText(q("#mainContent .table-panel .panel-subtitle"), "Every parcel, newest first · the last month unless you choose other dates · search and filters run on the server");
   };
 
   // Problems: the stage's own numbers (GET /ops/stage-counts), the same on every tab.
@@ -116,7 +116,7 @@
     const key = page === "Customer parcels" ? "customer" : page === "E-commerce operations" ? "ecommerce" : "documents";
     q("#mainContent .metrics")?.remove();
     const active = Ops.overview?.serviceLines?.[key];
-    setText(q("#mainContent .table-panel .panel-subtitle"), `${active == null ? "" : `${Ops.num(active)} active · `}newest first · 100 a page · search and filters run on the server`);
+    setText(q("#mainContent .table-panel .panel-subtitle"), `${active == null ? "" : `${Ops.num(active)} active · `}newest first · the last month unless you choose other dates · search and filters run on the server`);
     // Booking buttons (New shipment form, bookings below): walk-in senders on Customer parcels, the category's name elsewhere.
     const heading = q("#mainContent .page-heading .heading-actions");
     if (!heading) return;

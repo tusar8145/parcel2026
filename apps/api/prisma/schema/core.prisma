@@ -476,6 +476,8 @@ model Parcel {
   trackingId String        @unique // PP-260915-1042
   channel    ParcelChannel
   status     ParcelStatus  @default(PENDING_CONFIRMATION)
+  /// When the parcel entered its current status (set by ParcelWorkflowService.transition; All parcels › Status update date).
+  statusChangedAt DateTime @default(now())
   /// Optimistic-locking counter, bumped on every status change.
   version    Int           @default(0)
 
@@ -681,6 +683,7 @@ model Parcel {
   @@index([createdAt])
   @@index([deliveredAt])
   @@index([pickedUpAt])
+  @@index([statusChangedAt])
   @@index([merchantId, deliveredAt])
   @@map("parcels")
 }

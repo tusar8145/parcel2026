@@ -9,6 +9,9 @@
  *                  &from &to &merchantId &line &stage &forHubIds &hubId). Rows use the page's markup
  *                  (shipmentRows) and actions; live parcel events patch the affected rows
  *                  (Ops.lists.patch) instead of redrawing the page.
+ *   All parcels    cfg.register: numbered pages (GET /parcels ?page: First 1 … 5 … 13 Last, rows per page), the
+ *                  last month by default, Date field (booking or latest status change), every status in
+ *                  the filter and Export as Excel (GET /parcels/export: the filters, or the ticked rows).
  *   Scope          Hub operators see "My hub" by default (GET /parcels ?forHubIds=their hubs) with a
  *                  switch to "All hubs" (Ops.scope); counts follow the same scope.
  *   Stage counts   GET /ops/stage-counts → Ops.stageCountsData; any [data-count-key="stages.pickup"]
@@ -25,7 +28,10 @@
   const qa = (selector, root = document) => [...root.querySelectorAll(selector)];
   const esc = Ops.esc;
   const PAGE = 100;
+  const PAGE_SIZES = [50, 100, 200];
   const CLOSED = ["DELIVERED", "PICKUP_CANCELLED", "RETURNED"];
+  /** Every status for the filter: the page's own list only knows the rows it has loaded. */
+  const ALL_STATUSES = ["Pending operations confirmation", "Pickup assigned", "Pickup confirmed", "Picked up", "At hub", "In transit", "Assigned", "Out for delivery", "Retry scheduled", "Ready for collection", "Exception", "Return scheduled", "Delivered", "Returned", "Pickup cancelled"];
   const AT_RISK = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED", "PICKED_UP", "AT_HUB", "READY_FOR_COLLECTION", "ASSIGNED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "RETURN_SCHEDULED"];
 
   // ───────────── scope: my hub / all hubs ─────────────
@@ -116,15 +122,24 @@
   };
   const norm = v => String(v || "").toLowerCase().replace(/_/g, " ").trim();
 
+  /** The last calendar month up to today ("2026-10-05" to "2026-11-05"; 31 March → 28 February). */
+  function lastMonth() {
+    const to = new Date();
+    const from = new Date(to.getFullYear(), to.getMonth() - 1, 1);
+    from.setDate(Math.min(to.getDate(), new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate()));
+    return { from: Ops.dayKey(from), to: Ops.dayKey(to) };
+  }
+
   const lists = new Map();
   /**
    * cfg: { params() → fixed query ({ stage, line, … }), empty (text when nothing is there), noun,
-   *        limit (rows per page), more (false: no "Load more"), bulkAccept (New orders) }
+   *        limit (rows per page), more (false: no "Load more"), bulkAccept (New orders),
+   *        register (All parcels: numbered pages, last month by default, Date field, Excel export) }
    */
   function define(id, cfg) {
     let list = lists.get(id);
     if (!list) {
-      list = { id, ids: [], cursor: null, key: null, loading: false, error: null, stale: true, seq: 0, filters: {}, pending: false, timer: null };
+      list = { id, ids: [], cursor: null, key: null, loading: false, error: null, stale: true, seq: 0, filters: cfg.register ? { ...lastMonth(), dateField: "pickup" } : {}, pending: false, timer: null, page: 1, pages: 1, total: null };
       lists.set(id, list);
     }
     list.cfg = cfg;
@@ -132,7 +147,7 @@
   }
   const hostOf = list => document.querySelector(`#mainContent [data-list="${CSS.escape(list.id)}"]`);
   const visibleLists = () => [...lists.values()].filter(hostOf);
-  const pageSize = list => list.cfg.limit || PAGE;
+  const pageSize = list => list.size || list.cfg.limit || PAGE;
 
   /** The query for GET /parcels (without the cursor). */
   function query(list) {
@@ -145,6 +160,7 @@
     else if (f.status) params.set("status", f.status);
     if (f.from) params.set("from", new Date(`${f.from}T00:00:00`).toISOString());
     if (f.to) params.set("to", new Date(`${f.to}T23:59:59.999`).toISOString());
+    if (f.dateField === "status" && (f.from || f.to)) params.set("dateField", "status");
     if (f.line && !fixed.line) params.set("line", f.line);
     if (f.merchantId) params.set("merchantId", f.merchantId);
     if (f.hubId) params.set("hubId", f.hubId);
@@ -170,8 +186,9 @@
     if (f.merchantId && p.merchant?.id !== f.merchantId) return false;
     if (f.hubId && p.currentHub?.id !== f.hubId) return false;
     if (f.failedBefore && (Number(p.failedAttempts) > 0) !== (f.failedBefore === "true")) return false;
-    if (f.from && Ops.dayKey(p.createdAt) < f.from) return false;
-    if (f.to && Ops.dayKey(p.createdAt) > f.to) return false;
+    const date = f.dateField === "status" ? p.statusChangedAt || p.updatedAt : p.createdAt;
+    if (f.from && Ops.dayKey(date) < f.from) return false;
+    if (f.to && Ops.dayKey(date) > f.to) return false;
     const hubs = list.cfg.scoped !== false && !f.hubId ? Ops.scope.hubIds() : null;
     if (hubs) {
       // "My hub": a parcel held at another hub is not mine; held at, dropped off at or picked up by mine is.
@@ -185,10 +202,16 @@
     return true;
   }
 
-  async function load(list, { more = false, soft = false } = {}) {
+  async function load(list, { more = false, soft = false, page = null } = {}) {
     if (!Ops.ready) return;
     const params = query(list);
     const key = params.toString();
+    const numbered = !!list.cfg.register;
+    if (numbered) {
+      // New filters start again from the first page.
+      list.page = key === list.key ? page || list.page : 1;
+      params.set("page", String(list.page));
+    }
     if (more && list.cursor) params.set("cursor", list.cursor);
     const seq = ++list.seq;
     list.loading = true;
@@ -204,14 +227,24 @@
     const versions = new Map(before.map(id => [id, Ops.apiParcel(id)?.updatedAt]));
     let changedRows = null;
     try {
-      const page = await DF.api(`/parcels?${params}`);
+      const answer = await DF.api(`/parcels?${params}`);
       if (seq !== list.seq) return; // the filters changed meanwhile
-      Ops.upsertParcels(page.items);
-      if (soft) changedRows = page.items.filter(p => versions.has(p.trackingId) && versions.get(p.trackingId) !== p.updatedAt).map(p => p.trackingId);
-      const fresh = page.items.map(p => p.trackingId);
-      if (more) {
+      // The page emptied (its parcels left the filters): the last page that still has rows.
+      if (numbered && !answer.items.length && answer.total > 0) {
+        list.loading = false;
+        return void (await load(list, { soft, page: answer.pages }));
+      }
+      Ops.upsertParcels(answer.items);
+      if (soft) changedRows = answer.items.filter(p => versions.has(p.trackingId) && versions.get(p.trackingId) !== p.updatedAt).map(p => p.trackingId);
+      const fresh = answer.items.map(p => p.trackingId);
+      if (numbered) {
+        list.ids = fresh;
+        list.cursor = null;
+        list.total = answer.total;
+        list.pages = Math.max(1, answer.pages);
+      } else if (more) {
         list.ids = [...new Set([...list.ids, ...fresh])];
-        list.cursor = page.nextCursor;
+        list.cursor = answer.nextCursor;
         list.loadedMore = true;
       } else if (soft && list.loadedMore && list.key === key) {
         // A live reload of the first page keeps the rows "Load more" added below it (minus those that left).
@@ -219,7 +252,7 @@
         list.ids = [...fresh, ...list.ids.filter(id => !seen.has(id) && fits(list, Ops.apiParcel(id) || {}) !== false)];
       } else {
         list.ids = fresh;
-        list.cursor = page.nextCursor;
+        list.cursor = answer.nextCursor;
         list.loadedMore = false;
       }
       list.key = key;
@@ -266,9 +299,29 @@
     }
     const n = list.ids.length;
     const noun = list.cfg.noun || "parcel";
+    if (list.cfg.register) return pager(list, foot, noun);
     const more = list.cursor && list.cfg.more !== false;
     const text = list.loading && !n ? "Loading…" : `Showing ${Ops.num(n)} ${noun}${n === 1 ? "" : "s"}${more ? " · more on the server" : ""} · updates live`;
     foot.innerHTML = `<span data-list-count>${esc(text)}</span>${more ? ` <button class="button button-sm" type="button" data-list-more="${esc(list.id)}"${list.loading ? " disabled" : ""}>${list.loading ? "Loading…" : `Load ${pageSize(list)} more`}</button>` : ""}`;
+  }
+
+  /** The footer of a numbered list: "Showing 101–200 of 1,234 parcels", rows per page, First ‹ 1 … 4 5 6 … 13 › Last. */
+  function pager(list, foot, noun) {
+    const n = list.ids.length;
+    const total = list.total ?? n;
+    const size = pageSize(list);
+    const first = (list.page - 1) * size + 1;
+    const text = list.loading && !n ? "Loading…" : total ? `Showing ${Ops.num(first)}–${Ops.num(first + n - 1)} of ${Ops.num(total)} ${noun}${total === 1 ? "" : "s"} · updates live` : `No ${noun}s`;
+    const jump = (label, page, aria, { current = false, off = false } = {}) =>
+      `<button class="button button-sm${current ? " button-primary" : ""}" type="button" data-list-page="${esc(list.id)}" data-page="${page}" aria-label="${esc(aria)}"${current ? ' aria-current="page"' : ""}${off || list.loading ? " disabled" : ""}>${esc(label)}</button>`;
+    const { page, pages } = list;
+    const near = [...new Set([1, page - 1, page, page + 1, pages])].filter(p => p >= 1 && p <= pages).sort((a, b) => a - b);
+    const numbers = near.map((p, i) => `${i && p - near[i - 1] > 1 ? `<span aria-hidden="true" style="padding:0 2px">…</span>` : ""}${jump(Ops.num(p), p, `Page ${p}`, { current: p === page })}`).join("");
+    const sizes = PAGE_SIZES.map(s => `<option value="${s}"${s === size ? " selected" : ""}>${s}</option>`).join("");
+    foot.style.cssText = "padding:11px 16px;border-top:1px solid var(--line);color:#98a2ae;font-size:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between";
+    foot.innerHTML = `<span data-list-count>${esc(text)}</span><span style="display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center"><label style="display:inline-flex;gap:6px;align-items:center;margin-right:6px">Rows per page<select class="select-small" data-list-size="${esc(list.id)}" aria-label="Rows per page">${sizes}</select></label>${
+      pages > 1 ? `<nav aria-label="Pages" data-list-pager style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center">${jump("First", 1, "First page", { off: page === 1 })}${jump("‹", page - 1, "Previous page", { off: page === 1 })}${numbers}${jump("›", page + 1, "Next page", { off: page === pages })}${jump("Last", pages, "Last page", { off: page === pages })}</nav>` : ""
+    }</span>`;
   }
 
   /** A row for one parcel, in the page's markup (decorated by bridge-parcel.js when inserted). */
@@ -314,7 +367,7 @@
 
   // ── the page's own shipment table (New orders, All parcels, Problems) ──
 
-  const MAIN_INPUTS = { shipmentSearch: "q", statusFilter: "status", shipmentDateFrom: "from", shipmentDateTo: "to", lineFilter: "line", merchantFilter: "merchantId" };
+  const MAIN_INPUTS = { shipmentSearch: "q", statusFilter: "status", shipmentDateField: "dateField", shipmentDateFrom: "from", shipmentDateTo: "to", lineFilter: "line", merchantFilter: "merchantId" };
   /** The parcel type filter (cfg.lines): GET /parcels ?line. Customer parcels have no merchant. */
   const LINES = [
     ["CUSTOMER", "Customer parcel"],
@@ -359,9 +412,14 @@
     if (!host) return null;
     const list = define(id, cfg);
     host.dataset.list = id;
-    // Filters the server can't apply are dropped: the product / service filter and "status update date".
+    // The product / service filter can't be applied by the server; Date field only where the list offers it.
     $("productFilter")?.remove();
-    $("shipmentDateField")?.closest("label")?.remove();
+    if (!cfg.register) $("shipmentDateField")?.closest("label")?.remove();
+    const status = $("statusFilter");
+    if (cfg.register && status) {
+      const keep = [...status.options].filter(o => !o.value || o.value === "Needs info").map(o => o.outerHTML);
+      status.innerHTML = `${keep.filter(o => !/Needs info/.test(o)).join("")}${ALL_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("")}${keep.filter(o => /Needs info/.test(o)).join("")}`;
+    }
     const merchant = $("merchantFilter");
     if (cfg.lines && !$("lineFilter")) {
       const html = `<select class="select-small" id="lineFilter" aria-label="Filter by parcel type"><option value="">All parcel types</option>${LINES.map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join("")}</select>`;
@@ -435,17 +493,48 @@
     const key = MAIN_INPUTS[t.id] || (t.matches?.("[data-list-hub]") ? "hubId" : t.matches?.("[data-list-failed]") ? "failedBefore" : null);
     if (!key || key === "q") return;
     const list = listOfElement(t);
-    if (list) setFilter(list, key, t.value);
+    if (!list) return;
+    if (key === "from" || key === "to") {
+      const from = key === "from" ? t.value : list.filters.from;
+      const to = key === "to" ? t.value : list.filters.to;
+      if (from && to && from > to) {
+        t.value = list.filters[key] || "";
+        return void showToast("The From date can't be after the To date.");
+      }
+    }
+    setFilter(list, key, t.value);
+  });
+  window.addEventListener("change", event => {
+    const list = event.target.matches?.("[data-list-size]") && lists.get(event.target.dataset.listSize);
+    if (!list) return;
+    list.size = Number(event.target.value);
+    void load(list);
   });
   window.addEventListener(
     "click",
     event => {
       const more = event.target.closest?.("[data-list-more]");
-      if (!more) return;
+      const jump = event.target.closest?.("[data-list-page]");
+      if (!more && !jump) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      const list = lists.get(more.dataset.listMore);
-      if (list && !list.loading) void load(list, { more: true });
+      const list = lists.get((more || jump).dataset[more ? "listMore" : "listPage"]);
+      if (!list || list.loading) return;
+      if (more) return void load(list, { more: true });
+      void load(list, { page: Number(jump.dataset.page) }).then(() => hostOf(list)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    },
+    true,
+  );
+  // All parcels › Export: the server writes the file, so it holds every matching parcel, not one page.
+  window.addEventListener(
+    "click",
+    event => {
+      const button = event.target.closest?.('[data-action="export"]');
+      const list = button && visibleLists().find(l => l.cfg.register);
+      if (!list) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void exportList(list, button);
     },
     true,
   );
@@ -510,6 +599,8 @@
           if (belongs === false && !ticked) {
             list.ids.splice(at, 1);
             tr?.remove();
+            // A numbered page fills up again from the next one, and its total drops.
+            if (list.cfg.register) reload = true;
             continue;
           }
           const row = rowFor(id);
@@ -550,8 +641,38 @@
     const body = document.querySelector("#mainContent tbody[data-list-body]");
     const list = body && lists.get(body.dataset.listBody);
     if (!list) return { ...sync, capped: false };
-    if (!list.cursor) return { ids: list.ids.slice(0, cap), ticked: false, capped: list.ids.length > cap };
+    if (!list.cursor && !(list.total > list.ids.length)) return { ids: list.ids.slice(0, cap), ticked: false, capped: list.ids.length > cap };
     return { ...(await matchingIds(list, cap)), ticked: false };
+  }
+
+  /** The filtered parcels (or the ticked rows) as Excel: every page, with the columns the filters call for. */
+  async function exportList(list, button) {
+    const ticked = tickedIds(list);
+    if (!ticked.length && !list.ids.length) return void showToast("There are no parcels to export. Change the dates or filters.");
+    const params = query(list);
+    params.delete("limit");
+    if (ticked.length) params.set("trackingIds", ticked.join(","));
+    const html = button.innerHTML;
+    button.disabled = true;
+    button.textContent = "Exporting…";
+    try {
+      const response = await DF.apiRaw(`/parcels/export?${params}`);
+      const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "parcels.xlsx";
+      const url = URL.createObjectURL(await response.blob());
+      const link = Object.assign(document.createElement("a"), { href: url, download: name });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const rows = Number(response.headers.get("x-row-count"));
+      const matched = Number(response.headers.get("x-matched"));
+      showToast(rows < matched ? `Exported the newest ${Ops.num(rows)} of ${Ops.num(matched)} parcels (the limit for one file). Use a shorter date range for the rest.` : `${Ops.num(rows)} parcel${rows === 1 ? "" : "s"} exported to Excel.`);
+    } catch (error) {
+      showToast(DF.describe(error));
+    } finally {
+      button.disabled = false;
+      button.innerHTML = html;
+    }
   }
 
   Ops.lists = {

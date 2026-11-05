@@ -88,10 +88,9 @@
     const merchantName = $("merchantFilter")?.value;
     const merchant = merchantName && list.find(m => m.name === merchantName);
     if (merchant) filters.merchantId = merchant.id;
-    if ($("shipmentDateField")?.value !== "status") {
-      if ($("shipmentDateFrom")?.value) filters.from = $("shipmentDateFrom").value;
-      if ($("shipmentDateTo")?.value) filters.to = $("shipmentDateTo").value;
-    }
+    if ($("shipmentDateField")?.value === "status") filters.dateField = "status";
+    if ($("shipmentDateFrom")?.value) filters.from = $("shipmentDateFrom").value;
+    if ($("shipmentDateTo")?.value) filters.to = $("shipmentDateTo").value;
     return {
       mode: "bulk",
       bulkKind: "all",

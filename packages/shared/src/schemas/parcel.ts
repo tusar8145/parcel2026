@@ -126,6 +126,8 @@ export const listParcelsQuerySchema = z.object({
     .optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
+  /** What `from` / `to` apply to: the booking date (default) or the date of the latest status change. */
+  dateField: z.enum(["created", "status"]).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });

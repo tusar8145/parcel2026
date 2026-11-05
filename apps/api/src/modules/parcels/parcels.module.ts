@@ -20,11 +20,12 @@ import { HubDeskController } from "./hub-desk.controller";
 import { HubDeskService } from "./hub-desk.service";
 import { ParcelCorrectionsController } from "./parcel-corrections.controller";
 import { ParcelCorrectionsService } from "./parcel-corrections.service";
+import { ParcelExportService } from "./parcel-export.service";
 
 @Module({
   imports: [PricingModule],
   controllers: [ParcelsController, GuestBookingController, PickupSlotsController, IntakeChangeController, CompleteDetailsController, CollectionsController, ParcelMessagesController, HubDeskController, ParcelCorrectionsController],
-  providers: [ParcelsService, ParcelWorkflowService, RiderTasksService, PickupSlotsService, GuestBookingService, IntakeChangeService, CompleteDetailsService, CollectionsService, ParcelMessagesService, HubDeskService, ParcelCorrectionsService],
+  providers: [ParcelsService, ParcelWorkflowService, RiderTasksService, PickupSlotsService, GuestBookingService, IntakeChangeService, CompleteDetailsService, CollectionsService, ParcelMessagesService, HubDeskService, ParcelCorrectionsService, ParcelExportService],
   exports: [ParcelsService, ParcelWorkflowService, HubDeskService, PickupSlotsService, IntakeChangeService, CompleteDetailsService, CollectionsService],
 })
 export class ParcelsModule {}

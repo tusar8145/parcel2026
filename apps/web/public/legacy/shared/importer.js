@@ -964,6 +964,9 @@
   }
 
   // ───────────── bulk updates (Courier Operations) ─────────────
+
+  /** A date filter's day as the start (or end) of that local day. */
+  const bulkDay = (d, end) => (d ? new Date(`${d}T${end ? "23:59:59.999" : "00:00:00"}`).toISOString() : "");
   // Step 1 downloads the filtered parcels with action columns; the upload, preview, apply,
   // progress and result steps above run on /bulk-updates with these tables and counters.
 
@@ -1006,7 +1009,7 @@
     try {
       const f = ui.filters;
       const list = await DF.api(
-        q("/bulk-updates/actions", { kind: bulkKind(), preset: f.preset, status: f.status, merchantId: f.merchantId, hubId: f.hubId, intake: f.intake, sla: f.sla, incomplete: f.incomplete ? "true" : "", line: ui.cfg.line }),
+        q("/bulk-updates/actions", { kind: bulkKind(), preset: f.preset, status: f.status, merchantId: f.merchantId, hubId: f.hubId, intake: f.intake, sla: f.sla, from: bulkDay(f.from), to: bulkDay(f.to, true), dateField: f.dateField, incomplete: f.incomplete ? "true" : "", line: ui.cfg.line }),
       );
       if (!ui || ui.step !== "actions") return;
       ui.actions = list;
@@ -1073,8 +1076,8 @@
       field("Hub", selectOf("dfiBHub", (cfg.hubs || []).map(h => [h.id, h.name]), f.hubId, cfg.hubs?.length === 1 ? "My hub's work" : "All hubs")),
       field("Intake", selectOf("dfiBIntake", [["PICKUP", "Rider pickup"], ["DROP_OFF", "Drop-off at hub"]], f.intake, "Pickup and drop-off")),
       field("SLA state", selectOf("dfiBSla", [["AWAITING_REVIEW", "Awaiting review"], ["ON_TRACK", "On track"], ["AT_RISK", "At risk"], ["BREACHED", "Breached"]], f.sla, "Any")),
-      field("Created from", `<input class="table-search" type="date" id="dfiBFrom" value="${esc(f.from || "")}">`),
-      field("Created to", `<input class="table-search" type="date" id="dfiBTo" value="${esc(f.to || "")}">`),
+      field(f.dateField === "status" ? "Status updated from" : "Created from", `<input class="table-search" type="date" id="dfiBFrom" value="${esc(f.from || "")}">`),
+      field(f.dateField === "status" ? "Status updated to" : "Created to", `<input class="table-search" type="date" id="dfiBTo" value="${esc(f.to || "")}">`),
       `<label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;padding-top:18px"><input type="checkbox" id="dfiBNeeds" ${f.incomplete ? "checked" : ""}> Needs info only</label>`,
     ];
     const body = `<div style="display:grid;gap:18px">
@@ -1125,7 +1128,6 @@
 
   function bulkQuery() {
     const f = ui.filters;
-    const day = (d, end) => (d ? new Date(`${d}T${end ? "23:59:59.999" : "00:00:00"}`).toISOString() : "");
     return q("/bulk-updates/export", {
       kind: bulkKind(),
       action: bulkAction()?.action,
@@ -1135,8 +1137,9 @@
       hubId: f.hubId,
       intake: f.intake,
       sla: f.sla,
-      from: day(f.from),
-      to: day(f.to, true),
+      from: bulkDay(f.from),
+      to: bulkDay(f.to, true),
+      dateField: f.dateField,
       incomplete: f.incomplete ? "true" : "",
       line: ui.cfg.line,
     });

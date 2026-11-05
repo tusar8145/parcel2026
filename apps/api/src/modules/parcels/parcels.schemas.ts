@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { phoneSchema } from "@paira-express/shared";
+import { listParcelsWithStageSchema } from "./parcel-stages";
 
 const optionalText = (max: number) => z.string().trim().max(max).optional().transform(v => v || undefined);
 
@@ -39,5 +40,14 @@ export const riderReturnSchema = z.object({
   source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).optional(),
 });
 export const riderHandoversQuerySchema = z.object({ hubId: z.uuid() });
+/** GET /parcels/export: the list's filters, or (trackingIds) only the rows ticked on the page, within those filters. */
+export const exportParcelsQuerySchema = listParcelsWithStageSchema.omit({ cursor: true, limit: true, page: true }).extend({
+  trackingIds: z
+    .string()
+    .transform(v => [...new Set(v.split(",").map(s => s.trim().toUpperCase()).filter(Boolean))])
+    .pipe(z.array(z.string().max(40)).min(1).max(200))
+    .optional(),
+});
+
 /** GET /track/:id — `t`: the link token from the SMS / guest booking (unlocks the live rider position). */
 export const trackQuerySchema = z.object({ t: z.string().trim().max(64).optional() });

@@ -107,8 +107,8 @@ test("New orders → choose Accept & assign → download → 2 riders + 1 invali
 
   // ── 1. Choose an action: the page's actions, each with a line and the parcels that can take it ──
   const actions = page.locator('#dfiActions [data-dfi="pick-action"]');
-  await expect(actions).toHaveCount(6);
-  await expect(actions.locator("strong")).toHaveText(["Accept & assign pickup rider", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note"]);
+  await expect(actions).toHaveCount(7);
+  await expect(actions.locator("strong")).toHaveText(["Accept & assign pickup rider", "Receive at hub", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note"]);
   await expect(page.locator('#dfiActions [data-count="accept_pickup"]')).toHaveText(/^[\d,]+ parcels?$/);
   await page.click('[data-dfi="pick-action"][data-action="accept_pickup"]');
   await expect(page.locator("#dfiActionInfo")).toContainText("Accept & assign pickup rider · New orders");
@@ -208,7 +208,7 @@ test("All parcels: the preview re-prices Change to drop-off and Complete details
 
   await signIn(page, ops);
   await opsNav(page, "ecommerce");
-  await expect(page.locator("#courierBulkUpdate")).toHaveText("Bulk update All parcels by Excel");
+  await expect(page.locator("#courierBulkUpdate")).toHaveText("Bulk update Excel");
   await page.click("#courierBulkUpdate");
   // All parcels offers every action (Add to transfer bag included).
   await expect(page.locator('#dfiActions [data-dfi="pick-action"]')).toHaveCount(15);

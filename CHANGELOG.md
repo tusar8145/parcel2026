@@ -7,6 +7,13 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.2.0 — 2026-11-05
+- Courier Operations › New orders › Bulk update: new "Receive at hub" action for drop-offs brought to a hub.
+- All parcels: the list now has numbered pages with rows per page, and shows the last month unless you choose other dates.
+- All parcels: new "Date field" filter, to filter by Pickup / created date or Status update date. The status filter now lists every status.
+- All parcels: Export now gives an Excel file with every parcel you filtered, not only one page. It always has the first status date, reference no and recipient phone.
+- All parcels › Export: filtering by Delivered adds delivery date, received by and relation; filtering by Returned adds return date and reason; choosing an E-commerce merchant or the E-commerce tab adds COD.
+
 ## 1.1.1 — 2026-10-30
 - Courier Operations › Today: the stage cards show only their names (New orders, Pickup…), without the 1, 2, 3… numbers.
 

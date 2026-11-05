@@ -17,7 +17,7 @@ export const bulkKindQuerySchema = z.object({ kind: bulkKindSchema.default("all"
 
 /** A page's parcels for a bulk update: the shipment filters plus SLA state, service line and presets. */
 export const bulkActionsQuerySchema = listParcelsQuerySchema
-  .pick({ status: true, q: true, merchantId: true, hubId: true, intake: true, dropOffHubId: true, incomplete: true, from: true, to: true })
+  .pick({ status: true, q: true, merchantId: true, hubId: true, intake: true, dropOffHubId: true, incomplete: true, from: true, to: true, dateField: true })
   .extend({
     kind: bulkKindSchema.default("all"),
     /**

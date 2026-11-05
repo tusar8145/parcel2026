@@ -145,5 +145,16 @@ export function failureWhere(query: { failedAttempts?: boolean; failedBefore?: b
   return where;
 }
 
-export const listParcelsWithStageSchema = listParcelsQuerySchema.extend(stageFilterSchema.shape);
+/** The date range of a list or export: on the booking date, or on the latest status change (All parcels › Date field). */
+export function dateRangeWhere(query: { from?: Date; to?: Date; dateField?: "created" | "status" }): Prisma.ParcelWhereInput {
+  if (!query.from && !query.to) return {};
+  const range = { gte: query.from, lte: query.to };
+  return query.dateField === "status" ? { statusChangedAt: range } : { createdAt: range };
+}
+
+export const listParcelsWithStageSchema = listParcelsQuerySchema.extend({
+  ...stageFilterSchema.shape,
+  /** Numbered pages (All parcels): the answer also has `total` and `pages`; `limit` is the page size. Without it, cursor paging. */
+  page: z.coerce.number().int().min(1).optional(),
+});
 export const stageCountsQuerySchema = stageFilterSchema.pick({ forHubIds: true });

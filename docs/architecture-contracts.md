@@ -537,7 +537,7 @@ action uses.
 
   | Page | Page's parcels | Actions |
   |---|---|---|
-  | New orders | Pending operations confirmation | Accept & assign pickup rider, Cancel, Change to drop-off, Change to rider pickup, Complete details, Add note |
+  | New orders | Pending operations confirmation | Accept & assign pickup rider, Receive at hub (drop-offs), Cancel, Change to drop-off, Change to rider pickup, Complete details, Add note |
   | Pickup | Pickup assigned / confirmed, picked up | Assign / reassign pickup rider, Mark picked up, Cancel, Add note |
   | Hub desk | Picked up, in transit, drop-offs on their way, at hub, ready for collection | Receive at hub, Mark exception, Add note |
   | Delivery | At hub without delivery rider (doorstep), assigned | Assign delivery rider, Complete details, Add note |

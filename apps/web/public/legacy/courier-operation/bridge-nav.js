@@ -699,7 +699,7 @@ select:not([multiple]):not([size])::-ms-expand{display:none}
       if (panelSub) panelSub.textContent = "Newest first · 100 a page · tick orders to accept and assign them together";
       Ops.lists.main("new-orders", { params: () => ({ ...tab.list }), bulkAccept: tab.bulkAccept, noun: "order", lines: true, empty: "No orders are waiting for operations." });
     }
-    if (view === "All parcels") Ops.lists.main(`all-${tab.id}`, { params: () => ({ ...tab.list }), merchants: tab.merchants, empty: "No parcels match." });
+    if (view === "All parcels") Ops.lists.main(`all-${tab.id}`, { params: () => ({ ...tab.list }), merchants: tab.merchants, register: true, empty: "No parcels match." });
     stageBulkButton(view, tab);
     if (view === "New orders") newOrdersButtons();
     else if (view === "All parcels") newOrdersButtons({ scan: false });

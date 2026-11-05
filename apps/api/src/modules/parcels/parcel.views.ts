@@ -164,6 +164,7 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
     declaredValue: num(p.declaredValue),
     instructions: p.instructions,
     receiverRelation: p.receiverRelation,
+    statusChangedAt: p.statusChangedAt,
     originBranchCode: p.originBranchCode,
     /**
      * Return to merchant (RTO), when one was requested or scheduled. `requestedBy` (a person's name, often

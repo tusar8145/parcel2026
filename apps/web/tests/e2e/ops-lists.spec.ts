@@ -2,7 +2,7 @@ import { type Browser, type Page } from "@playwright/test";
 import { Fixtures, expect, opsNav, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 // Courier Operations' server-paged parcel tables and the stage pages built on them
-// (public/legacy/courier-operation/bridge-lists.js, bridge-nav.js): about 100 rows a page with
+// (public/legacy/courier-operation/bridge-lists.js, bridge-nav.js): about 100 rows a page, numbered pages or
 // "Load more", server-side filters, the New orders / Pickup split, bulk Accept & assign, the Hub desk's
 // single Receive tab, the hub operator's "my hub" default and the trimmed Today page.
 // Every account and parcel is temporary (support.ts Fixtures) and deleted afterwards.
@@ -73,16 +73,49 @@ test("tables page 100 rows at a time from the server; New orders accepts (one by
   await api(`/imports/${job.id}/commit`, { method: "POST" });
   await expect.poll(async () => (await sql<{ n: number }>(`SELECT count(*)::int AS n FROM parcels WHERE "merchantId" = $1`, [shop.id]))[0].n, { timeout: 90_000 }).toBe(105);
 
-  // ── All parcels › E-commerce, filtered by the merchant on the server: 100 rows, then "Load more" ──
+  // ── All parcels › E-commerce, filtered by the merchant on the server: numbered pages of 100 rows ──
   await opsNav(page, "ecommerce");
   await expect(page.locator(`#merchantFilter option[value="${shop.id}"]`)).toHaveCount(1, { timeout: 20_000 });
   await page.selectOption("#merchantFilter", shop.id);
   const all = rows(page, "all-E-commerce");
   await expect(all).toHaveCount(100, { timeout: 20_000 });
-  await expect(page.locator('[data-list="all-E-commerce"] .shipment-count')).toContainText("Showing 100 parcels · more on the server");
-  await page.click('[data-list="all-E-commerce"] [data-list-more]');
-  await expect(all).toHaveCount(105, { timeout: 20_000 });
-  await expect(page.locator('[data-list="all-E-commerce"] [data-list-more]')).toHaveCount(0);
+  const foot = page.locator('[data-list="all-E-commerce"] .shipment-count');
+  await expect(foot).toContainText("Showing 1–100 of 105 parcels");
+  await page.click('[data-list="all-E-commerce"] [data-list-pager] [aria-label="Page 2"]');
+  await expect(all).toHaveCount(5, { timeout: 20_000 });
+  await expect(foot).toContainText("Showing 101–105 of 105 parcels");
+  await expect(page.locator('[data-list-pager] [aria-current="page"]')).toHaveText("2");
+  await page.selectOption('[data-list-size="all-E-commerce"]', "50");
+  await expect(all).toHaveCount(50, { timeout: 20_000 });
+  await expect(foot).toContainText("Showing 1–50 of 105 parcels");
+  await page.selectOption('[data-list-size="all-E-commerce"]', "100");
+  await expect(all).toHaveCount(100, { timeout: 20_000 });
+
+  // The last month is the default range, a date range overrides it, and From can't pass To.
+  const to = await page.inputValue("#shipmentDateTo");
+  expect(await page.inputValue("#shipmentDateFrom")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(await page.inputValue("#shipmentDateFrom") < to).toBe(true);
+  await page.fill("#shipmentDateFrom", "2099-01-01");
+  await page.locator("#shipmentDateFrom").blur();
+  await expect(page.locator("#toast, .toast").first()).toContainText("can't be after", { timeout: 5_000 });
+  await page.fill("#shipmentDateTo", "2020-01-01");
+  await page.locator("#shipmentDateTo").blur();
+  await page.fill("#shipmentDateFrom", "2020-01-01");
+  await page.locator("#shipmentDateFrom").blur();
+  await expect(all).toHaveCount(0, { timeout: 20_000 });
+  await page.fill("#shipmentDateTo", to);
+  await page.locator("#shipmentDateTo").blur();
+  await expect(all).toHaveCount(100, { timeout: 20_000 });
+
+  // Date field: every imported order changed status today, none in the past.
+  await expect(page.locator("#shipmentDateField")).toBeVisible();
+  await page.selectOption("#shipmentDateField", "status");
+  await expect(foot).toContainText("of 105 parcels", { timeout: 20_000 });
+
+  // Export writes all 105, not the page on screen, in an E-commerce file with COD.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click('#mainContent .page-heading [data-action="export"]')]);
+  expect(download.suggestedFilename()).toMatch(/^parcels-.*\.xlsx$/);
+  await page.selectOption("#shipmentDateField", "pickup");
   // The next action stays on screen at 1440 px: the action column is pinned on the right.
   await all.first().locator("td:first-child").scrollIntoViewIfNeeded();
   const action = all.first().locator("td:last-child");
@@ -193,6 +226,49 @@ test("Scan desk: one Receive entry tab (with Find), parcels at my hub with their
   await expect(row.locator("select")).toHaveCount(0);
   await hubPage.fill("#listSearch-hub-now", "NO-SUCH-PARCEL");
   await expect(hubPage.locator('[data-list="hub-now"] [data-list-empty]')).toHaveText("No parcels match the search or filters.", { timeout: 20_000 });
+  expect(errors).toEqual([]);
+});
+
+test("every All parcels tab has the last month by default, Date field, every status, pages and the Excel export; a Delivered export of an E-commerce merchant has its extra columns", async ({ browser }) => {
+  const errors: string[] = [];
+  const page = await signedIn(browser, OPS, errors);
+  const id = await book(page, shop, `Export ${fx.stamp}`);
+  for (const [area, list] of [["allParcels", "all-All"], ["ecommerce", "all-E-commerce"], ["banking", "all-Banking & Financial"], ["customerParcels", "all-Customer"]] as const) {
+    await opsNav(page, area);
+    const host = page.locator(`[data-list="${list}"]`);
+    await expect(host.locator("[data-list-size]"), area).toBeVisible({ timeout: 20_000 });
+    expect(await page.inputValue("#shipmentDateFrom"), area).not.toBe("");
+    expect(await page.inputValue("#shipmentDateTo"), area).not.toBe("");
+    await expect(page.locator("#shipmentDateField option"), area).toHaveText(["Pickup / created date", "Status update date"]);
+    for (const status of ["Delivered", "Returned", "Return scheduled", "Ready for collection"]) await expect(page.locator(`#statusFilter option[value="${status}"]`), `${area} ${status}`).toHaveCount(1);
+    await expect(page.locator('#statusFilter option[value="Return requested"]'), area).toHaveCount(0);
+    await expect(page.locator('#mainContent .page-heading [data-action="export"]'), area).toBeVisible();
+  }
+
+  // The bulk update of All parcels starts from the page's dates and date field.
+  await opsNav(page, "allParcels");
+  await page.selectOption("#shipmentDateField", "status");
+  await expect(page.locator('[data-list="all-All"] [data-list-size]')).toBeVisible();
+  const from = await page.inputValue("#shipmentDateFrom");
+  await page.click("#courierBulkUpdate, #stageBulkUpdate");
+  await page.locator('#dfiActions [data-action="add_note"], #dfiActions button:has-text("Add note")').first().click();
+  await expect(page.locator("#dfiBFrom")).toHaveValue(from, { timeout: 20_000 });
+  await expect(page.locator("#dfiExport")).toContainText("Status updated from");
+  await page.keyboard.press("Escape");
+
+  // Delivered, chosen E-commerce merchant: the file has what operations reconcile with.
+  await sql(`UPDATE parcels SET status = 'DELIVERED', "deliveredAt" = now(), "statusChangedAt" = now(), "receiverRelation" = 'Self' WHERE "trackingId" = $1`, [id]);
+  await page.goto("/courier-operation");
+  await page.waitForSelector("html.legacy-ready", { state: "attached" });
+  await opsNav(page, "ecommerce");
+  await expect(page.locator(`#merchantFilter option[value="${shop.id}"]`)).toHaveCount(1, { timeout: 20_000 });
+  await page.selectOption("#merchantFilter", shop.id);
+  await page.selectOption("#statusFilter", "Delivered");
+  await expect(page.locator('[data-list="all-E-commerce"] tbody[data-list-body] tr[data-shipment-id]')).toHaveCount(1, { timeout: 20_000 });
+  await page.screenshot({ path: "test-results/all-parcels.png", fullPage: true });
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click('#mainContent .page-heading [data-action="export"]')]);
+  expect(download.suggestedFilename()).toMatch(/^parcels-delivered-.*\.xlsx$/);
+  await expect(page.locator("#toast")).toContainText("1 parcel exported to Excel.");
   expect(errors).toEqual([]);
 });
 

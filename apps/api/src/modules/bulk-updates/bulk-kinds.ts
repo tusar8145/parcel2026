@@ -22,6 +22,8 @@ export interface BulkKindDef {
   scope: string;
   /** The page's actions, in the order the dialog lists them. */
   actions: BulkActionId[];
+  /** Which parcels an action's file lists on this page, where that is narrower than the action's own text. */
+  parcelsOf?: Partial<Record<BulkActionId, string>>;
   /** The statuses the page's parcels can be in (the dialog's status filter). */
   statuses: readonly ParcelStatus[];
   /** Quick filters the dialog offers on this page. */
@@ -36,7 +38,8 @@ export const KINDS: Record<BulkKind, BulkKindDef> = {
     page: "New orders",
     title: "New orders bulk update",
     scope: "orders waiting for operations (Pending operations confirmation: rider pickups awaiting review and drop-offs not yet brought in)",
-    actions: ["accept_pickup", "cancel", "to_drop_off", "to_pickup", "complete_details", "add_note"],
+    actions: ["accept_pickup", "receive_at_hub", "cancel", "to_drop_off", "to_pickup", "complete_details", "add_note"],
+    parcelsOf: { receive_at_hub: "drop-offs not yet brought in (a rider pickup can be received once it is changed to a drop-off)" },
     statuses: ["PENDING_CONFIRMATION"],
     presets: ["pending_review", "needs_info"],
   },

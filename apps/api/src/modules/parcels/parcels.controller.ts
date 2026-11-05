@@ -1,6 +1,7 @@
-import { Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
-import { ApiHeader, ApiTags } from "@nestjs/swagger";
+import { Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Res } from "@nestjs/common";
+import { ApiHeader, ApiProduces, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
+import type { FastifyReply } from "fastify";
 import type { z } from "zod";
 import {
   assignPickupHubSchema,
@@ -18,11 +19,14 @@ import { PrismaService } from "../../common/prisma.service";
 import { withIdempotency } from "../../common/idempotency";
 import { ParcelsService } from "./parcels.service";
 import { RiderTasksService } from "./rider-tasks.service";
-import { parcelNoteSchema, riderHandoverSchema, riderReturnSchema, riderHandoversQuerySchema, trackQuerySchema, updateParcelDetailsSchema } from "./parcels.schemas";
+import { ParcelExportService } from "./parcel-export.service";
+import { exportParcelsQuerySchema, parcelNoteSchema, riderHandoverSchema, riderReturnSchema, riderHandoversQuerySchema, trackQuerySchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import { listParcelsWithStageSchema } from "./parcel-stages";
 import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { AnalyticsService } from "../analytics/analytics.service";
 import { WebsiteActivityService } from "../analytics/website-activity.service";
+
+const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 @ApiTags("parcels")
 @Controller()
@@ -33,6 +37,7 @@ export class ParcelsController {
     private readonly prisma: PrismaService,
     private readonly analytics: AnalyticsService,
     private readonly website: WebsiteActivityService,
+    private readonly exports: ParcelExportService,
   ) {}
 
   /** Public tracking by ID (masked: no phones or street addresses). */
@@ -74,6 +79,30 @@ export class ParcelsController {
   @ApiZodQuery(listParcelsWithStageSchema)
   list(@CurrentActor() actor: Actor, @ZQuery(listParcelsWithStageSchema) query: z.infer<typeof listParcelsWithStageSchema>) {
     return this.parcels.list(actor, query);
+  }
+
+  /**
+   * All parcels › Export: the filtered parcels (or the ticked `trackingIds`) as an .xlsx file. Columns follow
+   * the filters: delivery details for Delivered, return details for Returned, COD for E-commerce.
+   * Headers: X-Row-Count (rows in the file), X-Matched (parcels matching), X-Row-Limit.
+   */
+  @RequirePermissions("parcel:read:any")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get("parcels/export")
+  @ApiProduces(XLSX)
+  @ApiZodQuery(exportParcelsQuerySchema)
+  async export(@CurrentActor() actor: Actor, @ZQuery(exportParcelsQuerySchema) query: z.infer<typeof exportParcelsQuerySchema>, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    const file = await this.exports.export(actor, query, meta);
+    return reply
+      .status(200)
+      .header("content-type", XLSX)
+      .header("content-disposition", `attachment; filename="${file.fileName}"`)
+      .header("cache-control", "no-store")
+      .header("x-row-count", String(file.count))
+      .header("x-matched", String(file.matched))
+      .header("x-row-limit", String(file.maxRows))
+      .header("access-control-expose-headers", "x-row-count, x-matched, x-row-limit, content-disposition")
+      .send(file.buffer);
   }
 
   @AllowApiKey()

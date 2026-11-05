@@ -19,6 +19,7 @@ import { ParcelsService } from "../parcels/parcels.service";
 import { IntakeChangeService } from "../parcels/intake-change.service";
 import { CompleteDetailsService } from "../parcels/complete-details.service";
 import { opsHubScope } from "../parcels/ops-scope";
+import { dateRangeWhere } from "../parcels/parcel-stages";
 import { describeMissing, type MissingField } from "../parcels/incomplete";
 import { PricingService } from "../pricing/pricing.service";
 import { RoutingService } from "../routing/routing.service";
@@ -260,7 +261,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
           summary: t.summary,
           howTo: `${t.label}: ${t.howTo}`,
           does: t.does,
-          parcels: t.parcels,
+          parcels: KINDS[query.kind].parcelsOf?.[id] ?? t.parcels,
           skipBlank: t.skipBlank,
           fill: columns.filter(c => c.editable).map(c => c.header),
           columns: columns.map(c => ({ key: c.key, header: c.header, editable: c.editable, required: !!c.required })),
@@ -292,7 +293,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     if (query.dropOffHubId) and.push({ dropOffHubId: query.dropOffHubId });
     if (query.intake) and.push({ intake: query.intake });
     if (query.incomplete !== undefined) and.push({ incomplete: query.incomplete });
-    if (query.from || query.to) and.push({ createdAt: { gte: query.from, lte: query.to } });
+    and.push(dateRangeWhere(query));
     if (query.sla === "AWAITING_REVIEW") and.push({ status: "PENDING_CONFIRMATION", intake: "PICKUP" });
     else if (query.sla) and.push({ slaState: query.sla, status: { notIn: TERMINAL } });
     if (query.line === "customer") and.push({ merchantId: null });
@@ -324,7 +325,7 @@ export class BulkUpdatesService implements OnApplicationBootstrap {
     if (query.incomplete) parts.push("needs info");
     if (query.sla) parts.push(`SLA ${query.sla === "AWAITING_REVIEW" ? "awaiting review" : SLA_LABEL[query.sla].toLowerCase()}`);
     if (query.line) parts.push({ ecommerce: "e-commerce", document: "documents", customer: "customer parcels" }[query.line]);
-    if (query.from || query.to) parts.push(`created ${query.from ? dhaka(query.from).slice(0, 10) : "…"} to ${query.to ? dhaka(query.to).slice(0, 10) : "…"}`);
+    if (query.from || query.to) parts.push(`${query.dateField === "status" ? "status updated" : "created"} ${query.from ? dhaka(query.from).slice(0, 10) : "…"} to ${query.to ? dhaka(query.to).slice(0, 10) : "…"}`);
     if (query.q) parts.push(`search "${query.q}"`);
     return parts.join(", ");
   }

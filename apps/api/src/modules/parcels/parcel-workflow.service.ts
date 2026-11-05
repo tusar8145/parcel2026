@@ -177,7 +177,7 @@ export class ParcelWorkflowService {
     }
     const { count } = await db.parcel.updateMany({
       where: { id: parcel.id, version: parcel.version },
-      data: { ...(input.data as Prisma.ParcelUncheckedUpdateManyInput), status: input.to, version: { increment: 1 } },
+      data: { ...(input.data as Prisma.ParcelUncheckedUpdateManyInput), status: input.to, statusChangedAt: operationNow(), version: { increment: 1 } },
     });
     if (!count) throw this.changedError();
 

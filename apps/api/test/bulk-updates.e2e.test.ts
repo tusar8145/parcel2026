@@ -149,6 +149,23 @@ describe("bulk updates", () => {
   };
 
   describe("action templates", () => {
+    it("New orders › Receive at hub: lists drop-offs only, and receives them at the hub they were booked for", async () => {
+      const s = await setup();
+      const pickup = await book(s);
+      const dropOff = await book(s, { intake: "DROP_OFF", dropOffHubId: s.gulshan.id });
+      const actions = await ctx.api("GET", "/bulk-updates/actions?kind=new_orders", { token: s.ops.token });
+      const receive = actions.body.find((a: { action: string }) => a.action === "receive_at_hub");
+      expect(receive).toMatchObject({ label: "Receive at hub", count: 1 });
+      expect(receive.parcels).toContain("drop-offs");
+
+      const { job, x } = await run(s.ops.token, "new_orders", "receive_at_hub", () => [dropOff]);
+      expect(x.ids).toEqual([dropOff]);
+      expect(job.counts).toMatchObject({ errors: 0, toApply: 1 });
+      await apply(s.ops.token, job, "new_orders");
+      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: dropOff } })).toMatchObject({ status: "AT_HUB", currentHubId: s.gulshan.id });
+      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: pickup } })).toMatchObject({ status: "PENDING_CONFIRMATION" });
+    });
+
     it("each page lists its actions with counts; each action's file holds only its eligible parcels, its own columns (no Action column), title and instructions", async () => {
       const s = await setup();
       const p1 = await book(s);
@@ -166,12 +183,12 @@ describe("bulk updates", () => {
       // The pages and their actions.
       const kinds = await ctx.api("GET", "/bulk-updates/kinds", { token: s.ops.token });
       expect(kinds.body.map((k: { kind: string }) => k.kind)).toEqual(["new_orders", "pickup", "hub_desk", "delivery", "problems", "returns", "transfers", "all"]);
-      expect(kinds.body[0].actions.map((a: { action: string }) => a.action)).toEqual(["accept_pickup", "cancel", "to_drop_off", "to_pickup", "complete_details", "add_note"]);
+      expect(kinds.body[0].actions.map((a: { action: string }) => a.action)).toEqual(["accept_pickup", "receive_at_hub", "cancel", "to_drop_off", "to_pickup", "complete_details", "add_note"]);
       expect(kinds.body[6].actions.map((a: { action: string }) => a.action)).toEqual(["transfer"]);
       expect(kinds.body[7].actions).toHaveLength(15);
 
       const expected: Record<string, Record<string, string[]>> = {
-        new_orders: { accept_pickup: [p1, p2, needs], cancel: [p1, p2, dropOff, needs], to_drop_off: [p1, p2, needs], to_pickup: [dropOff], complete_details: [needs], add_note: [p1, p2, dropOff, needs] },
+        new_orders: { accept_pickup: [p1, p2, needs], receive_at_hub: [dropOff], cancel: [p1, p2, dropOff, needs], to_drop_off: [p1, p2, needs], to_pickup: [dropOff], complete_details: [needs], add_note: [p1, p2, dropOff, needs] },
         pickup: { reassign_pickup: [assigned], mark_picked_up: [assigned], cancel: [assigned], add_note: [assigned, pickedUp] },
         hub_desk: { receive_at_hub: [dropOff, pickedUp], mark_exception: [dropOff, pickedUp, hubbed], add_note: [dropOff, pickedUp, hubbed] },
         delivery: { assign_delivery: [hubbed], complete_details: [], add_note: [hubbed] },
@@ -283,7 +300,7 @@ describe("bulk updates", () => {
       expect((await download(s.ops.token, "/bulk-updates/export?kind=new_orders")).status).toBe(422);
       const offPage = await download(s.ops.token, "/bulk-updates/export?kind=new_orders&action=assign_delivery");
       expect(offPage.body.error).toMatchObject({ code: "BULK_ACTION_NOT_ON_PAGE" });
-      expect(offPage.body.error.message).toBe('"Assign delivery rider" isn\'t an action of the New orders page. Choose one of "Accept & assign pickup rider", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note" (or use All parcels).');
+      expect(offPage.body.error.message).toBe('"Assign delivery rider" isn\'t an action of the New orders page. Choose one of "Accept & assign pickup rider", "Receive at hub", "Cancel", "Change to drop-off", "Change to rider pickup", "Complete details", "Add note" (or use All parcels).');
       expect((await download(s.ops.token, "/bulk-updates/export?kind=nope&action=cancel")).status).toBe(422);
     });
 

@@ -20,7 +20,7 @@ import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
 import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { assertRiderAssignable, opsHubScope } from "./ops-scope";
-import { failureWhere, forHubsWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
+import { dateRangeWhere, failureWhere, forHubsWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
 import { PickupSlotsService } from "./pickup-slots.service";
@@ -406,9 +406,10 @@ export class ParcelsService {
 
   // ───────────── reading ─────────────
 
-  async list(actor: Actor, query: z.infer<typeof listParcelsQuerySchema> & Partial<z.infer<typeof stageFilterSchema>>) {
+  /** The parcels a list's filters match, within the actor's scope (GET /parcels and its Excel export). */
+  async listWhere(actor: Actor, query: Omit<z.infer<typeof listParcelsQuerySchema>, "cursor" | "limit"> & Partial<z.infer<typeof stageFilterSchema>>): Promise<Prisma.ParcelWhereInput> {
     const q = query.q?.trim();
-    const where: Prisma.ParcelWhereInput = {
+    return {
       AND: [
         this.scope(actor),
         // Courier Operations' paged lists: journey stage, service line and "my hub" (parcel-stages.ts).
@@ -417,6 +418,7 @@ export class ParcelsService {
         query.forHubIds?.length ? await forHubsWhere(this.prisma, query.forHubIds) : {},
         // Failed deliveries (stage=failed equivalent) and "failed before" (any failed attempt).
         ...failureWhere(query),
+        dateRangeWhere(query),
         {
           status: query.status?.length ? { in: query.status } : undefined,
           channel: query.channel,
@@ -426,7 +428,6 @@ export class ParcelsService {
           dropOffHubId: query.dropOffHubId,
           bookingBatchId: query.batchId,
           incomplete: query.incomplete,
-          createdAt: query.from || query.to ? { gte: query.from, lte: query.to } : undefined,
           ...(query.riderId ? { OR: [{ pickupRiderId: query.riderId }, { deliveryRiderId: query.riderId }] } : {}),
         },
         q
@@ -444,20 +445,29 @@ export class ParcelsService {
           : {},
       ],
     };
-    const rows = await this.prisma.parcel.findMany({
-      where,
-      include: { ...parcelInclude, events: { orderBy: { createdAt: "asc" } } },
-      take: query.limit + 1,
-      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      orderBy: { id: "desc" },
-    });
-    const hasMore = rows.length > query.limit;
+  }
+
+  async list(actor: Actor, query: z.infer<typeof listParcelsQuerySchema> & Partial<z.infer<typeof stageFilterSchema>> & { page?: number }) {
+    const where = await this.listWhere(actor, query);
+    const numbered = query.page !== undefined;
+    const [rows, total] = await Promise.all([
+      this.prisma.parcel.findMany({
+        where,
+        include: { ...parcelInclude, events: { orderBy: { createdAt: "asc" } } },
+        take: numbered ? query.limit : query.limit + 1,
+        ...(numbered ? { skip: (query.page! - 1) * query.limit } : query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+        orderBy: { id: "desc" },
+      }),
+      numbered ? this.prisma.parcel.count({ where }) : null,
+    ]);
+    const hasMore = !numbered && rows.length > query.limit;
     const page = hasMore ? rows.slice(0, query.limit) : rows;
     const staff = isStaff(actor);
     // Staff: the hub that delivers each parcel (its next step: transfer or assign a rider here).
     const hubs = staff ? await deliveryHubsOf(this.prisma, page) : null;
     const items = page.map(p => ({ ...parcelView(p, { internal: staff }), ...(hubs ? { deliveryHub: hubs.get(p.id) ?? null } : {}) }));
-    return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+    return total === null ? { items, nextCursor } : { items, nextCursor, total, page: query.page!, pages: Math.ceil(total / query.limit) };
   }
 
   /** Detail by tracking ID, within the actor's scope (404 otherwise, so IDs don't leak). */

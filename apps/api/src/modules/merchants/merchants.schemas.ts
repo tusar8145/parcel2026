@@ -333,10 +333,10 @@ export const listProductsQuerySchema = merchantSelectorSchema.extend(pageQuerySc
 
 // ───────────── reports ─────────────
 
-export const REPORT_KINDS = ["orders", "delivery-performance", "cod-reconciliation", "returns", "invoices"] as const;
+export const REPORT_KINDS = ["orders", "delivery-performance", "failed-deliveries", "returns", "cod-reconciliation", "payouts", "invoices", "branches"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 export const reportQuerySchema = merchantSelectorSchema.extend({
   from: z.coerce.date("Enter a valid start date").optional(),
   to: z.coerce.date("Enter a valid end date").optional(),
-  format: z.enum(["csv", "json"]).default("csv"),
+  format: z.enum(["csv", "json", "xlsx"]).default("csv"),
 });

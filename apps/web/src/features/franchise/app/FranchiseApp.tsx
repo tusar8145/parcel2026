@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import AppVersion from "@/shared/AppVersion";
 import BrandMark from "@/shared/BrandMark";
 import { ToastProvider, api, describe, df, errorCode, type Me } from "./ui";
 import Overview from "./Overview";
@@ -133,7 +132,6 @@ export default function FranchiseApp() {
         <button type="button" className="fr-signout" onClick={() => void signOut()}>
           Sign out
         </button>
-        <AppVersion />
       </aside>
       <main className="fr-main">
         <header className="fr-topbar">

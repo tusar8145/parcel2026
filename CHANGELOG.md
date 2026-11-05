@@ -1,11 +1,21 @@
 # Changelog
 
-What's new in Paira Express, newest first. The top version is shown at the bottom of every panel's
+What's new in Paira Express, newest first. The top version is shown at the bottom of the super admin
 sidebar, and "What's new" there lists these notes.
 
 Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, then one short line per
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
+
+## 1.3.0 — 2026-11-05
+- Merchant panels: new menus "New orders" and "All orders" (Banking & Financial: "New requests" and "All requests") replace Orders and Shipments / Delivery requests and Delivery tracking.
+- Merchant lists: numbered pages and filters for your merchant type (status, dates, product, payment, document, branch, district) that cover all your orders.
+- Merchant lists: Export gives an Excel file of what you filtered, with the columns for your merchant type and status and no internal data. Print covers what you filtered, and shows only the formats for your merchant type.
+- Merchant panels › Reports: a new page with a period, headline numbers and the reports for your merchant type, on screen or in Excel. New reports: Failed deliveries, Payouts and Branch summary.
+- Reports no longer show internal details, and charges and money reports are for merchant owners only.
+- Buttons for bulk work (import, bulk update, assign, export, print) show a loading spinner while they work.
+- Version and "What's new" now show only in the Super admin panel.
+- Merchant panel › API & Webhooks: the OpenAPI reference link is removed.
 
 ## 1.2.0 — 2026-11-05
 - Courier Operations › New orders › Bulk update: new "Receive at hub" action for drop-offs brought to a hub.

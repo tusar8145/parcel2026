@@ -18,7 +18,7 @@ Setup and run instructions: `docs/development.md`.
   who use the panels (what changed for them, not file names). Several changes in one task share one version.
 - Fix → raise the last number (1.0.0 → 1.0.1); new feature → the middle one, last back to 0
   (1.0.1 → 1.1.0); big change → the first one (1.1.0 → 2.0.0).
-- The top version is the app version: every panel's sidebar shows it with "What's new"
+- The top version is the app version: the super admin sidebar shows it with "What's new"
   (`src/shared/AppVersion.tsx`, read at build time in `apps/web/next.config.ts`; restart `npm run dev`
   to see a new one). The Android apps keep their own versions (`mobile/*/pubspec.yaml`).
 
@@ -97,6 +97,10 @@ Setup and run instructions: `docs/development.md`.
   platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
   the `pairaexpress-demo-config` key for every page. Widgets with no backing data (maps,
   traffic charts, some report rows) remain decorative.
+- Merchant New orders / All orders (`shared/merchant-orders.js`): server-paged, filters by merchant type, and
+  `GET /merchants/me/parcels/export` (merchantExportColumns: nothing internal, charges for owners only). The
+  `Orders` page name is All orders; `Shipments` opens it. Reports come from `GET /merchants/me/reports`.
+- Buttons doing slow or bulk work: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy).
 - Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
   merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),
   website customer › Payments (`website/customer-payments.js`).

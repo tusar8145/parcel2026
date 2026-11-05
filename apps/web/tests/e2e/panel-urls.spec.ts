@@ -180,16 +180,16 @@ test("merchant panel: page links, Back / Forward, the live bell and the Notifica
   const page = await signIn(browser, OWNER, "/ecommerce-merchant?page=payments", errors);
   await expect(page.locator("#breadcrumbPage")).toHaveText("Balance");
   await expect(page).toHaveTitle("Balance · Paira Express · E-commerce merchant");
-  await page.click('#navigation [data-page="Shipments"]');
-  await expect.poll(() => query(page).page).toBe("shipments");
+  await page.click('#navigation [data-page="Orders"]');
+  await expect.poll(() => query(page).page).toBe("orders");
   await page.click('#navigation [data-page="Reports"]');
   await expect.poll(() => query(page).page).toBe("reports");
   await page.goBack();
-  await expect(page.locator("#breadcrumbPage")).toHaveText("Shipments");
+  await expect(page.locator("#breadcrumbPage")).toHaveText("All orders");
   await page.goBack();
   await expect(page.locator("#breadcrumbPage")).toHaveText("Balance");
   await page.goForward();
-  await expect(page.locator("#breadcrumbPage")).toHaveText("Shipments");
+  await expect(page.locator("#breadcrumbPage")).toHaveText("All orders");
   // Old names are rewritten.
   await page.goto("/ecommerce-merchant?page=API%20%26%20Webhooks");
   await ready(page);

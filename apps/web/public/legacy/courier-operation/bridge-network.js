@@ -86,11 +86,8 @@
       event.stopImmediatePropagation();
       const button = $("modalSubmit");
       if (button.disabled) return;
-      button.disabled = true;
-      Promise.resolve()
-        .then(() => handler(button))
-        .catch(error => error && showToast(error instanceof DF.ApiError ? DF.describe(error) : error.message))
-        .finally(() => (button.disabled = false));
+      // The dialog's own text stays (a bulk action counts its progress there).
+      void DF.busy(button, () => Promise.resolve().then(() => handler(button)).catch(error => error && showToast(error instanceof DF.ApiError ? DF.describe(error) : error.message)));
     },
     true,
   );

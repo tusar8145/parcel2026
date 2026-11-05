@@ -12,7 +12,7 @@ interface Release {
 const VERSION = process.env.APP_VERSION ?? "";
 const RELEASES: Release[] = JSON.parse(process.env.APP_RELEASES ?? "[]");
 
-/** Every panel's sidebar, at the bottom: the version, and "What's new" with the latest changelog notes. */
+/** The super admin panel's sidebar, at the bottom: the version, and "What's new" with the latest changelog notes. */
 export default function AppVersion() {
   const [open, setOpen] = useState(false);
   useEffect(() => {

@@ -151,10 +151,11 @@ test.describe.serial("spreadsheet imports", () => {
     await signIn(page, OWNER.phone, OWNER.password, /\/ecommerce-merchant/);
     await page.click('#navigation [data-page="Orders"]');
     await expect(page.locator("#merchantBulkImport")).toBeVisible();
-    await expect(page.locator("#merchantImportHistory")).toBeVisible();
 
-    // ── The template is a real .xlsx with red required headers, dropdowns and instructions ──
-    const template = await downloaded(page, () => page.click("#merchantBulkTemplate"));
+    // ── The template (in the import dialog) is a real .xlsx with red required headers, dropdowns and instructions ──
+    await page.click("#merchantBulkImport");
+    const template = await downloaded(page, () => page.click('[data-dfi="template"]'));
+    await page.keyboard.press("Escape");
     expect(template.name).toBe("paira-express-ecommerce-orders-template.xlsx");
     const parts = unzip(template.buffer);
     expect(parts.get("xl/workbook.xml")).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
@@ -260,7 +261,8 @@ test.describe.serial("spreadsheet imports", () => {
     expect(left.n).toBe(2);
 
     // ── History ──
-    await page.click("#merchantImportHistory");
+    await page.click("#merchantBulkImport");
+    await page.click('[data-dfi="history"]');
     await expect(page.locator("#dfiHistory tbody tr").first()).toContainText(`orders-${tag}.csv`);
     await expect(page.locator("#dfiHistory tbody tr").first()).toContainText("Completed");
     await page.keyboard.press("Escape");

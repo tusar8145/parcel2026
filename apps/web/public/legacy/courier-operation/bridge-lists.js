@@ -652,10 +652,8 @@
     const params = query(list);
     params.delete("limit");
     if (ticked.length) params.set("trackingIds", ticked.join(","));
-    const html = button.innerHTML;
-    button.disabled = true;
-    button.textContent = "Exporting…";
-    try {
+    await DF.busy(button, async () => {
+      try {
       const response = await DF.apiRaw(`/parcels/export?${params}`);
       const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "parcels.xlsx";
       const url = URL.createObjectURL(await response.blob());
@@ -667,12 +665,10 @@
       const rows = Number(response.headers.get("x-row-count"));
       const matched = Number(response.headers.get("x-matched"));
       showToast(rows < matched ? `Exported the newest ${Ops.num(rows)} of ${Ops.num(matched)} parcels (the limit for one file). Use a shorter date range for the rest.` : `${Ops.num(rows)} parcel${rows === 1 ? "" : "s"} exported to Excel.`);
-    } catch (error) {
-      showToast(DF.describe(error));
-    } finally {
-      button.disabled = false;
-      button.innerHTML = html;
-    }
+      } catch (error) {
+        showToast(DF.describe(error));
+      }
+    }, "Exporting…");
   }
 
   Ops.lists = {

@@ -163,6 +163,31 @@
     return response;
   }
 
+  /**
+   * Shows a button is working: spinner, disabled, aria-busy, until `work` ends (text: its words meanwhile).
+   * A second click while it runs does nothing. Returns what `work` returns.
+   */
+  async function busy(button, work, text) {
+    if (!button) return work();
+    if (button.classList.contains("df-busy")) return undefined;
+    if (!document.getElementById("dfBusyCss"))
+      document.head.insertAdjacentHTML("beforeend", `<style id="dfBusyCss">.df-busy{position:relative;cursor:progress!important;opacity:.85}.df-busy::before{content:"";display:inline-block;flex:none;width:12px;height:12px;margin-right:6px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:dfBusySpin .7s linear infinite}@keyframes dfBusySpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.df-busy::before{animation-duration:2.4s}}</style>`);
+    const html = button.innerHTML;
+    const disabled = button.disabled;
+    button.classList.add("df-busy");
+    button.setAttribute("aria-busy", "true");
+    button.disabled = true;
+    if (text) button.textContent = text;
+    try {
+      return await work();
+    } finally {
+      button.classList.remove("df-busy");
+      button.removeAttribute("aria-busy");
+      button.disabled = disabled;
+      if (text) button.innerHTML = html;
+    }
+  }
+
   /** Downloads a file from the API with the session (the token isn't a cookie) and saves it. */
   async function download(path, fallbackName = "download") {
     const response = await apiRaw(path);
@@ -734,6 +759,7 @@
     api,
     apiRaw,
     download,
+    busy,
     ApiError,
     auth,
     get supportAccess() {

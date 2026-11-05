@@ -8,6 +8,7 @@ import type { Db } from "../../common/prisma.service";
  * (GET /parcels?stage=) and the stage counts (GET /ops/stage-counts), so a list and its count agree.
  *
  *   new               PENDING_CONFIRMATION: orders waiting for operations (rider pickups and drop-offs)
+ *   not_picked_up     merchant panels' New orders: booked and not yet collected or brought in
  *   pickup_waiting    accepted (pickup assigned / confirmed) but without a pickup rider
  *   pickup            being picked up: pickup assigned / confirmed with a rider, or picked up
  *   hub               at a hub: AT_HUB, READY_FOR_COLLECTION
@@ -24,6 +25,7 @@ import type { Db } from "../../common/prisma.service";
  */
 export const PARCEL_STAGES = [
   "new",
+  "not_picked_up",
   "pickup_waiting",
   "pickup",
   "hub",
@@ -61,6 +63,8 @@ export function stageWhere(stage: ParcelStage, now = new Date()): Prisma.ParcelW
   switch (stage) {
     case "new":
       return { status: "PENDING_CONFIRMATION" };
+    case "not_picked_up":
+      return { status: { in: ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] } };
     case "pickup_waiting":
       return { status: { in: ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] }, pickupRiderId: null };
     case "pickup":
@@ -134,7 +138,25 @@ export const stageFilterSchema = z.object({
   failedAttempts: z.enum(["true", "false"]).transform(v => v === "true").optional(),
   /** true: parcels with at least one failed delivery attempt; false: none (e.g. "Waiting for a delivery rider" › Failed before). */
   failedBefore: z.enum(["true", "false"]).transform(v => v === "true").optional(),
+  /** Merchant lists: cash on delivery or prepaid (no COD). */
+  payment: z.enum(["cod", "prepaid"]).optional(),
+  /** Merchant lists: the delivery district. */
+  district: z.string().trim().max(80).optional(),
+  /** Merchant lists: the product or document type (the parcel's contents). */
+  contents: z.string().trim().max(120).optional(),
+  /** Banking & Financial merchants: the origin branch code. */
+  branch: z.string().trim().max(40).optional(),
 });
+
+/** The merchant list filters of GET /parcels (payment, district, contents, branch). */
+export function merchantFiltersWhere(query: { payment?: "cod" | "prepaid"; district?: string; contents?: string; branch?: string }): Prisma.ParcelWhereInput[] {
+  const where: Prisma.ParcelWhereInput[] = [];
+  if (query.payment) where.push({ codAmount: query.payment === "cod" ? { gt: 0 } : { lte: 0 } });
+  if (query.district) where.push({ deliveryDistrict: { equals: query.district, mode: "insensitive" } });
+  if (query.contents) where.push({ contents: { contains: query.contents, mode: "insensitive" } });
+  if (query.branch) where.push({ originBranchCode: { equals: query.branch, mode: "insensitive" } });
+  return where;
+}
 
 /** The failure filters of GET /parcels (failedAttempts, failedBefore). */
 export function failureWhere(query: { failedAttempts?: boolean; failedBefore?: boolean }): Prisma.ParcelWhereInput[] {

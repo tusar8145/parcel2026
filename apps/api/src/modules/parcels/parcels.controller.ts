@@ -92,7 +92,23 @@ export class ParcelsController {
   @ApiProduces(XLSX)
   @ApiZodQuery(exportParcelsQuerySchema)
   async export(@CurrentActor() actor: Actor, @ZQuery(exportParcelsQuerySchema) query: z.infer<typeof exportParcelsQuerySchema>, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
-    const file = await this.exports.export(actor, query, meta);
+    return this.sendExport(reply, await this.exports.export(actor, query, meta));
+  }
+
+  /**
+   * Merchant panels: the merchant's own filtered parcels (or the ticked `trackingIds`) as .xlsx, with no internal
+   * data. Columns follow the merchant type and status; charges are for owners. `merchantId`: for users of several merchants.
+   */
+  @RequirePermissions("parcel:read:own")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Get("merchants/me/parcels/export")
+  @ApiProduces(XLSX)
+  @ApiZodQuery(exportParcelsQuerySchema)
+  async merchantExport(@CurrentActor() actor: Actor, @ZQuery(exportParcelsQuerySchema) query: z.infer<typeof exportParcelsQuerySchema>, @ReqMeta() meta: RequestMeta, @Res() reply: FastifyReply) {
+    return this.sendExport(reply, await this.exports.merchantExport(actor, query, meta));
+  }
+
+  private sendExport(reply: FastifyReply, file: { buffer: Buffer; fileName: string; count: number; matched: number; maxRows: number }) {
     return reply
       .status(200)
       .header("content-type", XLSX)

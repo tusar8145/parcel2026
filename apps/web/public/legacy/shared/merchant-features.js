@@ -2,7 +2,7 @@
  * Merchant panel features on top of merchant-bridge.js (both merchant panels):
  * - Products page: the real catalogue (GET/POST/PATCH/DELETE /merchants/me/products), used to
  *   prefill the order form.
- * - Reports page: report exports from live data (GET /merchants/me/reports/:kind).
+ * - Reports page: the reports of the merchant type (GET /merchants/me/reports), on screen or as Excel.
  * - Pickup requests page: recurring daily pickups and one-off pickup requests
  *   (/merchants/me/pickup-schedules, /merchants/me/pickup-requests); a pickup time window in the
  *   order form (GET /pickup-slots, when offered).
@@ -217,69 +217,90 @@
 
   // ───────────── reports ─────────────
 
-  const REPORTS = () => [
-    { kind: "orders", title: doc() ? "Delivery requests" : "Orders", owner: false },
-    { kind: "delivery-performance", title: "Delivery performance by district", owner: false },
-    { kind: "returns", title: "Returns (RTO)", owner: false },
-    { kind: "cod-reconciliation", title: "COD reconciliation", owner: true, hide: doc() },
-    { kind: "invoices", title: "Invoices", owner: true },
-  ].filter(r => !r.hide);
-  const PERIODS = { 7: "Last 7 days", 30: "Last 30 days", 90: "Last 90 days", 365: "Last 12 months" };
-  let reportDays = 30;
+  /** Reports: the period, the reports this person may open (GET /merchants/me/reports) and the period's headline numbers. */
+  const PERIODS = { 7: "Last 7 days", 30: "Last 30 days", 90: "Last 90 days", 365: "Last 12 months", custom: "Custom dates" };
+  const R = { period: "30", from: "", to: "", catalog: null, kpis: null };
+  const dayOf = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  /** The chosen period as a query; null while custom dates are incomplete or the wrong way round. */
+  function reportRange() {
+    const from = R.period === "custom" ? R.from : dayOf(new Date(Date.now() - Number(R.period) * 86_400_000));
+    const to = R.period === "custom" ? R.to : dayOf(new Date());
+    if (!from || !to || from > to) return null;
+    return `from=${encodeURIComponent(new Date(`${from}T00:00:00`).toISOString())}&to=${encodeURIComponent(new Date(`${to}T23:59:59.999`).toISOString())}`;
+  }
+  const highlight = h => (h.format === "money" ? `৳${Number(h.value).toLocaleString("en-BD")}` : h.format === "percent" ? `${h.value}%` : typeof h.value === "number" ? h.value.toLocaleString("en-BD") : h.value);
 
   function beforeReports() {
-    pageData.Reports.rows = REPORTS().map(r => [r.title, PERIODS[reportDays], "On demand · live data", "CSV", r.owner ? "Owners" : "Whole team", r.owner && !isOwner() ? "Owners only" : "Ready"]);
+    pageData.Reports.rows = [];
+    pageData.Reports.stats = null;
   }
 
+  /** The page: period, headline numbers, then the reports grouped by what they're for. */
   function afterReports() {
     const main = $("mainContent");
-    const actions = main.querySelector(".page-heading .heading-actions");
-    if (actions && !$("dffReportPeriod")) actions.insertAdjacentHTML("afterbegin", `<select id="dffReportPeriod" class="select-small" aria-label="Report period">${Object.entries(PERIODS).map(([d, l]) => option(d, l, Number(d) === reportDays)).join("")}</select>`);
-    const subtitle = main.querySelector(".page-table-panel .panel-subtitle");
-    if (subtitle) subtitle.textContent = "Generated from your live data when you download";
-    const head = main.querySelector(".page-table-panel thead tr");
-    if (head && !head.querySelector("[data-dff-col]")) head.insertAdjacentHTML("beforeend", `<th data-dff-col></th>`);
-    const rows = $("tableBody")?.querySelectorAll("tr") || [];
-    REPORTS().forEach((r, i) => {
-      const cell = r.owner && !isOwner() ? `<td></td>` : `<td style="white-space:nowrap"><button type="button" class="button button-sm" data-dff-report="${r.kind}">Download CSV</button> <button type="button" class="button button-sm" data-dff-report-view="${r.kind}">View</button></td>`;
-      rows[i]?.insertAdjacentHTML("beforeend", cell);
-    });
+    main.querySelector(".page-table-panel")?.remove();
+    main.querySelector(".metrics")?.remove();
+    main.querySelector("#exportButton")?.remove();
+    const subtitle = main.querySelector(".page-heading .subtitle");
+    if (subtitle) subtitle.textContent = "Open a report on screen or download it to Excel. Everything comes from your live data.";
+    $("dffReportsPage")?.remove();
+    const custom = R.period === "custom";
+    const dates = custom ? `<label class="dff-report-date">From<input class="table-search" id="dffReportFrom" type="date" value="${esc(R.from)}"></label><label class="dff-report-date">To<input class="table-search" id="dffReportTo" type="date" value="${esc(R.to)}"></label>` : "";
+    const groups = [...new Set((R.catalog || []).map(r => r.group))];
+    const cards = groups
+      .map(
+        group => `<section class="panel" style="padding:16px 18px"><h2 class="panel-title" style="margin:0 0 12px">${esc(group)}</h2><div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">${R.catalog
+          .filter(r => r.group === group)
+          .map(
+            r => `<article data-dff-report-card="${r.kind}" style="display:grid;gap:10px;align-content:space-between;padding:14px;border:1px solid var(--line);border-radius:10px"><div><strong style="display:block;font-size:14px;margin-bottom:4px">${esc(r.title)}</strong><span style="color:#647184;font-size:13px">${esc(r.description)}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="button button-sm" data-dff-report-view="${r.kind}">View</button><button type="button" class="button button-sm" data-dff-report="${r.kind}">Download Excel</button></div></article>`,
+          )
+          .join("")}</div></section>`,
+      )
+      .join("");
+    const kpis = R.kpis ? `<div class="metrics" id="dffReportKpis" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">${R.kpis.map(h => `<article class="metric"><div class="metric-head"><span>${esc(h.label)}</span></div><div class="metric-value">${esc(highlight(h))}</div></article>`).join("")}</div>` : "";
+    main.querySelector(".page-heading")?.insertAdjacentHTML(
+      "afterend",
+      `<div id="dffReportsPage" style="display:grid;gap:14px"><section class="panel" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 18px"><label class="dff-report-date">Period<select id="dffReportPeriod" class="select-small" aria-label="Report period">${Object.entries(PERIODS).map(([d, l]) => option(d, l, d === R.period)).join("")}</select></label>${dates}</section>${kpis}${cards || `<section class="panel"><p class="empty-state">Loading reports…</p></section>`}</div>`,
+    );
+    if (!document.getElementById("dffReportCss")) document.head.insertAdjacentHTML("beforeend", `<style id="dffReportCss">.dff-report-date{display:inline-grid;gap:3px;color:#7d8897;font-size:11px}</style>`);
+    if (!R.catalog) void loadReports();
   }
 
-  async function fetchReport(kind) {
-    const from = new Date(Date.now() - reportDays * 86_400_000).toISOString();
-    return DF.api(`/merchants/me/reports/${kind}?format=json&from=${encodeURIComponent(from)}${q("&")}`);
-  }
-  const toCsv = (columns, rows) =>
-    [columns, ...rows]
-      .map(row => row.map(value => {
-        let text = value == null ? "" : String(value);
-        if (typeof value === "string" && /^[=+\-@]/.test(text)) text = `'${text}`;
-        return `"${text.replaceAll('"', '""')}"`;
-      }).join(","))
-      .join("\r\n");
-
-  async function downloadReport(kind) {
+  async function loadReports() {
     try {
-      const report = await fetchReport(kind);
-      window.csvDownload(`${S().merchant.code.toLowerCase()}-${kind}-${new Date().toISOString().slice(0, 10)}.csv`, `﻿${toCsv(report.columns, report.rows)}`);
-      toast(`${report.title}: ${report.rows.length} row(s) downloaded.`);
+      const range = reportRange();
+      const [catalog, summary] = await Promise.all([R.catalog || DF.api(`/merchants/me/reports${q()}`), range ? DF.api(`/merchants/me/reports/delivery-performance?format=json&${range}${q("&")}`) : null]);
+      R.catalog = catalog;
+      R.kpis = summary?.highlights || null;
+      if (S().page === "Reports") afterReports();
     } catch (error) {
       fail(error);
     }
   }
 
+  async function fetchReport(kind) {
+    const range = reportRange();
+    if (!range) throw new Error("Choose the From and To dates, with From before To.");
+    return DF.api(`/merchants/me/reports/${kind}?format=json&${range}${q("&")}`);
+  }
+  async function downloadReport(kind) {
+    const range = reportRange();
+    if (!range) return toast("Choose the From and To dates, with From before To.");
+    const name = await DF.download(`/merchants/me/reports/${kind}?format=xlsx&${range}${q("&")}`, `${kind}.xlsx`);
+    toast(`${R.catalog?.find(r => r.kind === kind)?.title || "Report"} downloaded: ${name}`);
+  }
+
   async function viewReport(kind) {
     try {
       const report = await fetchReport(kind);
-      const totals = Object.entries(report.summary).map(([k, v]) => `<span class="status status-blue">${esc(k.replace(/([A-Z])/g, " $1").toLowerCase())}: ${esc(typeof v === "number" ? v.toLocaleString("en-BD") : v)}</span>`).join(" ");
+      const totals = report.highlights.map(h => `<span class="status status-blue">${esc(h.label)}: ${esc(highlight(h))}</span>`).join(" ");
       dialog(
         report.title,
         `${esc(dateOnly(report.from))} – ${esc(dateOnly(report.to))} · ${report.rows.length} row(s)`,
         `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${totals}</div><div class="table-scroll"><table><thead><tr>${report.columns.map(c => `<th>${esc(c.toUpperCase())}</th>`).join("")}</tr></thead><tbody>${report.rows
           .slice(0, 200)
           .map(r => `<tr>${r.map(v => `<td>${esc(typeof v === "string" && /^\d{4}-\d\d-\d\dT/.test(v) ? dateTime(v) : v ?? "—")}</td>`).join("")}</tr>`)
-          .join("") || `<tr><td colspan="${report.columns.length}" class="empty-state">No rows in this period.</td></tr>`}</tbody></table></div>${report.rows.length > 200 ? `<p class="panel-subtitle">First 200 rows shown; download the CSV for all of them.</p>` : ""}<div class="modal-actions"><button type="button" class="button button-primary" data-dff-report="${esc(kind)}">Download CSV</button></div>`,
+          .join("") || `<tr><td colspan="${report.columns.length}" class="empty-state">No rows in this period.</td></tr>`}</tbody></table></div>${report.rows.length > 200 ? `<p class="panel-subtitle">First 200 rows shown; download the Excel file for all of them.</p>` : ""}<div class="modal-actions"><button type="button" class="button button-primary" data-dff-report="${esc(kind)}">Download CSV</button></div>`,
         900,
       );
     } catch (error) {
@@ -693,8 +714,8 @@
             .then(() => toast(`${p.name} removed.`), fail),
       );
     }
-    if ((el = hit("[data-dff-report]"))) return stop(event), void downloadReport(el.dataset.dffReport);
-    if ((el = hit("[data-dff-report-view]"))) return stop(event), void viewReport(el.dataset.dffReportView);
+    if ((el = hit("[data-dff-report]"))) return stop(event), void DF.busy(el, () => downloadReport(el.dataset.dffReport).catch(fail), "Preparing…");
+    if ((el = hit("[data-dff-report-view]"))) return stop(event), void DF.busy(el, () => viewReport(el.dataset.dffReportView), "Opening…");
     if (hit("#dffSchedules")) return stop(event), void loadPickups().then(openSchedules, fail);
     if (hit("#dffRequestPickup")) {
       stop(event);
@@ -758,8 +779,15 @@
     const t = event.target;
     if (t.id === "dffCatalogPick") return applyProduct(t.value);
     if (t.id === "dffReportPeriod") {
-      reportDays = Number(t.value) || 30;
-      return window.renderPage("Reports");
+      R.period = t.value;
+      R.kpis = null;
+      afterReports();
+      return void loadReports();
+    }
+    if (t.id === "dffReportFrom" || t.id === "dffReportTo") {
+      R[t.id === "dffReportFrom" ? "from" : "to"] = t.value;
+      if (R.from && R.to && R.from > R.to) return toast("The From date can't be after the To date.");
+      return void loadReports();
     }
   }
 
@@ -778,7 +806,7 @@
         afterPickups();
         if (!F.upcoming) void loadPickups().then(refreshPickupPage);
       }
-      if (page === "Shipments") {
+      if (page === "Orders") {
         const actions = $("mainContent").querySelector(".page-heading .heading-actions");
         if (actions && !$("dffReturns")) actions.insertAdjacentHTML("afterbegin", `<button class="button" id="dffReturns">${icon("box")} Returns (RTO)</button>`);
       }

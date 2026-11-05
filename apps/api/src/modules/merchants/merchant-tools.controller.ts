@@ -55,10 +55,17 @@ export class MerchantToolsController {
   }
 
   /**
-   * Report rows from live data: orders, delivery-performance, cod-reconciliation, returns,
-   * invoices. format=csv (default) downloads an Excel-compatible file; format=json returns
-   * the columns, rows and totals.
+   * Report rows from live data (see GET /merchants/me/reports). format=xlsx downloads Excel, format=csv
+   * (default) a CSV file; format=json returns the columns, rows, totals and highlights.
    */
+  /** The reports this person can open: by merchant type, and money reports for owners only. */
+  @RequirePermissions("parcel:read:own")
+  @Get("reports")
+  @ApiZodQuery(merchantSelectorSchema)
+  reports(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector) {
+    return this.tools.reportCatalog(actor, query);
+  }
+
   @RequirePermissions("parcel:read:own")
   @Get("reports/:kind")
   @ApiZodQuery(reportQuerySchema)
@@ -67,6 +74,13 @@ export class MerchantToolsController {
     const report = await this.tools.report(actor, kind as ReportKind, query);
     if (query.format === "json") return report;
     const day = report.to.slice(0, 10);
+    if (query.format === "xlsx") {
+      reply
+        .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        .header("content-disposition", `attachment; filename="${kind}-${report.from.slice(0, 10)}-to-${day}.xlsx"`)
+        .header("cache-control", "private, no-store");
+      return this.tools.reportXlsx(report);
+    }
     reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", `attachment; filename="${kind}-${day}.csv"`).header("cache-control", "private, no-store");
     return this.tools.reportCsv(report);
   }

@@ -60,7 +60,7 @@
   const COD_STATE = { WITH_RIDER: "With rider", AT_HUB: "At hub · processing", SETTLED: "Paid" };
   const SETTLEMENT_STATUS = { DRAFT: "Pending approval", APPROVED: "Approved · processing", PAID: "Paid" };
   /** Pages whose content comes from parcels (re-rendered when the data changes). */
-  const DATA_PAGES = new Set(["Overview", "Orders", "Shipments", "Pickup requests", "Customers", "Payments", "Reports", "Settings", "Billing"]);
+  const DATA_PAGES = new Set(["Overview", "New orders", "Orders", "Shipments", "Pickup requests", "Customers", "Payments", "Reports", "Settings", "Billing"]);
 
   const S = {
     cfg: null,
@@ -70,6 +70,8 @@
     stats: null,
     period: "7d",
     parcels: [],
+    /** Parcels the server-paged lists have shown (shared/merchant-orders.js): older than the ones kept in `parcels`. */
+    listed: new Map(),
     truncated: false,
     signature: "",
     invoices: [],
@@ -84,7 +86,7 @@
     pageNo: 1,
     dirty: false,
   };
-  const byId = id => S.parcels.find(p => p.trackingId === id);
+  const byId = id => S.parcels.find(p => p.trackingId === id) || S.listed.get(id);
   const isOwner = () => S.merchant?.myRole === "MERCHANT_OWNER";
   const q = (sep = "?") => (S.merchant ? `${sep}merchantId=${S.merchant.id}` : "");
 
@@ -450,9 +452,8 @@
       badge.hidden = !n;
     };
     if (!st) return;
-    const open = st.parcels.total - st.parcels.delivered - st.parcels.cancelled - (st.parcels.byStatus.RETURNED ?? 0);
-    set("Orders", open);
-    set("Shipments", st.parcels.inTransit);
+    const by = st.parcels.byStatus;
+    set("New orders", (by.PENDING_CONFIRMATION ?? 0) + (by.PICKUP_ASSIGNED ?? 0) + (by.PICKUP_CONFIRMED ?? 0));
     set("Pickup requests", st.parcels.awaitingPickup);
   }
 
@@ -671,6 +672,7 @@
 
   /** Client-side pages over the rows the filters left visible (filters use [hidden]). */
   function paginate() {
+    if (window.DFMerchantOrders?.active()) return; // New orders and All orders are paged by the server
     const body = $("tableBody");
     const footer = document.querySelector(".page-table-panel .table-footer");
     if (!body || !footer) return;
@@ -1625,7 +1627,7 @@
     return `<div class="page-heading"><div><p class="eyebrow">Developer tools</p><h1>API & Webhooks</h1><p class="subtitle">Book parcels and track them from your ${doc ? "business systems" : "store"} with the Paira Express API.</p></div>${statusPill(activeKeys.length ? `${activeKeys.length} active API key${activeKeys.length === 1 ? "" : "s"}` : "No API keys yet")}</div>
       <div class="metrics">${metricCard("API version", "v1", "settings", "Versioned REST API", "stable")}${metricCard("Authentication", "Bearer", "users", "API key in Authorization header", "HTTPS")}${metricCard("Webhook signing", "HMAC-SHA256", "bell", "Verify every event signature", "signed")}</div>
       <section class="panel" style="margin-bottom:14px"><div class="panel-heading"><div><h2 class="panel-title">API keys</h2><p class="panel-subtitle">Server-to-server credentials for ${esc(m?.name)} · ${esc(m?.code)}</p></div>${statusPill(m?.status === "ACTIVE" ? "Active" : "Pending account approval")}</div>${keysPanel}</section>
-      <div class="api-layout"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">API reference</h2><p class="panel-subtitle">REST over HTTPS · JSON request and response bodies · <a href="/api/docs" target="_blank" rel="noopener">full OpenAPI reference ↗</a></p></div><span class="status status-blue">Base URL · ${esc(base)}</span></div>
+      <div class="api-layout"><section class="panel"><div class="panel-heading"><div><h2 class="panel-title">API reference</h2><p class="panel-subtitle">REST over HTTPS · JSON request and response bodies</p></div><span class="status status-blue">Base URL · ${esc(base)}</span></div>
         <div class="form-grid" style="margin-top:16px"><div class="form-field full"><label>Authentication</label><pre class="api-code">Authorization: Bearer YOUR_API_KEY&#10;Content-Type: application/json&#10;Idempotency-Key: unique-request-id</pre></div>
         <div class="form-field full"><label>Book a ${doc ? "document consignment" : "parcel"} <span class="status status-good">POST /parcels · 201 Created</span></label><pre class="api-code">${esc(example.create)}</pre><small>The server prices the parcel from your service package. Keep the Idempotency-Key stable when retrying: a repeat returns the original parcel. merchantOrderRef must be unique (409 if it was already booked).</small></div>
         <div class="form-field full"><label>Get status and tracking history <span class="status status-blue">GET /parcels/{trackingId}</span></label><pre class="api-code">${esc(example.status)}</pre><small>Includes status, charges, COD and the full event history.</small></div>
@@ -1997,7 +1999,7 @@
       if (p) window.DFImport?.complete(p, { tones: IMPORT_TONES, onDone: () => refresh({ force: true }).catch(() => undefined) });
       return;
     }
-    if (hit("#merchantPrint")) {
+    if (hit("#merchantPrint") && !window.DFMerchantOrders?.active()) {
       stop(event);
       const format = $("merchantPrintFormat").value;
       if (format === "shipments") return void merchantPrintShipmentList();
@@ -2285,6 +2287,7 @@
     },
     openHistory: id => openHistory(id),
     byId,
+    toOrder,
     dialog,
     closeDialog,
     merchantQuery: q,

@@ -1,4 +1,3 @@
-import AppVersion from "@/shared/AppVersion";
 import BrandMark from "@/shared/BrandMark";
 import AppDownloadCard from "@/shared/AppDownloadCard";
 
@@ -36,17 +35,17 @@ export default function Sidebar() {
             </svg>
             Overview
           </button>{" "}
-          <button className="nav-item" data-page="Orders">
+          <button className="nav-item" data-page="New orders">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-orders" />
             </svg>
-            Delivery requests<span className="nav-count">24</span>
+            New requests<span className="nav-count">24</span>
           </button>{" "}
-          <button className="nav-item" data-page="Shipments">
+          <button className="nav-item" data-page="Orders">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-truck" />
             </svg>
-            Delivery tracking<span className="nav-count">18</span>
+            All requests
           </button>{" "}
           <button className="nav-item" data-page="Pickup requests">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
@@ -112,7 +111,6 @@ export default function Sidebar() {
           </div>
           <span style={{ color: "#98a2ae" }}>···</span>
         </div>{" "}
-        <AppVersion />
       </div>{" "}
     </aside>
   );

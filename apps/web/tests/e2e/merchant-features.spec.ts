@@ -38,7 +38,7 @@ async function signIn(browser: Browser, user: { login: string; password: string 
 
 async function nav(page: Page, name: string) {
   await page.click(`#navigation [data-page="${name}"]`);
-  await expect(page.locator("#breadcrumbPage")).toContainText(name);
+  await expect(page.locator("#breadcrumbPage")).toContainText(name === "Orders" ? "All orders" : name);
 }
 
 test("e-commerce merchant: products prefill orders, reports export, recurring pickups", async ({ browser }) => {
@@ -70,7 +70,7 @@ test("e-commerce merchant: products prefill orders, reports export, recurring pi
   await nav(page, "Reports");
   const download = page.waitForEvent("download");
   await page.click('[data-dff-report="orders"]');
-  expect((await download).suggestedFilename()).toMatch(/orders-\d{4}-\d\d-\d\d\.csv$/);
+  expect((await download).suggestedFilename()).toMatch(/orders-\d{4}-\d\d-\d\d-to-\d{4}-\d\d-\d\d\.xlsx$/);
 
   // ── Recurring pickup ──
   await nav(page, "Pickup requests");

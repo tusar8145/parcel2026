@@ -874,13 +874,13 @@
       if (!isBulk() && needsMerchant() && !ui.merchantId && !ui.cfg.merchantId) return chooseStep("Choose the merchant first: the template's services follow its package.");
       return void template({ ...ui.cfg, merchantId: ui.cfg.merchantId || (needsMerchant() ? ui.merchantId : "") || undefined });
     }
-    if (action === "download") return void bulkDownload(el);
+    if (action === "download") return void DF.busy(el, () => bulkDownload(el), "Preparing the file…");
     if (action === "preset") return bulkPreset(el.dataset.preset);
     if (action === "pick-action") return bulkPickAction(el.dataset.action);
     if (action === "actions") return void bulkActionStep();
     if (action === "history") return void history(ui.cfg);
     if (action === "new") return void open(ui.cfg);
-    if (action === "check") return void check();
+    if (action === "check") return void DF.busy(el, check, "Checking…");
     if (action === "map-back") {
       readMapping();
       return chooseStep();
@@ -895,7 +895,7 @@
     if (action === "filter") return void loadRows(el.dataset.filter, 1).catch(error => toast(describe(error)));
     if (action === "page") return void loadRows(ui.filter, Number(el.dataset.page)).catch(error => toast(describe(error)));
     if (action === "jump") return void jump();
-    if (action === "commit") return void commit(el);
+    if (action === "commit") return void DF.busy(el, () => commit(el), "Applying…");
     if (action === "failed") {
       if (el.dataset.id) return void DF.download(`${base()}/${el.dataset.id}/failed-rows`).catch(error => toast(describe(error)));
       return void downloadFailed();

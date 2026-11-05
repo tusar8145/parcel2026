@@ -1,4 +1,5 @@
 import { PickupsService } from "../src/modules/pickups/pickups.service";
+import { readXlsx } from "../src/modules/imports/xlsx/xlsx-reader";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
 /** Merchant tools: products, reports, returns (RTO) and pickup scheduling. */
@@ -203,6 +204,32 @@ describe("merchant tools", () => {
       expect((await ctx.api("GET", "/merchants/me/reports/cod-reconciliation?format=json", { token: owner.token })).status).toBe(200);
       expect((await ctx.api("GET", "/merchants/me/reports/invoices?format=json", { token: owner.token })).status).toBe(200);
       expect((await ctx.api("GET", "/merchants/me/reports/nope", { token: owner.token })).status).toBe(404);
+    });
+
+    it("offers each person only their reports, hides charges from staff and shows nothing internal", async () => {
+      const { owner, staff } = await workspace();
+      await ctx.api("POST", "/parcels", { token: owner.token, body: order() });
+      const kinds = async (token: string) => (await ctx.api("GET", "/merchants/me/reports", { token })).body.map((r: { kind: string }) => r.kind);
+      expect(await kinds(owner.token)).toEqual(["orders", "delivery-performance", "failed-deliveries", "returns", "cod-reconciliation", "payouts"]);
+      expect(await kinds(staff.token)).toEqual(["orders", "delivery-performance", "failed-deliveries", "returns"]);
+
+      const asOwner = (await ctx.api("GET", "/merchants/me/reports/orders?format=json", { token: owner.token })).body;
+      expect(asOwner.columns).toContain("Charge (BDT)");
+      expect(asOwner.highlights.map((h: { label: string }) => h.label)).toEqual(["Orders", "COD value", "Charges"]);
+      const asStaff = (await ctx.api("GET", "/merchants/me/reports/orders?format=json", { token: staff.token })).body;
+      expect(asStaff.columns).not.toContain("Charge (BDT)");
+      expect(asStaff.summary.charges).toBeUndefined();
+
+      const returns = (await ctx.api("GET", "/merchants/me/reports/returns?format=json", { token: staff.token })).body;
+      for (const internal of ["Requested by", "Return run", "Return charge (BDT)"]) expect(returns.columns).not.toContain(internal);
+      expect((await ctx.api("GET", "/merchants/me/reports/payouts?format=json", { token: staff.token })).status).toBe(403);
+      expect((await ctx.api("GET", "/merchants/me/reports/payouts?format=json", { token: owner.token })).status).toBe(200);
+      expect((await ctx.api("GET", "/merchants/me/reports/failed-deliveries?format=json", { token: staff.token })).status).toBe(200);
+
+      const file = await ctx.app.inject({ method: "GET", url: "/api/v1/merchants/me/reports/orders?format=xlsx", headers: { authorization: `Bearer ${owner.token}` } });
+      expect(file.statusCode).toBe(200);
+      expect(file.headers["content-disposition"]).toMatch(/orders-\d{4}-\d\d-\d\d-to-\d{4}-\d\d-\d\d\.xlsx/);
+      expect(readXlsx(file.rawPayload, { maxRows: 10 }).rows[0]).toContain("Tracking ID");
     });
   });
 });

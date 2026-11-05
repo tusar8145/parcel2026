@@ -71,7 +71,7 @@ const auth = (t: string) => ({ authorization: `Bearer ${t}` });
 
 async function nav(page: Page, name: string) {
   await page.click(`#navigation [data-page="${name}"]`);
-  await expect(page.locator("#breadcrumbPage")).toContainText(name === "Payments" ? "Balance" : name);
+  await expect(page.locator("#breadcrumbPage")).toContainText(name === "Payments" ? "Balance" : name === "Orders" ? /All (orders|requests)/ : name);
 }
 
 /** Fills the order modal's common fields. */
@@ -151,15 +151,15 @@ test("e-commerce merchant: identity, booking, tracking, cancelling and the dashb
   await expect(row).toBeVisible();
   await expect(row).toContainText("৳ 1,250");
   await expect(row).toContainText("Pending operations confirmation");
-  await expect(page.locator(".page-table-panel .table-footer > span")).toContainText("Showing 1–1 of 1 orders");
+  await expect(page.locator(".page-table-panel .table-footer > span")).toContainText("Showing 1–1 of 1 order");
   await row.locator("[data-merchant-history]").click();
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Pickup request submitted");
   // "Deliver to": the address as typed (its area / zone / district are not appended).
   await expect(page.locator("#merchantHistoryBackdrop")).toContainText("Deliver toHouse 7, Road 2Service");
   await page.click("#closeMerchantHistory");
 
-  // ── Shipments and pickup requests show it too ──
-  await nav(page, "Shipments");
+  // ── All orders shows where it's going, and pickup requests show it too ──
+  await nav(page, "Orders");
   await expect(page.locator(`#tableBody tr[data-merchant-record-id="${trackingId}"]`)).toContainText("Dhanmondi, Dhaka Central");
   await nav(page, "Pickup requests");
   await expect(page.locator("#tableBody")).toContainText(trackingId);
@@ -372,5 +372,88 @@ test("banking & financial merchant: redirect, document booking, delivery and its
   await page.fill('#mbPaidForm [name="reference"]', "CHQ-77");
   await page.click('#mbPaidForm [type="submit"]');
   await expect(page.locator(".mb-table")).toContainText("Waiting for confirmation");
+  expect(errors).toEqual([]);
+});
+
+test("merchant lists: New orders and All orders, server filters, Excel export, print by type, reports, no version or OpenAPI link", async ({ browser }) => {
+  const { page, errors } = await signIn(browser, shopOwner, /\/ecommerce-merchant/);
+  await expect(page.locator('#navigation [data-page="New orders"]')).toContainText("New orders");
+  await expect(page.locator('#navigation [data-page="Orders"]')).toContainText("All orders");
+  await expect(page.locator('#navigation [data-page="Shipments"]')).toHaveCount(0);
+  await expect(page.locator(".app-version")).toHaveCount(0);
+
+  // ── New orders: what was just booked, with the tools of an e-commerce merchant ──
+  await page.click('#navigation [data-page="New orders"]');
+  await expect(page.locator("#breadcrumbPage")).toHaveText("New orders");
+  const recipient = `E2E List ${unique()}`;
+  await fillOrder(page, recipient, "01812345679");
+  await page.fill("#merchantSvcCodAmount", "700");
+  await page.click('#orderForm button[type="submit"]');
+  const trackingId = await createdId(page);
+  const row = page.locator(`#tableBody tr[data-merchant-record-id="${trackingId}"]`);
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await expect(row).toContainText("Dhanmondi, Dhaka Central");
+  await expect(page.locator("#merchantPrintFormat option")).toHaveText(["Invoices · A4", "4 invoices · A4", "8 invoices · A4", "Invoice · POS 80mm", "Shipment labels", "Order list"]);
+  await expect(page.locator("#dffReturns")).toHaveCount(0);
+  await expect(page.locator("#merchantBulkImport")).toBeVisible();
+
+  // ── Filters run on the server, with a way back ──
+  await page.selectOption("#merchantPaymentFilter", "prepaid");
+  await expect(row).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.locator("#tableBody")).toContainText("match these filters");
+  await page.click("#merchantClearFilters");
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await page.fill("#tableSearch", recipient);
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("#tableSearch")).toBeFocused();
+  await page.fill("#tableSearch", "");
+
+  // ── All orders: the last month by default, and the Excel export with a loading button ──
+  await page.click('#navigation [data-page="Orders"]');
+  await expect(page.locator("#breadcrumbPage")).toHaveText("All orders");
+  await expect(page.locator("#merchantPageSize")).toBeVisible();
+  expect(await page.inputValue("#merchantDateFrom")).not.toBe("");
+  await expect(page.locator("#dffReturns")).toBeVisible();
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click("#merchantDownloadOrders")]);
+  expect(download.suggestedFilename()).toMatch(/^parcels-.*\.xlsx$/);
+  await expect(page.locator("#toast")).toContainText("exported to Excel");
+  await expect(page.locator("#mainContent")).not.toContainText("Bulk upload accepts");
+
+  // ── A later status moves out of New orders ──
+  await sql(`UPDATE parcels SET status = 'DELIVERED', "deliveredAt" = now(), "statusChangedAt" = now() WHERE "trackingId" = $1`, [trackingId]);
+  await page.click('#navigation [data-page="New orders"]');
+  await expect(row).toHaveCount(0, { timeout: 20_000 });
+
+  // ── Reports: the merchant type's reports, the period's numbers, on screen and in Excel ──
+  await page.click('#navigation [data-page="Reports"]');
+  await expect(page.locator("#breadcrumbPage")).toHaveText("Reports");
+  for (const kind of ["orders", "delivery-performance", "failed-deliveries", "returns", "cod-reconciliation", "payouts"]) await expect(page.locator(`[data-dff-report-card="${kind}"]`)).toBeVisible();
+  await expect(page.locator('[data-dff-report-card="branches"], [data-dff-report-card="invoices"]')).toHaveCount(0);
+  await expect(page.locator("#dffReportKpis")).toContainText("Success rate");
+  await page.click('[data-dff-report-view="orders"]');
+  await expect(page.locator("body")).toContainText("COD value");
+  await page.keyboard.press("Escape");
+
+  // ── API page: no OpenAPI link ──
+  await page.goto("/ecommerce-merchant?page=api-and-webhooks");
+  await expect(page.locator("#breadcrumbPage")).toContainText("API", { timeout: 20_000 });
+  await expect(page.locator('#mainContent a[href="/api/docs"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("banking & financial merchant: New requests and All requests with document filters and reports", async ({ browser }) => {
+  const { page, errors } = await signIn(browser, bankOwner, /\/banking-merchant/);
+  await expect(page.locator('#navigation [data-page="New orders"]')).toContainText("New requests");
+  await expect(page.locator('#navigation [data-page="Orders"]')).toContainText("All requests");
+  await page.click('#navigation [data-page="Orders"]');
+  await expect(page.locator("#breadcrumbPage")).toHaveText("All requests");
+  await expect(page.locator("#merchantBranchFilter")).toBeVisible();
+  await expect(page.locator("#merchantPaymentFilter")).toHaveCount(0);
+  await expect(page.locator("#merchantPrintFormat option")).toHaveText(["Invoices · A4", "4 invoices · A4", "8 invoices · A4", "Shipment labels", "Consignment list"]);
+  await page.click('#navigation [data-page="Reports"]');
+  await expect(page.locator('[data-dff-report-card="invoices"]')).toBeVisible();
+  await expect(page.locator('[data-dff-report-card="branches"]')).toBeVisible();
+  await expect(page.locator('[data-dff-report-card="cod-reconciliation"]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -1,10 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { parcelStatusLabel, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@paira-express/shared";
 import type { z } from "zod";
 import { addressText } from "../../common/address";
 import { AuditService } from "../../common/audit.service";
-import type { Actor } from "../../common/auth/actor";
+import { merchantIdsOf, type Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
+import { AppError } from "../../common/errors";
 import { dhakaDayKey } from "../../common/period";
 import { PrismaService } from "../../common/prisma.service";
 import type { Prisma } from "../../generated/prisma/client";
@@ -18,6 +19,9 @@ import type { exportParcelsQuerySchema } from "./parcels.schemas";
  * Every file has the booking date (the first status), reference no and recipient phone. More columns
  * follow the filters: Delivered adds the delivery details, Returned / Return scheduled the return details,
  * and an E-commerce export (the E-commerce tab or an E-commerce merchant) adds COD.
+ *
+ * Merchant panels › All orders: the merchant's own parcels with `merchantExportColumns`, which hold no
+ * internal data (no riders, hubs or SLA state; the delivery and return charges are for owners only).
  */
 
 /** Keeps a file a size Excel and the API's memory handle well; a longer period is exported in parts. */
@@ -42,6 +46,9 @@ const SELECT = {
   deliveryDistrict: true,
   serviceLevel: true,
   weightKg: true,
+  contents: true,
+  originBranchCode: true,
+  totalCharge: true,
   slaState: true,
   attemptCount: true,
   codAmount: true,
@@ -122,6 +129,29 @@ const COD: Column = { header: "COD (BDT)", width: 12, value: p => num(p.codAmoun
 /** What was really collected: partial deliveries take less than the COD amount. */
 const COD_COLLECTED: Column = { header: "COD collected (BDT)", width: 12, value: p => num(p.codCollectedAmount ?? p.codCollection?.amount) };
 
+const column = (header: string) => BASE.find(c => c.header === header)!;
+const CHARGE: Column = { header: "Delivery charge (BDT)", width: 13, value: p => num(p.totalCharge) };
+const RETURN_CHARGE = RETURNED.find(c => c.header === "Return charge (BDT)")!;
+
+/** A merchant's file: its own parcels, by merchant type and status, nothing internal. */
+export function merchantExportColumns(opts: { statuses?: readonly string[]; ecommerce: boolean; owner: boolean }): Column[] {
+  const delivered = !!opts.statuses?.includes("DELIVERED");
+  const returned = !!opts.statuses?.some(s => s === "RETURNED" || s === "RETURN_SCHEDULED");
+  const place = ["Recipient", "Recipient phone", "Address", "District", "Zone", "Service"].map(column);
+  const kind: Column[] = opts.ecommerce
+    ? [{ header: "Product", width: 24, value: p => p.contents ?? "" }, column("Weight (kg)"), COD]
+    : [{ header: "Document", width: 26, value: p => p.contents ?? "" }, { header: "Origin branch", width: 16, value: p => p.originBranchCode ?? "" }];
+  return [
+    ...["Date (first status)", "Tracking ID", "Reference no", "Status", "Status update date"].map(column),
+    ...place,
+    ...kind,
+    ...(opts.owner ? [CHARGE] : []),
+    ...(delivered ? DELIVERED : []),
+    ...(opts.ecommerce && delivered ? [COD_COLLECTED] : []),
+    ...(returned ? RETURNED.filter(c => opts.owner || c !== RETURN_CHARGE) : []),
+  ];
+}
+
 /** The file's columns for these filters. */
 export function exportColumns(opts: { statuses?: readonly string[]; ecommerce: boolean }): Column[] {
   const delivered = !!opts.statuses?.includes("DELIVERED");
@@ -142,6 +172,22 @@ export class ParcelExportService {
     const ecommerce = query.line === "ECOMMERCE" || merchant?.type === "ECOMMERCE";
     const columns = exportColumns({ statuses: query.status, ecommerce });
 
+    return this.write(actor, query, columns, merchant?.name, "parcel.export", meta);
+  }
+
+  /** A merchant's own parcels (merchant panels › New orders / All orders). */
+  async merchantExport(actor: Actor, query: z.infer<typeof exportParcelsQuerySchema>, meta: RequestMeta) {
+    const own = merchantIdsOf(actor);
+    const merchantId = query.merchantId ?? own[0];
+    if (!merchantId || !own.includes(merchantId)) throw new AppError("FORBIDDEN", "This export is for your own merchant account", HttpStatus.FORBIDDEN);
+    const merchant = await this.prisma.merchant.findUniqueOrThrow({ where: { id: merchantId }, select: { type: true, name: true, status: true } });
+    if (merchant.status !== "ACTIVE") throw new AppError("FORBIDDEN", "Your account must be active to export orders", HttpStatus.FORBIDDEN);
+    const owner = actor.kind === "user" && actor.roles.some(r => r.merchantId === merchantId && r.role === "MERCHANT_OWNER");
+    const columns = merchantExportColumns({ statuses: query.status, ecommerce: merchant.type === "ECOMMERCE", owner });
+    return this.write(actor, { ...query, merchantId }, columns, merchant.name, "merchant.parcel_export", meta);
+  }
+
+  private async write(actor: Actor, query: z.infer<typeof exportParcelsQuerySchema>, columns: Column[], merchantName: string | undefined, action: string, meta: RequestMeta) {
     const filters = await this.parcels.listWhere(actor, query);
     const where: Prisma.ParcelWhereInput = query.trackingIds ? { AND: [filters, { trackingId: { in: query.trackingIds } }] } : filters;
     const matched = await this.prisma.parcel.count({ where });
@@ -169,10 +215,10 @@ export class ParcelExportService {
     });
     await this.audit.record(
       actor,
-      { action: "parcel.export", entityType: "parcel", data: { rows: count, matched, status: query.status ?? null, merchantId: query.merchantId ?? null, line: query.line ?? null, from: query.from ?? null, to: query.to ?? null, dateField: query.dateField ?? "created", ticked: query.trackingIds?.length ?? 0 } },
+      { action, entityType: "parcel", data: { rows: count, matched, status: query.status ?? null, merchantId: query.merchantId ?? null, line: query.line ?? null, from: query.from ?? null, to: query.to ?? null, dateField: query.dateField ?? "created", ticked: query.trackingIds?.length ?? 0 } },
       meta,
     );
-    return { buffer, fileName: this.fileName(query, merchant?.name), count, matched, maxRows: PARCEL_EXPORT_MAX_ROWS };
+    return { buffer, fileName: this.fileName(query, merchantName), count, matched, maxRows: PARCEL_EXPORT_MAX_ROWS };
   }
 
   /** parcels-delivered-northstar-store-2026-10-05-to-2026-11-05.xlsx */

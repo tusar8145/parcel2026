@@ -33,7 +33,7 @@
     "ecommerce-merchant": { Payments: "balance" },
     "banking-merchant": { Payments: "balance" },
   }[app] || {};
-  const ALIASES = { Payments: ["Payments", "Billing", "Billing & invoices"] };
+  const ALIASES = { Payments: ["Payments", "Billing", "Billing & invoices"], Orders: ["Orders", "Shipments", "Delivery requests", "Delivery tracking"] };
   /** Tabs inside pages: the buttons' attribute and their values (value, label, slug). */
   const TABS = {
     "super-admin": {

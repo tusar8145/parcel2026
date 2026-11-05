@@ -111,6 +111,60 @@ describe("all parcels", () => {
     expect((await ctx.api("GET", "/parcels/export", { token: customer.token })).status).toBe(403);
   });
 
+  it("merchants: list filters, New orders, and an export of their own parcels by type and status with nothing internal", async () => {
+    const s = await setup();
+    const shopOwner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: s.shop.id }], "Shop Owner");
+    const shopStaff = await userWithRoles(ctx, [{ role: "MERCHANT_STAFF", merchantId: s.shop.id }], "Shop Staff");
+    const bankOwner = await userWithRoles(ctx, [{ role: "MERCHANT_OWNER", merchantId: s.bank.id }], "Bank Owner");
+    const cod = await book(s, s.shop.id, { contents: "Blue shirt" });
+    const prepaid = await book(s, s.shop.id, { codAmount: 0, contents: "Red shoes" });
+    const done = await book(s, s.shop.id);
+    const letter = await book(s, s.bank.id, { codAmount: 0, contents: "Cheque book", originBranchCode: "BR-12" });
+    await ctx.prisma.parcel.update({ where: { trackingId: done }, data: { status: "DELIVERED", deliveredAt: new Date(), receiverRelation: "Self", pickupRiderId: s.rider.rider.id, currentHubId: s.h.id } });
+
+    const ids = async (token: string, query: string) => (await ctx.api("GET", `/parcels?page=1&limit=50&${query}`, { token })).body.items.map((p: { trackingId: string }) => p.trackingId).sort();
+    expect(await ids(shopOwner.token, "stage=not_picked_up")).toEqual([cod, prepaid].sort());
+    expect(await ids(shopOwner.token, "payment=cod")).toEqual([cod, done].sort());
+    expect(await ids(shopOwner.token, "payment=prepaid")).toEqual([prepaid]);
+    expect(await ids(shopOwner.token, "contents=shoes")).toEqual([prepaid]);
+    expect(await ids(shopOwner.token, "district=dhaka%20central")).toEqual([cod, prepaid, done].sort());
+    expect(await ids(bankOwner.token, "branch=br-12")).toEqual([letter]);
+    expect(await ids(shopOwner.token, "branch=br-12")).toEqual([]);
+
+    const url = (query: string) => `/merchants/me/parcels/export?${query}`;
+    const file = async (token: string, query: string) => {
+      const res = await ctx.app.inject({ method: "GET", url: `/api/v1${url(query)}`, headers: { authorization: `Bearer ${token}` } });
+      expect(res.statusCode, res.body.slice(0, 200)).toBe(200);
+      const [header, ...rows] = readXlsx(res.rawPayload, { maxRows: 100, prefer: ["Parcels"] }).rows;
+      return { header, rows: rows.map(r => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""]))) };
+    };
+    const internal = ["Pickup rider", "Delivery rider", "Current hub", "SLA", "Sender phone"];
+    const all = await file(shopOwner.token, "");
+    expect(all.rows).toHaveLength(3); // the merchant's own parcels only, never the bank's
+    expect(all.header).toEqual(expect.arrayContaining(["Date (first status)", "Tracking ID", "Reference no", "Recipient phone", "Product", "COD (BDT)", "Delivery charge (BDT)"]));
+    for (const column of internal) expect(all.header).not.toContain(column);
+
+    const delivered = await file(shopOwner.token, "status=Delivered");
+    expect(delivered.rows.map(r => r["Tracking ID"])).toEqual([done]);
+    expect(delivered.header).toEqual(expect.arrayContaining(["Delivery date", "Received by", "Relation", "COD collected (BDT)"]));
+    expect((await file(shopOwner.token, "status=Returned")).header).toContain("Return charge (BDT)");
+
+    const staff = await file(shopStaff.token, "status=Returned");
+    expect(staff.header).toContain("Return date");
+    for (const money of ["Delivery charge (BDT)", "Return charge (BDT)"]) expect(staff.header).not.toContain(money);
+
+    const bank = await file(bankOwner.token, "");
+    expect(bank.rows).toHaveLength(1);
+    expect(bank.rows[0]).toMatchObject({ Document: "Cheque book", "Origin branch": "BR-12" });
+    expect(bank.header).not.toContain("COD (BDT)");
+
+    expect((await ctx.api("GET", `${url("")}&merchantId=${s.bank.id}`, { token: shopOwner.token })).status).toBe(403);
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    expect((await ctx.api("GET", url(""), { token: customer.token })).status).toBe(403);
+    await ctx.prisma.merchant.update({ where: { id: s.shop.id }, data: { status: "SUSPENDED" } });
+    expect((await ctx.api("GET", url(""), { token: shopOwner.token })).status).toBe(403);
+  });
+
   it("adds COD for E-commerce only, delivery columns for Delivered and return columns for Returned", async () => {
     const s = await setup();
     const delivered = await book(s, s.shop.id);

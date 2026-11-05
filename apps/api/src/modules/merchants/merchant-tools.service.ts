@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { z } from "zod";
-import { PARCEL_STATUS_LABEL, type ParcelStatus } from "@paira-express/shared";
+import { PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@paira-express/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError, conflict, notFound } from "../../common/errors";
@@ -9,6 +9,7 @@ import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { Prisma, type Product } from "../../generated/prisma/client";
 import { dhakaDay, toCsv } from "../ops/ops-common";
+import { STYLE, writeXlsx, type Cell as XlsxCell } from "../imports/xlsx/xlsx-writer";
 import { MerchantsService } from "./merchants.service";
 import type { listProductsQuerySchema, productSchema, ReportKind, reportQuerySchema, updateProductSchema } from "./merchants.schemas";
 
@@ -36,10 +37,39 @@ const label = (s: string) => PARCEL_STATUS_LABEL[s as ParcelStatus] ?? s;
 export const REPORT_TITLE: Record<ReportKind, string> = {
   orders: "Orders",
   "delivery-performance": "Delivery performance by district",
-  "cod-reconciliation": "COD reconciliation",
+  "failed-deliveries": "Failed deliveries",
   returns: "Returns (RTO)",
-  invoices: "Invoices",
+  "cod-reconciliation": "COD reconciliation",
+  payouts: "Payouts",
+  invoices: "Bills",
+  branches: "Branch summary",
 };
+
+interface ReportInfo {
+  kind: ReportKind;
+  group: "Orders & delivery" | "Money";
+  description: string;
+  /** Only for this merchant type (both when empty). */
+  type?: "ECOMMERCE" | "BANKING_FINANCIAL";
+  /** Money: merchant owners only. */
+  owner?: boolean;
+}
+/** What the Reports page offers: each merchant type's useful reports, nothing that needs internal data. */
+const REPORTS: ReportInfo[] = [
+  { kind: "orders", group: "Orders & delivery", description: "Every booking in the period with its recipient, status and delivery date." },
+  { kind: "delivery-performance", group: "Orders & delivery", description: "Delivered, returned and in-progress parcels per district, with success rate and delivery time." },
+  { kind: "failed-deliveries", group: "Orders & delivery", description: "Failed delivery attempts with the reason, to follow up with your recipients." },
+  { kind: "returns", group: "Orders & delivery", description: "Parcels coming back to you, with the reason and whether you confirmed them." },
+  { kind: "branches", group: "Orders & delivery", type: "BANKING_FINANCIAL", description: "Documents sent, delivered and returned per origin branch." },
+  { kind: "cod-reconciliation", group: "Money", type: "ECOMMERCE", owner: true, description: "COD due and collected per delivered order, and the payout that paid it." },
+  { kind: "payouts", group: "Money", type: "ECOMMERCE", owner: true, description: "Payouts with COD, charges deducted, the net amount and when it was paid." },
+  { kind: "invoices", group: "Money", type: "BANKING_FINANCIAL", owner: true, description: "Your bills with the amounts paid and still due." },
+];
+const OWNER_REPORTS = new Set(REPORTS.filter(r => r.owner).map(r => r.kind));
+const COD_STATE: Record<string, string> = { WITH_RIDER: "With rider", AT_HUB: "At hub", IN_TRANSIT: "On the way to settlement", AT_CENTRAL: "Ready to settle", SETTLED: "Settled", NOT_RECORDED: "Not recorded" };
+const PAYOUT_STATUS: Record<string, string> = { UNPAID: "Processing", PAID: "Paid", CANCELLED: "Cancelled" };
+const BILL_STATUS: Record<string, string> = { ISSUED: "Unpaid", PARTLY_PAID: "Partly paid", PAID: "Paid", VOID: "Cancelled" };
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 
 type Cell = string | number | null;
 export interface Report {
@@ -50,6 +80,8 @@ export interface Report {
   columns: string[];
   rows: Cell[][];
   summary: Record<string, number>;
+  /** The totals to show, in words: "COD collected" 12,500 (money), "Success rate" 92 (percent). */
+  highlights: { label: string; value: number | string; format?: "money" | "percent" }[];
 }
 
 /** Merchant product catalogue (prefills bookings) and the Reports page exports. */
@@ -130,16 +162,20 @@ export class MerchantToolsService {
     if (from > to) throw new AppError("INVALID_RANGE", "The start date must be before the end date", HttpStatus.UNPROCESSABLE_ENTITY);
     if (to.getTime() - from.getTime() > REPORT_MAX_DAYS * 86_400_000) throw new AppError("RANGE_TOO_LONG", `Reports cover at most ${REPORT_MAX_DAYS} days`, HttpStatus.UNPROCESSABLE_ENTITY);
     // Money columns are for owners (staff see operational reports).
-    const owner = actor.kind === "api_key" || actor.roles.some(r => r.merchantId === m.id && r.role === "MERCHANT_OWNER");
-    if (!owner && (kind === "cod-reconciliation" || kind === "invoices")) throw new AppError("FORBIDDEN", "Only merchant owners can export financial reports", HttpStatus.FORBIDDEN);
+    const owner = this.isOwner(actor, m.id);
+    const doc = m.type === "BANKING_FINANCIAL";
+    const noun = doc ? "Documents" : "Orders";
+    if (!owner && OWNER_REPORTS.has(kind)) throw new AppError("FORBIDDEN", "Only merchant owners can export financial reports", HttpStatus.FORBIDDEN);
     const range = { gte: from, lte: to };
-    const base = { kind, title: REPORT_TITLE[kind], from: from.toISOString(), to: to.toISOString() };
+    const base = { kind, title: kind === "orders" && doc ? "Delivery requests" : REPORT_TITLE[kind], from: from.toISOString(), to: to.toISOString() };
 
     if (kind === "orders") {
       const parcels = await this.prisma.parcel.findMany({ where: { merchantId: m.id, createdAt: range }, orderBy: { createdAt: "asc" }, take: REPORT_MAX_ROWS });
+      const charges = sum(parcels.map(p => p.totalCharge));
+      const cod = sum(parcels.map(p => p.codAmount));
       return {
         ...base,
-        columns: ["Booked", "Tracking ID", "Order ref", "Recipient", "Phone", "District", "Zone", "Service", "Weight (kg)", "COD (BDT)", "Charge (BDT)", "Status", "Delivered"],
+        columns: ["Booked", "Tracking ID", "Reference no", "Recipient", "Phone", "District", "Zone", "Service", ...(doc ? ["Document", "Origin branch"] : ["Product", "Weight (kg)", "COD (BDT)"]), ...(owner ? ["Charge (BDT)"] : []), "Status", "Delivered"],
         rows: parcels.map(p => [
           iso(p.createdAt),
           p.trackingId,
@@ -148,14 +184,14 @@ export class MerchantToolsService {
           p.recipientPhone,
           p.deliveryDistrict,
           p.deliveryZone,
-          p.serviceLevel,
-          num(p.weightKg),
-          num(p.codAmount),
-          num(p.totalCharge),
+          SERVICE_LEVEL_LABEL[p.serviceLevel],
+          ...(doc ? [p.contents, p.originBranchCode] : [p.contents, num(p.weightKg), num(p.codAmount)]),
+          ...(owner ? [num(p.totalCharge)] : []),
           label(p.status),
           iso(p.deliveredAt),
         ]),
-        summary: { orders: parcels.length, cod: sum(parcels.map(p => p.codAmount)), charges: sum(parcels.map(p => p.totalCharge)) },
+        summary: { orders: parcels.length, ...(doc ? {} : { cod }), ...(owner ? { charges } : {}) },
+        highlights: [{ label: noun, value: parcels.length }, ...(doc ? [] : [{ label: "COD value", value: cod, format: "money" as const }]), ...(owner ? [{ label: "Charges", value: charges, format: "money" as const }] : [])],
       };
     }
 
@@ -196,11 +232,75 @@ export class MerchantToolsService {
         });
       const delivered = parcels.filter(p => p.status === "DELIVERED").length;
       const returned = parcels.filter(p => p.status === "RETURNED" || p.status === "RETURN_SCHEDULED").length;
+      const successRate = delivered + returned ? round((delivered / (delivered + returned)) * 100, 1) : 0;
       return {
         ...base,
         columns: ["District", "Parcels", "Delivered", "Returned", "Cancelled", "In progress", "Success rate (%)", "Avg. delivery time (h)", "Avg. attempts"],
         rows,
-        summary: { parcels: parcels.length, delivered, returned, successRate: delivered + returned ? round((delivered / (delivered + returned)) * 100, 1) : 0 },
+        summary: { parcels: parcels.length, delivered, returned, successRate },
+        highlights: [
+          { label: noun, value: parcels.length },
+          { label: "Delivered", value: delivered },
+          { label: "Returned", value: returned },
+          { label: "Success rate", value: successRate, format: "percent" },
+        ],
+      };
+    }
+
+    if (kind === "failed-deliveries") {
+      const attempts = await this.prisma.deliveryAttempt.findMany({
+        where: { outcome: "FAILED", createdAt: range, parcel: { merchantId: m.id } },
+        select: { createdAt: true, reason: true, parcel: { select: { id: true, trackingId: true, merchantOrderRef: true, recipientName: true, recipientPhone: true, deliveryDistrict: true, status: true, attemptCount: true } } },
+        orderBy: { createdAt: "desc" },
+        take: REPORT_MAX_ROWS,
+      });
+      const reasons = new Map<string, number>();
+      for (const a of attempts) reasons.set(a.reason || "Not given", (reasons.get(a.reason || "Not given") ?? 0) + 1);
+      const top = [...reasons.entries()].sort((a, b) => b[1] - a[1])[0];
+      const parcelCount = new Set(attempts.map(a => a.parcel.id)).size;
+      return {
+        ...base,
+        columns: ["Date", "Tracking ID", "Reference no", "Recipient", "Phone", "District", "Reason", "Attempts", "Status now"],
+        rows: attempts.map(a => [iso(a.createdAt), a.parcel.trackingId, a.parcel.merchantOrderRef, a.parcel.recipientName, a.parcel.recipientPhone, a.parcel.deliveryDistrict, a.reason, a.parcel.attemptCount, label(a.parcel.status)]),
+        summary: { attempts: attempts.length, parcels: parcelCount },
+        highlights: [{ label: "Failed attempts", value: attempts.length }, { label: noun, value: parcelCount }, ...(top ? [{ label: "Top reason", value: top[0] }] : [])],
+      };
+    }
+
+    if (kind === "branches") {
+      const parcels = await this.prisma.parcel.findMany({ where: { merchantId: m.id, createdAt: range }, select: { originBranchCode: true, status: true }, take: REPORT_MAX_ROWS * 5 });
+      const groups = new Map<string, { total: number; delivered: number; returned: number; cancelled: number }>();
+      for (const p of parcels) {
+        const code = p.originBranchCode || "No branch";
+        const g = groups.get(code) ?? { total: 0, delivered: 0, returned: 0, cancelled: 0 };
+        g.total++;
+        if (p.status === "DELIVERED") g.delivered++;
+        else if (p.status === "RETURNED" || p.status === "RETURN_SCHEDULED") g.returned++;
+        else if (p.status === "PICKUP_CANCELLED") g.cancelled++;
+        groups.set(code, g);
+      }
+      return {
+        ...base,
+        columns: ["Branch", "Documents", "Delivered", "Returned", "Cancelled", "In progress", "Success rate (%)"],
+        rows: [...groups.entries()]
+          .sort((a, b) => b[1].total - a[1].total)
+          .map(([code, g]): Cell[] => [code, g.total, g.delivered, g.returned, g.cancelled, g.total - g.delivered - g.returned - g.cancelled, g.delivered + g.returned ? round((g.delivered / (g.delivered + g.returned)) * 100, 1) : null]),
+        summary: { branches: groups.size, documents: parcels.length },
+        highlights: [{ label: "Branches", value: groups.size }, { label: "Documents", value: parcels.length }],
+      };
+    }
+
+    if (kind === "payouts") {
+      const account = await this.prisma.account.findUnique({ where: { merchantId: m.id }, select: { id: true } });
+      const payouts = account ? await this.prisma.payout.findMany({ where: { accountId: account.id, createdAt: range, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, take: REPORT_MAX_ROWS }) : [];
+      const net = sum(payouts.map(x => x.amount));
+      const paid = sum(payouts.filter(x => x.status === "PAID").map(x => x.amount));
+      return {
+        ...base,
+        columns: ["Payout", "Created", "COD (BDT)", "Charges (BDT)", "Adjustments (BDT)", "Net (BDT)", "Status", "Paid on", "Payment reference"],
+        rows: payouts.map(x => [x.number, iso(x.createdAt), num(x.codTotal), num(x.chargesTotal), num(x.adjustmentsTotal), num(x.amount), PAYOUT_STATUS[x.status] ?? x.status, iso(x.paidAt), x.reference]),
+        summary: { payouts: payouts.length, net, paid },
+        highlights: [{ label: "Payouts", value: payouts.length }, { label: "Net amount", value: net, format: "money" }, { label: "Paid", value: paid, format: "money" }],
       };
     }
 
@@ -229,14 +329,16 @@ export class MerchantToolsService {
           p.merchantOrderRef,
           num(p.codAmount),
           num(c?.amount),
-          c ? c.state : "NOT_RECORDED",
+          COD_STATE[c ? c.state : "NOT_RECORDED"] ?? c?.state ?? null,
           num(p.totalCharge),
           payout?.number ?? null,
-          payout?.status ?? null,
+          payout ? (PAYOUT_STATUS[payout.status] ?? payout.status) : null,
           iso(payout?.paidAt),
         ];
       });
       const paid = parcels.filter(p => p.codCollection?.state === "SETTLED");
+      const collected = sum(parcels.map(p => p.codCollection?.amount ?? 0));
+      const settledAmount = sum(paid.map(p => p.codCollection!.amount));
       return {
         ...base,
         columns: ["Delivered", "Tracking ID", "Order ref", "COD due (BDT)", "COD collected (BDT)", "Cash state", "Delivery charge (BDT)", "Settlement", "Settlement status", "Paid"],
@@ -244,10 +346,16 @@ export class MerchantToolsService {
         summary: {
           parcels: parcels.length,
           codDue: sum(parcels.map(p => p.codAmount)),
-          collected: sum(parcels.map(p => p.codCollection?.amount ?? 0)),
-          settled: sum(paid.map(p => p.codCollection!.amount)),
+          collected,
+          settled: settledAmount,
           charges: sum(parcels.map(p => p.totalCharge)),
         },
+        highlights: [
+          { label: "Orders", value: parcels.length },
+          { label: "COD collected", value: collected, format: "money" },
+          { label: "Paid to you", value: settledAmount, format: "money" },
+          { label: "Not paid yet", value: round(collected - settledAmount, 2), format: "money" },
+        ],
       };
     }
 
@@ -255,15 +363,17 @@ export class MerchantToolsService {
       const parcels = await this.prisma.parcel.findMany({
         where: {
           merchantId: m.id,
-          OR: [{ returnRequestedAt: range }, { status: { in: ["RETURN_SCHEDULED", "RETURNED"] }, updatedAt: range }],
+          OR: [{ returnRequestedAt: range }, { status: { in: ["RETURN_SCHEDULED", "RETURNED"] }, statusChangedAt: range }],
         },
-        include: { returnRun: { select: { number: true } } },
-        orderBy: { updatedAt: "asc" },
+        orderBy: { statusChangedAt: "asc" },
         take: REPORT_MAX_ROWS,
       });
+      const returned = parcels.filter(p => p.status === "RETURNED").length;
+      const charges = sum(parcels.map(p => p.returnCharge ?? 0));
       return {
         ...base,
-        columns: ["Tracking ID", "Order ref", "Recipient", "District", "Reason", "Requested", "Requested by", "Status", "Return run", "Return charge (BDT)", "Received by merchant"],
+        // No internal columns (who requested it, the return run); the return charge is for owners.
+        columns: ["Tracking ID", "Reference no", "Recipient", "District", "Reason", "Requested", "Status", "Return date", ...(owner ? ["Return charge (BDT)"] : []), "You confirmed"],
         rows: parcels.map(p => [
           p.trackingId,
           p.merchantOrderRef,
@@ -271,13 +381,13 @@ export class MerchantToolsService {
           p.deliveryDistrict,
           p.returnReason,
           iso(p.returnRequestedAt),
-          p.returnRequestedBy,
           label(p.status),
-          p.returnRun?.number ?? null,
-          num(p.returnCharge),
+          p.status === "RETURNED" ? iso(p.statusChangedAt) : null,
+          ...(owner ? [num(p.returnCharge)] : []),
           iso(p.returnReceivedAt),
         ]),
-        summary: { returns: parcels.length, returned: parcels.filter(p => p.status === "RETURNED").length, charges: sum(parcels.map(p => p.returnCharge ?? 0)) },
+        summary: { returns: parcels.length, returned, ...(owner ? { charges } : {}) },
+        highlights: [{ label: "Returns", value: parcels.length }, { label: "Returned", value: returned }, ...(owner ? [{ label: "Return charges", value: charges, format: "money" as const }] : [])],
       };
     }
 
@@ -285,16 +395,45 @@ export class MerchantToolsService {
     const account = await this.prisma.account.findUnique({ where: { merchantId: m.id }, select: { id: true } });
     const bills = account ? await this.prisma.bill.findMany({ where: { accountId: account.id, issuedAt: range }, orderBy: { issuedAt: "asc" }, take: REPORT_MAX_ROWS }) : [];
     const open = bills.filter(b => b.status === "ISSUED" || b.status === "PARTLY_PAID");
+    const billed = sum(bills.filter(b => b.status !== "VOID").map(b => b.total));
+    const unpaid = sum(open.map(b => b.total.minus(b.paid)));
     return {
       ...base,
       columns: ["Bill", "Delivered from", "Delivered to", "Issued", "Status", "Total (BDT)", "Paid (BDT)", "Due (BDT)"],
-      rows: bills.map(b => [b.number, dhakaDay(b.periodFrom), dhakaDay(new Date(b.periodTo.getTime() - 1)), iso(b.issuedAt), b.status, num(b.total), num(b.paid), b.status === "VOID" ? 0 : num(b.total.minus(b.paid))]),
-      summary: { invoices: bills.length, total: sum(bills.filter(b => b.status !== "VOID").map(b => b.total)), unpaid: sum(open.map(b => b.total.minus(b.paid))) },
+      rows: bills.map(b => [b.number, dhakaDay(b.periodFrom), dhakaDay(new Date(b.periodTo.getTime() - 1)), iso(b.issuedAt), BILL_STATUS[b.status] ?? b.status, num(b.total), num(b.paid), b.status === "VOID" ? 0 : num(b.total.minus(b.paid))]),
+      summary: { invoices: bills.length, total: billed, unpaid },
+      highlights: [{ label: "Bills", value: bills.length }, { label: "Billed", value: billed, format: "money" }, { label: "Still due", value: unpaid, format: "money" }],
     };
+  }
+
+  /** The reports this person can open, grouped for the Reports page. */
+  async reportCatalog(actor: Actor, query: { merchantId?: string }) {
+    const m = await this.merchants.resolveOwn(actor, query.merchantId);
+    const owner = this.isOwner(actor, m.id);
+    return REPORTS.filter(r => (!r.type || r.type === m.type) && (!r.owner || owner)).map(({ kind, group, description }) => ({
+      kind,
+      group,
+      description,
+      title: kind === "orders" && m.type === "BANKING_FINANCIAL" ? "Delivery requests" : REPORT_TITLE[kind],
+    }));
+  }
+
+  private isOwner(actor: Actor, merchantId: string) {
+    return actor.kind === "api_key" || actor.roles.some(r => r.merchantId === merchantId && r.role === "MERCHANT_OWNER");
   }
 
   reportCsv(report: Report) {
     return toCsv(report.columns, report.rows);
+  }
+
+  /** The report as Excel: dates in Dhaka time ("2026-11-05 14:30"), numbers as numbers, IDs and phones as text. */
+  reportXlsx(report: Report) {
+    const dhaka = (value: string) => new Date(new Date(value).getTime() + 6 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+    const rows: XlsxCell[][] = [
+      report.columns.map(value => ({ value, style: STYLE.headerOptional })),
+      ...report.rows.map(row => row.map((cell): XlsxCell => (typeof cell === "string" ? { value: ISO_DATE.test(cell) ? dhaka(cell) : cell, style: STYLE.text } : cell))),
+    ];
+    return writeXlsx({ title: report.title, sheets: [{ name: report.title.slice(0, 31), rows, widths: report.columns.map(c => Math.min(30, Math.max(14, c.length + 4))), freezeHeader: true, autoFilter: true }] });
   }
 }
 

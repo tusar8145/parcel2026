@@ -33,6 +33,8 @@ export const scripts = [
   // Balance (the old Payments / Billing pages): the merchant's account, settlements, bills, payments.
   "/legacy/shared/merchant-balance.js",
   "/legacy/shared/merchant-features.js",
+  // New orders and All orders: server-paged lists, filters by merchant type, Excel export (DFMerchantOrders).
+  "/legacy/shared/merchant-orders.js",
   // "Where is it now" map in the parcel drawer (DFParcelMap, GET /parcels/:id/position; Leaflet loads on first use).
   "/legacy/shared/parcel-map.js",
   // Top search and the parcel side drawer (DFMerchantParcel), on the merchant's own parcels.

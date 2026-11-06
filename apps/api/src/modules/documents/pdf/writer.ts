@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
+import { BRAND_STAR_PNG } from "../../../common/brand-star";
 import { code128Widths } from "./code128";
 
 /**
@@ -133,7 +134,7 @@ export class PdfWriter {
       autoFirstPage: false,
       lang: "en-BD",
       displayTitle: true,
-      info: { Title: opts.title, Subject: opts.subject ?? opts.title, Author: opts.author ?? "Paira Express", Creator: "Paira Express", Producer: "Paira Express documents" },
+      info: { Title: opts.title, Subject: opts.subject ?? opts.title, Author: opts.author ?? "Delivery Fast", Creator: "Delivery Fast", Producer: "Delivery Fast documents" },
     });
     const fonts = loadFonts();
     for (const [key, buf] of Object.entries(fonts)) this.doc.registerFont(key, buf);
@@ -299,28 +300,9 @@ export class PdfWriter {
     this.doc.restore();
   }
 
-  /** The Paira Express mark: a pigeon in flight carrying a letter (as on the website and panels), `size` points wide. */
+  /** The logo's star, `size` points wide. */
   logo(x: number, y: number, size: number) {
-    const d = this.doc;
-    const ink = "#344054";
-    d.save().translate(x, y).scale(size / 36);
-    // The pigeon.
-    d.save().translate(-1.2, -0.6).scale(1.2);
-    d.save().fillOpacity(0.55).path("M14.2 12.6 C12.4 7.4 14.4 2.9 20.4 1.2 c-1.2 3.9 -0.4 7.6 2.4 10.6 Z").fill(ink).restore();
-    d.path("M11.6 13.2 C9.2 9.4 9.6 5.2 13.4 2.2 c0.3 3.9 2 7.1 5.4 9.6 Z").fill(ink);
-    d.lineWidth(0.8).strokeColor(COLOR.brand).path("M12.3 7.4 c0.5 1.6 1.4 2.9 2.7 4 M11.4 10.1 c0.8 1.2 1.9 2.1 3.2 2.7").stroke();
-    d.path("M2.4 12.4 L8 14.6 L2.8 17.2 Z").fill(ink);
-    d.path("M7.2 14.6 c2.2 -2.6 6.6 -3.4 11 -2.6 c2.2 0.4 3.8 -0.2 5 -1.3 c1.4 -1.3 3.6 -1 4.3 0.5 l1.8 0.7 l-1.8 0.9 c-0.3 1.3 -0.9 2.4 -1.9 3.3 c-1.9 1.9 -5 2.9 -8.7 2.9 c-4.3 0 -7.6 -1.2 -9.7 -4.4 Z").fill(ink);
-    d.path("M27.5 11.2 L30.4 11.9 L27.6 12.8 Z").fill(COLOR.brand);
-    d.circle(25.8, 11.1, 0.75).fill("#ffffff");
-    d.lineWidth(1).strokeColor(ink).path("M16 18.3 L15.7 19.6 M19.2 18.3 L19.4 19.6").stroke();
-    d.restore();
-    // The letter in its claws.
-    d.save().rotate(-8, { origin: [22, 27] });
-    d.lineWidth(1.6).roundedRect(15.6, 22.6, 12.4, 8.4, 1.3).fillAndStroke("#fff8df", COLOR.brand);
-    d.lineWidth(1.3).strokeColor(COLOR.brand).path("M16 23.1 L21.8 27.4 L27.6 23.1").stroke();
-    d.restore();
-    d.restore();
+    (this.doc as unknown as { image(src: Buffer, x: number, y: number, o: { fit: number[] }): void }).image(BRAND_STAR_PNG, x, y, { fit: [size, size] });
   }
 
   line(x1: number, y1: number, x2: number, y2: number, o: { color?: string; width?: number; dash?: number } = {}) {

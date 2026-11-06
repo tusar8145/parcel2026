@@ -90,7 +90,7 @@ export default function PhotoLink({ token }: { token: string }) {
     <main className="pl">
       <style>{CSS}</style>
       <header className="pl-head">
-        <strong>{"Paira Express"}</strong>
+        <strong>{"Delivery Fast"}</strong>
         <span>{title || "Photo"}</span>
       </header>
       {state === "closed" ? (

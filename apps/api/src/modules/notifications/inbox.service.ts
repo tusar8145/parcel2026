@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
-import type { Role } from "@paira-express/shared";
+import type { Role } from "@delivery-fast/shared";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";

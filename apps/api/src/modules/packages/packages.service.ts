@@ -40,7 +40,7 @@ import {
   type RateCardConfig,
   type SelectionProblem,
   type SpeedOption,
-} from "@paira-express/shared";
+} from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { AppError, conflict, notFound } from "../../common/errors";

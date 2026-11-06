@@ -7,15 +7,15 @@ export default function Sidebar() {
       {" "}
       <div className="brand">
         <div className="brand-mark">
-          <BrandMark size={40} />
+          <BrandMark size={200} />
         </div>
         <div className="brand-name">
-          {"paira "}
-          <span>express</span>
+          {"delivery "}
+          <span>fast</span>
         </div>
       </div>{" "}
       <button className="workspace" id="workspace">
-        <span className="workspace-icon">PE</span>
+        <span className="workspace-icon">DF</span>
         <span className="workspace-info">
           <strong>Platform administration</strong>
           <small>Super admin workspace</small>

@@ -87,14 +87,14 @@
 
   function showRecoveryCodes(box, codes, done) {
     box.innerHTML = `<h2>Save your recovery codes</h2><p>Each code signs you in once if you lose your phone. Keep them somewhere safe: they are shown only now.</p><div class="dfmfa-codes">${codes.map(c => `<span>${escapeHtml(c)}</span>`).join("")}</div><div class="dfmfa-row"><button type="button" data-copy>Copy</button><button type="button" data-download>Download</button><button type="button" class="primary" data-done>I've saved them</button></div>`;
-    const text = `Paira Express recovery codes (${new Date().toLocaleDateString()})\n\n${codes.join("\n")}\n`;
+    const text = `Delivery Fast recovery codes (${new Date().toLocaleDateString()})\n\n${codes.join("\n")}\n`;
     box.querySelector("[data-copy]").addEventListener("click", e => {
       navigator.clipboard?.writeText(text).then(() => (e.target.textContent = "Copied"), () => undefined);
     });
     box.querySelector("[data-download]").addEventListener("click", () => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      a.download = "paira-express-recovery-codes.txt";
+      a.download = "delivery-fast-recovery-codes.txt";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });

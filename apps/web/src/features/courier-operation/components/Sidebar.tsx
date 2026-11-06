@@ -48,18 +48,18 @@ export default function Sidebar() {
       {" "}
       <div className="brand">
         <div className="brand-mark">
-          <BrandMark size={40} />
+          <BrandMark size={200} />
         </div>
         <div className="brand-name">
-          {"paira "}
-          <span>express</span>
+          {"delivery "}
+          <span>fast</span>
         </div>
       </div>{" "}
       {/* A brand label (there is one company to show; nothing to switch). */}
       <div className="company-switch" id="companySwitch" style={{ cursor: "default" }}>
-        <span className="company-avatar">PE</span>
+        <span className="company-avatar">DF</span>
         <span className="company-info">
-          <strong>Paira Express</strong>
+          <strong>Delivery Fast</strong>
           <small>Operations console</small>
         </span>
       </div>{" "}

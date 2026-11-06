@@ -12,7 +12,7 @@ import {
   SUPER_ADMIN_ONLY_PERMISSIONS,
   type Permission,
   type Role,
-} from "@paira-express/shared";
+} from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { PermissionService } from "../../common/auth/permissions.service";

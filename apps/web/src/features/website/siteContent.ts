@@ -1,4 +1,4 @@
-import { DEFAULT_BRANDING, DEFAULT_WEBSITE, type WebsiteSettings } from "@paira-express/shared";
+import { DEFAULT_BRANDING, DEFAULT_WEBSITE, type WebsiteSettings } from "@delivery-fast/shared";
 
 export const SITE_CACHE_TAG = "website";
 

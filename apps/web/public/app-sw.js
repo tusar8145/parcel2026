@@ -1,7 +1,7 @@
 const VERSION = "2026.10.29-1";
-// Caches made before the rename to Paira Express (removed once, like older versions).
+// Caches made before the rename to Delivery Fast (removed once, like older versions).
 const LEGACY_PREFIX = "delivery-fast-static-";
-const CACHE = `paira-express-static-${VERSION}`;
+const CACHE = `delivery-fast-static-${VERSION}`;
 const MAX_ENTRIES = 250;
 
 self.addEventListener("install", event => {
@@ -12,7 +12,7 @@ self.addEventListener("activate", event => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter(name => (name.startsWith("paira-express-static-") || name.startsWith(LEGACY_PREFIX)) && name !== CACHE).map(name => caches.delete(name)));
+      await Promise.all(names.filter(name => (name.startsWith("delivery-fast-static-") || name.startsWith(LEGACY_PREFIX)) && name !== CACHE).map(name => caches.delete(name)));
       await self.clients.claim();
     })(),
   );

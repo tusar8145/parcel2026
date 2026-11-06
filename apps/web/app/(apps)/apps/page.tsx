@@ -12,7 +12,7 @@ export default function Page() {
     <main className="ap">
       <style>{CSS}</style>
       <header className="ap-head">
-        <strong>{"Paira Express"}</strong>
+        <strong>{"Delivery Fast"}</strong>
         <span>{"Android apps"}</span>
       </header>
       {APPS.map(({ app, name, who }) => {

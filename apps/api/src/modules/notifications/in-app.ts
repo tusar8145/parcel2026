@@ -1,4 +1,4 @@
-import { PANEL_FOR_ROLE, type Role } from "@paira-express/shared";
+import { PANEL_FOR_ROLE, type Role } from "@delivery-fast/shared";
 import type { NotificationEvent } from "./events";
 
 /**

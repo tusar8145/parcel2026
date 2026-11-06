@@ -11,7 +11,7 @@
   const $ = id => document.getElementById(id);
   const nav = $("navigation");
   if (!nav) return;
-  const STORE = "pairaexpress-admin-menu";
+  const STORE = "deliveryfast-admin-menu";
   const CATALOG = "Pricing & catalogs";
   const PARTS = {
     "Return reasons": { eyebrow: "Operational settings", subtitle: "The reasons offered on return forms.", heading: "Return reasons" },

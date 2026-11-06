@@ -1,5 +1,5 @@
 /*
- * Paira Express web client: API access, sign-in state and the bridge that lets the
+ * Delivery Fast web client: API access, sign-in state and the bridge that lets the
  * original page scripts run on real data.
  *
  * - DF.api(path, options) calls /api/v1 (proxied by Next.js, so it's same-origin). The
@@ -12,11 +12,11 @@
  */
 (() => {
   const BASE = "/api/v1";
-  const PARCELS_KEY = "pairaexpress-customer-parcels";
-  const SESSION_KEY = "pairaexpress-customer-session";
-  const ADDRESS_KEY = "pairaexpress-customer-address-book";
-  const CONFIG_KEY = "pairaexpress-demo-config";
-  const RETURN_KEY = "pairaexpress-after-login";
+  const PARCELS_KEY = "deliveryfast-customer-parcels";
+  const SESSION_KEY = "deliveryfast-customer-session";
+  const ADDRESS_KEY = "deliveryfast-customer-address-book";
+  const CONFIG_KEY = "deliveryfast-demo-config";
+  const RETURN_KEY = "deliveryfast-after-login";
 
   /** Which roles may open each panel. */
   const PANEL_ROLES = {
@@ -335,7 +335,7 @@
     supportAccess = null;
     accessToken = null;
     state.user = null;
-    if (reason) document.title = `Support access ${reason} · Paira Express`;
+    if (reason) document.title = `Support access ${reason} · Delivery Fast`;
     return null;
   }
 
@@ -675,7 +675,7 @@
     if (!user) return void memory.delete(SESSION_KEY);
     const session = { name: user.name, phone: localPhone(user.phone), email: user.email || "", updatedAt: new Date().toLocaleString() };
     memory.set(SESSION_KEY, JSON.stringify(session));
-    window.pairaExpressCustomerSession = session;
+    window.deliveryFastCustomerSession = session;
   }
 
   function setAddressBook(addresses) {
@@ -698,10 +698,10 @@
   function describe(error) {
     if (error instanceof ApiError) {
       if (error.code === "VALIDATION_FAILED" && Array.isArray(error.details) && error.details.length) return error.details.map(d => d.message).join(" · ");
-      if (error.status === 0 || error.status >= 500) return "We couldn't reach Paira Express. Please try again.";
+      if (error.status === 0 || error.status >= 500) return "We couldn't reach Delivery Fast. Please try again.";
       return error.message;
     }
-    return "We couldn't reach Paira Express. Check your connection and try again.";
+    return "We couldn't reach Delivery Fast. Check your connection and try again.";
   }
 
   function toast(message) {
@@ -947,7 +947,7 @@
   // address is rewritten to the new slug. Deep links: ?parcel=<tracking ID> opens the parcel,
   // ?ticket=<number> the support ticket. Other parameters (period, from, to, filters) are kept.
   // Navigating pushes a history entry (Back / Forward work); redraws replace it. The title follows:
-  // "Page › Tab · Paira Express · Panel". Each panel connects with DF.nav.start(adapter):
+  // "Page › Tab · Delivery Fast · Panel". Each panel connects with DF.nav.start(adapter):
   //   { panel: "Courier Operations", home: "Overview", pages: () => [{ name, label?, slug?, aliases?, tabs?: [{ name, label?, slug?, aliases? }] }],
   //     open(pageName, tabName), openParcel?(id), openTicket?(number) }
   // and calls DF.nav.entered(pageName, tabName[, { replace: true }]) whenever a page or tab is on screen.
@@ -1025,7 +1025,7 @@
     function setTitle(found) {
       const name = found.page.label || found.page.name;
       const tab = found.tab && found.page.tabs?.length > 1 ? ` › ${found.tab.label || found.tab.name}` : "";
-      const title = `${name}${tab} · Paira Express · ${adapter.panel}`;
+      const title = `${name}${tab} · Delivery Fast · ${adapter.panel}`;
       document.title = title;
       // React may redraw the server's <title> after a history change.
       setTimeout(() => document.title !== title && (document.title = title), 0);
@@ -1519,7 +1519,7 @@
   document.addEventListener("focusout", placeEvent, true);
 
   DF.ready = boot().catch(error => {
-    console.error("Paira Express could not start", error);
+    console.error("Delivery Fast could not start", error);
   });
   if (state.app === "courier-operation") trackButtons();
   window.DF = DF;

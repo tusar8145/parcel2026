@@ -56,13 +56,13 @@ export default function SiteHeader({ legacy = false }: { legacy?: boolean }) {
       {" "}
       <div className="shell nav">
         {" "}
-        <a className="brand" href="/" aria-label="Paira Express home">
-          <span className="brand-mark" style={{ width: 46, height: 46 }}>
+        <a className="brand" href="/" aria-label="Delivery Fast home">
+          <span className="brand-mark">
             <BrandMark />
           </span>
           <span className="brand-word">
-            {"paira "}
-            <span>express</span>
+            {"delivery "}
+            <span>fast</span>
           </span>
         </a>{" "}
         <nav className={`nav-links${!legacy && menuOpen ? " open" : ""}`} id="navLinks" aria-label="Main navigation" onClick={closeMenu}>

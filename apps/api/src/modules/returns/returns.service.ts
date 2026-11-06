@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
-import { TERMINAL_STATUSES, type ParcelStatus } from "@paira-express/shared";
+import { TERMINAL_STATUSES, type ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { RealtimeService } from "../../common/realtime.service";
@@ -253,7 +253,7 @@ export class ReturnsService {
           status: parcel.status,
           title: "Return requested",
           description: `Return to sender requested: ${input.reason}`,
-          location: "Paira Express",
+          location: "Delivery Fast",
           actorUserId: actor.kind === "user" ? actor.userId : null,
           actorLabel: by,
         },

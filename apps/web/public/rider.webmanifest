@@ -1,8 +1,8 @@
 {
   "id": "/rider",
-  "name": "Paira Express Rider",
+  "name": "Delivery Fast Rider",
   "short_name": "DF Rider",
-  "description": "Pickups, deliveries, proof of delivery, COD and earnings for Paira Express riders. Works offline.",
+  "description": "Pickups, deliveries, proof of delivery, COD and earnings for Delivery Fast riders. Works offline.",
   "start_url": "/rider?source=pwa",
   "scope": "/rider",
   "display": "standalone",

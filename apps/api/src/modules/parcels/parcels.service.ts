@@ -5,8 +5,8 @@ import { notifyNewWork } from "../notifications/new-work";
 import { deliveryHubsOf } from "./delivery-hub";
 import { operationNow } from "../../common/operation-time";
 import type { z } from "zod";
-import { isCustomerCancellable, parcelPrefix, type CreateParcelInput, type ParcelStatus } from "@paira-express/shared";
-import { TERMINAL_STATUSES, type assignRiderSchema, type cancelParcelSchema, type listParcelsQuerySchema, type updateStatusSchema } from "@paira-express/shared";
+import { isCustomerCancellable, parcelPrefix, type CreateParcelInput, type ParcelStatus } from "@delivery-fast/shared";
+import { TERMINAL_STATUSES, type assignRiderSchema, type cancelParcelSchema, type listParcelsQuerySchema, type updateStatusSchema } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { OutboxService } from "../notifications/outbox.service";
@@ -32,7 +32,7 @@ import { slaDueDates } from "../sla/sla-policy";
 import { missingFieldsOf } from "./incomplete";
 import { assertActivePlaces } from "../geography/geo-catalog";
 import { PackagesService, type PackageQuote } from "../packages/packages.service";
-import { SPEED_LABEL, type ProductType } from "@paira-express/shared";
+import { SPEED_LABEL, type ProductType } from "@delivery-fast/shared";
 
 /** The recipient and the merchant stop seeing the rider's position when the last fix is older than this. */
 export const LIVE_LOCATION_STALE_MINUTES = 15;
@@ -277,7 +277,7 @@ export class ParcelsService {
                     location: dropOff.hub.name,
                     metadata: { hubId: dropOff.hub.id, kind: "drop_off_booked" },
                   }
-                : { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Paira Express" }),
+                : { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Delivery Fast" }),
               actorUserId: actor !== "guest" && actor.kind === "user" ? actor.userId : null,
               actorLabel: ctx.actorLabel,
             },

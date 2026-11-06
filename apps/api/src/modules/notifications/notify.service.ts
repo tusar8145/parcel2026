@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { isMaskedPhone, NOTIFICATION_SERVICE_OF_EVENT } from "@paira-express/shared";
+import { isMaskedPhone, NOTIFICATION_SERVICE_OF_EVENT } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { env } from "../../config/env";
 import { OutboxService } from "./outbox.service";

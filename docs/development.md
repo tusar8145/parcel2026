@@ -1,6 +1,6 @@
 # Development guide
 
-There are two ways to run Paira Express: everything in Docker (quickest), or the apps on your
+There are two ways to run Delivery Fast: everything in Docker (quickest), or the apps on your
 machine for development.
 
 ## Option A: Docker (whole stack)
@@ -18,7 +18,7 @@ screen; read them with `docker compose logs -f api worker`. Data lives in Docker
 Requirements:
 - Node.js 20.19+ (22 LTS recommended).
 - PostgreSQL 14+ with a UTF-8 database. The default `.env.example` expects database
-  `pairaexpress`, user `pairaexpress`, password `pairaexpress` on `localhost:5432`, plus a
+  `deliveryfast`, user `deliveryfast`, password `deliveryfast` on `localhost:5432`, plus a
   `pairaexpress_test` database for the tests.
   - Without a PostgreSQL install, `npm run db:up` runs a private one on port 5433 instead;
     change the port in `apps/api/.env` and `.env.test`.
@@ -27,10 +27,10 @@ Requirements:
 ```bash
 npm install
 cp apps/api/.env.example apps/api/.env   # then set JWT_ACCESS_SECRET and ENCRYPTION_KEY (commands are in the file)
-npm run db:deploy -w @paira-express/api   # create the tables
-npm run db:seed:geo -w @paira-express/api # Bangladesh districts/zones/areas, 30 hubs, delivery zones (config)
-npm run db:seed:setup -w @paira-express/api # service plans, price cards, central hub (settings only; safe on a real install)
-npm run db:seed -w @paira-express/api     # demo hubs, riders, merchants and one account per role
+npm run db:deploy -w @delivery-fast/api   # create the tables
+npm run db:seed:geo -w @delivery-fast/api # Bangladesh districts/zones/areas, 30 hubs, delivery zones (config)
+npm run db:seed:setup -w @delivery-fast/api # service plans, price cards, central hub (settings only; safe on a real install)
+npm run db:seed -w @delivery-fast/api     # demo hubs, riders, merchants and one account per role
 npm run dev:api                           # terminal 1: API on http://localhost:4000 (docs: /api/docs)
 npm run dev                               # terminal 2: website and panels on http://localhost:3000
 ```
@@ -59,7 +59,7 @@ npm run dev                               # terminal 2: website and panels on ht
   and keeps configuration (back up first; see the comments in the file).
 
 ### Demo accounts
-Every seeded account uses the password `PairaExpress2026`. Sign in at
+Every seeded account uses the password `DeliveryFast2026`. Sign in at
 `http://localhost:3000/#/login` and you're sent to your role's panel.
 
 | Role | Sign in with |
@@ -82,7 +82,7 @@ as "Development code: …".
 ```bash
 npm test                                       # shared unit tests + all API e2e tests
 cd apps/web && npx playwright test -c playwright.e2e.config.ts   # browser tests (API + web + seeded DB running)
-npm run build -w @paira-express/web && npm run test:visual       # parity with design-reference/
+npm run build -w @delivery-fast/web && npm run test:visual       # parity with design-reference/
 ```
 Browser tests need only the seeded staff accounts (`*@pairaexpress.example`): each spec creates its
 own temporary merchants, owners, staff, riders and customers (`apps/web/tests/e2e/support.ts`) and
@@ -109,7 +109,7 @@ them between tests. Set `TEST_DATABASE_URL` / `TEST_REDIS_URL` to run suites in 
 - **Money.** COD moves rider → hub (handover) → merchant (settlement with maker-checker approval).
   Prepaid deliveries are billed on monthly invoices.
 - **Merchants.** Self-service API keys (`df_live_…`, shown once, stored hashed), signed webhooks
-  (`X-PairaExpress-Signature: t=<unix>,v1=<HMAC-SHA256 of "t.body">`) with retries, team members,
+  (`X-DeliveryFast-Signature: t=<unix>,v1=<HMAC-SHA256 of "t.body">`) with retries, team members,
   and Idempotency-Key support on `POST /parcels`.
 - **Background jobs.** pg-boss on PostgreSQL delivers SMS and webhooks with retries. In
   development they run inside the API (`RUN_WORKERS=true`).
@@ -120,7 +120,7 @@ Step-by-step server setup with PM2 and Apache: `docs/deployment.md`.
 
 - **Secrets.** Set `NODE_ENV=production`, a strong `JWT_ACCESS_SECRET`, an `ENCRYPTION_KEY`,
   and `EXPOSE_DEV_OTP=false`. The API refuses to start with invalid configuration.
-- **Migrations.** Run `npm run db:deploy -w @paira-express/api` on each release. Never run
+- **Migrations.** Run `npm run db:deploy -w @delivery-fast/api` on each release. Never run
   `db:seed` in production; it refuses to.
 - **Workers.** Run API instances with `RUN_WORKERS=false` plus one or more `npm run worker`
   processes.
@@ -145,10 +145,10 @@ sudo -u postgres psql
 & "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" `
   -h localhost `
   -p 5432 `
-  -U pairaexpress `
-  -d pairaexpress `
+  -U deliveryfast `
+  -d deliveryfast `
   -F c `
-  -f "$HOME\Downloads\pairaexpress.backup"
+  -f "$HOME\Downloads\deliveryfast.backup"
 
 
 
@@ -160,15 +160,15 @@ CREATE DATABASE pairaexpress OWNER pairaexpress;
 \q
 
 
-PGPASSWORD='pairaexpress' pg_restore \
+PGPASSWORD='deliveryfast' pg_restore \
   -h localhost \
   -p 5432 \
-  -U pairaexpress \
-  -d pairaexpress \
+  -U deliveryfast \
+  -d deliveryfast \
   --no-owner \
   --no-acl \
   --exit-on-error \
-  /root/pairaexpress.backup
+  /root/deliveryfast.backup
 
 email
 

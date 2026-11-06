@@ -38,7 +38,7 @@ describe("platform security (super admin)", () => {
 
       const setup = await ctx.api("POST", "/auth/mfa/setup", { body: { mfaToken: first.body.mfaToken } });
       expect(setup.status).toBe(200);
-      expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\/Paira%20Express:/);
+      expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\/Delivery%20Fast:/);
       expect(setup.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
       const secret = setup.body.secret as string;
 
@@ -412,12 +412,12 @@ describe("platform security (super admin)", () => {
   // ───────────── analytics ─────────────
 
   describe("first-party analytics", () => {
-    const browser = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36", host: "pairaexpress.example" };
+    const browser = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36", host: "deliveryfast.example" };
 
     it("counts page views, visits and tracking lookups without personal data, ignoring bots", async () => {
       const view = (body: object, headers = browser) => ctx.api("POST", "/analytics/pageview", { body, headers });
       expect((await view({ path: "/", referrer: "https://www.google.com/" })).body).toEqual({ counted: true });
-      expect((await view({ path: "/#/track/DF12345678?phone=01711000000", referrer: "https://pairaexpress.example/" })).status).toBe(202);
+      expect((await view({ path: "/#/track/DF12345678?phone=01711000000", referrer: "https://deliveryfast.example/" })).status).toBe(202);
       expect((await view({ path: "/" })).body.counted).toBe(true);
       expect((await view({ path: "/" }, { ...browser, "user-agent": "Googlebot/2.1 (+http://www.google.com/bot.html)" })).body.counted).toBe(false);
       expect((await view({ path: "javascript:alert(1)" })).body.counted).toBe(false);

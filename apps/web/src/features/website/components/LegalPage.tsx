@@ -1,4 +1,4 @@
-import { parseAbout, type WebsitePage } from "@paira-express/shared";
+import { parseAbout, type WebsitePage } from "@delivery-fast/shared";
 import { Block } from "./AboutPage";
 
 /**
@@ -25,7 +25,7 @@ export function LegalPage({ page, edited }: { page: WebsitePage; edited: boolean
           {edited ? null : (
             <p role="note" style={{ margin: "0 0 18px", padding: "10px 14px", borderRadius: 10, background: "#fff7e0", border: "1px solid #f0dca0" }}>
               <strong>{"Draft for legal review. "}</strong>
-              {"This text is a working draft prepared for Paira Express and has not yet been approved by counsel."}
+              {"This text is a working draft prepared for Delivery Fast and has not yet been approved by counsel."}
             </p>
           )}
           {blocks.map((block, i) => (

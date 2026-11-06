@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { serviceLevelSchema } from "@paira-express/shared";
+import { serviceLevelSchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { boolQuery, optionalText } from "../ops/ops-common";
 

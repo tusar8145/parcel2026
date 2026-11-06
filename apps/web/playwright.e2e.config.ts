@@ -29,6 +29,6 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     // The cookie choice is already made, so the consent banner doesn't cover buttons (website.spec.ts tests the banner).
-    storageState: { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: "pairaexpress-cookie-consent", value: JSON.stringify({ analytics: false, at: new Date().toISOString() }) }] }] },
+    storageState: { cookies: [], origins: [{ origin: baseURL, localStorage: [{ name: "deliveryfast-cookie-consent", value: JSON.stringify({ analytics: false, at: new Date().toISOString() }) }] }] },
   },
 });

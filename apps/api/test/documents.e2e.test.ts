@@ -73,7 +73,7 @@ describe("documents (PDF)", () => {
       expect(info.pages).toBe(2);
       expect(a4.headers["x-document-count"]).toBe("6");
       expect(a4.headers["x-document-pages"]).toBe("2");
-      expect(String(a4.headers["content-disposition"])).toMatch(/^inline; filename="paira-express-labels-a4-\d{8}-\d{4}\.pdf"$/);
+      expect(String(a4.headers["content-disposition"])).toMatch(/^inline; filename="delivery-fast-labels-a4-\d{8}-\d{4}\.pdf"$/);
       for (const id of all) expect(pdfHas(info, id), id).toBe(true);
       expect(pdfHas(info, "COLLECT COD")).toBe(true);
       expect(pdfHas(info, "Northstar Test")).toBe(true);
@@ -156,7 +156,7 @@ describe("documents (PDF)", () => {
         expect(pdfHas(grid, "generated")).toBe(false);
         expect(pdfHas(grid, "Delivery invoices")).toBe(false);
         expect(pdfHas(grid, "E-commerce invoices")).toBe(false);
-        expect(pdfHas(grid, "Paira Express")).toBe(true);
+        expect(pdfHas(grid, "Delivery Fast")).toBe(true);
         for (const id of ids) expect(pdfHas(grid, id)).toBe(true);
       }
       expect(ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=pos`, s.owner.token)).pages).toBe(5);
@@ -252,7 +252,7 @@ describe("documents (PDF)", () => {
   describe("finance documents", () => {
     it("with VAT off (the default) delivery invoices don't mention VAT, tax or BIN", async () => {
       const s = await setup();
-      await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatRate: 15, seller: { name: "Paira Express Ltd.", bin: "000123456-0101", address: "Gulshan 1, Dhaka" } } } });
+      await ctx.prisma.setting.create({ data: { key: "finance.config", value: { vatRate: 15, seller: { name: "Delivery Fast Ltd.", bin: "000123456-0101", address: "Gulshan 1, Dhaka" } } } });
       const ids = await book(s, 1);
       const shipment = ok(await pdf("GET", `/documents/invoices?ids=${ids.join(",")}&layout=a4`, s.ops.token));
       expect(pdfHas(shipment, "Delivery charge")).toBe(true);

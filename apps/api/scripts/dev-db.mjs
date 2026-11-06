@@ -9,8 +9,8 @@ const dataDir = path.resolve(import.meta.dirname, "../.data/postgres");
 const port = Number(process.env.DEV_DB_PORT || 5433);
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
-  user: "pairaexpress",
-  password: "pairaexpress",
+  user: "deliveryfast",
+  password: "deliveryfast",
   port,
   persistent: true,
   // UTF-8 regardless of the OS locale (Windows defaults to WIN1252, which can't store ৳ or Bengali).

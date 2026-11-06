@@ -186,7 +186,7 @@ test.describe.serial("super admin notifications", () => {
       await expect(editor).toContainText("Sign-in code · SMS");
       await expect(editor).toContainText("must include {{code}}");
       await editor.locator("[data-nt-preview]").click();
-      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Paira Express sign-in code");
+      await expect(editor.locator("#ntPreview")).toContainText("482913 is your Delivery Fast sign-in code");
       await editor.locator("[data-nt-close]").click();
 
       // Parcel notifications: the Parcel group only, with the same filters.

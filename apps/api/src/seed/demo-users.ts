@@ -2,7 +2,7 @@
  * Demo accounts of every type on the Bangladesh hub network (run `npm run db:seed:geo` first).
  * Idempotent: accounts are found by email and updated, never duplicated.
  *
- *   npm run db:seed:users -w @paira-express/api -- --out <file outside the repo>
+ *   npm run db:seed:users -w @delivery-fast/api -- --out <file outside the repo>
  *
  * Passwords: one per role group, taken from DEMO_PASSWORD_<GROUP> (SUPER_ADMIN, OPS, HUB,
  * FINANCE, SUPPORT, RIDER, MERCHANT, CUSTOMER) or generated (18 characters, mixed). Every run
@@ -15,11 +15,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomInt } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { passwordSchema } from "@paira-express/shared";
+import { passwordSchema } from "@delivery-fast/shared";
 import { PrismaClient, type Prisma, type Role, type VehicleType } from "../generated/prisma/client";
 import { hashPassword } from "../common/crypto";
 import { nextCounter } from "../common/counters";
-import { merchantCodePrefix } from "@paira-express/shared";
+import { merchantCodePrefix } from "@delivery-fast/shared";
 
 type Group = "SUPER_ADMIN" | "OPS" | "HUB" | "FINANCE" | "SUPPORT" | "RIDER" | "MERCHANT" | "CUSTOMER";
 const PANEL: Record<Group, string> = {
@@ -238,7 +238,7 @@ async function main() {
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(
     out,
-    `# Paira Express demo accounts\n\nGenerated ${new Date().toISOString()} by \`npm run db:seed:users\`. Sign in with the email or the phone number and the password.\nOne password per role group. Running the seed again sets new passwords and rewrites this file.\n\n${table.join("\n")}\n`,
+    `# Delivery Fast demo accounts\n\nGenerated ${new Date().toISOString()} by \`npm run db:seed:users\`. Sign in with the email or the phone number and the password.\nOne password per role group. Running the seed again sets new passwords and rewrites this file.\n\n${table.join("\n")}\n`,
   );
   console.log(`${rows.length} accounts ready. Credentials written to ${out}`);
 }

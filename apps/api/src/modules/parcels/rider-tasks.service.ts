@@ -3,7 +3,7 @@ import { cashFor, createPartialReturn, partialData } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { addressText } from "../../common/address";
 import type { z } from "zod";
-import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@paira-express/shared";
+import type { deliveryOutcomeSchema, pickupOutcomeSchema, proofCaptureSchema } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
 import { actorLabel } from "../../common/auth/actor";
 import { PrismaService, type Db } from "../../common/prisma.service";

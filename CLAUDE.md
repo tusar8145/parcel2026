@@ -1,4 +1,4 @@
-# Paira Express
+# Delivery Fast
 
 npm workspaces monorepo:
 - `apps/api` – NestJS 11 (Fastify) API, Prisma 7 + PostgreSQL, pg-boss jobs (on Postgres), Redis
@@ -95,7 +95,7 @@ Setup and run instructions: `docs/development.md`.
   panels (`shared/merchant-bridge.js` + per-panel `bridge.js`), super admin
   (`super-admin/bridge.js`) and support tickets on every page (`shared/support.js`). Super-admin
   platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
-  the `pairaexpress-demo-config` key for every page. Widgets with no backing data (maps,
+  the `deliveryfast-demo-config` key for every page. Widgets with no backing data (maps,
   traffic charts, some report rows) remain decorative.
 - Merchant New orders / All orders (`shared/merchant-orders.js`): server-paged, filters by merchant type, and
   `GET /merchants/me/parcels/export` (merchantExportColumns: nothing internal, charges for owners only). The
@@ -117,5 +117,5 @@ Setup and run instructions: `docs/development.md`.
 - `npm test` – shared unit tests + API e2e tests
 - `npx playwright test -c playwright.e2e.config.ts` (in apps/web) – full-stack browser tests;
   needs the API, web and a seeded database running
-- `npm run build -w @paira-express/web && npm run test:visual` – pixel/DOM parity of the
+- `npm run build -w @delivery-fast/web && npm run test:visual` – pixel/DOM parity of the
   unchanged website views against `design-reference/`

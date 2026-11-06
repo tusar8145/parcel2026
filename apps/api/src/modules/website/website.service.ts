@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { DEFAULT_WEBSITE, type SignupKey, type WebsiteSettings } from "@paira-express/shared";
+import { DEFAULT_WEBSITE, type SignupKey, type WebsiteSettings } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";

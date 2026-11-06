@@ -85,7 +85,7 @@
       const url = URL.createObjectURL(pdf);
       // Keep the URL alive for a while: the viewer re-reads it to save or print.
       setTimeout(() => URL.revokeObjectURL(url), 15 * 60_000);
-      const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "paira-express.pdf";
+      const name = (response.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/)?.[1] || "delivery-fast.pdf";
       if (tab && !tab.closed) show(tab, url, name);
       else {
         // Pop-ups blocked: save the file instead.
@@ -140,7 +140,7 @@
     return open(`/documents/${kind}`, { ...options, method: "POST", body: { ...params, ids: list } });
   }
 
-  const LABEL_FORMAT_KEY = "pairaexpress-label-format";
+  const LABEL_FORMAT_KEY = "deliveryfast-label-format";
   const labelFormat = () => {
     try {
       return localStorage.getItem(LABEL_FORMAT_KEY) === "thermal" ? "thermal" : "a4";

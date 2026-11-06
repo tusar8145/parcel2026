@@ -275,7 +275,7 @@
 
   function composerMarkup() {
     if (!composerOpen) return "";
-    const customerProfile = window.pairaExpressCustomerSession || {};
+    const customerProfile = window.deliveryFastCustomerSession || {};
     const customerFields = role === "customer" ? `<label>Your name<input name="requesterName" required maxlength="80" value="${escapeHtml(prefilled.requesterName || customerProfile.name || "")}" autocomplete="name"></label>
       <label>Phone number<input name="requesterPhone" required maxlength="32" value="${escapeHtml(prefilled.requesterPhone || customerProfile.phone || "")}" autocomplete="tel"></label>` : "";
     return `<form class="st-composer" data-support-ticket-form>
@@ -294,7 +294,7 @@
 
   function messageMarkup(message, viewerId) {
     const system = message.author.kind === "system";
-    const name = system ? "Paira Express support" : message.author.label;
+    const name = system ? "Delivery Fast support" : message.author.label;
     return `<article class="st-message ${message.author.id && message.author.id === viewerId ? "mine" : ""} ${message.internal ? "internal" : ""}">
       <div class="st-message-head"><strong>${escapeHtml(name)}${message.internal ? ` <em class="st-internal-tag">Internal note</em>` : ""}</strong><span>${escapeHtml(when(message.createdAt))}</span></div>
       <p>${escapeHtml(message.body)}</p><div class="st-files">${attachmentMarkup(message.attachments)}</div>
@@ -368,7 +368,7 @@
       <div class="st-layout"><section class="st-list panel"><div class="panel-heading"><div><h2 class="panel-title">Tickets</h2><p class="panel-subtitle">${staff ? "All support requests" : "Your support conversations"}</p></div></div>
       ${list}</section>
       <section class="st-thread panel" aria-label="Support conversation">${threadMarkup(selected)}</section></div>
-      <p class="st-demo-note">${staff ? "Replies go to the requester's support page. Internal notes are visible to support staff only." : "Replies from Paira Express support appear in this conversation."}</p>`;
+      <p class="st-demo-note">${staff ? "Replies go to the requester's support page. Internal notes are visible to support staff only." : "Replies from Delivery Fast support appear in this conversation."}</p>`;
   }
 
   // ───────────── rendering ─────────────
@@ -541,7 +541,7 @@
 
   function renderCustomerSupport() {
     if (role !== "customer" || !routeHash().startsWith("#/support")) return;
-    if (!window.pairaExpressCustomerSession) {
+    if (!window.deliveryFastCustomerSession) {
       window.requireCustomerLogin?.(routeHash().slice(2));
       return;
     }
@@ -559,16 +559,16 @@
         prefilled = { ...prefilled, subject: `Help with ${reference}`, category: "Delivery issue", relatedRef: reference };
       }
     }
-    document.title = "Paira Express — Customer support";
+    document.title = "Delivery Fast — Customer support";
     document.getElementById("navLinks")?.classList.remove("open");
     document.getElementById("menuButton")?.setAttribute("aria-expanded", "false");
     document.querySelectorAll("main > :not(#pageView)").forEach(node => node.remove());
     const pageView = document.getElementById("pageView");
     if (!pageView) return;
     pageView.hidden = false;
-    pageView.innerHTML = window.pairaExpressCustomerSession && typeof window.customerAreaShell === "function"
+    pageView.innerHTML = window.deliveryFastCustomerSession && typeof window.customerAreaShell === "function"
       ? window.customerAreaShell(supportPage(), "support")
-      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Paira Express</button>${supportPage()}</div>`;
+      : `<div class="route-shell"><button class="route-back" type="button" data-route="home">Back to Delivery Fast</button>${supportPage()}</div>`;
     afterRender();
   }
 
@@ -702,7 +702,7 @@
         composerOpen = true;
         prefilled = { subject: `Help with ${ref}`, category: "Delivery issue", relatedRef: ref.toUpperCase() };
       }
-      if (!window.pairaExpressCustomerSession) {
+      if (!window.deliveryFastCustomerSession) {
         window.requireCustomerLogin?.(route);
         return;
       }

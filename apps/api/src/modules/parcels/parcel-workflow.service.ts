@@ -1,7 +1,7 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { postParcelEntries } from "../money/entries";
 import { chosenOperationTime, operationNow } from "../../common/operation-time";
-import { canTransition, packagePricesSchema, PARCEL_STATUS_LABEL, reattemptFeeFor, type ParcelStatus, type TransitionActor, type TransitionContext } from "@paira-express/shared";
+import { canTransition, packagePricesSchema, PARCEL_STATUS_LABEL, reattemptFeeFor, type ParcelStatus, type TransitionActor, type TransitionContext } from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { OutboxService } from "../notifications/outbox.service";
@@ -29,12 +29,12 @@ const dhakaDateTime = (d: Date) => d.toLocaleString("en-GB", { timeZone: "Asia/D
 
 /** Default customer-facing text for each status. */
 const EVENT_TEXT: Record<ParcelStatus, { title: string; description: string; location?: string }> = {
-  PENDING_CONFIRMATION: { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Paira Express" },
+  PENDING_CONFIRMATION: { title: "Pickup request submitted", description: "We received the request. Operations will confirm it shortly.", location: "Delivery Fast" },
   PICKUP_ASSIGNED: { title: "Pickup accepted and rider assigned", description: "A rider will collect the parcel.", location: "Courier operations" },
   PICKUP_CONFIRMED: { title: "Pickup confirmed", description: "The pickup time has been confirmed.", location: "Courier operations" },
   PICKED_UP: { title: "Picked up", description: "The rider collected the parcel.", location: "Rider" },
   PICKUP_CANCELLED: { title: "Pickup cancelled", description: "The pickup request was cancelled." },
-  AT_HUB: { title: "At hub", description: "The parcel arrived at a Paira Express hub." },
+  AT_HUB: { title: "At hub", description: "The parcel arrived at a Delivery Fast hub." },
   ASSIGNED: { title: "Assigned to delivery rider", description: "A rider has been assigned to deliver the parcel.", location: "Courier operations" },
   IN_TRANSIT: { title: "In transit", description: "The parcel is on its way to the destination area." },
   OUT_FOR_DELIVERY: { title: "Out for delivery", description: "The rider is on the way to the recipient.", location: "Rider" },
@@ -456,7 +456,7 @@ export class ParcelWorkflowService {
           estimatedDeliveryAt: parcel.estimatedDeliveryAt && parcel.estimatedDeliveryAt > deliveryDueAt ? parcel.estimatedDeliveryAt : deliveryDueAt,
         },
         title: `Received at ${input.hub.name} (drop-off)`,
-        description: `The sender handed the parcel over at ${input.hub.name}. It is now in the Paira Express network.`,
+        description: `The sender handed the parcel over at ${input.hub.name}. It is now in the Delivery Fast network.`,
         location: input.hub.name,
         metadata: { hubId: input.hub.id, kind: "drop_off_received" },
         internalNote: input.note,

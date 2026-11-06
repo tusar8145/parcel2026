@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { NUMBER_PREFIXES } from "@paira-express/shared";
+import { NUMBER_PREFIXES } from "@delivery-fast/shared";
 import { resetDatabase, startApp, userWithRoles, type TestContext } from "./helpers";
 
 /** Every .ts file under src (not generated code). */

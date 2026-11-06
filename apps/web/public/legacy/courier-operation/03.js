@@ -29,7 +29,7 @@
       if(!["Customer parcels","E-commerce operations","Banking & Financial operations"].includes(page))return baseCourierExportCurrentData();
       const category=page==="Customer parcels"?"Customer parcels":page==="Banking & Financial operations"?"Documents":"E-commerce",rows=visibleOrSelectedShipments(page),name=page==="Customer parcels"?"customer-parcels":page==="Banking & Financial operations"?"document-shipments":"e-commerce-orders";
       if(!rows.length){showToast("No filtered or selected shipments are available to export.");return}
-      courierCsvDownload(`paira-express-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected ${category.toLowerCase()} shipment(s) exported.`);
+      courierCsvDownload(`delivery-fast-${name}.csv`,courierShipmentExportRows(rows));showToast(`${rows.length} filtered or selected ${category.toLowerCase()} shipment(s) exported.`);
     };
     const baseCourierPageTable=pageTable;
     const riderReportState={from:new Date().toISOString().slice(0,10),to:new Date().toISOString().slice(0,10),rider:""};
@@ -67,12 +67,12 @@
       const rows=riderReportData().map(rider=>[rider.id,rider.name,rider.zone,rider.picked,Object.entries(rider.counts).filter(([,count])=>count).map(([status,count])=>`${status}: ${count}`).join(" · ")]);
       if(!rows.length){showToast("No rider data is available for export.");return}
       const csv=[["Pickup date from","Pickup date to","Rider ID","Rider name","Zone","Parcels picked up","Status counts"],...rows.map(row=>[riderReportState.from,riderReportState.to,...row])].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n");
-      courierCsvDownload("paira-express-rider-report.csv",csv);showToast(`${rows.length} rider report row(s) downloaded.`);
+      courierCsvDownload("delivery-fast-rider-report.csv",csv);showToast(`${rows.length} rider report row(s) downloaded.`);
     }
     function exportHubTransferReport(){
       const events=filteredHubTransfers();if(!events.length){showToast("No hub transfers are available for this date range.");return}
       const rows=events.map(event=>[hubTransferDate(event.date),event.trackingId,event.fromHub,event.toHub,event.rider||"",event.status]),csv=[["Transfer date","Tracking ID","From hub","To hub","Rider","Status"],...rows].map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(",")).join("\r\n");
-      courierCsvDownload("paira-express-hub-transfer-report.csv",csv);showToast(`${events.length} hub transfer(s) downloaded.`);
+      courierCsvDownload("delivery-fast-hub-transfer-report.csv",csv);showToast(`${events.length} hub transfer(s) downloaded.`);
     }
     function hubOperationsPage(){
       const pending=shipments.filter(s=>s.status==="At hub"||s.status==="Assigned"||s.status==="In transit");
@@ -131,7 +131,7 @@
       const shipment=shipments.find(row=>row.id===select.dataset.customerStatus);if(!shipment)return;
       if(shipment.status==="Pickup requested"||shipment.status==="Pending operations confirmation"||shipment.status==="Pickup cancelled"){showToast("Confirm the pickup before updating its delivery status.");render("Customer parcels");return}
       shipment.status=select.value;shipment.sla=select.value==="Delivered"?"Met":select.value==="Exception"?"At risk":"On track";shipment.history??=[];shipment.history.push(`${shipment.status} · courier operations`);
-      try{const saved=JSON.parse(localStorage.getItem("pairaexpress-customer-parcels")||"[]");if(!Array.isArray(saved))throw new Error("Saved customer parcel list has an invalid format.");const record=saved.find(row=>row.trackingId===shipment.id);if(record){record.status=shipment.status;record.customerCanCancel=false;record.updatedAt=new Date().toLocaleString();record.events=[...(Array.isArray(record.events)?record.events:[]),{time:record.updatedAt,title:shipment.status,place:"Courier operations",detail:"Shipment status updated by operations."}];localStorage.setItem("pairaexpress-customer-parcels",JSON.stringify(saved))}}catch(error){console.error("Customer parcel status could not be saved.",error);showToast("Status changed in this courier view, but could not be saved to browser storage.");render("Customer parcels");return}
+      try{const saved=JSON.parse(localStorage.getItem("deliveryfast-customer-parcels")||"[]");if(!Array.isArray(saved))throw new Error("Saved customer parcel list has an invalid format.");const record=saved.find(row=>row.trackingId===shipment.id);if(record){record.status=shipment.status;record.customerCanCancel=false;record.updatedAt=new Date().toLocaleString();record.events=[...(Array.isArray(record.events)?record.events:[]),{time:record.updatedAt,title:shipment.status,place:"Courier operations",detail:"Shipment status updated by operations."}];localStorage.setItem("deliveryfast-customer-parcels",JSON.stringify(saved))}}catch(error){console.error("Customer parcel status could not be saved.",error);showToast("Status changed in this courier view, but could not be saved to browser storage.");render("Customer parcels");return}
       const page=document.getElementById("breadcrumbPage").textContent;render(page);showToast(`${shipment.id} updated to ${shipment.status}.`);
     });
-    window.addEventListener("storage",event=>{if(event.key!=="pairaexpress-customer-parcels")return;syncWebsiteCustomerParcels();const page=document.getElementById("breadcrumbPage").textContent;render(page==="Live overview"?"Overview":page)});
+    window.addEventListener("storage",event=>{if(event.key!=="deliveryfast-customer-parcels")return;syncWebsiteCustomerParcels();const page=document.getElementById("breadcrumbPage").textContent;render(page==="Live overview"?"Overview":page)});

@@ -10,6 +10,15 @@ const OWN_THEME = ["franchise", "application"];
 // full (Terms, Privacy, About) shows at once.
 const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]):not(:has([data-static-page])){opacity:0}";
 
+// The logo holds the name, so the written name beside it shows only for another company (data-brand-custom,
+// set by branding/runtime.ts), which replaces the logo with its own.
+const LOGO_CSS =
+  "html:not([data-brand-custom]) :is(.brand-word,.brand-name,.fr-brand b){display:none}" +
+  "html[data-brand-custom] [data-brand-mark]{display:none}" +
+  ".brand-mark:has([data-brand-mark]){width:auto!important;height:auto!important;max-width:100%}" +
+  "[data-brand-mark]{max-width:100%;height:auto}" +
+  "@media(max-width:520px){.header [data-brand-mark]{width:150px}}";
+
 // Modals close only from their own buttons (✕, Cancel…) or Escape, never by a click outside them. Every panel's
 // modals (legacy scripts and React) close on a click whose target is the backdrop itself, so such clicks are
 // stopped here, at window in the capture phase, before any of those handlers. A backdrop is a fixed element that
@@ -46,10 +55,10 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
   return (
     <html lang="en">
       <head>
-        <link rel="manifest" href="/pairaexpress.webmanifest" />
+        <link rel="manifest" href="/deliveryfast.webmanifest" />
         {/* The browser tab icon (Super admin › Branding & company; a default icon until one is uploaded). */}
         <link rel="icon" href="/api/v1/branding/icon" />
-        <style dangerouslySetInnerHTML={{ __html: BOOT_CSS }} />
+        <style dangerouslySetInnerHTML={{ __html: BOOT_CSS + LOGO_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: MODAL_GUARD }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
         {theme ? <style dangerouslySetInnerHTML={{ __html: theme }} /> : null}

@@ -1,4 +1,4 @@
-# Full Paira Express stack: PostgreSQL, Redis, migrations, API, background worker and web.
+# Full Delivery Fast stack: PostgreSQL, Redis, migrations, API, background worker and web.
 #
 #   cp .env.docker.example .env.docker      # then set the secrets in it
 #   docker compose --env-file .env.docker up -d --build
@@ -7,7 +7,7 @@
 #
 # SMS codes are written to the API log:  docker compose logs -f api worker
 
-name: pairaexpress
+name: deliveryfast
 
 x-api-env: &api-env
   NODE_ENV: production
@@ -59,7 +59,7 @@ services:
 
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile, target: runtime }
-    image: pairaexpress/api:latest
+    image: deliveryfast/api:latest
     restart: unless-stopped
     environment:
       <<: *api-env
@@ -70,7 +70,7 @@ services:
       redis: { condition: service_healthy }
 
   worker:
-    image: pairaexpress/api:latest
+    image: deliveryfast/api:latest
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
     environment:
@@ -85,14 +85,14 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args: { API_ORIGIN: "http://api:4000" }
-    image: pairaexpress/web:latest
+    image: deliveryfast/web:latest
     restart: unless-stopped
     ports: ["${WEB_PORT:-8080}:3000"]
     depends_on: { api: { condition: service_healthy } }
 
   # Demo data (one account per role). Run on demand: docker compose run --rm seed
   seed:
-    image: pairaexpress/api:latest
+    image: deliveryfast/api:latest
     profiles: [tools]
     command: ["node", "dist/seed/demo.js"]
     environment:

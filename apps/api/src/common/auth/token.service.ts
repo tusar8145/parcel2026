@@ -1,14 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import { jwtVerify, SignJWT, errors as joseErrors } from "jose";
-import { ROLES, type Role } from "@paira-express/shared";
+import { ROLES, type Role } from "@delivery-fast/shared";
 import { env } from "../../config/env";
 import { RedisService } from "../redis.service";
 import { unauthorized } from "../errors";
 import { userActor, type ImpersonationInfo, type RoleGrant, type UserActor } from "./actor";
 import { AUTHZ_VERSION_KEY, PermissionService, userVersionKey } from "./permissions.service";
 
-const ISSUER = "pairaexpress-api";
-const AUDIENCE = "pairaexpress";
+const ISSUER = "deliveryfast-api";
+const AUDIENCE = "deliveryfast";
 
 interface AccessClaims {
   sid: string;

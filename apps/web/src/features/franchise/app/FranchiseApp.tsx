@@ -24,7 +24,7 @@ const pageFromUrl = (): Slug => {
 };
 
 function Logo() {
-  return <BrandMark size={36} />;
+  return <BrandMark size={180} />;
 }
 
 /** The franchise panel: one account per franchise hub (Role FRANCHISE). */
@@ -52,7 +52,7 @@ export default function FranchiseApp() {
     } catch (e) {
       setBlocked(
         errorCode(e) === "FRANCHISE_SUSPENDED"
-          ? { title: "This franchise is suspended", text: "The franchise panel is closed while the franchise is suspended. Contact Paira Express support to resolve it." }
+          ? { title: "This franchise is suspended", text: "The franchise panel is closed while the franchise is suspended. Contact Delivery Fast support to resolve it." }
           : { title: "The franchise panel couldn't open", text: describe(e) },
       );
     }
@@ -78,7 +78,7 @@ export default function FranchiseApp() {
   };
   const label = PAGES.find(p => p.slug === page)?.label ?? "Overview";
   useEffect(() => {
-    if (me) document.title = `${label} · ${me.name} · Paira Express Franchise`;
+    if (me) document.title = `${label} · ${me.name} · Delivery Fast Franchise`;
   }, [label, me]);
 
   const signOut = async () => {
@@ -107,8 +107,8 @@ export default function FranchiseApp() {
         <div className="fr-brand">
           <Logo />
           <b>
-            {"paira "}
-            <span>express</span>
+            {"delivery "}
+            <span>fast</span>
           </b>
         </div>
         <div className="fr-workspace">

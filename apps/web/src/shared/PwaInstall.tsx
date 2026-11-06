@@ -38,14 +38,14 @@ export default function PwaInstall() {
     if ("serviceWorker" in navigator && window.isSecureContext) {
       if (process.env.NODE_ENV === "production") {
         void navigator.serviceWorker.register("/app-sw.js", { scope: "/" }).catch(error => {
-          console.warn("Paira Express: the app could not be made installable", error);
+          console.warn("Delivery Fast: the app could not be made installable", error);
         });
       } else {
         // Development: a cached copy would hide edits to public/legacy. Remove one left from earlier.
         void navigator.serviceWorker.getRegistrations().then(registrations => {
           for (const r of registrations) if (r.active?.scriptURL.endsWith("/app-sw.js")) void r.unregister();
         });
-        if ("caches" in window) void caches.keys().then(names => names.filter(n => n.startsWith("paira-express-static-") || n.startsWith("delivery-fast-static-") /* before the rename */).forEach(n => void caches.delete(n)));
+        if ("caches" in window) void caches.keys().then(names => names.filter(n => n.startsWith("delivery-fast-static-") || n.startsWith("delivery-fast-static-") /* before the rename */).forEach(n => void caches.delete(n)));
       }
     }
 
@@ -96,7 +96,7 @@ export function InstallAppButton() {
         type="button"
         onClick={() => void install()}
         style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 4px)", margin: "0 2px 10px", padding: "8px 12px", border: "1px solid #e1e7fb", borderRadius: 10, background: "#fff", color: "#344054", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-        aria-label="Install Paira Express as an app on this computer"
+        aria-label="Install Delivery Fast as an app on this computer"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="3" y="4" width="18" height="12" rx="2" />
@@ -111,7 +111,7 @@ export function InstallAppButton() {
           style={{ position: "fixed", inset: 0, zIndex: 1001, display: "grid", placeItems: "center", padding: 16, background: "#17203366" }}
         >
           <section role="dialog" aria-modal="true" aria-labelledby="dfInstallTitle" style={{ width: "min(420px, 100%)", padding: 22, borderRadius: 14, background: "#fff", color: "#182230", boxShadow: "0 16px 48px #17203333", font: "14px/1.5 system-ui, sans-serif" }}>
-            <h2 id="dfInstallTitle" style={{ margin: "0 0 8px", fontSize: 18 }}>{"Install Paira Express"}</h2>
+            <h2 id="dfInstallTitle" style={{ margin: "0 0 8px", fontSize: 18 }}>{"Install Delivery Fast"}</h2>
             <p style={{ margin: "0 0 16px" }}>{"Open your browser menu and choose “Install app” (or the install icon in the address bar)."}</p>
             <button type="button" onClick={() => setShowHelp(false)} style={{ padding: "8px 12px", border: 0, borderRadius: 7, background: "#1f2937", color: "#fff", font: "600 14px system-ui, sans-serif", cursor: "pointer" }}>
               {"Close"}

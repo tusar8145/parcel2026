@@ -11,7 +11,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import { opsHubScope } from "../parcels/ops-scope";
 import { assertHubInScope } from "../ops/ops-common";
 import type { createBatchSchema, listBatchesQuerySchema, listStockQuerySchema, printSchema, updateBatchSchema, voidSchema } from "./cn-stock.schemas";
-import { parcelPrefixOfMerchant } from "@paira-express/shared";
+import { parcelPrefixOfMerchant } from "@delivery-fast/shared";
 
 const batchInclude = {
   hub: { select: { id: true, code: true, name: true } },

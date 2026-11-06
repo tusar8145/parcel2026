@@ -147,7 +147,7 @@ export class MerchantSelfReviewController {
     private readonly kyc: MerchantKycService,
   ) {}
 
-  /** Application status, rejection reason and messages with Paira Express. */
+  /** Application status, rejection reason and messages with Delivery Fast. */
   @Get("review")
   @ApiZodQuery(merchantSelectorSchema)
   myReview(@CurrentActor() actor: Actor, @ZQuery(merchantSelectorSchema) query: Selector) {

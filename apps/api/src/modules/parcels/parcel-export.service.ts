@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { parcelStatusLabel, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@paira-express/shared";
+import { parcelStatusLabel, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@delivery-fast/shared";
 import type { z } from "zod";
 import { addressText } from "../../common/address";
 import { AuditService } from "../../common/audit.service";

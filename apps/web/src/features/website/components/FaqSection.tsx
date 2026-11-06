@@ -1,4 +1,4 @@
-import type { WebsiteFaq } from "@paira-express/shared";
+import type { WebsiteFaq } from "@delivery-fast/shared";
 
 /** The questions are edited in Super admin › Website settings. */
 export default function FaqSection({ faqs }: { faqs: WebsiteFaq[] }) {

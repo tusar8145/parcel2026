@@ -3,8 +3,8 @@ import "@fontsource-variable/noto-sans-bengali";
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Paira Express — Scan parcels",
-  applicationName: "Paira Express",
+  title: "Delivery Fast — Scan parcels",
+  applicationName: "Delivery Fast",
   robots: { index: false, follow: false },
   referrer: "no-referrer",
 };

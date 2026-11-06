@@ -1,7 +1,7 @@
 /*
  * White label on every page (website and panels; started by <BrandingRuntime/> in the root layout): the company
  * set in Super admin › Branding & company (GET /api/v1/branding) replaces the default one where pages show it -
- * the name ("Paira Express" in text, titles and the "paira express" wordmark), the logo (the pigeon mark), the
+ * the name ("Delivery Fast" in text, titles and the "delivery fast" wordmark), the logo, the
  * browser tab icon and the contact details (phone, email, address, also in tel: / mailto: links). Nothing else
  * changes.
  *
@@ -24,10 +24,10 @@ export interface BrandingView {
 }
 
 const DEFAULT = {
-  name: "Paira Express",
+  name: "Delivery Fast",
   phone: "01969 921122",
   tel: "+8801969921122",
-  email: "info@pairaexpress.com.bd",
+  email: "info@deliveryfast.com.bd",
   address: "House-6 Road -2A Banani, Dhaka-1213",
 };
 const KEY = "df.branding.v1";
@@ -39,11 +39,11 @@ let loaded = false;
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const digits = (p: string) => String(p || "").replace(/[^\d+]/g, "").replace(/^0(?=1)/, "+880");
 
-/** "Swift Parcel" → "SP", "Dakghor" → "DA", "Paira Express Ltd" → "PE". */
+/** "Swift Parcel" → "SP", "Dakghor" → "DA", "Delivery Fast Ltd" → "PE". */
 export function initials(name: string) {
   const words = name.trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w));
   const letters = words.length > 1 ? words.slice(0, 2).map(w => [...w.replace(/[^\p{L}\p{N}]/gu, "")][0] ?? "") : [...(words[0] ?? "").replace(/[^\p{L}\p{N}]/gu, "")].slice(0, 2);
-  return letters.join("").toUpperCase() || "PE";
+  return letters.join("").toUpperCase() || "DF";
 }
 
 function readStored() {
@@ -117,34 +117,34 @@ function fixElement(el: Element) {
   // The two-tone wordmark: "delivery <span>fast</span>" → the company name, its last word in the accent colour.
   const html = el as HTMLElement;
   if (el.matches(".brand-word, .brand-name") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name) {
-    if ((el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "paira express") {
+    if ((el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase() === "delivery fast") {
       const words = b.companyName.trim().split(/\s+/);
       const last = words.pop();
       el.innerHTML = `${words.length ? `${esc(words.join(" "))} ` : ""}<span>${esc(last)}</span>`;
       html.dataset.brandDone = "1";
     }
   }
-  // The name painted on the van in the website's hero ("paira express", lower case), made smaller to fit the van.
-  if (el.matches(".van-logo") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim().toLowerCase() === "paira express") {
+  // The name painted on the van in the website's hero ("delivery fast", lower case), made smaller to fit the van.
+  if (el.matches(".van-logo") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim().toLowerCase() === "delivery fast") {
     el.textContent = b.companyName.trim().toLowerCase();
     html.style.whiteSpace = "nowrap";
     const room = 92; // the van body is 115px wide, the text starts 18px in
     if (html.scrollWidth > room) html.style.fontSize = `${Math.max(8, Math.floor((13 * room) / html.scrollWidth))}px`;
     html.dataset.brandDone = "1";
   }
-  // The workspace badge ("PE" in the super admin sidebar): the company's initials.
-  if (el.matches(".workspace-icon") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim() === "PE") {
+  // The workspace badge ("DF" in the super admin sidebar): the company's initials.
+  if (el.matches(".workspace-icon") && !html.dataset.brandDone && b.companyName && b.companyName !== DEFAULT.name && el.textContent?.trim() === "DF") {
     el.textContent = initials(b.companyName);
     html.dataset.brandDone = "1";
   }
-  // The logo: the uploaded image instead of the pigeon mark.
-  if (b.logoUrl && el.matches("svg[data-brand-mark]")) {
-    const w = parseFloat((el as SVGElement).style.width) || el.getBoundingClientRect().width || 40;
+  // The logo: the uploaded image instead of the default logo.
+  if (b.logoUrl && el.matches("[data-brand-mark]")) {
+    const w = Number(el.getAttribute("width")) || 160;
     const img = document.createElement("img");
     img.src = b.logoUrl;
     img.alt = b.companyName || "";
     img.dataset.brandLogo = "1";
-    img.style.cssText = `width:${w}px;height:${w}px;object-fit:contain;display:block`;
+    img.style.cssText = `max-width:${w}px;max-height:44px;width:auto;height:auto;display:block`;
     el.replaceWith(img);
   }
 }
@@ -155,12 +155,13 @@ function fixTree(root: Node) {
   if (root.nodeType !== Node.ELEMENT_NODE) return;
   const el = root as Element;
   fixElement(el);
-  el.querySelectorAll(".brand-word, .brand-name, .workspace-icon, .van-logo, svg[data-brand-mark], a[href], [aria-label], [title], [alt], [placeholder]").forEach(fixElement);
+  el.querySelectorAll(".brand-word, .brand-name, .workspace-icon, .van-logo, [data-brand-mark], a[href], [aria-label], [title], [alt], [placeholder]").forEach(fixElement);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) fixText(n as Text);
 }
 
 function fixTitle() {
+  document.documentElement.toggleAttribute("data-brand-custom", !!b?.companyName && b.companyName !== DEFAULT.name);
   if (!b?.companyName || b.companyName === DEFAULT.name) return;
   if (document.title.includes(DEFAULT.name)) document.title = document.title.split(DEFAULT.name).join(b.companyName);
 }

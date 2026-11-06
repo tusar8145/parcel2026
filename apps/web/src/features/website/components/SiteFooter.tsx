@@ -6,20 +6,20 @@ export default function SiteFooter() {
       <div className="shell">
         <div className="footer-grid">
           <div className="footer-brand">
-            <a className="brand" href="/" aria-label="Paira Express home">
-              <span className="brand-mark" style={{ width: 46, height: 46 }}>
-                <BrandMark />
+            <a className="brand" href="/" aria-label="Delivery Fast home">
+              <span className="brand-mark">
+                <BrandMark light />
               </span>
               <span className="brand-word">
-                {"paira "}
-                <span>express</span>
+                {"delivery "}
+                <span>fast</span>
               </span>
             </a>
             <p>Getting the things that matter where they need to be, across Bangladesh.</p>
             <div className="footer-col footer-contact" style={{ marginTop: 18 }}>
               <strong>Contact Us</strong>
               <a href="tel:+8801969921122">01969 921122</a>
-              <a href="mailto:info@pairaexpress.com.bd">info@pairaexpress.com.bd</a>
+              <a href="mailto:info@deliveryfast.com.bd">info@deliveryfast.com.bd</a>
               <a href="https://www.google.com/maps/search/?api=1&query=House-6%20Road-2A%20Banani%2C%20Dhaka-1213" target="_blank" rel="noopener">
                 House-6 Road -2A Banani, Dhaka-1213
               </a>
@@ -51,7 +51,7 @@ export default function SiteFooter() {
             </a>
           </div>
           <div className="footer-col">
-            <strong>Paira Express</strong>
+            <strong>Delivery Fast</strong>
             <a href="/about">About us</a>
             <a href="#faq">{"Help & FAQs"}</a>
             <a href="/support" data-route="support">
@@ -71,7 +71,7 @@ export default function SiteFooter() {
           </div>
         </div>
         <div className="footer-bottom">
-          <span>© 2026 Paira Express. All rights reserved.</span>
+          <span>© 2026 Delivery Fast. All rights reserved.</span>
           <span>Built for Bangladesh</span>
         </div>
       </div>

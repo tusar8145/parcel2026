@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Paira Express — Super admin",
+  title: "Delivery Fast — Super admin",
 };
 
 export const viewport: Viewport = {

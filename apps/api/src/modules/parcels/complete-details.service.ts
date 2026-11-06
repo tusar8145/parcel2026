@@ -13,7 +13,7 @@ import {
   rateCardConfigSchema,
   type ParcelStatus,
   type ServiceLevel,
-} from "@paira-express/shared";
+} from "@delivery-fast/shared";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { actorLabel, merchantIdsOf, type Actor } from "../../common/auth/actor";

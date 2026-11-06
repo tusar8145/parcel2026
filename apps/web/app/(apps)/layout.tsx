@@ -3,9 +3,9 @@ import "@fontsource-variable/noto-sans-bengali";
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Paira Express — Apps",
-  applicationName: "Paira Express",
-  description: "Download the Paira Express Android apps for merchants, riders and operations staff.",
+  title: "Delivery Fast — Apps",
+  applicationName: "Delivery Fast",
+  description: "Download the Delivery Fast Android apps for merchants, riders and operations staff.",
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#1d5fd0" };

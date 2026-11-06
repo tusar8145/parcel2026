@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { phoneSchema } from "@paira-express/shared";
+import { phoneSchema } from "@delivery-fast/shared";
 import { listParcelsWithStageSchema } from "./parcel-stages";
 
 const optionalText = (max: number) => z.string().trim().max(max).optional().transform(v => v || undefined);

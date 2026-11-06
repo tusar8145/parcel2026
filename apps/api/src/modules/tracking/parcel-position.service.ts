@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { ParcelStatus } from "@paira-express/shared";
+import type { ParcelStatus } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import type { Actor } from "../../common/auth/actor";
 import { notFound } from "../../common/errors";

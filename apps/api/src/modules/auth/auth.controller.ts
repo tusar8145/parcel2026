@@ -10,7 +10,7 @@ import {
   requestOtpSchema,
   resetPasswordSchema,
   signupSchema,
-} from "@paira-express/shared";
+} from "@delivery-fast/shared";
 import { ApiZodBody, ZBody } from "../../common/zod";
 import { CurrentUser, Public, ReqMeta, type RequestMeta } from "../../common/auth/decorators";
 import type { UserActor } from "../../common/auth/actor";

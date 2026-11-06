@@ -1,5 +1,5 @@
 import { gunzipSync } from "node:zlib";
-import { DEFAULT_WEBSITE } from "@paira-express/shared";
+import { DEFAULT_WEBSITE } from "@delivery-fast/shared";
 import { WebsiteService } from "../src/modules/website/website.service";
 import { readXlsx } from "../src/modules/imports/xlsx/xlsx-reader";
 import { hub, parcelBody, PASSWORD, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";

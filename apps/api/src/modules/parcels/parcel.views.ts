@@ -11,7 +11,7 @@ import {
   parcelStatusLabel,
   trackingStage,
   type ParcelStatus,
-} from "@paira-express/shared";
+} from "@delivery-fast/shared";
 import type { Prisma } from "../../generated/prisma/client";
 import { MISSING_LABEL, type MissingField } from "./incomplete";
 import { addressText } from "../../common/address";

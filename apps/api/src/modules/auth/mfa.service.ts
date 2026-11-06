@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { authenticator } from "otplib";
 import QRCode from "qrcode";
 import { randomInt } from "node:crypto";
-import { MFA_REQUIRED_ROLES, type Role } from "@paira-express/shared";
+import { MFA_REQUIRED_ROLES, type Role } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { RedisService } from "../../common/redis.service";
 import { AuditService } from "../../common/audit.service";
@@ -12,7 +12,7 @@ import type { RequestMeta } from "../../common/auth/decorators";
 
 /** RFC 6238: 30-second steps, 6 digits, SHA-1 (what authenticator apps expect); ±1 step for clock drift. */
 const totp = authenticator.clone({ step: 30, window: 1, digits: 6 });
-const ISSUER = "Paira Express";
+const ISSUER = "Delivery Fast";
 
 const LOGIN_CHALLENGE_TTL_SECONDS = 10 * 60;
 const SETUP_CHALLENGE_TTL_SECONDS = 15 * 60;

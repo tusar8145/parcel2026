@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { SERVICE_LEVEL_LABEL, SERVICE_LEVELS, type RateCardConfig } from "@paira-express/shared";
+import { SERVICE_LEVEL_LABEL, SERVICE_LEVELS, type RateCardConfig } from "@delivery-fast/shared";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { notFound } from "../../common/errors";

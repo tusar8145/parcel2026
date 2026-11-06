@@ -71,7 +71,7 @@ export async function createApp(options: { logger?: boolean } = {}) {
   const document = SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle("Paira Express API")
+      .setTitle("Delivery Fast API")
       .setDescription("Parcels, tracking, riders, merchants, COD and support. Errors use { error: { code, message, details, requestId } }.")
       .setVersion("1.0")
       .addBearerAuth({ type: "http", scheme: "bearer", description: "Access token, or a merchant API key (df_live_…)" })

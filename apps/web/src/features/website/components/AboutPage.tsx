@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { DEFAULT_BRANDING, parseAbout, type AboutBlock } from "@paira-express/shared";
+import { DEFAULT_BRANDING, parseAbout, type AboutBlock } from "@delivery-fast/shared";
 
 /**
  * /about: the company profile. Its text is edited in Super admin › Branding & company (GET /branding,
- * about.title / intro / body in ABOUT_FORMAT); until then it is Paira Express's own.
+ * about.title / intro / body in ABOUT_FORMAT); until then it is Delivery Fast's own.
  */
 
 const H2 = ({ children }: { children: ReactNode }) => <h2 style={{ margin: "30px 0 10px", fontSize: 21, letterSpacing: "-.3px" }}>{children}</h2>;

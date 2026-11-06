@@ -94,7 +94,7 @@ export default function ShareFiles({ token }: { token: string }) {
     <main className="sf">
       <style>{CSS}</style>
       <header className="sf-head">
-        <strong>{"Paira Express"}</strong>
+        <strong>{"Delivery Fast"}</strong>
         <span>{"Share files with the computer"}</span>
       </header>
       {state === "closed" ? (

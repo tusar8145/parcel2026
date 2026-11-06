@@ -29,15 +29,14 @@
         : `<input id="${id}" type="${opts.type || "text"}" value="${esc(value)}" placeholder="${esc(opts.placeholder || "")}" ${opts.required ? "required" : ""}>`
     }${opts.hint ? `<small style="color:#8a94a3;font-size:12px">${esc(opts.hint)}</small>` : ""}</label>`;
 
-  // The logo the pages show now (the pigeon mark), taken from the sidebar the first time it is seen.
+  // The logo the pages show now, taken from the sidebar the first time it is seen.
   let currentMark = "";
   const markHtml = () => {
-    const svg = document.querySelector("svg[data-brand-mark]");
-    if (svg && !currentMark) {
-      const copy = svg.cloneNode(true);
-      copy.removeAttribute("style");
-      copy.setAttribute("width", "60");
-      copy.setAttribute("height", "60");
+    const mark = document.querySelector("[data-brand-mark]");
+    if (mark && !currentMark) {
+      const copy = mark.cloneNode(true);
+      copy.removeAttribute("height");
+      copy.setAttribute("width", "62");
       currentMark = copy.outerHTML;
     }
     return currentMark;
@@ -54,7 +53,7 @@
         ? `<div style="${box};display:grid;place-items:center;overflow:hidden" data-brand-keep>${markHtml()}</div>`
         : `<div style="width:${size}px;height:${size}px;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:#9aa4b2;font-size:11px">None</div>`;
     const custom = pending === undefined ? (which === "logo" ? !!S.b.logoUrl : !String(S.b.iconUrl).endsWith("=default")) : pending !== null;
-    const note = which === "logo" ? (url ? "Your logo, shown in every header." : "The current logo (the pigeon mark). Upload one to replace it.") : custom ? "Your icon." : "The default icon.";
+    const note = which === "logo" ? (url ? "Your logo, shown in every header." : "The current logo. Upload one to replace it.") : custom ? "Your icon." : "The default icon.";
     return `<div style="display:flex;align-items:center;gap:14px">${img}<div style="display:grid;gap:6px"><span style="color:#667283;font-size:12px">${esc(note)}${pending !== undefined ? " (not saved yet)" : ""}</span><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="button" type="button" data-pick="${which}">Upload…</button>${custom ? `<button class="button" type="button" data-clear="${which}">${which === "logo" ? "Remove" : "Use default"}</button>` : ""}</div></div></div>`;
   }
 
@@ -68,7 +67,7 @@
       <div class="config-layout" style="margin:0">
         <section class="panel"><div class="panel-heading"><div><h2 class="panel-title">Company</h2><p class="panel-subtitle">Shown in headers, page and tab titles, messages and PDFs</p></div></div>
           <div class="form-grid" style="margin-top:12px">
-            ${field("brName", "Company name", b.companyName, { required: true, hint: "Replaces “Paira Express” everywhere it shows." })}
+            ${field("brName", "Company name", b.companyName, { required: true, hint: "Replaces “Delivery Fast” everywhere it shows." })}
             ${field("brLegal", "Legal name", b.legalName === b.companyName ? "" : b.legalName, { placeholder: "Same as the company name", hint: "On invoices and statements." })}
             ${field("brTagline", "Tagline", b.tagline, { full: true })}
             ${field("brWebsite", "Website", b.website, { type: "url", placeholder: "https://", full: true })}
@@ -114,9 +113,9 @@
     };
   }
 
-  /** Paira Express's own About text with the company's name in it. */
+  /** Delivery Fast's own About text with the company's name in it. */
   function defaultAbout(name = $("brName")?.value.trim() || S.b.companyName) {
-    const named = t => String(t || "").split("Paira Express").join(name || "Paira Express");
+    const named = t => String(t || "").split("Delivery Fast").join(name || "Delivery Fast");
     return { intro: named(S.b.defaults?.about?.intro), body: named(S.b.defaults?.about?.body).trim() };
   }
 
@@ -177,7 +176,7 @@
       event.preventDefault();
       if (check && !check()) return;
       const typed = values();
-      // Paira Express's own text is kept as "the default", so it follows a later change of the company name.
+      // Delivery Fast's own text is kept as "the default", so it follows a later change of the company name.
       const d = defaultAbout(typed.companyName);
       if (typed.about?.body === d.body) typed.about.body = "";
       if (typed.about?.intro === d.intro) typed.about.intro = "";

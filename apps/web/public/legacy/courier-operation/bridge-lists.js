@@ -36,7 +36,7 @@
 
   // ───────────── scope: my hub / all hubs ─────────────
 
-  const SCOPE_KEY = "pairaexpress-ops-scope";
+  const SCOPE_KEY = "deliveryfast-ops-scope";
   let scopeValue = "mine";
   try {
     if (localStorage.getItem(SCOPE_KEY) === "all") scopeValue = "all";
@@ -93,7 +93,7 @@
     try {
       Ops.stageCountsData = await DF.api(`/ops/stage-counts${hubIds ? `?forHubIds=${hubIds.join(",")}` : ""}`);
     } catch (error) {
-      if (error?.status !== 403) console.error("Paira Express: stage counts could not be loaded", error);
+      if (error?.status !== 403) console.error("Delivery Fast: stage counts could not be loaded", error);
       return;
     }
     applyCounts();

@@ -26,7 +26,7 @@ export default function AppVersion() {
   return (
     <>
       <div className="app-version" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "10px 4px 0", color: "#98a2b3", fontSize: 12 }}>
-        <span>{`Paira Express v${VERSION}`}</span>
+        <span>{`Delivery Fast v${VERSION}`}</span>
         <button type="button" onClick={() => setOpen(true)} style={{ padding: 0, border: 0, background: "none", color: "#2f55c9", font: "inherit", fontWeight: 600, cursor: "pointer" }}>
           {"What's new"}
         </button>

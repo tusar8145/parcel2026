@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema } from "@paira-express/shared";
+import { emailSchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { boolQuery } from "../ops/ops-common";
 

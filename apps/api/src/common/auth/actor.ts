@@ -1,4 +1,4 @@
-import { permissionsFor, type Permission, type Role } from "@paira-express/shared";
+import { permissionsFor, type Permission, type Role } from "@delivery-fast/shared";
 
 export interface RoleGrant {
   role: Role;

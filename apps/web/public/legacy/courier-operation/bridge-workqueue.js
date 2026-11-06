@@ -162,12 +162,12 @@
     .wq-missing{display:inline-flex;align-items:center;gap:8px;border:1px solid #f4cdca;background:#fff5f4;color:#b42318;border-radius:10px;padding:7px 12px;font-weight:650;cursor:pointer;font:inherit;font-size:13px}
     .wq-missing b{background:#b42318;color:#fff;border-radius:999px;padding:1px 8px;font-size:12px}
     .wq-missing[aria-current="true"]{outline:2px solid #f4cdca}
-    .wq-scan{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 16px;border-bottom:1px solid var(--line,#e9edf2);background:#fafbfd}
+    .wq-scan{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 16px;border-bottom:1px solid var(--line,#e3e6ea);background:#fafbfd}
     .wq-scan label{display:grid;gap:4px;font-size:12px;color:#667085;font-weight:600}
     .wq-scan input,.wq-scan select{height:38px;min-width:200px}
     .wq-scan .wq-code{flex:1;min-width:240px}
     .wq-scan .wq-code input{width:100%;font-size:15px;font-weight:600;letter-spacing:.02em}
-    .wq-log{list-style:none;margin:0;padding:8px 16px;display:grid;gap:4px;max-height:160px;overflow:auto;border-bottom:1px solid var(--line,#e9edf2)}
+    .wq-log{list-style:none;margin:0;padding:8px 16px;display:grid;gap:4px;max-height:160px;overflow:auto;border-bottom:1px solid var(--line,#e3e6ea)}
     .wq-log li{font-size:12.5px;padding:5px 9px;border-radius:7px;background:#effaf5;color:#0f5c3f}
     .wq-log li.bad{background:#fff3ee;color:#9a3412}
     .wq-log time{color:#8a94a3;margin-right:6px}
@@ -267,7 +267,7 @@
         state.log.length ? `<ul class="wq-log" id="wqLog">${state.log.map(e => `<li class="${e.ok ? "" : "bad"}"><time>${esc(e.at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</time>${esc(e.message)}</li>`).join("")}</ul>` : ""
       }`;
     } else if (!task.action) {
-      scanBox = `<p class="wq-muted" style="padding:10px 16px;border-bottom:1px solid var(--line,#e9edf2)">${esc(task.hint)}</p>`;
+      scanBox = `<p class="wq-muted" style="padding:10px 16px;border-bottom:1px solid var(--line,#e3e6ea)">${esc(task.hint)}</p>`;
     }
 
     const transfer = task.key.startsWith("transfer-");

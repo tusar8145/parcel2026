@@ -293,12 +293,12 @@ export default function PhoneScanner({ token }: { token: string }) {
 const CSS = `
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f4f6fa;color:#1d2939}
 .psc{max-width:560px;margin:0 auto;padding:12px 14px 40px;display:grid;gap:10px}
-.psc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#2f62e3;color:#fff;border-radius:12px;padding:12px 14px}
+.psc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#1d5fd0;color:#fff;border-radius:12px;padding:12px 14px}
 .psc-head div{display:grid;gap:2px}.psc-head span{font-size:13px;opacity:.9}.psc-count{font-weight:700;white-space:nowrap}
 .psc-camera{position:relative;border-radius:12px;overflow:hidden;background:#101828;aspect-ratio:4/3;display:grid;place-items:center}
 .psc-camera video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .psc-frame{position:absolute;left:10%;right:10%;top:36%;height:28%;border:2px solid #fcc118;border-radius:8px;box-shadow:0 0 0 999px #10182855}
-.psc-start{position:relative;z-index:1;font:inherit;font-size:17px;font-weight:700;padding:14px 22px;border:0;border-radius:10px;background:#fcc118;color:#1d2939}
+.psc-start{position:relative;z-index:1;font:inherit;font-size:17px;font-weight:700;padding:14px 22px;border:0;border-radius:8px;background:#fcc118;color:#1d2939}
 .psc-tools{display:flex;gap:8px;flex-wrap:wrap}
 .psc-btn{font:inherit;font-weight:600;padding:10px 14px;border:1px solid #d0d5dd;border-radius:9px;background:#fff;color:#344054}
 .psc-btn:disabled{opacity:.5}

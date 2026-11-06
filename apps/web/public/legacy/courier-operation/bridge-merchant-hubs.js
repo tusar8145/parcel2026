@@ -217,7 +217,7 @@
     }
     let badge = document.getElementById("navAddressCount");
     if (!badge) {
-      item.insertAdjacentHTML("beforeend", `<span class="nav-count" id="navAddressCount" style="background:#fff5df;color:#b87913" title="Address changes to approve"></span>`);
+      item.insertAdjacentHTML("beforeend", `<span class="nav-count" id="navAddressCount" style="background:#fdf1d3;color:#8a5a00" title="Address changes to approve"></span>`);
       badge = document.getElementById("navAddressCount");
     }
     badge.textContent = String(n);

@@ -52,8 +52,8 @@
 /* Single selects everywhere in Courier Operations: one look instead of the browser's default (sizes stay as each page sets them). */
 select:not([multiple]):not([size]){-webkit-appearance:none;-moz-appearance:none;appearance:none;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:12px;padding-right:30px!important;border:1px solid #dfe4ec;border-radius:8px;color:#344054;cursor:pointer;transition:border-color .15s,box-shadow .15s}
 select:not([multiple]):not([size]):hover{border-color:#c3ccd9}
-select:not([multiple]):not([size]):focus{border-color:#7c9cf5;box-shadow:0 0 0 3px #3766e81f;outline:none}
-select:not([multiple]):not([size]):disabled{background-color:#f5f7fa;color:#98a2b3;cursor:not-allowed}
+select:not([multiple]):not([size]):focus{border-color:#7c9cf5;box-shadow:0 0 0 3px #1d5fd01f;outline:none}
+select:not([multiple]):not([size]):disabled{background-color:#f4f5f7;color:#98a2b3;cursor:not-allowed}
 select:not([multiple]):not([size])::-ms-expand{display:none}
 /* Riders › Shifts & attendance (bridge-shifts.js): readable table text, the rider in bold. */
 #shiftPanels tbody td{color:#344054;font-size:13px}
@@ -68,7 +68,7 @@ select:not([multiple]):not([size])::-ms-expand{display:none}
 .df-tabs .button{border:0;background:transparent;color:#556274;padding:7px 13px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:none}
 .df-tabs .button:hover{background:#e3e7ee;color:#1d2939}
 .df-tabs .button.button-primary{background:#fff;color:#2f55c9;box-shadow:0 1px 2px rgba(16,24,40,.08),0 1px 3px rgba(16,24,40,.06)}
-.df-tabs .button:focus-visible{outline:2px solid #3766e8;outline-offset:1px}
+.df-tabs .button:focus-visible{outline:2px solid #1d5fd0;outline-offset:1px}
 .df-stage-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:11px;margin-bottom:13px}
 .df-stage-grid .metric{cursor:pointer;min-height:92px}
 .df-stage-grid .metric:hover,.df-stage-grid .metric:focus-visible{border-color:#b8c8ff;outline:none}
@@ -653,8 +653,8 @@ select:not([multiple]):not([size])::-ms-expand{display:none}
     input.min = localInput(new Date(now.getTime() - OP_TIME_DAYS * 86_400_000));
     if (document.activeElement !== input) input.value = localInput(opTime.value || now);
     const custom = opTime.on && opTime.value;
-    input.style.borderColor = custom ? "#b87913" : "";
-    note.style.color = custom ? "#b87913" : "#8b96a4";
+    input.style.borderColor = custom ? "#8a5a00" : "";
+    note.style.color = custom ? "#8a5a00" : "#8b96a4";
     note.textContent = custom ? `Entries on this page are recorded at ${opTimeText(opTime.value)}.` : opTime.on ? "Choose the date & time the work happened (up to 30 days back)." : "Entries are recorded at the current time.";
   }
   // While no time is chosen, keep the picker on the current minute.

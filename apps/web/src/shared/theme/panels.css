@@ -1,0 +1,257 @@
+/*
+ * The panels built on the same parts: E-commerce and Banking merchant, Courier Operations, Super admin, Rider.
+ * It restyles their existing markup, nothing else.
+ */
+/* ── menu ── */
+.sidebar { border-right: 1px solid var(--line); padding: 0 12px 12px; }
+.brand { height: auto; margin: 0 0 14px; padding: 20px 8px 6px; }
+.workspace-switch { background: var(--surface-2); border-color: var(--line); border-radius: 8px; margin-bottom: 14px; padding: 8px; }
+.workspace-avatar { background: var(--blue-soft); border-radius: 8px; color: var(--blue-ink); }
+.workspace-meta strong { font-size: 13px; font-weight: 600; }
+.workspace-meta small { color: var(--ink-3); font-size: 11px; }
+.nav-group { margin-bottom: 16px; }
+.nav-label { color: var(--ink-3); font-size: 11px; font-weight: 500; letter-spacing: 0; margin: 0 10px 4px; text-transform: none; }
+.nav-item { border-radius: 8px; color: var(--ink-2); font-size: 14px; font-weight: 400; gap: 10px; margin: 2px 0; padding: 8px 10px; }
+.nav-item svg { height: 18px; opacity: 1; width: 18px; }
+.nav-item:hover { background: var(--surface-3); color: var(--ink); }
+.nav-item.active { background: var(--blue-soft); color: var(--blue-ink); font-weight: 500; }
+.nav-item .nav-count { background: var(--amber-soft); border-radius: 6px; color: var(--amber); font-size: 12px; font-weight: 500; padding: 0 6px; }
+.nav-item.active .nav-count { background: #fff; color: var(--blue-ink); }
+.help-card { background: var(--surface-2); border-color: var(--line); border-radius: 8px; margin: 0 0 10px; }
+.help-card p { color: var(--ink-3); }
+.help-card button { background: #fff; border-color: var(--line); border-radius: 8px; color: var(--blue-ink); }
+.user-profile { padding: 12px 4px 0; }
+.profile-avatar { background: var(--blue); color: #fff; }
+.profile-meta small { color: var(--ink-3); font-size: 11px; }
+
+/* ── top bar ── */
+.topbar { background: var(--surface); border-bottom: 1px solid var(--line); height: 56px; padding: 0 36px; }
+.breadcrumb { color: var(--ink-3); }
+.breadcrumb strong { color: var(--ink); font-weight: 500; }
+.top-search { background: var(--surface); border-color: var(--line); border-radius: 8px; color: var(--ink); height: 36px; padding: 0 12px 0 33px; width: 300px; }
+.top-search:focus { border-color: var(--blue); }
+.search-wrap svg { color: var(--ink-3); height: 16px; top: 10px; width: 16px; }
+.icon-button { border-color: transparent; border-radius: 8px; color: var(--ink-2); height: 36px; width: 36px; }
+.icon-button:hover { background: var(--surface-3); }
+.notification-dot { background: var(--red); }
+
+/* ── page ── */
+.main-content { max-width: none; padding: 36px 72px 56px; }
+.page-heading { align-items: flex-start; flex-wrap: nowrap; gap: 16px; margin-bottom: 24px; }
+.page-heading > :first-child { flex: 1 1 280px; min-width: 260px; }
+.eyebrow { color: var(--ink-3); font-size: 12px; font-weight: 500; letter-spacing: 0; margin-bottom: 2px; text-transform: none; }
+body[data-app$="-merchant"] .eyebrow { display: none; }
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.subtitle { color: var(--ink-3); font-size: 14px; margin-top: 2px; }
+.heading-actions { flex: 0 1 auto; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+/* ── buttons ── */
+.button { background: var(--surface); border-color: var(--line-strong); border-radius: 8px; color: var(--ink); font-size: 14px; font-weight: 500; min-height: 36px; padding: 0 14px; }
+.button:hover { background: var(--surface-3); border-color: var(--line-strong); }
+.button svg { height: 16px; width: 16px; }
+.button-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.button-primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+.button-sm { font-size: 13px; min-height: 32px; padding: 0 10px; }
+
+/* ── cards ── */
+.metric, .panel { border-color: var(--line); border-radius: 12px; }
+.metrics { gap: 16px; margin-bottom: 16px; }
+.metric { min-height: 0; padding: 16px 18px; }
+.metric-head { color: var(--ink-2); }
+.metric-icon { background: var(--blue-soft); border-radius: 8px; color: var(--blue-ink); height: 28px; width: 28px; }
+.metric-icon svg { height: 16px; width: 16px; }
+.metric-value { font-size: 24px; font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: -.02em; margin-top: 4px; }
+.metric-foot { color: var(--ink-3); margin-top: 2px; }
+.metric-foot span:empty { display: none; }
+.dashboard-grid, .content-grid { gap: 16px; margin-bottom: 16px; }
+.panel { padding: 18px 20px; }
+.panel-title { font-size: 14px; font-weight: 600; }
+.panel-subtitle { color: var(--ink-3); margin-top: 2px; }
+.activity-icon { background: var(--blue-soft); border-radius: 8px; color: var(--blue-ink); }
+.activity-copy { color: var(--ink-2); }
+.activity-copy strong { color: var(--ink); font-weight: 600; }
+.activity-copy small { color: var(--ink-3); }
+
+/* ── charts ── */
+.chart-grid line { stroke: #e9ebef; }
+.chart-labels { fill: var(--ink-3); }
+.chart-line { stroke: #2a78d6; stroke-width: 2; }
+.chart-line-secondary { stroke: #eb6834; stroke-dasharray: none; stroke-width: 2; }
+.chart-point { stroke: #2a78d6; }
+.legend-dot { background: #2a78d6; }
+.legend-dot.gray { background: #eb6834; }
+.chart-legend, .progress-label, .dispatch-label { color: var(--ink-2); }
+.dispatch-summary span { color: var(--ink-3); }
+.dispatch-summary strong, .dispatch-row strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+.progress-track { background: var(--surface-3); }
+
+/* ── tables ── */
+.panel.table-panel { overflow: hidden; padding: 0; }
+.table-panel .panel-heading { border-bottom: 1px solid var(--line); gap: 10px 12px; padding: 12px 16px; flex-wrap: wrap; }
+.page-table-panel { margin-top: 0; }
+.table-tools { flex-wrap: wrap; }
+th { background: var(--surface-2); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: 12px; font-weight: 500; letter-spacing: 0; padding: 9px 16px; }
+td { border-bottom: 1px solid var(--line); color: var(--ink); font-size: 14px; padding: 10px 16px; }
+tbody tr:hover td { background: var(--surface-2); }
+.order-id { color: var(--blue-ink); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 13px; font-weight: 400; }
+.customer-mini { background: var(--surface-3); color: var(--ink-2); }
+.customer-name { color: var(--ink); font-weight: 400; }
+.customer-phone { color: var(--ink-3); }
+.table-footer { border-top: 1px solid var(--line); color: var(--ink-3); }
+.page-btn { border-color: var(--line); border-radius: 8px; color: var(--ink-2); min-height: 32px; min-width: 32px; }
+.page-btn:hover:not(:disabled) { background: var(--surface-3); }
+.page-btn.current { background: var(--blue-soft); border-color: var(--blue-soft); color: var(--blue-ink); }
+.empty-state { color: var(--ink-3); padding: 40px 24px; }
+
+/* ── status tags ── */
+.status { border-radius: 6px; font-size: 12px; font-weight: 500; padding: 2px 6px; white-space: nowrap; }
+.status-transit, .status-processing, .status-out { background: var(--blue-soft); color: var(--blue-ink); }
+
+/* ── fields ── */
+.table-search, .select-small, .form-field input:not([type="checkbox"], [type="radio"], [type="file"]), .form-field select, .form-field textarea { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); font-size: 14px; min-height: 36px; padding: 0 10px; }
+.form-field textarea { padding: 8px 10px; }
+.table-search:focus, .select-small:focus, .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--blue); outline: 0; box-shadow: 0 0 0 1px var(--blue); }
+.form-field label { color: var(--ink-2); font-weight: 500; }
+.form-field small { color: var(--ink-3); }
+
+/* ── dialogs and toast ── */
+.modal-backdrop { background: rgb(0 0 0 / .4); }
+/* The rider's delivery form: taller than a phone screen, so it scrolls and Save stays reachable. */
+body[data-app="rider"] .modal { max-height: calc(100dvh - 40px); overflow-y: auto; }
+.modal { border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--pop); }
+.modal-head h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.modal-head p { color: var(--ink-3); }
+.toast { background: var(--ink); border-radius: 8px; box-shadow: var(--pop); }
+.api-code { background: var(--surface-2); border-color: var(--line); border-radius: 8px; color: var(--ink); font-family: "Geist Mono Variable", ui-monospace, monospace; }
+
+/* ── Courier Operations, Super admin, Rider: their names for the same parts ── */
+.company-switch, .workspace, .rider-chip { background: var(--surface-2); border-color: var(--line); border-radius: 8px; margin-bottom: 14px; padding: 8px; }
+.company-avatar, .workspace-icon { background: var(--blue-soft); border-radius: 8px; color: var(--blue-ink); }
+.company-info strong, .workspace-info strong, .rider-info strong { font-size: 13px; font-weight: 600; }
+.company-info small, .workspace-info small, .rider-info small { color: var(--ink-3); font-size: 11px; }
+.switch-chevron, .workspace-caret { color: var(--ink-3); }
+.avatar { background: var(--blue); color: #fff; font-weight: 600; }
+.online-dot, .live-dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.support-card { background: var(--surface-2); border-color: var(--line); border-radius: 8px; margin: 0 0 10px; }
+.support-card p { color: var(--ink-3); }
+.support-card button { background: #fff; border-color: var(--line); border-radius: 8px; color: var(--blue-ink); }
+.ops-link { background: var(--surface-2); border-color: var(--line); border-radius: 8px; color: var(--blue-ink); font-size: 13px; font-weight: 500; margin: 0 0 10px; }
+.ops-link:hover { background: var(--blue-soft); border-color: var(--blue-soft); }
+.admin-profile { padding: 12px 4px 0; }
+.live-chip, .shift-chip, .environment { border-radius: 6px; font-size: 12px; font-weight: 500; padding: 4px 8px; }
+.live-chip i { box-shadow: none; }
+.environment { background: var(--violet-soft); color: var(--violet); }
+.environment i { background: var(--violet); }
+.content { max-width: none; padding: 36px 72px 56px; }
+.lower-grid, .layout, .grid, .activity-two-col, .workflow-grid, .config-layout { gap: 16px; }
+.layout, .grid, .activity-two-col { margin-bottom: 16px; }
+.grid-lines line { stroke: #e9ebef; }
+.chart-previous { stroke: #eb6834; stroke-dasharray: none; stroke-width: 2; }
+
+.button-danger { background: var(--surface); border-color: #f0c5c5; color: var(--red); }
+.button-danger:hover { background: var(--red-soft); border-color: #f0c5c5; }
+.mini-button { background: var(--surface); border-color: var(--line-strong); border-radius: 6px; color: var(--ink-2); font-weight: 500; }
+.mini-button:hover { background: var(--surface-3); }
+.mini-button.approve { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
+.mini-button.reject { border-color: #f0c5c5; color: var(--red); }
+
+.alert-item, .activity, .approval-row, .audit-row, .queue-item, .earnings-row, .activity-event-row { border-bottom-color: var(--line); }
+.alert-icon, .audit-icon, .activity-event-icon { border-radius: 8px; }
+.audit-icon, .activity-event-icon { background: var(--blue-soft); color: var(--blue-ink); }
+.alert-copy, .audit-copy, .activity-event-copy, .earnings-row, .source-row { color: var(--ink-2); }
+.alert-copy strong, .audit-copy strong, .activity-event-copy strong, .approval-copy strong, .queue-copy strong, .earnings-row strong, .next-address, .primary-cell, .recipient, .generic-table td:first-child, .source-row strong { color: var(--ink); font-weight: 600; }
+.alert-copy small, .audit-copy small, .activity-event-copy small, .activity-event-time, .approval-copy small, .approval-age, .queue-copy span, .queue-detail small, .next-label, .next-meta, .subcell, .network-summary span, .mini-card span, .service-card p, .service-card-bottom span, .setting-card p, .map-caption, .map-footer, .traffic-labels { color: var(--ink-3); }
+.setting-value { color: var(--ink-2); font-weight: 500; }
+.tracking { color: var(--blue-ink); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 13px; font-weight: 400; }
+.merchant-avatar { background: var(--surface-3); color: var(--ink-2); }
+.network-summary strong, .mini-card strong, .service-card-bottom strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.service-card, .setting-card, .mini-card { border-color: var(--line); border-radius: 12px; }
+.service-kicker { color: var(--ink-3); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.service-card-head > svg { color: var(--blue-ink); }
+.config-chip, .workflow-kpis span { background: var(--surface-2); border-color: var(--line); border-radius: 6px; color: var(--ink-2); }
+.service-group, .proof-box { background: var(--surface-2); border-color: var(--line); border-radius: 8px; }
+.service-plan-checks .config-check { color: var(--ink-2); }
+
+.callout { border-radius: 8px; font-size: 13px; }
+body[data-app="courier-operation"] .callout { background: var(--blue-soft); border-color: #cddffa; color: var(--blue-ink); }
+body[data-app="super-admin"] .callout { background: var(--amber-soft); border-color: #f3dfae; color: var(--amber); }
+
+.status-good, .status-complete { background: var(--green-soft); color: var(--green); }
+.status-blue, .status-assigned { background: var(--blue-soft); color: var(--blue-ink); }
+.status-warn, .status-issue { background: var(--amber-soft); color: var(--amber); }
+.status-bad { background: var(--red-soft); color: var(--red); }
+.stop-tag, .activity-tag { border-radius: 6px; font-weight: 500; }
+.activity-tag { background: var(--blue-soft); color: var(--blue-ink); }
+.stop-marker { border-color: var(--blue-soft); color: var(--blue-ink); font-weight: 600; }
+
+.workflow-form label, .config-form label { align-content: start; }
+.field label, .workflow-form label, .config-form label { color: var(--ink-2); font-size: 13px; font-weight: 500; }
+.field input:not([type="checkbox"], [type="radio"], [type="file"]), .field select, .field textarea, .workflow-form input, .workflow-form select, .workflow-row select, .config-form input:not([type="checkbox"], [type="radio"], [type="file"]), .config-form select, .config-form textarea, .activity-toolbar input, .activity-toolbar select { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); font-size: 14px; min-height: 36px; padding: 0 10px; }
+.field textarea, .config-form textarea { padding: 8px 10px; }
+.field input:focus, .field select:focus, .field textarea:focus, .workflow-form input:focus, .workflow-form select:focus, .workflow-row select:focus, .config-form input:focus, .config-form select:focus, .config-form textarea:focus, .activity-toolbar input:focus, .activity-toolbar select:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); outline: 0; }
+.shipment-date-filter { color: var(--ink-3); font-size: 11px; }
+
+.traffic-bar { background: #2a78d6; }
+.traffic-bar:nth-child(3n) { background: #6ea5e6; }
+.traffic-bar:hover:after { background: var(--ink); }
+.source-track { background: var(--surface-3); }
+.source-track i { background: #2a78d6; }
+
+.next-stop { background: var(--surface-2); border-color: var(--line); }
+.earnings-total { background: var(--blue-soft); color: var(--blue-ink); }
+.earnings-total strong { color: var(--blue-ink); }
+.cash-banner { background: var(--amber-soft); border-color: #f3dfae; }
+.cash-banner span, .cash-banner strong { color: var(--amber); }
+.form-feedback { color: var(--red); }
+
+/* Long operational tables: tighter than the merchant panels', so every column fits. */
+body:not([data-app$="-merchant"]) th { padding: 9px 12px; }
+body:not([data-app$="-merchant"]) td { font-size: 13px; padding: 9px 12px; }
+body:not([data-app$="-merchant"]) .tracking { font-size: 12px; }
+.subcell { font-family: "Geist Variable", "Noto Sans Bengali Variable", ui-sans-serif, system-ui, sans-serif; font-size: 12px; }
+.table-search { max-width: 100%; min-width: 210px; }
+.company-info, .workspace-info, .rider-info { text-align: left; }
+.live-chip, .shift-chip, .environment { white-space: nowrap; }
+
+/* The small sample maps. */
+.map, .route-map { border-color: var(--line); }
+.map-tag, .map-label { border-color: var(--line); color: var(--ink-2); }
+.map-route, .route-line { border-right-color: #2a78d6; border-top-color: #2a78d6; }
+.rider-pin, .pin-start { background: var(--blue); }
+.hub-pin, .map-legend i.hub { background: var(--violet); }
+.alert-pin { background: var(--red); }
+.pin-one, .pin-two { background: var(--green); }
+.pin-three { background: var(--amber); }
+
+.breadcrumb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-actions { flex: none; }
+@media (max-width: 1200px) {
+  :root { --sidebar: 236px; }
+  .topbar { padding: 0 20px; }
+  .top-search { width: 220px; }
+  .main-content, .content { padding: 28px 48px 44px; }
+  body .table-scroll { overflow-x: auto; }
+  body .st-layout { grid-template-columns: minmax(0, 1fr); }
+}
+/* Courier Operations' top bar: its two wide buttons become icons, with their names kept for screen readers. */
+@media (max-width: 1100px) {
+  body[data-app="courier-operation"] .top-actions { gap: 6px; }
+  body[data-app="courier-operation"] .top-actions > .button { font-size: 0; gap: 0; min-width: 36px; padding: 0 9px; }
+}
+@media (max-width: 900px) {
+  body[data-app="courier-operation"] .breadcrumb { display: none; }
+}
+@media (max-width: 780px) {
+  .top-search { width: 155px; }
+  .topbar { padding: 0 16px; }
+  .main-content, .content { padding: 24px 20px 36px; }
+  .page-heading { flex-wrap: wrap; }
+  .page-heading > :first-child { flex-basis: 100%; min-width: 0; }
+}
+@media (max-width: 520px) {
+  .top-search { padding-right: 0; width: 36px; }
+  .top-search:focus { width: min(250px, 75vw); }
+  .page-heading { align-items: flex-start; }
+  .heading-actions { justify-content: flex-start; }
+}

@@ -126,7 +126,7 @@
       `<small id="dfProofStamp" class="panel-subtitle" style="display:block;margin-top:8px">Getting your location for the proof stamp…</small>`,
     );
     const otp = $("otpProof");
-    if (otp && navigator.onLine === false) otp.insertAdjacentHTML("beforeend", `<small style="display:block;color:#b87913">You're offline: the code is checked when this update syncs.</small>`);
+    if (otp && navigator.onLine === false) otp.insertAdjacentHTML("beforeend", `<small style="display:block;color:#8a5a00">You're offline: the code is checked when this update syncs.</small>`);
     prefetch().then(fix => {
       const label = $("dfProofStamp");
       if (!label) return;

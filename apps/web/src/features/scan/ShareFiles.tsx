@@ -147,9 +147,9 @@ export default function ShareFiles({ token }: { token: string }) {
 const CSS = `
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f4f6fa;color:#1d2939}
 .sf{max-width:560px;margin:0 auto;padding:12px 14px 40px;display:grid;gap:12px}
-.sf-head{display:grid;gap:2px;background:#2f62e3;color:#fff;border-radius:12px;padding:12px 14px}.sf-head span{font-size:14px;opacity:.9}
+.sf-head{display:grid;gap:2px;background:#1d5fd0;color:#fff;border-radius:12px;padding:12px 14px}.sf-head span{font-size:14px;opacity:.9}
 .sf-drop{display:grid;gap:6px;place-items:center;align-content:center;text-align:center;min-height:200px;padding:20px;border:2px dashed #c9d2df;border-radius:12px;color:#647184;background:#fff;font:inherit;cursor:pointer}
-.sf-drop strong{font-size:18px;color:#344054}.sf-drop.over{border-color:#2f62e3;background:#eef3ff}.sf-drop:disabled{opacity:.6}
+.sf-drop strong{font-size:18px;color:#344054}.sf-drop.over{border-color:#1d5fd0;background:#eef3ff}.sf-drop:disabled{opacity:.6}
 .sf-problem{margin:0;color:#b42318;font-weight:600;font-size:14px}
 .sf-card{background:#fff;border:1px solid #e4e7ec;border-radius:12px;padding:14px 16px}.sf-card h1{margin:0 0 8px;font-size:20px}.sf-card p{margin:0;color:#475467;line-height:1.5}
 .sf-sum{font-weight:600;margin-bottom:8px!important}

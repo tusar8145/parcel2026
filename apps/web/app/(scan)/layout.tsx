@@ -1,3 +1,5 @@
+import "@fontsource-variable/geist";
+import "@fontsource-variable/noto-sans-bengali";
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
@@ -7,7 +9,7 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#2f62e3" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#1d5fd0" };
 
 /** The phone page of "Scan with phone" (Courier Operations › New orders): its own document, no panel scripts. */
 export default function Layout({ children }: { children: React.ReactNode }) {

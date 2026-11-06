@@ -368,7 +368,7 @@
     return `<ol style="list-style:none;margin:0;padding:0">${events
       .map(
         (e, index) =>
-          `<li style="position:relative;margin-left:8px;padding:0 0 16px 22px;border-left:${index === events.length - 1 ? "0" : "1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index === 0 ? "#3766e8" : "#cbd5e1"}"></span><strong style="font-size:13px">${esc(e.title)}${e.internal ? " · internal" : ""}</strong><div style="margin-top:3px;color:#647184;font-size:13px">${esc([e.location, e.description].filter(Boolean).join(" · "))}</div><small style="display:block;margin-top:3px;color:#99a3af">${esc([Ops.when(e.at), e.actor].filter(Boolean).join(" · "))}</small></li>`,
+          `<li style="position:relative;margin-left:8px;padding:0 0 16px 22px;border-left:${index === events.length - 1 ? "0" : "1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index === 0 ? "#1d5fd0" : "#cbd5e1"}"></span><strong style="font-size:13px">${esc(e.title)}${e.internal ? " · internal" : ""}</strong><div style="margin-top:3px;color:#647184;font-size:13px">${esc([e.location, e.description].filter(Boolean).join(" · "))}</div><small style="display:block;margin-top:3px;color:#99a3af">${esc([Ops.when(e.at), e.actor].filter(Boolean).join(" · "))}</small></li>`,
       )
       .join("")}</ol>`;
   }

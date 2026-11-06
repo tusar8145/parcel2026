@@ -220,27 +220,27 @@ export default function ScanPhone({ token }: { token: string }) {
 
 const CSS = `
 *{box-sizing:border-box}
-body{margin:0;background:#f3f6fb;color:#172033;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Bengali",sans-serif}
+body{margin:0;background:#f4f5f7;color:#12161c;font:15px/1.45 "Geist Variable","Noto Sans Bengali Variable",system-ui,sans-serif}
 .scan{max-width:520px;margin:0 auto;padding:0 16px 32px}
 .scan header{display:flex;justify-content:space-between;align-items:center;padding:16px 0}
-.scan header strong{color:#2f62e3;font-size:17px}
-.scan header span{color:#687588;font-size:13px}
-.card{background:#fff;border:1px solid #e3e8f0;border-radius:14px;padding:18px}
+.scan header strong{color:#1d5fd0;font-size:17px}
+.scan header span{color:#6b7482;font-size:13px}
+.card{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:18px}
 .card h1{margin:0 0 4px;font-size:19px}
-.meta{margin:0 0 10px;color:#2f62e3;font-weight:600;font-size:14px}
-.hint{margin:0 0 16px;color:#5d6a7d;font-size:14px}
+.meta{margin:0 0 10px;color:#1d5fd0;font-weight:600;font-size:14px}
+.hint{margin:0 0 16px;color:#4c5563;font-size:14px}
 .actions{display:grid;gap:10px}
 .actions button{min-height:52px;font-size:16px}
-button{font:inherit;font-weight:600;border:1px solid #d6dde8;background:#fff;color:#273449;border-radius:10px;padding:10px 14px;cursor:pointer}
-button.primary{background:#2f62e3;border-color:#2f62e3;color:#fff}
+button{font:inherit;font-weight:600;border:1px solid #cdd2d9;background:#fff;color:#12161c;border-radius:8px;padding:10px 14px;cursor:pointer}
+button.primary{background:#1d5fd0;border-color:#1d5fd0;color:#fff}
 button:disabled{opacity:.5}
 .problem{margin:12px 0 0;color:#b42318;font-size:14px}
 .expired h1{color:#b42318}
 .list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
-.list li{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e3e8f0;border-radius:12px;padding:8px}
+.list li{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:8px}
 .list img{width:56px;height:56px;object-fit:cover;border-radius:8px;background:#eef2f7;flex:none}
 .list div{flex:1;min-width:0;display:grid}
-.list .state{color:#687588;font-size:13px}
+.list .state{color:#6b7482;font-size:13px}
 .list .state.sent{color:#067647}
 .list .state.failed{color:#b42318}
 .list button{padding:8px 12px}

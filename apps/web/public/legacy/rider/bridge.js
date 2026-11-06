@@ -35,7 +35,7 @@
   document.head.insertAdjacentHTML(
     "beforeend",
     `<style id="dfRiderPanelStyles">
-      .panel-title{margin:0;font-size:15px;font-weight:650;color:#182230}
+      .panel-title{margin:0;font-size:15px;font-weight:650;color:#12161c}
       .panel-subtitle{margin:5px 0 0;color:#96a0ad;font-size:13px;font-weight:400}
       #dfPayPanels{margin-top:0!important}
     </style>`,
@@ -627,7 +627,7 @@
         const queued = !!task._queued && task.status === "OUT_FOR_DELIVERY";
         const text = queued ? "The delivery code is sent to the recipient when your start syncs." : "Start the delivery first; the code is sent to the recipient then.";
         const start = queued ? "" : ` <button type="button" class="button button-sm button-primary" data-df-start="${esc(id)}">Start delivery</button>`;
-        $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags data-df-start-hint style="color:#b87913;font-weight:600">${esc(text)}${start}</p>`);
+        $("modalDescription").insertAdjacentHTML("afterend", `<p class="form-feedback" data-parcel-flags data-df-start-hint style="color:#8a5a00;font-weight:600">${esc(text)}${start}</p>`);
       }
     }
     // The delivery dialog: call the recipient from it.

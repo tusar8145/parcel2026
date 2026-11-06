@@ -62,8 +62,8 @@
     `<style id="dfSectionTabs">${ALL_PARTS.map(p => `#mainContent[data-sec-part="${p}"] [data-sec]:not([data-sec="${p}"]){display:none!important}`).join("")}
       #mainContent[data-sec-part] [data-sec-pair]{grid-template-columns:minmax(0,1fr)!important}
       .sec-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0;padding:0 16px 16px;list-style:none}
-      .sec-steps li{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line,#e9edf2);border-radius:10px;background:#fafbfd}
-      .sec-steps b{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#3766e8;color:#fff;font-size:12px}
+      .sec-steps li{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line,#e3e6ea);border-radius:10px;background:#fafbfd}
+      .sec-steps b{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#1d5fd0;color:#fff;font-size:12px}
       .sec-steps strong{display:block;font-size:13px}
       .sec-steps small{display:block;margin-top:2px;color:#667085;font-size:12px;line-height:1.4}
       @media(max-width:900px){.sec-steps{grid-template-columns:minmax(0,1fr)}}

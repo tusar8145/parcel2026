@@ -1115,7 +1115,7 @@
     const action = self
       ? `<p class="panel-subtitle" style="margin:0">You can't suspend your own account.</p>`
       : u.status === "ACTIVE"
-        ? `<button type="button" class="button" data-staff-close>Close</button><button type="button" class="button button-primary" data-staff-status="SUSPENDED" style="background:#c34d4d;border-color:#c34d4d">Suspend account</button>`
+        ? `<button type="button" class="button" data-staff-close>Close</button><button type="button" class="button button-primary" data-staff-status="SUSPENDED" style="background:#c02f2f;border-color:#c02f2f">Suspend account</button>`
         : `<button type="button" class="button" data-staff-close>Close</button><button type="button" class="button button-primary" data-staff-status="ACTIVE">Reactivate account</button>`;
     document.body.insertAdjacentHTML(
       "beforeend",

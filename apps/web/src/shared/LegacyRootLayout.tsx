@@ -3,6 +3,9 @@ import path from "node:path";
 import PwaInstall from "./PwaInstall";
 import BrandingRuntime from "./branding/BrandingRuntime";
 
+// Apps with their own markup, and so their own layer; every other panel shares panels.css. The website has none.
+const OWN_THEME = ["franchise", "application"];
+
 // Hide only pages that still require the legacy scripts to finish booting.
 const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]){opacity:0}";
 
@@ -35,7 +38,10 @@ const MODAL_GUARD = `(function(){
 export default function LegacyRootLayout({ app, children }: { app: string; children: React.ReactNode }) {
   // Line endings as the browser's HTML parser leaves them (\r\n → \n): a Windows checkout's CRLF file
   // would otherwise differ from the parsed <style> text and React reports a hydration mismatch.
-  const css = fs.readFileSync(path.join(process.cwd(), "src/features", app, "styles.css"), "utf8").replace(/\r\n?/g, "\n");
+  const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8").replace(/\r\n?/g, "\n");
+  const css = read(`src/features/${app}/styles.css`);
+  // The panels' shared look (after the page's own styles, so it wins). The website keeps its own.
+  const theme = app === "website" ? "" : read("src/shared/theme/tokens.css") + read(`src/shared/theme/${OWN_THEME.includes(app) ? app : "panels"}.css`);
   return (
     <html lang="en">
       <head>
@@ -45,6 +51,7 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
         <style dangerouslySetInnerHTML={{ __html: BOOT_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: MODAL_GUARD }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
+        {theme ? <style dangerouslySetInnerHTML={{ __html: theme }} /> : null}
         <noscript>
           <style>{"body{opacity:1!important}"}</style>
         </noscript>

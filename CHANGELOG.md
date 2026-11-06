@@ -7,6 +7,19 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.11.1 — 2026-11-06
+- All panels: more empty space around the page content, on the left and right most of all.
+- All panels: the buttons beside a page title, such as on New orders and All parcels, sit at the top right again.
+- Merchant panels on smaller screens: long tables scroll sideways instead of being cut off.
+- Support on smaller screens: the ticket list sits above the conversation, so the page no longer runs off the side.
+
+## 1.11.0 — 2026-11-06
+- The new look is now everywhere: Courier Operations, Super admin, Rider, Franchise, application pages and the phone scanner pages, with the same fonts, colours, icons, menu, cards, tables and forms as the merchant panels. Everything works as before.
+- Courier Operations on smaller screens: Share files and Phone scanner in the top bar show as icons, so the bar fits the screen.
+
+## 1.10.0 — 2026-11-06
+- E-commerce and Banking & Financial merchant panels: a new look, with new fonts, colours, icons, menu, cards, tables and forms. Everything works as before.
+
 ## 1.9.0 — 2026-11-06
 - All panels: menu items are now links, so right click › Open in new tab, Ctrl+click and middle click open them in a new tab.
 

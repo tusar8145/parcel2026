@@ -12,7 +12,7 @@
   if (!DF || !Ops) return;
   const $ = id => document.getElementById(id);
   const esc = Ops.esc;
-  const TAG = `<span class="df-franchise-tag" style="display:inline-flex;margin-left:6px;padding:1px 7px;border-radius:999px;background:#fff5df;color:#b87913;font-size:10.5px;font-weight:700;vertical-align:middle">Franchise</span>`;
+  const TAG = `<span class="df-franchise-tag" style="display:inline-flex;margin-left:6px;padding:1px 7px;border-radius:999px;background:#fdf1d3;color:#8a5a00;font-size:10.5px;font-weight:700;vertical-align:middle">Franchise</span>`;
   const franchiseHubs = () => (DF.state.hubs || []).filter(h => h.type === "FRANCHISE" && h.active);
   const isFranchiseHub = id => (DF.state.hubs || []).some(h => h.id === id && h.type === "FRANCHISE");
 
@@ -56,7 +56,7 @@
     const fields = $("modalFields");
     fields?.insertAdjacentHTML(
       "beforeend",
-      `<div class="field full" id="dfPickupHub" style="border-top:1px solid #eef1f5;padding-top:12px;margin-top:4px"><label for="dfPickupHubSelect">Or hand this pickup to a franchise hub</label><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="dfPickupHubSelect" style="flex:1;min-width:200px">${hubs.map(h => `<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.district)}</option>`).join("")}</select><button type="button" class="button" id="dfPickupHubGo">Hand to franchise</button></div><small style="color:#7b8796">The franchise assigns one of its own riders.</small></div>`,
+      `<div class="field full" id="dfPickupHub" style="border-top:1px solid #eef1f5;padding-top:12px;margin-top:4px"><label for="dfPickupHubSelect">Or hand this pickup to a franchise hub</label><div style="display:flex;gap:8px;flex-wrap:wrap"><select id="dfPickupHubSelect" style="flex:1;min-width:200px">${hubs.map(h => `<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.district)}</option>`).join("")}</select><button type="button" class="button" id="dfPickupHubGo">Hand to franchise</button></div><small style="color:#6b7482">The franchise assigns one of its own riders.</small></div>`,
     );
   }
 

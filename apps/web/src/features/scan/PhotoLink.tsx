@@ -129,11 +129,11 @@ export default function PhotoLink({ token }: { token: string }) {
 const CSS = `
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f4f6fa;color:#1d2939}
 .pl{max-width:520px;margin:0 auto;padding:12px 14px 40px;display:grid;gap:12px}
-.pl-head{display:grid;gap:2px;background:#2f62e3;color:#fff;border-radius:12px;padding:12px 14px}.pl-head span{font-size:14px;opacity:.9}
+.pl-head{display:grid;gap:2px;background:#1d5fd0;color:#fff;border-radius:12px;padding:12px 14px}.pl-head span{font-size:14px;opacity:.9}
 .pl-empty{display:grid;place-items:center;text-align:center;min-height:240px;padding:20px;border:2px dashed #c9d2df;border-radius:12px;color:#647184;background:#fff}
 .pl-preview{width:100%;max-height:60vh;object-fit:contain;border-radius:12px;background:#101828}
 .pl-tools{display:flex;gap:8px;flex-wrap:wrap}
-.pl-btn{flex:1;font:inherit;font-weight:600;padding:12px 14px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;color:#344054}
+.pl-btn{flex:1;font:inherit;font-weight:600;padding:12px 14px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:#344054}
 .pl-btn:disabled{opacity:.5}.pl-primary{background:#fcc118;border-color:#fcc118;color:#1d2939}
 .pl-send{width:100%;font-size:17px;padding:14px;background:#12a150;border-color:#12a150;color:#fff}
 .pl-problem{margin:0;color:#b42318;font-weight:600;font-size:14px}

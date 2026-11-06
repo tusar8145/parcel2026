@@ -986,7 +986,7 @@
     const timeline = events
       .map(
         (e, index) =>
-          `<li style="position:relative;margin-left:8px;padding:0 0 18px 25px;border-left:${index === events.length - 1 ? "0" : "1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index === 0 ? "#3766e8" : "#cbd5e1"}"></span><strong>${esc(e.title)}</strong><div style="margin-top:3px;color:#647184">${esc([e.description, e.location].filter(Boolean).join(" · "))}</div><small style="display:block;margin-top:4px;color:#99a3af">${esc(when(e.at))}</small></li>`,
+          `<li style="position:relative;margin-left:8px;padding:0 0 18px 25px;border-left:${index === events.length - 1 ? "0" : "1px solid #dfe5ee"}"><span style="position:absolute;left:-6px;top:2px;width:11px;height:11px;border-radius:50%;background:${index === 0 ? "#1d5fd0" : "#cbd5e1"}"></span><strong>${esc(e.title)}</strong><div style="margin-top:3px;color:#647184">${esc([e.description, e.location].filter(Boolean).join(" · "))}</div><small style="display:block;margin-top:4px;color:#99a3af">${esc(when(e.at))}</small></li>`,
       )
       .join("");
     const complete = p.incomplete && EDITABLE_INCOMPLETE.includes(p.status) ? `<button type="button" class="button button-primary" data-df-complete="${esc(p.trackingId)}">Complete details</button>` : "";
@@ -1433,8 +1433,8 @@
       .df-pay-kinds .button{border:0;background:transparent;color:#556274;box-shadow:none}
       .df-pay-kinds .button.button-primary{background:#fff;color:#2f55c9;box-shadow:0 1px 2px rgba(16,24,40,.08)}
       .df-paid-to{display:flex;align-items:center;gap:14px;margin:0 0 15px}
-      .df-paid-to-icon{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--green-soft,#e8f7f0);color:var(--green,#16845b);font-size:20px;font-weight:700}
-      .df-paid-to-missing .df-paid-to-icon{background:var(--amber-soft,#fff5df);color:var(--amber,#b87913)}
+      .df-paid-to-icon{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--green-soft,#e3f4e9);color:var(--green,#0b7a3b);font-size:20px;font-weight:700}
+      .df-paid-to-missing .df-paid-to-icon{background:var(--amber-soft,#fdf1d3);color:var(--amber,#8a5a00)}
       .df-paid-to-copy{flex:1;display:grid;gap:2px;min-width:0}
       .df-paid-to-copy small{color:#8792a2;font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
       .df-paid-to-copy strong{font-size:15px}

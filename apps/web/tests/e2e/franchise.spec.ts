@@ -1,7 +1,7 @@
 import { type Browser, type Page } from "@playwright/test";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
+import { Fixtures, adminNav, apiUrl, confirmDialog, expect, opsNav, sql, test, type TempUser } from "./support";
 
 /**
  * Franchise hubs through the real UI (owner spec 2026-10-18): super admin creates a franchise (a hub tagged Franchise,
@@ -233,7 +233,7 @@ test("franchise hub end to end through the UI", async ({ browser }) => {
   fx.adoptParcel((await f.page.locator("#frBookedId").textContent())!.trim());
 
   // Super admin > Hubs & zones shows the hub with its Franchise tag.
-  await a.page.click('#navigation [data-page="Hubs & zones"]');
+  await adminNav(a.page, "Hubs & zones");
   await expect(a.page.locator(`#hzHubs tr[data-hub-row="${fr.hubId}"] [data-hub-tag]`)).toHaveText("Franchise", { timeout: 20_000 });
 
   // Super admin suspends it: the panel closes.

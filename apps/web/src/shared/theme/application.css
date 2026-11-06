@@ -1,0 +1,31 @@
+/* The application-status pages in the shared look (tokens.css). It restyles their existing markup, nothing else. */
+.ap-top { border-bottom-color: var(--line); }
+.ap-who span { color: var(--ink-3); }
+.ap-heading h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.ap-eyebrow { color: var(--ink-3); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.ap-hero { border-radius: 12px; }
+.ap-hero.blue { border-color: #cddffa; }
+.ap-hero-icon { border-radius: 8px; }
+.ap-hero h2 { font-size: 18px; font-weight: 600; }
+.ap-hero p { color: var(--ink-2); }
+.ap-hero .ap-meta { color: var(--ink-3); }
+.ap-badge, .ap-readonly { border-radius: 6px; font-size: 12px; font-weight: 500; padding: 2px 6px; }
+.ap-readonly { background: var(--surface-3); color: var(--ink-2); }
+.ap-card { border-color: var(--line); border-radius: 12px; }
+.ap-card h2 { font-size: 14px; font-weight: 600; }
+.ap-card-head p, .ap-muted, .ap-msg-head small, .ap-step small, .ap-details dt { color: var(--ink-3); }
+.ap-step { background: var(--surface-2); border-color: var(--line); border-radius: 8px; }
+.ap-step.current { border-color: #cddffa; }
+.ap-dot { background: var(--surface-3); color: var(--ink-2); font-weight: 600; }
+.ap-msg { background: var(--surface-2); border-color: var(--line); border-radius: 8px; }
+.ap-msg.requester { border-color: #cddffa; }
+.ap-reply textarea { border-color: var(--line-strong); border-radius: 8px; color: var(--ink); }
+.ap-reply textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); outline: 0; }
+.ap-details dd { font-weight: 500; }
+.ap-btn { border-color: var(--line-strong); border-radius: 8px; color: var(--ink); font-size: 14px; font-weight: 500; }
+.ap-btn:hover { background: var(--surface-3); }
+.ap-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.ap-btn.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+.ap-btn.danger { border-color: #f0c5c5; color: var(--red); }
+.ap-toast { background: var(--ink); border-radius: 8px; box-shadow: var(--pop); }
+.ap-toast.bad { background: var(--red); }

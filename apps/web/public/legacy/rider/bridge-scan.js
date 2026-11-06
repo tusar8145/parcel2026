@@ -347,7 +347,7 @@
       #actionModal.df-scan-quick select{min-height:44px}
       .df-scan-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
       .df-scan-card{display:flex;flex-direction:column;gap:6px;text-align:left;padding:14px;border:1px solid var(--line,#e4e8ee);border-radius:12px;background:#fff;cursor:pointer;font:inherit;color:inherit}
-      .df-scan-card:hover,.df-scan-card:focus-visible{border-color:var(--blue,#3766e8);box-shadow:0 0 0 3px #3766e81f}
+      .df-scan-card:hover,.df-scan-card:focus-visible{border-color:var(--blue,#1d5fd0);box-shadow:0 0 0 3px #1d5fd01f}
       .df-scan-card strong{display:flex;gap:8px;align-items:center;font-size:15px}
       .df-scan-card strong svg{width:18px;height:18px}
       .df-scan-card span{color:#647184;font-size:13px;line-height:1.45}

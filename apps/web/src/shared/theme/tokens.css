@@ -1,0 +1,36 @@
+/*
+ * Paira Express's panel look: colours, type and small shared details. The website keeps its own.
+ * Only appearance: panels, franchise and application.css layer on top of each page's own styles.css
+ * (LegacyRootLayout). Removing this folder puts the previous look back.
+ */
+:root {
+  --ink: #12161c;
+  --ink-2: #4c5563;
+  --ink-3: #6b7482;
+  --muted: #6b7482;
+  --line: #e3e6ea;
+  --line-strong: #cdd2d9;
+  --canvas: #f4f5f7;
+  --surface: #fff;
+  --surface-2: #f8f9fa;
+  --surface-3: #eef0f3;
+  --blue: #1d5fd0;
+  --blue-hover: #174fb0;
+  --blue-ink: #1a55bb;
+  --blue-soft: #e8f0fd;
+  --green: #0b7a3b;
+  --green-soft: #e3f4e9;
+  --amber: #8a5a00;
+  --amber-soft: #fdf1d3;
+  --red: #c02f2f;
+  --red-soft: #fbe6e6;
+  --violet: #5240c0;
+  --violet-soft: #ece9fb;
+  --pop: 0 12px 32px -8px rgb(18 22 28 / 0.18), 0 2px 6px rgb(18 22 28 / 0.06);
+  --sidebar: 256px;
+  font-family: "Geist Variable", "Noto Sans Bengali Variable", ui-sans-serif, system-ui, sans-serif;
+}
+body { background: var(--canvas); color: var(--ink); font-size: 14px; line-height: 1.45; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+::-webkit-scrollbar { height: 10px; width: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); background-clip: content-box; border: 3px solid transparent; border-radius: 10px; }

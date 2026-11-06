@@ -86,7 +86,7 @@
       iconAnchor: [size / 2, size / 2],
       html: `<span style="display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:${text === "H" ? "6px" : "50%"};background:${color};color:#fff;font:700 11px/1 Arial,sans-serif;border:2px solid #fff;box-shadow:0 2px 6px #10182855">${esc(text)}</span>`,
     });
-  const PARCEL_COLOR = { BREACHED: "#c34d4d", AT_RISK: "#b87913", ON_TRACK: "#3766e8" };
+  const PARCEL_COLOR = { BREACHED: "#c02f2f", AT_RISK: "#8a5a00", ON_TRACK: "#1d5fd0" };
 
   function ensureMap(page, container, only) {
     const L = window.L;
@@ -130,12 +130,12 @@
     entry.parcels.clearLayers();
     const bounds = [];
     for (const h of DF.state.hubs.filter(h => h.lat != null && h.lng != null)) {
-      L.marker([h.lat, h.lng], { icon: pinIcon(L, "H", "#182230", 24), zIndexOffset: 500 }).bindTooltip(esc(h.name)).addTo(entry.hubs);
+      L.marker([h.lat, h.lng], { icon: pinIcon(L, "H", "#12161c", 24), zIndexOffset: 500 }).bindTooltip(esc(h.name)).addTo(entry.hubs);
       if (!mine || mine.includes(h.id)) bounds.push([h.lat, h.lng]);
     }
     for (const p of entry.only === "vehicles" ? [] : data.map?.parcels || []) {
-      const color = p.status === "EXCEPTION" ? "#c34d4d" : PARCEL_COLOR[p.sla] || "#3766e8";
-      L.circleMarker([p.lat, p.lng], { radius: p.kind === "pickup" ? 5 : 6, color: p.kind === "pickup" ? "#b87913" : color, weight: 2, fillColor: color, fillOpacity: p.approximate ? 0.25 : 0.7 })
+      const color = p.status === "EXCEPTION" ? "#c02f2f" : PARCEL_COLOR[p.sla] || "#1d5fd0";
+      L.circleMarker([p.lat, p.lng], { radius: p.kind === "pickup" ? 5 : 6, color: p.kind === "pickup" ? "#8a5a00" : color, weight: 2, fillColor: color, fillOpacity: p.approximate ? 0.25 : 0.7 })
         .bindTooltip(`${esc(p.trackingId)} · ${esc(p.statusLabel)} · ${esc(p.zone)}${p.approximate ? " (zone centre)" : ""}`)
         .on("click", () => courierTrackingHistory(p.trackingId))
         .addTo(entry.parcels);
@@ -152,7 +152,7 @@
   }
 
   function riderIcon(r) {
-    return pinIcon(window.L, "R", r.stale ? "#98a2ae" : r.status === "ON_BREAK" ? "#b87913" : "#16845b");
+    return pinIcon(window.L, "R", r.stale ? "#98a2ae" : r.status === "ON_BREAK" ? "#8a5a00" : "#0b7a3b");
   }
   function drawRiders(entry) {
     const L = window.L;
@@ -167,7 +167,7 @@
     for (const [id, marker] of entry.riderMarkers) if (!seen.has(id)) (entry.riders.removeLayer(marker), entry.riderMarkers.delete(id));
   }
 
-  const vehicleIcon = v => pinIcon(window.L, "V", v.stale ? "#98a2ae" : "#3766e8", 24);
+  const vehicleIcon = v => pinIcon(window.L, "V", v.stale ? "#98a2ae" : "#1d5fd0", 24);
   const vehicleTip = v => `${esc(v.vehicleRegNo)} · ${esc(v.route)} · ${esc(v.number)} · ${v.stale ? `last seen ${esc(Ops.ago(v.at))}${v.sharing ? "" : " (sharing stopped)"}` : `live · ${esc(Ops.ago(v.at))}`}`;
   function drawVehicles(entry) {
     const L = window.L;
@@ -318,9 +318,9 @@
     if (!p) return;
     const L = window.L;
     const line = (p.geometry || []).filter(pt => Array.isArray(pt) && pt.length === 2);
-    if (line.length > 1) L.polyline(line, { color: "#3766e8", weight: 4, opacity: 0.8 }).addTo(entry.route);
-    if (p.start) L.marker([p.start.lat, p.start.lng], { icon: pinIcon(L, "S", "#182230") }).bindTooltip("Start").addTo(entry.route);
-    for (const s of p.stops) L.marker([s.lat, s.lng], { icon: pinIcon(L, String(s.seq), s.kind === "pickup" ? "#b87913" : "#3766e8", 22), zIndexOffset: 800 }).bindTooltip(`${s.seq}. ${esc(s.trackingId)}`).addTo(entry.route);
+    if (line.length > 1) L.polyline(line, { color: "#1d5fd0", weight: 4, opacity: 0.8 }).addTo(entry.route);
+    if (p.start) L.marker([p.start.lat, p.start.lng], { icon: pinIcon(L, "S", "#12161c") }).bindTooltip("Start").addTo(entry.route);
+    for (const s of p.stops) L.marker([s.lat, s.lng], { icon: pinIcon(L, String(s.seq), s.kind === "pickup" ? "#8a5a00" : "#1d5fd0", 22), zIndexOffset: 800 }).bindTooltip(`${s.seq}. ${esc(s.trackingId)}`).addTo(entry.route);
     const bounds = [...(p.start ? [[p.start.lat, p.start.lng]] : []), ...p.stops.map(s => [s.lat, s.lng])];
     if (bounds.length) entry.map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
   }

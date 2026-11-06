@@ -229,6 +229,6 @@ export const EDITOR_CSS = `
 .editor-crop .handle.se{right:-2px;bottom:-2px;cursor:nwse-resize}
 .editor-tools,.editor-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px}
 .editor button{min-height:46px;background:#1e293b;border-color:#334155;color:#e2e8f0}
-.editor button.primary{background:#2f62e3;border-color:#2f62e3;color:#fff}
+.editor button.primary{background:#1d5fd0;border-color:#1d5fd0;color:#fff}
 .editor .loading{color:#94a3b8}
 `;

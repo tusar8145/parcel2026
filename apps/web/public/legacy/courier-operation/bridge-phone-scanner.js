@@ -63,7 +63,7 @@
       b.dataset.state = "connected";
     } else {
       label.textContent = "Phone: waiting…";
-      b.style.borderColor = "#b87913";
+      b.style.borderColor = "#8a5a00";
       b.style.color = "#8a5a0b";
       b.dataset.state = "waiting";
     }

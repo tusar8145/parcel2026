@@ -46,7 +46,7 @@
         </label>
         <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pushEnabled" ${s.enabled ? "checked" : ""}> Send push notifications</label>
         <div><button type="button" class="button button-primary" data-push-save>Save</button></div>
-        <hr style="border:0;border-top:1px solid var(--line, #e9edf2);margin:4px 0">
+        <hr style="border:0;border-top:1px solid var(--line, #e3e6ea);margin:4px 0">
         <div style="display:grid;gap:6px"><strong>Send a test</strong><span class="panel-subtitle">Choose someone who has the app signed in on a phone.</span>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${picker("pushTestSearch", "Name, phone, merchant or rider code")}<span id="pushTestChosen" class="panel-subtitle"></span><button type="button" class="button" data-push-test>Send test push</button></div>
           <div id="pushTestResults"></div>

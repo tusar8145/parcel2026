@@ -26,7 +26,7 @@ test("system guide: super admin page with search and tabs; Courier Operations op
   await page.waitForTimeout(300);
   // Search: the cash handover slip (HS) and the hub transfer that sends whole slips (HT).
   await expect(page.locator(".sg tbody .sg-prefix")).toHaveText(["HS", "HT"]);
-  for (const t of ["statuses", "money", "roles"]) {
+  for (const t of ["lifecycle", "money", "roles"]) {
     await page.click(`[data-sg-tab="${t}"]`);
     await expect(page.locator(`[data-sg-tab="${t}"]`)).toHaveAttribute("aria-selected", "true");
   }

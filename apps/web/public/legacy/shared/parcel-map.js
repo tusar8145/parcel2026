@@ -59,14 +59,14 @@
 </style>`,
   );
 
-  const COLORS = { rider: "#16845b", hub: "#182230", vehicle: "#3766e8", last: "#667085", none: "#98a2ae" };
+  const COLORS = { rider: "#0b7a3b", hub: "#12161c", vehicle: "#1d5fd0", last: "#667085", none: "#98a2ae" };
   const LETTER = { rider: "R", hub: "H", vehicle: "V", last: "✓", none: "?" };
   const icon = (L, kind, stale) =>
     L.divIcon({
       className: "",
       iconSize: [26, 26],
       iconAnchor: [13, 13],
-      html: `<span style="display:grid;place-items:center;width:26px;height:26px;border-radius:${kind === "hub" ? "6px" : "50%"};background:${stale ? "#98a2ae" : COLORS[kind] || "#3766e8"};color:#fff;font:700 12px/1 Arial,sans-serif;border:2px solid #fff;box-shadow:0 2px 6px #10182855">${LETTER[kind] || "•"}</span>`,
+      html: `<span style="display:grid;place-items:center;width:26px;height:26px;border-radius:${kind === "hub" ? "6px" : "50%"};background:${stale ? "#98a2ae" : COLORS[kind] || "#1d5fd0"};color:#fff;font:700 12px/1 Arial,sans-serif;border:2px solid #fff;box-shadow:0 2px 6px #10182855">${LETTER[kind] || "•"}</span>`,
     });
 
   const ago = iso => {

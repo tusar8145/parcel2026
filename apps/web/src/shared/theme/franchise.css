@@ -1,0 +1,73 @@
+/* The franchise panel in the shared look (tokens.css). It restyles the panel's existing markup, nothing else. */
+.fr-sidebar { border-right-color: var(--line); }
+.fr-workspace { background: var(--surface-2); border-color: var(--line); border-radius: 8px; }
+.fr-workspace small { color: var(--ink-3); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.fr-workspace strong { font-size: 13px; font-weight: 600; }
+.fr-workspace span { color: var(--ink-3); }
+.fr-tag { border-radius: 6px; font-weight: 500; }
+.fr-nav a { border-radius: 8px; color: var(--ink-2); font-size: 14px; font-weight: 400; padding: 8px 10px; }
+.fr-nav a:hover { background: var(--surface-3); color: var(--ink); }
+.fr-nav a[aria-current="page"] { background: var(--blue-soft); color: var(--blue-ink); font-weight: 500; }
+.fr-nav .count { border-radius: 6px; color: var(--amber); font-weight: 500; }
+.fr-signout { border-color: var(--line-strong); border-radius: 8px; color: var(--ink); font-weight: 500; }
+.fr-signout:hover { background: var(--surface-3); }
+.fr-topbar { background: var(--surface); border-bottom-color: var(--line); height: 56px; padding: 0 36px; }
+.fr-topbar .crumb { color: var(--ink-3); }
+.fr-topbar .crumb b { font-weight: 500; }
+.fr-menu { border-color: var(--line); }
+.fr-content { max-width: none; padding: 36px 72px 56px; }
+.fr-heading h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+.fr-heading p, .fr-card-head p, .fr-hint { color: var(--ink-3); }
+.fr-eyebrow { color: var(--ink-3); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.fr-card, .fr-metric { border-color: var(--line); border-radius: 12px; }
+.fr-card { padding: 18px 20px; }
+.fr-card h2 { font-size: 14px; font-weight: 600; }
+.fr-metric { padding: 16px 18px; }
+.fr-metric small { color: var(--ink-2); font-size: 13px; }
+.fr-metric strong { font-weight: 600; letter-spacing: -.02em; }
+.fr-metric span { color: var(--ink-3); }
+.fr-metric.accent, .fr-metric.warn { background: var(--surface); }
+.fr-tabs { background: var(--surface-3); border-radius: 8px; padding: 3px; }
+.fr-tabs button { border-radius: 6px; color: var(--ink-2); font-weight: 500; padding: 6px 12px; }
+.fr-tabs button[aria-selected="true"] { box-shadow: 0 1px 2px rgb(18 22 28 / .08); }
+.fr-tabs .count { color: var(--ink-3); }
+.fr-table { font-size: 14px; }
+.fr-table th { background: var(--surface-2); border-bottom: 1px solid var(--line); color: var(--ink-3); font-size: 12px; font-weight: 500; letter-spacing: 0; padding: 9px 12px; text-transform: none; }
+.fr-table td { border-bottom-color: var(--line); padding: 10px 12px; }
+.fr-table tbody tr:hover td { background: var(--surface-2); }
+.fr-table td small { color: var(--ink-3); }
+.fr-pill { background: var(--surface-3); border-radius: 6px; color: var(--ink-2); font-weight: 500; padding: 2px 6px; }
+.fr-pill.green { background: var(--green-soft); color: var(--green); }
+.fr-pill.blue { background: var(--blue-soft); color: var(--blue-ink); }
+.fr-pill.amber { background: var(--amber-soft); color: var(--amber); }
+.fr-pill.red { background: var(--red-soft); color: var(--red); }
+.fr-btn { border-color: var(--line-strong); border-radius: 8px; color: var(--ink); font-size: 14px; font-weight: 500; }
+.fr-btn:hover { background: var(--surface-3); border-color: var(--line-strong); }
+.fr-btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.fr-btn.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+.fr-btn.danger { border-color: #f0c5c5; color: var(--red); }
+.fr-btn.sm { font-size: 13px; height: 32px; }
+.fr-link { color: var(--blue-ink); font-weight: 500; }
+.fr-field label { color: var(--ink-2); font-size: 13px; font-weight: 500; }
+.fr-field input:not([type="checkbox"], [type="radio"], [type="file"]), .fr-field select, .fr-field textarea, .fr-scan input { border-color: var(--line-strong); border-radius: 8px; color: var(--ink); }
+.fr-field input:not([type="checkbox"], [type="radio"], [type="file"]), .fr-field select { height: 36px; }
+.fr-field input:focus, .fr-field select:focus, .fr-field textarea:focus, .fr-scan input:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); outline: 0; }
+.fr-section-title { color: var(--ink-2); font-weight: 600; }
+.fr-scan-result { border-radius: 8px; }
+.fr-scan-result.ok { color: var(--green); }
+.fr-scan-result.bad { color: var(--red); }
+.fr-row { border-top-color: var(--line); }
+.fr-quote { background: var(--surface-2); border-radius: 8px; }
+.fr-quote .line { color: var(--ink-2); }
+.fr-dialog-backdrop { background: rgb(0 0 0 / .4); }
+.fr-dialog { border: 1px solid var(--line); box-shadow: var(--pop); }
+.fr-dialog h2 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.fr-dialog > p { color: var(--ink-3); }
+.fr-toast { background: var(--ink); border-radius: 8px; box-shadow: var(--pop); }
+.fr-toast.bad { background: var(--red); }
+.fr-notice { border-radius: 8px; color: var(--blue-ink); }
+.fr-notice.amber { color: var(--amber); }
+@media (max-width: 900px) {
+  .fr-topbar { padding: 0 16px; }
+  .fr-content { padding: 24px 20px 36px; }
+}

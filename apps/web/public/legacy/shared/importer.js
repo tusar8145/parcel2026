@@ -449,7 +449,7 @@
         c => `<tr data-dfi-map-row="${c.index}">
           <td class="primary-cell" style="white-space:nowrap">${esc(c.letter)}${c.header ? ` · ${esc(c.header)}` : ""}</td>
           <td style="max-width:340px">${c.samples.length ? c.samples.map(v => `<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#586577">${esc(v)}</span>`).join("") : `<span style="color:#98a2ae">empty</span>`}</td>
-          <td><select class="select-small" data-dfi-map="${c.index}" aria-label="Field for column ${esc(c.letter)}" style="min-width:210px${c.key ? "" : ";color:#98a2ae"}">${fieldOptions(c.key)}</select>${c.key && c.by ? `<small style="display:block;margin-top:3px;color:#16845b">Matched ${esc(BY_LABEL[c.by] || "")}</small>` : ""}</td>
+          <td><select class="select-small" data-dfi-map="${c.index}" aria-label="Field for column ${esc(c.letter)}" style="min-width:210px${c.key ? "" : ";color:#98a2ae"}">${fieldOptions(c.key)}</select>${c.key && c.by ? `<small style="display:block;margin-top:3px;color:#0b7a3b">Matched ${esc(BY_LABEL[c.by] || "")}</small>` : ""}</td>
         </tr>`,
       )
       .join("");
@@ -710,7 +710,7 @@
     draw(
       isBulk() ? `Applying changes · ${job.number}` : `Creating ${noun(ui.cfg)} · ${job.number}`,
       `This runs on the server: you can close this window and follow it in the ${isBulk() ? "bulk update" : "import"} history.`,
-      `<div style="display:grid;gap:10px;padding:10px 0" id="dfiProgress"><div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.percent}" style="height:12px;background:#eef1f5;border-radius:8px;overflow:hidden"><div id="dfiBar" style="height:100%;width:${p.percent}%;background:#3766e8;transition:width .4s"></div></div><p class="panel-subtitle" id="dfiProgressText" style="margin:0">${esc(`${fmt(p.processed)} of ${fmt(p.total)} rows processed (${p.percent}%)`)}</p></div>`,
+      `<div style="display:grid;gap:10px;padding:10px 0" id="dfiProgress"><div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.percent}" style="height:12px;background:#eef1f5;border-radius:8px;overflow:hidden"><div id="dfiBar" style="height:100%;width:${p.percent}%;background:#1d5fd0;transition:width .4s"></div></div><p class="panel-subtitle" id="dfiProgressText" style="margin:0">${esc(`${fmt(p.processed)} of ${fmt(p.total)} rows processed (${p.percent}%)`)}</p></div>`,
       button("close", "Close · keep running"),
     );
     const update = data => {

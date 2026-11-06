@@ -83,7 +83,7 @@ export default function nextConfig(phase: string): NextConfig {
     output: "standalone",
     outputFileTracingRoot: path.join(__dirname, "../.."),
     // Each page's styles.css is read when the page is rendered (LegacyRootLayout).
-    outputFileTracingIncludes: { "/**": ["./src/features/*/styles.css"] },
+    outputFileTracingIncludes: { "/**": ["./src/features/*/styles.css", "./src/shared/theme/*.css"] },
     async headers() {
       return [
         {

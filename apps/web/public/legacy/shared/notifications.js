@@ -30,17 +30,17 @@
     `<style id="dfNotifyStyles">
 .notification-dot.dfn-count{width:auto;height:auto;min-width:17px;padding:0 4px;right:-7px;top:-7px;border-radius:9px;color:#fff;font:700 10px/13px system-ui,sans-serif;text-align:center;letter-spacing:0}
 .notification-dot[hidden]{display:none!important}
-.dfn-pop{position:fixed;z-index:70;width:min(380px,calc(100vw - 24px));max-height:min(560px,75vh);display:flex;flex-direction:column;border:1px solid var(--line,#e3e8ef);border-radius:10px;background:#fff;box-shadow:0 18px 40px #1720332b;font-size:13px;color:var(--ink,#182230)}
+.dfn-pop{position:fixed;z-index:70;width:min(380px,calc(100vw - 24px));max-height:min(560px,75vh);display:flex;flex-direction:column;border:1px solid var(--line,#e3e8ef);border-radius:10px;background:#fff;box-shadow:0 18px 40px #1720332b;font-size:13px;color:var(--ink,#12161c)}
 .dfn-pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 12px 8px;border-bottom:1px solid var(--line,#e3e8ef)}
 .dfn-pop-head strong{font-size:14px}
 .dfn-pop-body{overflow:auto;padding:6px}
 .dfn-pop-foot{padding:8px;border-top:1px solid var(--line,#e3e8ef);text-align:center}
-.dfn-link{border:0;background:none;color:#3766e8;font:inherit;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:6px}
+.dfn-link{border:0;background:none;color:#1d5fd0;font:inherit;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:6px}
 .dfn-link:hover,.dfn-link:focus-visible{background:#f1f5ff;outline:none}
 .dfn-link:disabled{color:#a0a9b5;cursor:default;background:none}
 .dfn-item{position:relative;display:flex;gap:10px;width:100%;padding:9px 10px 9px 22px;border:0;border-radius:8px;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}
 .dfn-item:hover,.dfn-item:focus-visible{background:#f3f6fb;outline:none}
-.dfn-item.unread::before{content:"";position:absolute;left:8px;top:15px;width:7px;height:7px;border-radius:50%;background:#3766e8}
+.dfn-item.unread::before{content:"";position:absolute;left:8px;top:15px;width:7px;height:7px;border-radius:50%;background:#1d5fd0}
 .dfn-item .dfn-text{display:grid;gap:2px;min-width:0;flex:1}
 .dfn-item strong{font-weight:600;overflow-wrap:anywhere}
 .dfn-item:not(.unread) strong{font-weight:500;color:#475467}

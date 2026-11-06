@@ -35,8 +35,20 @@ export default function PanelAssetPrefetch() {
       }
     };
     const win = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
-    if (win.requestIdleCallback) win.requestIdleCallback(prefetch, { timeout: 5000 });
-    else window.setTimeout(prefetch, 1500);
+    const whenIdle = () => {
+      if (win.requestIdleCallback) win.requestIdleCallback(prefetch, { timeout: 5000 });
+      else window.setTimeout(prefetch, 1500);
+    };
+    // The page comes first: nothing is downloaded until it has opened.
+    const root = document.documentElement;
+    if (root.classList.contains("legacy-ready")) return whenIdle();
+    const observer = new MutationObserver(() => {
+      if (!root.classList.contains("legacy-ready")) return;
+      observer.disconnect();
+      whenIdle();
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
   }, []);
 
   return null;

@@ -82,7 +82,7 @@ test("the menu: groups open and close, every moved page opens, and old links sti
   await adminNav(page, "Address");
   await expect(page.locator("#geoAdmin #geoTotals")).toContainText("districts", { timeout: 20_000 });
   // The whole width of the page.
-  const widths = await page.evaluate(() => [document.querySelector("#geoAdmin")!.closest("section")!.getBoundingClientRect().width, document.querySelector("#mainContent")!.getBoundingClientRect().width]);
+  const widths = await page.evaluate(() => [document.querySelector("#geoAdmin")!.closest("section")!.getBoundingClientRect().width, (el => { const style = getComputedStyle(el); return el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight); })(document.querySelector("#mainContent")!)]);
   expect(widths[0]).toBeGreaterThan(widths[1] * 0.9);
   await expect(page.locator('[data-catalog-form="returnReasons"]')).toBeHidden();
 

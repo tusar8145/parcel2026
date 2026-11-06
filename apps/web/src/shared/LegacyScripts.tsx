@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { versioned } from "./legacyAssets";
 
 declare global {
   interface Window {
@@ -10,12 +11,6 @@ declare global {
 }
 
 const CLIENT = "/legacy/shared/api.js";
-const ASSET_VERSIONS: Record<string, string> = JSON.parse(process.env.LEGACY_ASSET_VERSIONS || "{}");
-
-function versioned(src: string) {
-  const version = ASSET_VERSIONS[src];
-  return version ? `${src}?v=${version}` : src;
-}
 
 function load(src: string, ordered: boolean) {
   return new Promise<void>(resolve => {

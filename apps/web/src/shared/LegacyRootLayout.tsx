@@ -6,8 +6,9 @@ import BrandingRuntime from "./branding/BrandingRuntime";
 // Apps with their own markup, and so their own layer; every other panel shares panels.css. The website has none.
 const OWN_THEME = ["franchise", "application"];
 
-// Hide only pages that still require the legacy scripts to finish booting.
-const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]){opacity:0}";
+// Hide only pages that still require the legacy scripts to finish booting. A website page the server wrote in
+// full (Terms, Privacy, About) shows at once.
+const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]):not(:has([data-static-page])){opacity:0}";
 
 // Modals close only from their own buttons (✕, Cancel…) or Escape, never by a click outside them. Every panel's
 // modals (legacy scripts and React) close on a click whose target is the backdrop itself, so such clicks are

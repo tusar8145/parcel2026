@@ -43,5 +43,5 @@ export default async function Page({ params }: Props) {
   if (slug.length === 0) return <WebsiteHomePage />;
   // Turned off in Super admin › Website settings: the page says so instead of a form that would be refused.
   if (isClosed(await siteContent(), match.route.legacy)) return <WebsitePage staticPage={{ name: "closed", content: <ClosedPage route={match.route.legacy} /> }} />;
-  return <WebsitePage />;
+  return <WebsitePage panelAssets={match.route.legacy === "login"} />;
 }

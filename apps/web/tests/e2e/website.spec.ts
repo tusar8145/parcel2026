@@ -73,6 +73,15 @@ test("legal pages and cookie consent", async ({ browser }) => {
   await expect(page.locator(".df-cookie-consent")).toHaveCount(0); // the choice is remembered
 });
 
+test("Terms, Privacy and About show without waiting for the page scripts", async ({ page }) => {
+  await page.route("**/legacy/**", route => route.abort());
+  for (const path of ["/terms", "/privacy", "/about"]) {
+    await page.goto(path);
+    await expect(page.locator("main[data-static-page]")).toBeVisible();
+    await expect(page.locator("body")).toHaveCSS("opacity", "1");
+  }
+});
+
 test("sign-in and sign-up validate inline with the API's rules", async ({ browser }) => {
   const page = await open(browser, "/login");
   const form = page.locator('form[data-form="login"]');

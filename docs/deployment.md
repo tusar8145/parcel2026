@@ -93,7 +93,7 @@ cp -r apps/web/public apps/web/.next/standalone/apps/web/
 ```
 
 Legacy panel scripts are content-versioned and cached immutably by the browser. The public
-website quietly prefetches them when the browser is idle (except on data-saver or slow 2G
+sign-in page quietly prefetches them once it has opened and the browser is idle (except on data-saver or slow 2G
 connections); after a deploy, only changed scripts need a new download.
 
 The website and panels share the **Paira Express** installable app (`/pairaexpress.webmanifest`).

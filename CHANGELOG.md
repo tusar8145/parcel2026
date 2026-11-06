@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.11.2 — 2026-11-06
+- E-commerce and Banking & Financial merchant panels: text typed into an order, such as a customer name, is always shown as plain text and can never run as code.
+
 ## 1.11.1 — 2026-11-06
 - All panels: more empty space around the page content, on the left and right most of all.
 - All panels: the buttons beside a page title, such as on New orders and All parcels, sit at the top right again.

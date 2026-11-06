@@ -48,5 +48,15 @@ export const scripts = [
   // Period filter on Overview and Platform activity.
   "/legacy/super-admin/bridge-period.js",
   // Last: every page (and tab) has its own address: ?page=<slug>[&tab=<slug>], Back / Forward, titles (DF.nav).
+  // Website settings: sign-up switches, "Send a parcel", page texts, FAQs.
+  "/legacy/super-admin/bridge-website.js",
+  // Audit & security log: the whole log, 20 rows a page from the server.
+  "/legacy/super-admin/bridge-audit.js",
+  // Rider earning plans: delivery type, plan cards, tabs (arranges what 03.js draws).
+  "/legacy/super-admin/bridge-rider-plans.js",
+  // The collapsible menu groups, and Return reasons / Receiver relations / Address (parts of the catalog page).
+  "/legacy/super-admin/bridge-menu.js",
+  // Numbered pages for long tables.
+  "/legacy/shared/table-pager.js",
   "/legacy/shared/panel-nav.js"
 ];

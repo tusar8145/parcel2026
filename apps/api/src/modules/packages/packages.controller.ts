@@ -28,6 +28,8 @@ import {
   simulateSchema,
   updateHubGroupSchema,
   updateProductSchema,
+  productMessagesSchema,
+  exportProductsQuerySchema,
 } from "./packages.schemas";
 
 const isStaff = (actor: Actor) => actor.permissions.has("parcel:read:any");
@@ -279,10 +281,31 @@ export class PackagesController {
   }
 
   @RequirePermissions("config:manage")
+  @Get("parcel-products/export")
+  @ApiZodQuery(exportProductsQuerySchema)
+  async exportProducts(@ZQuery(exportProductsQuerySchema) query: z.infer<typeof exportProductsQuerySchema>, @Res() reply: FastifyReply) {
+    const file = await this.products.exportFile(query);
+    return reply
+      .status(200)
+      .header("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("content-disposition", `attachment; filename="${file.fileName}"`)
+      .header("cache-control", "no-store")
+      .send(file.buffer);
+  }
+
+  @RequirePermissions("config:manage")
   @Post("parcel-products")
   @ApiZodBody(productSchema)
   createProduct(@CurrentActor() actor: Actor, @ZBody(productSchema) body: z.infer<typeof productSchema>, @ReqMeta() meta: RequestMeta) {
     return this.products.create(actor, body, meta);
+  }
+
+  /** Messages for many products at once: the chosen products on, every other product of the segment off. */
+  @RequirePermissions("config:manage")
+  @Put("parcel-products/messages")
+  @ApiZodBody(productMessagesSchema)
+  setProductMessages(@CurrentActor() actor: Actor, @ZBody(productMessagesSchema) body: z.infer<typeof productMessagesSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.products.setMessages(actor, body, meta);
   }
 
   @RequirePermissions("config:manage")

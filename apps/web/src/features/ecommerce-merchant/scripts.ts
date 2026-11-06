@@ -39,5 +39,7 @@ export const scripts = [
   // Top search and the parcel side drawer (DFMerchantParcel), on the merchant's own parcels.
   "/legacy/shared/merchant-parcel.js",
   // Last: every page (and tab) has its own address: ?page=<slug>[&tab=<slug>], Back / Forward, titles (DF.nav).
+  // Numbered pages for long tables.
+  "/legacy/shared/table-pager.js",
   "/legacy/shared/panel-nav.js"
 ];

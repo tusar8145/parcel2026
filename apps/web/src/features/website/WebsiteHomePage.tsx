@@ -12,17 +12,21 @@ import CtaBand from "./components/CtaBand";
 import SiteFooter from "./components/SiteFooter";
 import CookieConsent from "./react/CookieConsent";
 import LegacyHashRedirect from "./LegacyHashRedirect";
+import SiteSwitches from "./SiteSwitches";
+import { siteContent } from "./siteContent";
 
 /** React-first homepage; the other website routes still use the legacy router for now. */
-export default function WebsiteHomePage() {
+export default async function WebsiteHomePage() {
+  const site = await siteContent();
   return (
     <>
       {" "}
+      <SiteSwitches site={site} />
       <TopNote /> <SiteHeader /> <LegacyHashRedirect />
       <main>
         {" "}
         <Hero /> <StatStrip /> <TrackingSection /> <ServicesSection /> <PricingSection /> <PartnersSection />{" "}
-        <StepsBand /> <FaqSection /> <CtaBand />{" "}
+        <StepsBand /> <FaqSection faqs={site.faqs} /> <CtaBand />{" "}
       </main>{" "}
       <SiteFooter /> <CookieConsent />
     </>

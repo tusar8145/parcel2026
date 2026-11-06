@@ -121,6 +121,7 @@ const STAGE: Record<string, { stage: string; when: string }> = {
   "notify.pickup_assigned": { stage: "Booking & pickup", when: "When a rider is assigned to collect the parcel" },
   "notify.picked_up": { stage: "Booking & pickup", when: "When the rider collects the parcel" },
   "notify.cancelled": { stage: "Booking & pickup", when: "When a pickup is cancelled" },
+  "notify.received_at_hub": { stage: "Booking & pickup", when: "When the parcel reaches its first hub; your customer gets the tracking link" },
   "notify.out_for_delivery": { stage: "Delivery", when: "When the rider sets out to deliver" },
   "notify.delivery_code": { stage: "Delivery", when: "When the rider starts the delivery; your customer gives this code to receive the parcel" },
   "notify.delivered": { stage: "Delivery", when: "When the parcel is delivered" },

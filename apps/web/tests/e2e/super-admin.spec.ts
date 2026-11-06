@@ -3,7 +3,7 @@ import { request as playwrightRequest, type APIRequestContext, type Browser, typ
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
-import { API_BASE, Fixtures, apiUrl, expect, secondApprovalOn, test } from "./support";
+import { adminNav, API_BASE, Fixtures, apiUrl, expect, secondApprovalOn, test } from "./support";
 
 // Super admins must use two-step verification, and price changes need a second super admin
 // (maker-checker). The seeded super admins belong to the owner, so the tests use two temporary
@@ -93,7 +93,7 @@ async function approveMakerChanges() {
 }
 
 const toast = (page: Page) => page.locator("#toast");
-const nav = (page: Page, name: string) => page.click(`#navigation [data-page="${name}"]`);
+const nav = adminNav;
 const settingsSaved = (page: Page) =>
   page.waitForResponse(r => r.url().endsWith("/api/v1/settings/platform-config") && r.request().method() === "PUT" && r.ok());
 
@@ -221,9 +221,9 @@ test.describe("super admin", () => {
   test("shared catalogs keep only the lists forms read; products and services point to Service plans", async ({ browser }) => {
     const admin = await open(browser, "/", errors);
     await signInAsAdmin(admin);
-    await nav(admin, "Pricing & catalogs");
+    await nav(admin, "Return reasons");
     const main = admin.locator("#mainContent");
-    await expect(main.locator("#catalogProductsPointer")).toContainText("Service plans → Products");
+    await expect(main.locator("#catalogProductsPointer")).toContainText("Operational settings → Products");
     // The old product, service level and document type lists are gone; the lists real forms read stay.
     for (const list of ["ecommerceProducts", "documentProducts", "deliveryServices", "documentTypes"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(0);
     for (const title of ["E-commerce products", "Document products", "Delivery service levels", "Document type catalog"]) await expect(main.getByText(title, { exact: true })).toHaveCount(0);
@@ -233,12 +233,12 @@ test.describe("super admin", () => {
     for (const list of ["ecommercePackaging", "documentPackaging"]) await expect(main.locator(`[data-catalog-form="${list}"]`)).toHaveCount(0);
     for (const title of ["Receiver relationships", "E-commerce packaging", "Document packaging"]) await expect(main.getByText(title, { exact: true })).toHaveCount(0);
     await expect(main.locator("#geoAdmin")).toBeAttached();
-    await main.locator("[data-open-products]").click();
-    await expect(admin.locator("#pkgProductsPanel")).toBeVisible();
+    await main.locator("[data-open-products]").evaluate(el => (el as HTMLElement).click());
+    await expect(admin.locator("#productsPage")).toBeVisible();
     await expect(admin.locator("#pkgProductsPanel .panel-title")).toHaveText("Customer & E-commerce products");
     // The demo service table is gone; the page holds the spreadsheet import settings.
     await nav(admin, "Import settings");
-    await expect(main.locator("h1")).toHaveText("Spreadsheet imports");
+    await expect(main.locator("h1")).toHaveText("Import Template settings");
     await expect(main.locator("#importSettingsPointer")).toContainText("Services and prices: Service plans");
     await expect(main.locator('[data-action="newService"]')).toHaveCount(0);
     await expect(main.locator("#importSettings")).toBeVisible();
@@ -364,8 +364,7 @@ test.describe("super admin", () => {
     await signInAsAdmin(admin);
     // The notification channels are on SMS, Email & Push › Channels & limits.
     const settingsTab = async (who: Page) => {
-      await nav(who, "Integrations");
-      await who.click('[data-int-tab="settings"]');
+      await nav(who, "Channels & limits");
     };
     const sms = admin.locator('#sysChannelsForm [name="sms"]');
     // The owner's current choice is put back afterwards.

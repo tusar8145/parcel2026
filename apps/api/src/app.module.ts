@@ -48,6 +48,7 @@ import { ShiftsModule } from "./modules/shifts/shifts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { GuideModule } from "./modules/guide/guide.module";
 import { BrandingModule } from "./modules/branding/branding.module";
+import { WebsiteModule } from "./modules/website/website.module";
 import { RoutingModule } from "./modules/routing/routing.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { ParcelScansModule } from "./modules/parcel-scans/parcel-scans.module";
@@ -113,6 +114,7 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     ReportsModule,
     GuideModule,
     BrandingModule,
+    WebsiteModule,
     RoutingModule,
     ImportsModule,
     ParcelScansModule,

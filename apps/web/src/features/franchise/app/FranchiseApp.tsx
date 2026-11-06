@@ -121,12 +121,23 @@ export default function FranchiseApp() {
         </div>
         <nav className="fr-nav" aria-label="Franchise">
           {PAGES.map(p => (
-            <button key={p.slug} type="button" data-page={p.slug} aria-current={page === p.slug ? "page" : undefined} onClick={() => go(p.slug)}>
+            <a
+              key={p.slug}
+              href={`?page=${p.slug}`}
+              data-page={p.slug}
+              aria-current={page === p.slug ? "page" : undefined}
+              onClick={event => {
+                // Ctrl, Cmd or Shift: the browser opens the link in a new tab.
+                if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+                event.preventDefault();
+                go(p.slug);
+              }}
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d={p.icon} />
               </svg>
               {p.label}
-            </button>
+            </a>
           ))}
         </nav>
         <button type="button" className="fr-signout" onClick={() => void signOut()}>

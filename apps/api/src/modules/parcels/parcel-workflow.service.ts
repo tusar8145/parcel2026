@@ -353,6 +353,16 @@ export class ParcelWorkflowService {
         ? ((await db.rider.findUnique({ where: { id: parcel.deliveryRiderId }, select: { user: { select: { phone: true } } } }))?.user.phone ?? "")
         : "";
     if (notice) after.outbox.push(...(await this.returnNotices.notify(db, { ...notice, vars: { trackingId: parcel.trackingId, trackingUrl: track, ...(riderPhone ? { riderPhone } : {}) }, parcel })));
+    // The first hub on its way (after pickup, or a drop-off brought in): the recipient hears it's coming.
+    if (to === "AT_HUB" && (from === "PICKED_UP" || from === "PENDING_CONFIRMATION") && parcel.recipientPhone)
+      after.outbox.push(
+        ...(await this.returnNotices.notify(db, {
+          event: "parcel.received_at_hub",
+          to: { phone: parcel.recipientPhone, name: parcel.recipientName },
+          vars: { trackingId: parcel.trackingId, trackingUrl: track },
+          parcel,
+        })),
+      );
     if (to === "DELIVERED") {
       // Ask customers (not merchants, who ship in bulk) to rate the delivery; the signed link works without signing in.
       if (!parcel.merchantId) after.outbox.push(

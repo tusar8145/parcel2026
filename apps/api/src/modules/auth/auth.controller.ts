@@ -70,8 +70,8 @@ export class AuthController {
   @Post("otp")
   @HttpCode(200)
   @ApiZodBody(requestOtpSchema)
-  requestOtp(@ZBody(requestOtpSchema) body: { phone: string; purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET" }, @ReqMeta() meta: RequestMeta) {
-    return this.auth.requestOtp(body.phone, body.purpose, meta);
+  requestOtp(@ZBody(requestOtpSchema) body: { phone: string; purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET"; intent?: "merchant" | "rider" | "franchise" }, @ReqMeta() meta: RequestMeta) {
+    return this.auth.requestOtp(body.phone, body.purpose, meta, body.intent);
   }
 
   @Public()

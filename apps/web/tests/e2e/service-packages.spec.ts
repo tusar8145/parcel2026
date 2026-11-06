@@ -1,6 +1,6 @@
 import { request as playwrightRequest, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, API_BASE, expect, opsNav, secondApprovalOn, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
+import { adminNav, Fixtures, apiUrl, API_BASE, expect, opsNav, secondApprovalOn, sql, test, type TempMerchant, type TempRider, type TempUser } from "./support";
 
 /**
  * Service packages & pricing (spec v2) through the real UI:
@@ -128,6 +128,7 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await page.click('#navigation [data-page="Service plans"]');
   await page.click('[data-pkg-segment="ECOMMERCE"]');
   await expect(page.locator("#pkgTable")).toContainText(PACKAGE_NAME);
+  await page.click('[data-pkg-section="merchants"]');
   const row = page.locator(`#pkgAssignments tr[data-pkg-merchant="${shop.code}"]`);
   await row.locator("[data-pkg-assign-select]").selectOption({ label: PACKAGE_NAME });
   await row.locator("[data-pkg-assign]").click();
@@ -135,25 +136,96 @@ test("super admin creates a package and assigns it; the merchant's order form pr
   await approvePending();
 
   // ── Products: one "Send SMS & email" switch (add form + list) ──
-  const products = page.locator("#pkgProductsPanel");
-  await expect(products.locator("#pkgProducts thead")).toContainText("MESSAGES");
-  await expect(products.locator("#pkgProducts thead")).not.toContainText("MESSAGES NOT SENT");
+  // Service plans keeps only which products send messages; the list itself is in Operational settings › Products.
+  await page.click('[data-pkg-section="messages"]');
+  await expect(page.locator("#pkgProductsPanel .panel-title")).toHaveText("Products with messages");
+  await expect(page.locator("#pkgProducts")).toHaveCount(0);
+  await expect(page.locator("#pkgProductForm")).toHaveCount(0);
+  await adminNav(page, "Products");
+  await expect(page.locator("#mainContent h1")).toHaveText("Products", { timeout: 20_000 });
+  await page.click('[data-product-list="ECOMMERCE"]');
+  let products = page.locator("#pkgProductsPanel");
+  await expect(products.locator("#pkgProducts thead")).not.toContainText("MESSAGES");
   await expect(products.locator("[data-pkg-product-mutes]")).toHaveCount(0);
-  await products.locator("#pkgProductName").fill(QUIET_PRODUCT);
-  await expect(products.locator("#pkgProductSendMessages")).toBeChecked();
-  await products.locator("#pkgProductSendMessages").uncheck();
-  await products.locator('#pkgProductForm button[type="submit"]').click();
+  await page.click("#pkgProductAdd");
+  await page.fill("#pkgProductName", QUIET_PRODUCT);
+  await expect(page.locator("#pkgProductSendMessages")).toHaveCount(0);
+  await page.click('#pkgProductForm button[type="submit"]');
   // Wait for the row itself: an earlier "sent for approval" toast may still be showing.
   const quietRow = () => page.locator(`#pkgProducts tr[data-pkg-product="${QUIET_PRODUCT}"]`);
+  await page.fill("#pkgProductSearch", QUIET_PRODUCT);
   await expect(quietRow()).toBeVisible();
-  await expect(quietRow()).toContainText("Messages: Off");
+  await expect(page.locator("#pkgProducts tbody tr:visible")).toHaveCount(1);
+  await expect(page.locator("#pkgProductCount")).toContainText("1 of");
   const [created] = await sql<{ id: string; sendMessages: boolean }>(`SELECT id, "sendMessages" FROM parcel_products WHERE name = $1`, [QUIET_PRODUCT]);
-  expect(created.sendMessages).toBe(false);
-  await quietRow().locator("[data-pkg-product-messages]").check();
-  await expect(quietRow()).toContainText("Messages: On");
-  expect((await sql<{ sendMessages: boolean }>(`SELECT "sendMessages" FROM parcel_products WHERE id = $1`, [created.id]))[0].sendMessages).toBe(true);
-  await quietRow().locator("[data-pkg-product-messages]").uncheck();
-  await expect(quietRow()).toContainText("Messages: Off");
+  expect(created.sendMessages).toBe(true);
+
+  // Edit its type; deactivate it; the status filter finds it; Excel holds what the search shows.
+  // The name column sorts: A to Z, then Z to A, and the search stays.
+  await page.fill("#pkgProductSearch", "");
+  const names = () => page.locator("#pkgProducts tbody tr td:first-child").allInnerTexts();
+  const sorted = (list: string[]) => [...list].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true }));
+  await page.click("#pkgProductSort");
+  await expect(page.locator("#pkgProducts thead th").first()).toHaveAttribute("aria-sort", "ascending");
+  const up = await names();
+  expect(up).toEqual(sorted(up));
+  await page.click("#pkgProductSort");
+  await expect(page.locator("#pkgProducts thead th").first()).toHaveAttribute("aria-sort", "descending");
+  const down = await names();
+  expect(down).toEqual(sorted(down).reverse());
+  await page.fill("#pkgProductSearch", QUIET_PRODUCT);
+  await page.click("#pkgProductSort");
+  await expect(page.locator("#pkgProducts tbody tr:visible")).toHaveCount(1);
+  await expect(page.locator("#pkgProductSearch")).toHaveValue(QUIET_PRODUCT);
+
+  // Cancel and Escape close the dialog and change nothing.
+  await quietRow().locator("[data-pkg-product-edit]").click();
+  await page.fill("#pkgProductName", "Not saved");
+  await page.click("#pkgProductDialog [data-pkg-product-close]");
+  await expect(page.locator("#pkgProductDialog")).toHaveCount(0);
+  await expect(quietRow()).toBeVisible();
+  await quietRow().locator("[data-pkg-product-edit]").click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#pkgProductDialog")).toHaveCount(0);
+  await page.click("#pkgProductAdd");
+  await page.click("#pkgProductDialog [data-pkg-product-close]");
+  await expect(page.locator("#pkgProductDialog")).toHaveCount(0);
+  await quietRow().locator("[data-pkg-product-edit]").click();
+  await expect(page.locator("#pkgProductName")).toHaveValue(QUIET_PRODUCT);
+  await page.selectOption("#pkgProductType", "BOOKS");
+  await page.click('#pkgProductForm button[type="submit"]');
+  await expect(quietRow()).toContainText("Books");
+  await quietRow().locator("[data-pkg-product-toggle]").click();
+  await expect(quietRow()).toContainText("Inactive");
+  await page.selectOption("#pkgProductStatus", "active");
+  await expect(quietRow()).toBeHidden();
+  await expect(page.locator("#pkgProductNone")).toBeVisible();
+  await page.selectOption("#pkgProductStatus", "inactive");
+  await expect(quietRow()).toBeVisible();
+  const [file] = await Promise.all([page.waitForEvent("download"), page.click("#pkgProductExport")]);
+  expect(file.suggestedFilename()).toBe("products-customer-ecommerce.xlsx");
+  await quietRow().locator("[data-pkg-product-toggle]").click();
+  await expect(quietRow()).toBeHidden(); // active again, and the filter is on inactive
+  await page.selectOption("#pkgProductStatus", "");
+  await page.fill("#pkgProductSearch", "");
+
+  // Banking & Financial has its own list.
+  await page.click('[data-product-list="BANKING_FINANCIAL"]');
+  await expect(products.locator(".panel-title")).toHaveText("Banking & Financial products");
+  await expect(quietRow()).toHaveCount(0);
+
+  // One field for many products: search, tick, save (Service plans).
+  await adminNav(page, "Service plans");
+  await page.click('[data-pkg-segment="ECOMMERCE"]');
+  await page.click('[data-pkg-section="messages"]');
+  products = page.locator("#pkgProductsPanel");
+  await expect(products.locator(".panel-title")).toHaveText("Products with messages");
+  const pick = products.locator(`[data-pkg-msg-pick="${created.id}"]`);
+  await products.locator("#pkgMsgToggle").click();
+  await products.locator("#pkgMsgSearch").fill(QUIET_PRODUCT);
+  await pick.uncheck();
+  await products.locator("#pkgMsgSave").click();
+  await expect.poll(async () => (await sql<{ sendMessages: boolean }>(`SELECT "sendMessages" FROM parcel_products WHERE id = $1`, [created.id]))[0].sendMessages).toBe(false);
   await page.context().close();
 
   // ── The merchant's order form: live breakdown from the new package (same district ৳55) ──

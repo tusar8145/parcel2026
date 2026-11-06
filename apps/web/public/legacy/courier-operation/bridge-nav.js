@@ -927,5 +927,6 @@ select:not([multiple]):not([size])::-ms-expand{display:none}
       if (first) DF.nav ? DF.nav.quietly(() => navigate(first.dataset.nav)) : navigate(first.dataset.nav);
     } else updateCounts();
     DF.nav?.extras(); // ?parcel= opens the drawer, ?ticket= the support ticket
+    DF.menuLinks?.(); // the menu items become links: Open in new tab
   });
 })();

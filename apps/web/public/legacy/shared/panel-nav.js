@@ -28,11 +28,12 @@
 
   /** Pages whose slug isn't their internal name (the menu label reads better). */
   const SLUGS = {
-    "super-admin": { Approvals: "approval-center", "Platform settings": "global-notifications", "Pricing & catalogs": "catalogs-and-locations" },
+    "super-admin": { Approvals: "approval-center", "Platform settings": "global-notifications" },
     // Merchant panels: the Payments page is Balance (shared/merchant-balance.js); old Payments / Billing links open it.
     "ecommerce-merchant": { Payments: "balance" },
     "banking-merchant": { Payments: "balance" },
   }[app] || {};
+  const ADMIN_ALIASES = { Address: ["Pricing & catalogs", "catalogs-and-locations"], "Channels & limits": ["Integrations", "Settings"], "Website settings": ["Branding & company"] };
   const ALIASES = { Payments: ["Payments", "Billing", "Billing & invoices"], Orders: ["Orders", "Shipments", "Delivery requests", "Delivery tracking"] };
   /** Tabs inside pages: the buttons' attribute and their values (value, label, slug). */
   const TABS = {
@@ -46,15 +47,12 @@
           ["document", "Banking & Financial template", "banking-and-financial"],
         ],
       },
-      // SMS, Email & Push (super-admin/bridge-notifications.js).
-      Integrations: {
-        attr: "data-int-tab",
-        detect: () => document.querySelector('#mainContent [data-int-tab][aria-selected="true"]')?.dataset.intTab || null,
+      Products: {
+        attr: "data-product-list",
+        detect: () => document.querySelector('#mainContent [data-product-list][aria-pressed="true"]')?.dataset.productList || null,
         list: [
-          ["settings", "Channels & limits", "channels-and-limits"],
-          ["messages", "Recent messages", "recent-messages"],
-          ["gateways", "Gateway Settings", "gateway-settings"],
-          ["push", "Push notifications", "push-notifications"],
+          ["ECOMMERCE", "Customer & E-commerce", "e-commerce"],
+          ["BANKING_FINANCIAL", "Banking & Financial", "banking-and-financial"],
         ],
       },
       "Service plans": {
@@ -94,7 +92,7 @@
         name,
         label,
         slug: SLUGS[name] || DF.nav.slug(name),
-        aliases: [label, ...(app.endsWith("-merchant") ? ALIASES[name] || [] : [])],
+        aliases: [label, ...(app.endsWith("-merchant") ? ALIASES[name] || [] : app === "super-admin" ? ADMIN_ALIASES[name] || [] : [])],
         tabs: tabs?.list.map(([value, tabLabel, slug]) => ({ name: value, label: tabLabel, slug })),
       };
     });
@@ -207,6 +205,7 @@
       DF.nav.entered(page, null);
     }
     DF.nav.extras();
+    DF.menuLinks();
   }
 
   // The merchant parcel drawer (shared/merchant-parcel.js) is part of the address while it is open.

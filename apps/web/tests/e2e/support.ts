@@ -130,6 +130,14 @@ export const OPS_NAV = {
 export type OpsArea = keyof typeof OPS_NAV;
 
 /** Opens a Courier Operations area from the menu (and its tab), e.g. `opsNav(page, "ecommerce")`. */
+/** Super admin menu: opens a collapsed group when the item is inside one. */
+export async function adminNav(page: Page, name: string) {
+  const item = page.locator(`#navigation [data-page="${name}"]`);
+  const group = item.locator("xpath=ancestor::*[@data-nav-sub]");
+  if ((await group.count()) && !(await item.isVisible())) await group.locator(".nav-sub-toggle").click();
+  await item.click();
+}
+
 export async function opsNav(page: Page, area: OpsArea) {
   const [view, tab] = OPS_NAV[area] as readonly string[];
   await page.click(`#navigation [data-nav="${view}"]`);

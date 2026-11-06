@@ -1,6 +1,6 @@
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, sql, test, type TempUser } from "./support";
+import { adminNav, Fixtures, apiUrl, expect, sql, test, type TempUser } from "./support";
 
 // The nationwide geography (npm run db:seed:geo) in the panels: the super admin's geography admin
 // lists the districts and shows one district's zones / one zone's areas (or a search) at a time, and hubs carry the catalog zone drop-offs
@@ -29,12 +29,12 @@ async function panel(browser: Browser, user: TempUser, url: string, mfa = false)
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   return page;
 }
-const nav = (page: Page, name: string) => page.click(`#navigation [data-page="${name}"]`);
+const nav = adminNav;
 
 test("super admin browses the country's districts, zones and areas without rendering them all", async ({ browser }) => {
   const admin = await fx.user(`E2E-Geo-Admin-${stamp} Test`, [{ role: "SUPER_ADMIN" }]);
   const page = await panel(browser, admin, "/super-admin", true);
-  await nav(page, "Pricing & catalogs");
+  await nav(page, "Address");
   // The geography admin (super-admin/bridge-geo.js): every district is listed, one district's
   // zones and one zone's areas at a time. 64 districts with Dhaka city split into North / Central /
   // South plus the outer "Dhaka (Sub-urban)" district = 67.
@@ -73,8 +73,12 @@ test("super admin adds a hub with its zone from the district's zones and changes
   await expect(page.locator("#hzZone option", { hasText: "Gulshan" })).toHaveCount(0);
   await page.fill("#hzAddress", "Teknaf Sadar Road");
   await page.fill("#hzCode", `CXB-${stamp}`.slice(0, 20));
+  // The typed address fills the zone in; without one the form can't be sent.
+  await expect(page.locator("#hzZone")).toHaveValue("Teknaf");
+  await page.selectOption("#hzZone", "");
   await page.click('#hzForm [type="submit"]');
-  await expect(page.locator("#hzDialog")).toBeVisible(); // no zone chosen yet
+  await expect(page.locator("#hzDialog")).toBeVisible();
+  expect(await page.locator("#hzForm").evaluate(form => (form as HTMLFormElement).checkValidity())).toBe(false);
   await page.selectOption("#hzZone", "Teknaf");
   await page.click('#hzForm [type="submit"]');
   await expect(page.locator("#toast")).toContainText(`${name}`);

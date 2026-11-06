@@ -102,6 +102,11 @@ Setup and run instructions: `docs/development.md`.
   `Orders` page name is All orders; `Shipments` opens it. Reports come from `GET /merchants/me/reports`.
 - Buttons doing slow or bulk work: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy). Courier
   Operations does this for every `.button` that starts API work (`trackButtons` in shared/api.js).
+- Website settings (`modules/website`, `GET/PUT /website`): sign-up switches, "Send a parcel", page texts and FAQs,
+  enforced by the API, not only hidden. The public pages read `siteContent()` (`src/features/website/siteContent.ts`,
+  cached with a tag); after saving, call `DF.clearSiteCache()` (`app/site-cache/route.ts`).
+- Long tables: `shared/table-pager.js` pages any table with more than 25 rows; server-paged lists are left alone.
+- Super admin menu: collapsible groups and the pages that show part of another page are in `bridge-menu.js`.
 - Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
   merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),
   website customer › Payments (`website/customer-payments.js`).

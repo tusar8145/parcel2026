@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import fs from "node:fs";
 import { type BrowserContext, type Page } from "@playwright/test";
-import { API_BASE, Fixtures, expect, opsNav, test, type TempUser, openPdf } from "./support";
+import { adminNav, API_BASE, Fixtures, expect, opsNav, test, type TempUser, openPdf } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -471,7 +471,7 @@ test.describe.serial("spreadsheet imports", () => {
     expect(enabled.ok(), await enabled.text()).toBe(true);
     await page.goto("/super-admin");
     await page.waitForSelector("html.legacy-ready", { state: "attached" });
-    await page.click('#navigation [data-page="Import settings"]');
+    await adminNav(page, "Import settings");
     const panel = page.locator("#importSettings");
     await expect(panel).toBeVisible();
     const district = panel.locator('[data-import-required="district"]');

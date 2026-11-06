@@ -178,6 +178,7 @@ test("searchable selects: super admin price simulator and the merchant order for
   await signInAdmin(page);
   await page.click('#navigation [data-page="Service plans"]');
   await page.click('[data-pkg-segment="ECOMMERCE"]');
+  await page.click('[data-pkg-section="simulator"]');
   await expect(page.locator("#simDeliveryDistrict")).toBeVisible({ timeout: 20_000 });
   await searchPick(page, "#simDeliveryDistrict", "dhaka cen", "Dhaka Central");
   await expect(page.locator("#simDeliveryDistrict")).toHaveValue("Dhaka Central");

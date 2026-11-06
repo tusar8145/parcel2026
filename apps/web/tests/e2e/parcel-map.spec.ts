@@ -229,6 +229,7 @@ test("super admin: Rider plans shows the rider location interval from the server
   await page.goto("/super-admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.click('#navigation [data-page="Rider plans"]');
+  await page.click('button[data-rp-tab="location"]');
   const panel = page.locator("#dfLocationSettings");
   await expect(panel.locator("#dfLocationInterval")).toHaveValue(String(current.intervalMinutes));
   await expect(panel.locator("#dfLocationMeters")).toHaveValue(String(current.movementMeters));

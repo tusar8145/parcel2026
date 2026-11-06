@@ -32,17 +32,14 @@ test("super admin changes the company; the website shows its name, contact, tab 
   await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
   await page.goto("/super-admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
-  await page.click('#navigation [data-page="Branding & company"]');
+  await page.click('#navigation [data-page="Website settings"]');
   await expect(page.locator("#brName")).toBeVisible({ timeout: 20_000 });
 
   // The About text is there to edit, and the current logo (the pigeon mark) is shown.
-  await expect(page.locator("#brAboutBody")).toHaveValue(/## Our Story/);
   await expect(page.locator("#brLogoBox svg")).toBeVisible();
   await expect(page.locator("#brandForm")).toBeVisible();
-  await expect(page.locator('#navigation .nav-item[data-page]').last()).toHaveAttribute("data-page", "Branding & company");
   await page.fill("#brName", "Swift Parcel");
   await page.fill("#brEmail", "hello@swift.example");
-  await page.fill("#brAboutBody", "We deliver across the city.\n\n## Why us\n- Same day");
   const chooser = page.waitForEvent("filechooser");
   await page.click('[data-pick="icon"]');
   await (await chooser).setFiles({ name: "icon.png", mimeType: "image/png", buffer: PNG });
@@ -50,6 +47,14 @@ test("super admin changes the company; the website shows its name, contact, tab 
   await page.screenshot({ path: "test-results/branding-admin.png", fullPage: true });
   await page.click('#brandForm button[type="submit"]');
   await expect(page.locator("#brIconBox")).toContainText("Your icon.", { timeout: 15_000 });
+  // The About text has its own tab.
+  await page.click('[data-site-tab="about"]');
+  await expect(page.locator("#siteBody")).toHaveValue(/## Our Story/);
+  await page.fill("#siteBody", "We deliver across the city.\n\n## Why us\n- Same day");
+  await page.click('#siteForm button[type="submit"]');
+  await expect(page.locator("#toast")).toContainText("About Us published", { timeout: 15_000 });
+  await page.click('[data-site-tab="company"]');
+  await expect(page.locator("#brName")).toBeVisible({ timeout: 20_000 });
   // The editor itself keeps its own text (data-brand-keep), the sidebar shows the new name.
   await expect(page.locator("#brName")).toHaveValue("Swift Parcel");
   await expect(page.locator("#brLegal")).toHaveValue("");

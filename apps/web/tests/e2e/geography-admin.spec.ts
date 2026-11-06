@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, confirmDialog, expect, sql, test, type TempUser } from "./support";
+import { adminNav, Fixtures, apiUrl, confirmDialog, expect, sql, test, type TempUser } from "./support";
 
 // Geography admin (super admin → Shared catalogs & locations) and the hub register (super
 // admin → Hubs & zones). Everything is created with unique names by temporary accounts and
@@ -78,7 +78,7 @@ test("super admin: districts → zones → areas: add, bulk add, rename, deactiv
   const { page, errors } = await openPanel(browser);
   page.on("dialog", dialog => dialog.accept());
   await signInAdmin(page);
-  await page.click('#navigation [data-page="Pricing & catalogs"]');
+  await adminNav(page, "Address");
   await expect(page.locator("#geoAdmin #geoTotals")).toContainText("districts", { timeout: 20_000 });
 
   // Add a district (with an invalid half coordinate first).
@@ -167,7 +167,7 @@ test("super admin: hub register: add, edit, deactivate, delete only when unused"
   test.setTimeout(240_000);
   const { page, errors } = await openPanel(browser);
   await signInAdmin(page, netAdmin);
-  await page.click('#navigation [data-page="Hubs & zones"]');
+  await adminNav(page, "Hubs & zones");
   const register = page.locator("#hzHubs");
   await expect(register).toContainText("Gulshan Sorting Hub", { timeout: 20_000 });
 

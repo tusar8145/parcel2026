@@ -105,5 +105,9 @@ export const listAuditLogsQuerySchema = pageQuerySchema
     action: z.string().trim().min(1).max(80).optional(),
     from: z.coerce.date("From must be a date or ISO timestamp").optional(),
     to: z.coerce.date("To must be a date or ISO timestamp").optional(),
+    /** Numbered pages: the answer also has `total` and `pages`. Without it, cursor paging. */
+    page: z.coerce.number().int().min(1).optional(),
+    /** Search: the action or who did it. */
+    q: z.string().trim().max(80).optional(),
   })
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: "From must be before To", path: ["from"] });

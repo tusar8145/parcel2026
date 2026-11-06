@@ -15,6 +15,7 @@ export const NOTIFICATION_EVENTS = [
   "parcel.booked",
   "parcel.pickup_assigned",
   "parcel.picked_up",
+  "parcel.received_at_hub",
   "parcel.out_for_delivery",
   "parcel.delivery_code",
   "parcel.delivered",

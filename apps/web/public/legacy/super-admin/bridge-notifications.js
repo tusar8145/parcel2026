@@ -49,11 +49,20 @@
       if (typeof generic === "object" && !generic[page]) generic[page] = { desc, cols: [], rows: [] };
   } catch {}
 
+  // The pages of the old "SMS, Email & Push": each shows one of its parts.
+  const INT_PAGES = { "Channels & limits": "settings", "Recent messages": "messages", "Push notifications": "push", "Integration settings": "gateways" };
   const baseShowPage = window.showPage;
   window.showPage = showPage = function (page) {
-    if (page === SETTINGS_PAGE) {
-      S.intTab = "settings";
-      page = "Integrations";
+    // Old links and the page's own redraws.
+    if (page === SETTINGS_PAGE) page = "Channels & limits";
+    if (page === "Integrations") page = S.intPage || "Channels & limits";
+    if (INT_PAGES[page]) {
+      S.intPage = page;
+      S.intTab = INT_PAGES[page];
+      baseShowPage("Integrations");
+      current = "Integrations";
+      window.dispatchEvent(new CustomEvent("df:admin-page", { detail: page }));
+      return void integrationsPage();
     }
     baseShowPage(page);
     current = page;
@@ -564,25 +573,20 @@
 
   // ───────────────────────────── Integrations ─────────────────────────────
 
-  /** SMS, Email & Push: Channels & limits (first) · Recent messages · Gateways (status, keys, test). */
-  const INT_TABS = [
-    ["settings", "Channels & limits"],
-    ["messages", "Recent messages"],
-    ["gateways", "Gateway Settings"],
-    // Firebase push for the merchant and rider apps, messages to all / chosen users and their history (bridge-push.js).
-    ["push", "Push notifications"],
-  ];
+  /** The four pages' headings. */
+  const INT_HEADINGS = {
+    settings: ["Notification settings", "Channel & limits", "Which channels send, the limits and quiet hours."],
+    messages: ["Notification settings", "Recent messages", "The latest SMS and email messages and how they went."],
+    push: ["Notification settings", "Push notifications", "Send messages to merchants and riders, and see what was sent."],
+    gateways: ["Platform control", "Integration settings", "The SMS (mram), email (Mailjet) and Firebase push connections: status, keys and a test message."],
+  };
   async function integrationsPage() {
     const main = document.getElementById("mainContent");
-    const tab = INT_TABS.some(([k]) => k === S.intTab) ? S.intTab : "settings";
-    const tabs = INT_TABS;
-    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">Platform connections</p><h1>SMS, Email & Push</h1><p class="subtitle">The SMS and email gateways and Firebase push for the mobile apps (keys are stored encrypted and never shown again), which channels are on, the SMS limits and message settings, and push messages to merchants and riders.</p></div></div>
-      <div class="int-tabs" role="tablist" aria-label="SMS, email and push" style="display:inline-flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;padding:4px;border-radius:11px;background:#eef1f5">${tabs
-        .map(([k, label]) => `<button type="button" role="tab" class="button button-sm${k === tab ? " button-primary" : ""}" data-int-tab="${k}" aria-selected="${k === tab}" style="${k === tab ? "" : "background:transparent;border:0;box-shadow:none;color:#556274"}">${label}</button>`)
-        .join("")}</div>
-      <div id="intBody"><p class="panel-subtitle">Loading…</p></div>`;
+    const tab = INT_HEADINGS[S.intTab] ? S.intTab : "settings";
+    const [eyebrow, title, subtitle] = INT_HEADINGS[tab];
+    main.innerHTML = `<div class="page-heading"><div><p class="eyebrow">${esc(eyebrow)}</p><h1>${esc(title)}</h1><p class="subtitle">${esc(subtitle)}</p></div></div><div id="intBody"><p class="panel-subtitle">Loading…</p></div>`;
     const crumb = document.getElementById("breadcrumbPage");
-    if (crumb) crumb.textContent = "SMS, Email & Push";
+    if (crumb) crumb.textContent = title;
     const box = document.getElementById("intBody");
     if (tab === "settings") return settingsTab(box);
     if (tab === "push") return window.DFPushTab ? window.DFPushTab(box, () => still("Integrations")) : void (box.innerHTML = '<p class="panel-subtitle">Push notifications could not load.</p>');
@@ -603,24 +607,10 @@
     }
     if (!still("Integrations") || !box.isConnected) return;
     box.innerHTML = `<section class="metrics" id="gatewayMetrics">${S.gateways.map(metric).join("")}</section>
-      <div class="config-layout" id="gatewayCards">${S.gateways.map(gatewayCard).join("")}</div>`;
+      <div class="config-layout" id="gatewayCards">${S.gateways.map(gatewayCard).join("")}</div><div id="pushIntegration"></div>`;
     wireIntegrations();
+    window.DFPushTab?.(document.getElementById("pushIntegration"), () => still("Integrations"), "integration");
   }
-  // The menu item opens Channels & limits (redraws after data loads keep the tab; a ?tab= link clicks its tab, shared/panel-nav.js).
-  document.addEventListener(
-    "click",
-    event => {
-      if (event.target instanceof Element && event.target.closest('#navigation [data-page="Integrations"]')) S.intTab = "settings";
-    },
-    true,
-  );
-  document.addEventListener("click", event => {
-    const tab = event.target instanceof Element ? event.target.closest("[data-int-tab]") : null;
-    if (!tab || current !== "Integrations") return;
-    S.intTab = tab.dataset.intTab;
-    void integrationsPage();
-  });
-
   const STATUS = g => (g.mode === "live" ? ["Live", "good"] : g.configured && g.enabled ? ["Log only (development)", "blue"] : g.configured ? ["Disabled", "warn"] : ["Not configured", "bad"]);
 
   function metric(g) {

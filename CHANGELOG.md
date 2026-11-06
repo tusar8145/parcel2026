@@ -7,6 +7,44 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.9.0 — 2026-11-06
+- All panels: menu items are now links, so right click › Open in new tab, Ctrl+click and middle click open them in a new tab.
+
+## 1.8.1 — 2026-11-06
+- Super admin menu: Integration settings now comes just before System guide.
+
+## 1.8.0 — 2026-11-06
+- Operational settings › Products: click the Product column to sort by name, A to Z or Z to A. Export follows the same order.
+
+## 1.7.1 — 2026-11-06
+- Operational settings › Products: the Cancel button in the add and edit product dialog works, and Escape closes it.
+
+## 1.7.0 — 2026-11-06
+- Super admin: Website settings and Branding & company are now one page, Website & branding, in tabs: Company & branding, Signups & booking, About Us, Privacy Policy, Terms of Service and FAQs.
+- Super admin: the Firebase push connection moved to Integration settings. Push notifications keeps sending messages and their history.
+- Super admin › Audit & security log: numbered pages of 20 rows, over the whole log rather than the latest 100, and the search covers every entry.
+
+## 1.6.0 — 2026-11-06
+- Operational settings › Products: search, status filter, numbered pages, Excel export and editing a product's name and type. Messages are no longer set here; Service plans does that, package by package.
+- Super admin › Rider earning plans: a new layout. Choose a delivery type, see each plan on a card, and work in tabs: Earning plans, Rider assignments (with search) and Rider location.
+- Super admin › Address, Return reasons and Receiver relations now use the full width of the page.
+- Super admin menu: Monitoring now comes above Platform control.
+
+## 1.5.0 — 2026-11-06
+- Super admin › Service plans & pricing: a new layout. Choose Customer, E-commerce or Banking & Financial, see the plan at a glance, and work in tabs: Packages, Merchants, Price simulator, Messages and Hub Pickup.
+- Editing a package now has its own page, with Details, Services and Prices, a live price preview beside the form, and Save always in reach. Merchants can be searched.
+
+## 1.4.1 — 2026-11-06
+- Super admin: products moved to Operational settings › Products, by merchant type, where you add, deactivate and delete them. Service plans keeps only "Products with messages".
+
+## 1.4.0 — 2026-11-05
+- Super admin: new Website settings. Turn each sign-up (merchant, rider, franchise, customer) and "Send a parcel" on or off, and edit About Us, Privacy Policy, Terms of Service and FAQs.
+- Website: the home page and content pages open from a cache, and what you save in Super admin shows at once. The login page and every panel load faster.
+- New SMS: the recipient gets a message with the tracking link when the parcel reaches its first hub, with its own on/off switch and template in Parcel notifications.
+- Super admin menu: new Notification settings, Integration settings, Operational settings, Location settings and Monitoring. "SMS, Email & Push" and "Shared catalogs & locations" are now split across these; nothing was removed. Excel Import settings is now Import Template settings.
+- Service plans › Products: choose all the products that send messages in one field, with search and select all.
+- Long tables in the Merchant, Courier Operations and Super admin panels now have numbered pages.
+
 ## 1.3.1 — 2026-11-05
 - Courier Operations: every button that takes time now shows a loading spinner until the work is done, and can't be clicked twice meanwhile.
 - Collect from hub: a live parcel update no longer clears the collection code or the ID photo while you are handing a parcel over.

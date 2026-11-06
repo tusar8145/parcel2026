@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import WebsitePage from "@/features/website/WebsitePage";
 import WebsiteHomePage from "@/features/website/WebsiteHomePage";
 import { pageMetadata } from "@/features/website/seo";
-import { routeForSegments } from "@/features/website/routes";
+import { routeForSegments, WEBSITE_ROUTES } from "@/features/website/routes";
+import { ClosedPage } from "@/features/website/components/ClosedPage";
+import { isClosed } from "@/features/website/SiteSwitches";
+import { siteContent } from "@/features/website/siteContent";
 
 type Props = { params: Promise<{ slug?: string[] }> };
 
@@ -28,9 +31,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return pageMetadata(route);
 }
 
+/** Built ahead (home, /login, /pricing …), so they open from the cache; /track/PP-… is drawn on request. */
+export function generateStaticParams() {
+  return WEBSITE_ROUTES.map(route => ({ slug: route.path ? route.path.split("/") : [] }));
+}
+
 export default async function Page({ params }: Props) {
   const { slug = [] } = await params;
-  if (!routeForSegments(slug)) notFound();
+  const match = routeForSegments(slug);
+  if (!match) notFound();
   if (slug.length === 0) return <WebsiteHomePage />;
+  // Turned off in Super admin › Website settings: the page says so instead of a form that would be refused.
+  if (isClosed(await siteContent(), match.route.legacy)) return <WebsitePage staticPage={{ name: "closed", content: <ClosedPage route={match.route.legacy} /> }} />;
   return <WebsitePage />;
 }

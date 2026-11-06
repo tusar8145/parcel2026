@@ -8,3 +8,5 @@ export * from "./schemas/parcel";
 export * from "./schemas/website";
 export * from "./system-guide";
 export * from "./branding";
+export * from "./website";
+export * from "./legal-default";

@@ -30,6 +30,7 @@ import {
   updateWebhookSchema,
 } from "./merchants.schemas";
 import { MerchantsService } from "./merchants.service";
+import { WebsiteService } from "../website/website.service";
 import { MerchantIntegrationsService } from "./merchant-integrations.service";
 import { PlansService } from "./plans.service";
 import { MerchantStatsService } from "./merchant-stats.service";
@@ -40,12 +41,16 @@ type Selector = z.infer<typeof merchantSelectorSchema>;
 @ApiTags("merchants")
 @Controller("merchants")
 export class MerchantsController {
-  constructor(private readonly merchants: MerchantsService) {}
+  constructor(
+    private readonly merchants: MerchantsService,
+    private readonly website: WebsiteService,
+  ) {}
 
   /** Any signed-in user can apply; they become the owner of the new (pending) merchant. */
   @Post("applications")
   @ApiZodBody(merchantApplicationSchema)
-  apply(@CurrentUser() actor: UserActor, @ZBody(merchantApplicationSchema) body: z.infer<typeof merchantApplicationSchema>, @ReqMeta() meta: RequestMeta) {
+  async apply(@CurrentUser() actor: UserActor, @ZBody(merchantApplicationSchema) body: z.infer<typeof merchantApplicationSchema>, @ReqMeta() meta: RequestMeta) {
+    await this.website.assertOpen("merchant");
     return this.merchants.apply(actor, body, meta);
   }
 

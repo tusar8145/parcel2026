@@ -49,104 +49,181 @@ export default function Sidebar() {
           </button>{" "}
         </div>{" "}
         <div className="nav-group">
-          <div className="nav-label">Merchant management</div>{" "}
+          <div className="nav-label">Merchant management</div>
           <button className="nav-item" data-page="E-commerce merchants">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-building" />
             </svg>
             E-commerce merchants
-          </button>{" "}
+          </button>
           <button className="nav-item" data-page="Banking & Financial merchants">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-building" />
             </svg>
             Banking & Financial merchants
-          </button>{" "}
+          </button>
           <button className="nav-item" data-page="Service plans">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-settings" />
             </svg>
             {"Service plans & pricing"}
-          </button>{" "}
-          <button className="nav-item" data-page="Import settings">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            Excel Import settings
-          </button>{" "}
-          <button className="nav-item" data-page="Parcel notifications">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-settings" />
-            </svg>
-            Parcel notifications
-          </button>{" "}
-        </div>{" "}
+          </button>
+        </div>
         <div className="nav-group">
-          <div className="nav-label">{"Rider setup & pricing"}</div>{" "}
+          <div className="nav-label">{"Rider setup & pricing"}</div>
           <button className="nav-item" data-page="Rider plans">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-wallet" />
             </svg>
             Rider earning plans
-          </button>{" "}
-        </div>{" "}
+          </button>
+        </div>
         <div className="nav-group">
-          <div className="nav-label">Platform control</div>{" "}
+          <div className="nav-label">Monitoring</div>
           <button className="nav-item" data-page="Platform activity">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-chart" />
             </svg>
             Platform activity
-          </button>{" "}
-          <button className="nav-item" data-page="Admin users">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-users" />
-            </svg>
-            {"Admin users & roles"}
-          </button>{" "}
-          <button className="nav-item" data-page="Platform settings">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-settings" />
-            </svg>
-            Global notifications
-          </button>{" "}
-          <button className="nav-item" data-page="Integrations">
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-plug" />
-            </svg>
-            {"SMS, Email & Push"}
-          </button>{" "}
-          <button className="nav-item" data-page={"Pricing & catalogs"}>
-            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-box" />
-            </svg>
-            {"Shared catalogs & locations"}
-          </button>{" "}
+          </button>
           <button className="nav-item" data-page="Audit log">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-clipboard" />
             </svg>
             {"Audit & security log"}
-          </button>{" "}
-          <button className="nav-item" data-page="System guide">
+          </button>
+        </div>
+        <div className="nav-group">
+          <div className="nav-label">Platform control</div>
+          <button className="nav-item" data-page="Admin users">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
-              <use href="#i-clipboard" />
+              <use href="#i-users" />
             </svg>
-            System guide
-          </button>{" "}
-          <button className="nav-item" data-page={"Branding & company"}>
+            {"Admin users & roles"}
+          </button>
+          <div className="nav-sub" data-nav-sub="notifications">
+            <button type="button" className="nav-item nav-sub-toggle" aria-expanded="false">
+              <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+              {"Notification settings"}
+              <span className="nav-sub-arrow" aria-hidden="true" />
+            </button>
+            <div className="nav-sub-items" hidden>
+          <button className="nav-item" data-page="Parcel notifications">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-settings" />
             </svg>
-            {"Branding & company"}
-          </button>{" "}
+            Parcel notifications
+          </button>
+          <button className="nav-item" data-page="Platform settings">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-settings" />
+            </svg>
+            Global notifications
+          </button>
+          <button className="nav-item" data-page={"Channels & limits"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+            {"Channel & limits"}
+          </button>
+          <button className="nav-item" data-page={"Push notifications"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+            {"Push notifications"}
+          </button>
+          <button className="nav-item" data-page={"Recent messages"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+            {"Recent messages"}
+          </button>
+            </div>
+          </div>
+          <button className="nav-item" data-page={"Website settings"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-settings" />
+            </svg>
+            {"Website & branding"}
+          </button>
+          <div className="nav-sub" data-nav-sub="operational">
+            <button type="button" className="nav-item nav-sub-toggle" aria-expanded="false">
+              <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+              {"Operational settings"}
+              <span className="nav-sub-arrow" aria-hidden="true" />
+            </button>
+            <div className="nav-sub-items" hidden>
+          <button className="nav-item" data-page={"Return reasons"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Return reasons"}
+          </button>
+          <button className="nav-item" data-page={"Receiver relations"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Receiver relations"}
+          </button>
+          <button className="nav-item" data-page={"Products"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Products"}
+          </button>
           <button className="nav-item" data-page="Invoice settings">
             <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
               <use href="#i-clipboard" />
             </svg>
             {"Invoice settings"}
-          </button>{" "}
-        </div>{" "}
+          </button>
+          <button className="nav-item" data-page="Import settings">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Import Template settings"}</button>
+            </div>
+          </div>
+          <div className="nav-sub" data-nav-sub="location">
+            <button type="button" className="nav-item nav-sub-toggle" aria-expanded="false">
+              <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+              {"Location settings"}
+              <span className="nav-sub-arrow" aria-hidden="true" />
+            </button>
+            <div className="nav-sub-items" hidden>
+          <button className="nav-item" data-page={"Address"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Address"}
+          </button>
+          <button className="nav-item" data-page={"Hubs & zones"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-box" />
+            </svg>
+            {"Hubs & zones"}
+          </button>
+            </div>
+          </div>
+          <button className="nav-item" data-page={"Integration settings"}>
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-plug" />
+            </svg>
+            {"Integration settings"}
+          </button>
+          <button className="nav-item" data-page="System guide">
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+              <use href="#i-clipboard" />
+            </svg>
+            System guide
+          </button>
+        </div>{" "}{" "}
       </nav>{" "}
       <div className="sidebar-bottom">
         <a className="ops-link" href="/courier-operation">

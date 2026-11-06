@@ -38,9 +38,13 @@ export const identifierSchema = z
   .min(3, "Enter your email or mobile number")
   .transform(value => (value.includes("@") ? value.toLowerCase() : isBdMobile(value) ? normalizeBdPhone(value) : value));
 
+/** What an account is being created for: a partner application stays open while customer sign-up is closed. */
+const signupIntent = z.enum(["merchant", "rider", "franchise"]).optional();
+
 export const requestOtpSchema = z.object({
   phone: phoneSchema,
   purpose: z.enum(OTP_PURPOSES),
+  intent: signupIntent,
 });
 
 export const signupSchema = z.object({
@@ -49,6 +53,7 @@ export const signupSchema = z.object({
   email: emailSchema.optional(),
   password: passwordSchema,
   otp: otpCodeSchema,
+  intent: signupIntent,
 });
 
 export const passwordLoginSchema = z.object({

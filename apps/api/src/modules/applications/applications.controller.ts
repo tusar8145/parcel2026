@@ -6,6 +6,7 @@ import type { UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { applicationSchema, decideApplicationSchema, listApplicationsQuerySchema, type ApplicationInput } from "./applications.schemas";
 import { ApplicationsService } from "./applications.service";
+import { WebsiteService } from "../website/website.service";
 
 /**
  * Rider and franchise applications: submitted → under review → information requested →
@@ -15,7 +16,10 @@ import { ApplicationsService } from "./applications.service";
 @ApiTags("applications")
 @Controller("applications")
 export class ApplicationsController {
-  constructor(private readonly applications: ApplicationsService) {}
+  constructor(
+    private readonly applications: ApplicationsService,
+    private readonly website: WebsiteService,
+  ) {}
 
   /** Any signed-in user can apply (one open application per kind). */
   @ApiBearerAuth()
@@ -23,7 +27,8 @@ export class ApplicationsController {
   @ApiZodBody(applicationSchema)
   @ApiCreatedResponse({ description: "{ application, message }" })
   @ApiConflictResponse({ description: "APPLICATION_PENDING, or ALREADY_A_RIDER" })
-  submit(@CurrentUser() actor: UserActor, @ZBody(applicationSchema) body: ApplicationInput, @ReqMeta() meta: RequestMeta) {
+  async submit(@CurrentUser() actor: UserActor, @ZBody(applicationSchema) body: ApplicationInput, @ReqMeta() meta: RequestMeta) {
+    await this.website.assertOpen(body.kind === "RIDER" ? "rider" : "franchise");
     return this.applications.submit(actor, body, meta);
   }
 

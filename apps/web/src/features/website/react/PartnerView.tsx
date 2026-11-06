@@ -286,7 +286,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
     if (!target) return;
     const phoneField = v.accountMode === "new" ? "partnerPhone" : "accountLogin";
     try {
-      const result = await df().auth.requestOtp(target.phone, target.purpose);
+      const result = await df().auth.requestOtp(target.phone, target.purpose, kind);
       setOtp({ ...target, hint: result.devCode ? `Development code: ${result.devCode}` : `We sent a 6-digit code by SMS to +880 ${local10(target.phone)}. It expires in 5 minutes.` });
       form.set("accountOtp", "");
       countdown.start(cooldownFrom(result));
@@ -324,7 +324,7 @@ export default function PartnerView({ kind }: { kind: PartnerKind }) {
           await sendCode();
           return false;
         }
-        await df().auth.signup({ name: v[accountName].trim(), phone: target!.phone, password: v.accountPassword, otp: v.accountOtp.trim() });
+        await df().auth.signup({ name: v[accountName].trim(), phone: target!.phone, password: v.accountPassword, otp: v.accountOtp.trim(), intent: kind });
         toast("Your Paira Express account is ready. Sending your application…");
       } else {
         let result: SessionUser | MfaChallenge;

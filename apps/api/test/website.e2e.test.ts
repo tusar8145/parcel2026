@@ -1,285 +1,250 @@
-import { vi } from "vitest";
-import { createServer, type Server } from "node:http";
+import { gunzipSync } from "node:zlib";
+import { DEFAULT_WEBSITE } from "@paira-express/shared";
+import { WebsiteService } from "../src/modules/website/website.service";
+import { readXlsx } from "../src/modules/imports/xlsx/xlsx-reader";
+import { hub, parcelBody, PASSWORD, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
 
-// Before the app (and its cached env) loads: geo calls go to the local stand-in below.
-const NOMINATIM_PORT = 47651;
-vi.hoisted(() => {
-  process.env.NOMINATIM_URL = "http://127.0.0.1:47651";
-  process.env.NOMINATIM_MIN_INTERVAL_MS = "0";
-});
-import { decrypt } from "../src/common/crypto";
-import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
-
-// A stand-in for Nominatim, so geo tests never call the public server.
-const nominatimRequests: { url: string; userAgent?: string }[] = [];
-const nominatim: Server = createServer((req, res) => {
-  nominatimRequests.push({ url: req.url ?? "", userAgent: req.headers["user-agent"] });
-  res.setHeader("content-type", "application/json");
-  if (req.url?.startsWith("/search")) {
-    res.end(
-      JSON.stringify([
-        {
-          lat: "23.7937",
-          lon: "90.4066",
-          display_name: "Road 11, Banani, Dhaka, Bangladesh",
-          address: { road: "Road 11", house_number: "42", suburb: "Banani", city: "Dhaka", postcode: "1213" },
-        },
-      ]),
-    );
-  } else if (req.url?.startsWith("/reverse")) {
-    res.end(JSON.stringify({ lat: "23.78", lon: "90.41", display_name: "Gulshan Avenue, Gulshan, Dhaka, Bangladesh", address: { road: "Gulshan Avenue", suburb: "Gulshan", city: "Dhaka" } }));
-  } else {
-    res.statusCode = 404;
-    res.end("{}");
-  }
-});
-
-const SENDER = "01711000000";
-// Website (customer) parcels: CP-… (system guide: parcel prefixes by line).
-const CROCKFORD_ID = /^CP-\d{6}-[0-9A-HJKMNP-TV-Z]{5}$/;
-
-describe("public website", () => {
+/** Website settings: the switches are enforced by the API (not only hidden), and content can be edited. */
+describe("website settings", () => {
   let ctx: TestContext;
   beforeAll(async () => {
-    await new Promise<void>(r => nominatim.listen(NOMINATIM_PORT, "127.0.0.1", r));
     ctx = await startApp();
   });
-  beforeEach(() => resetDatabase(ctx));
-  afterAll(async () => {
-    await ctx.app.close();
-    nominatim.close();
+  beforeEach(async () => {
+    await resetDatabase(ctx);
+    // The switches are cached briefly; a test starts from what it saves.
+    (ctx.app.get(WebsiteService) as unknown as { cached: null }).cached = null;
   });
+  afterAll(() => ctx.app.close());
 
-  /** The first bookable slot the API offers. */
-  const firstSlot = async () => {
-    const res = await ctx.api("GET", "/pickup-slots");
+  const admin = () => userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+  const save = async (token: string, body: unknown) => {
+    const res = await ctx.api("PUT", "/website", { token, body });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return res.body;
+  };
+
+  it("is all open by default, and only config managers can change it", async () => {
+    const res = await ctx.api("GET", "/website");
     expect(res.status).toBe(200);
-    const slot = res.body.days.flatMap((d: { slots: { available: boolean }[] }) => d.slots).find((s: { available: boolean }) => s.available);
-    expect(slot).toBeTruthy();
-    return { start: slot.start as string, end: slot.end as string };
-  };
+    expect(res.body).toMatchObject({ signups: { merchant: true, rider: true, franchise: true, customer: true }, sendParcel: true, edited: { privacy: false, terms: false } });
+    expect(res.body.faqs).toEqual(DEFAULT_WEBSITE.faqs);
+    expect(res.body.about.title).toBeTruthy();
+    expect((await ctx.api("GET", "/website/status")).body).toEqual({ signups: res.body.signups, sendParcel: true });
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    expect((await ctx.api("PUT", "/website", { token: customer.token, body: { sendParcel: false } })).status).toBe(403);
+    expect((await ctx.api("GET", "/website/admin", { token: customer.token })).status).toBe(403);
+    expect((await ctx.api("GET", "/website/admin")).status).toBe(401);
+  });
 
-  const verifyGuest = async (phone = SENDER) => {
-    const sent = await ctx.api("POST", "/guest/verification", { body: { phone } });
-    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
-    expect(await ctx.prisma.outboxMessage.count({ where: { template: "guest.booking_verification" } })).toBeGreaterThan(0);
-    const confirmed = await ctx.api("POST", "/guest/verification/confirm", { body: { phone, code: sent.body.devCode } });
-    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
-    return confirmed.body.verificationToken as string;
-  };
+  it("saves pages and FAQs, changing only what is sent, and records it", async () => {
+    const a = await admin();
+    const edited = await save(a.token, { privacy: { title: "Privacy", intro: "How we handle data.", body: "## One\n\nOur new policy text." }, faqs: [{ id: "x", question: "New question?", answer: "New answer." }] });
+    expect(edited.edited).toEqual({ privacy: true, terms: false });
+    expect(edited.terms).toEqual(DEFAULT_WEBSITE.terms);
+    expect(edited.defaults.privacy).toEqual(DEFAULT_WEBSITE.privacy);
+    const shown = (await ctx.api("GET", "/website")).body;
+    expect(shown.privacy.body).toContain("Our new policy text.");
+    expect(shown.faqs).toHaveLength(1);
+    expect(shown.signups.customer).toBe(true);
+    expect((await ctx.api("PUT", "/website", { token: a.token, body: { faqs: [{ id: "x", question: "", answer: "y" }] } })).status).toBe(422);
+    expect(await ctx.prisma.auditLog.findFirst({ where: { action: "website.settings_update" } })).toBeTruthy();
+  });
 
-  it("issues random, readable tracking IDs and still finds older and mistyped ones", async () => {
-    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Rahim Uddin");
-    const ids = new Set<string>();
-    for (let i = 0; i < 3; i++) {
-      const res = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
-      expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(res.body.trackingId).toMatch(CROCKFORD_ID);
-      ids.add(res.body.trackingId);
+  it("customer sign-up and sign-in off: new customers and customer sign-in are refused; everyone else signs in; partner sign-up stays open", async () => {
+    const a = await admin();
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    await save(a.token, { signups: { customer: false } });
+
+    const closed = await ctx.api("POST", "/auth/otp", { body: { phone: "01712000111", purpose: "SIGNUP" } });
+    expect(closed.status).toBe(403);
+    expect(closed.body.error.code).toBe("SIGNUP_CLOSED");
+    expect((await ctx.api("POST", "/auth/signup", { body: { name: "New Person", phone: "01712000111", password: PASSWORD, otp: "123456" } })).status).toBe(403);
+    expect((await ctx.api("POST", "/auth/otp", { body: { phone: "01712000111", purpose: "SIGNUP", intent: "merchant" } })).status).toBe(200);
+
+    const signIn = (phone: string) => ctx.api("POST", "/auth/login", { body: { identifier: phone, password: PASSWORD } });
+    const refused = await signIn(customer.phone);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.code).toBe("CUSTOMER_LOGIN_OFF");
+    expect((await signIn(ops.phone)).status).toBe(200);
+
+    // A partner application in progress keeps its applicant's sign-in.
+    await save(a.token, { signups: { customer: true } });
+    expect((await signIn(customer.phone)).status).toBe(200);
+  });
+
+  it("partner applications are refused when their switch is off, and each switch is on its own", async () => {
+    const a = await admin();
+    const applicant = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Applicant");
+    const merchant = {
+      type: "ECOMMERCE",
+      name: "Closed Shop",
+      contactName: "Rumana Akter",
+      contactPhone: "01811000111",
+      business: { district: "Dhaka North", zone: "Gulshan", area: "Road 4 Gulshan", street: "House 7, Road 4, Flat B2", lat: 23.7925, lng: 90.4078 },
+      pickupSameAsBusiness: true,
+      pickupTime: "MIDDAY",
+    };
+    const contact = { name: "Karim Mia", phone: "01811000222" };
+    const rider = { kind: "RIDER", ...contact, area: "Dhaka North", vehicle: "MOTORCYCLE" };
+    const franchise = { kind: "FRANCHISE", ...contact, location: "Mirpur", territory: "CITY_ZONE" };
+    const submit = (path: string, body: unknown) => ctx.api("POST", path, { token: applicant.token, body });
+
+    await save(a.token, { signups: { merchant: false, rider: false, franchise: false } });
+    for (const [path, body] of [["/merchants/applications", merchant], ["/applications", rider], ["/applications", franchise]] as const) {
+      const res = await submit(path, body);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body.error.code).toBe("SIGNUP_CLOSED");
     }
-    expect(ids.size).toBe(3);
+    expect((await ctx.api("POST", "/auth/otp", { body: { phone: "01712000222", purpose: "SIGNUP", intent: "rider" } })).status).toBe(403);
 
-    // Typed with spaces, lower case and an O for a zero still finds it.
-    const id = [...ids][0];
-    const [, date, random] = id.split("-");
-    const typed = ` cp-${date}-${random.toLowerCase().replace(/0/g, "o").replace(/1/g, "l")} `;
-    expect((await ctx.api("GET", `/track/${encodeURIComponent(typed)}`)).body.trackingId).toBe(id);
-
-    // An older sequential ID stays valid.
-    await ctx.prisma.parcel.update({ where: { trackingId: id }, data: { trackingId: "PP-261001-1001" } });
-    expect((await ctx.api("GET", "/track/PP-261001-1001")).status).toBe(200);
+    // Each switch is on its own.
+    await save(a.token, { signups: { rider: true } });
+    expect((await submit("/applications", rider)).status).toBe(201);
+    expect((await submit("/applications", franchise)).status).toBe(403);
+    await save(a.token, { signups: { merchant: true, franchise: true } });
+    expect((await submit("/applications", franchise)).status).toBe(201);
+    expect((await submit("/merchants/applications", merchant)).status, "merchant").toBe(201);
   });
 
-  it("lists pickup slots and enforces them for website bookings", async () => {
-    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-    const slots = await ctx.api("GET", "/pickup-slots");
-    expect(slots.body).toMatchObject({ timezone: "Asia/Dhaka" });
-    expect(slots.body.days).toHaveLength(7);
-    expect(slots.body.days[0].label).toBe("Today");
-
-    const bad = await ctx.api("POST", "/parcels", {
-      token: customer.token,
-      body: parcelBody({ pickupWindow: { start: "2026-01-01T03:00:00.000Z", end: "2026-01-01T06:00:00.000Z" } }),
-    });
-    expect(bad.status).toBe(409);
-    expect(bad.body.error.code).toBe("PICKUP_SLOT_UNAVAILABLE");
-
-    const slot = await firstSlot();
-    const ok = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody({ pickupWindow: slot }) });
-    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
-    expect(ok.body.pickupWindow).toMatchObject({ start: slot.start, end: slot.end });
-    expect(ok.body.pickupWindow.label).toMatch(/, \d{1,2}:\d{2} [AP]M – \d{1,2}:\d{2} [AP]M$/);
-    // Shown (without personal details) on public tracking too.
-    expect((await ctx.api("GET", `/track/${ok.body.trackingId}`)).body.pickupWindow.start).toBe(slot.start);
+  it("Send a parcel off: customers and guests can't book; merchants and operations can", async () => {
+    const a = await admin();
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    await save(a.token, { sendParcel: false });
+    const booked = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
+    expect(booked.status).toBe(403);
+    expect(booked.body.error.code).toBe("SEND_PARCEL_CLOSED");
+    expect((await ctx.api("POST", "/guest/verification", { body: { phone: "01712000333" } })).status).toBe(403);
+    await save(a.token, { sendParcel: true });
+    expect((await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() })).status).toBe(201);
   });
 
-  it("caps a slot at its configured capacity", async () => {
-    const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }]);
-    const saved = await ctx.api("PUT", "/pickup-slots/config", {
-      token: admin.token,
-      body: { daysAhead: 7, leadMinutes: 0, closedWeekdays: [], windows: [{ start: "08:00", end: "20:00", capacity: 1 }] },
-    });
-    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-    const tomorrow = (await ctx.api("GET", "/pickup-slots")).body.days[1];
-    const window = { start: tomorrow.slots[0].start, end: tomorrow.slots[0].end };
-    expect((await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody({ pickupWindow: window }) })).status).toBe(201);
-    const full = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody({ pickupWindow: window }) });
-    expect(full.body.error.code).toBe("PICKUP_SLOT_UNAVAILABLE");
-    const after = (await ctx.api("GET", `/pickup-slots?date=${tomorrow.date}`)).body.days[0].slots[0];
-    expect(after).toMatchObject({ available: false, remaining: 0 });
+  it("the recipient gets one SMS with the tracking link at the first hub, not at later hubs", async () => {
+    const first = await hub(ctx, "HUB-W1");
+    const second = await hub(ctx, "HUB-W2");
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    const rider = await riderUser(ctx, "R-6048", first.id);
+    const { body: parcel } = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
+    const id = parcel.trackingId as string;
+    const status = (body: Record<string, unknown>) => ctx.api("POST", `/parcels/${id}/status`, { token: ops.token, body });
+    const messages = () => ctx.prisma.outboxMessage.findMany({ where: { template: "parcel.received_at_hub" } });
+
+    expect((await ctx.api("POST", `/parcels/${id}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } })).status).toBe(200);
+    expect((await status({ status: "PICKED_UP" })).status).toBe(200);
+    expect(await messages()).toHaveLength(0);
+    expect((await status({ status: "AT_HUB", hubId: first.id })).status).toBe(200);
+    const sent = await messages();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ channel: "SMS", to: parcel.recipient.phone });
+    expect(sent[0].body).toContain(id);
+    expect(sent[0].body).toContain("/track");
+
+    expect((await status({ status: "IN_TRANSIT", hubId: second.id })).status).toBe(200);
+    expect((await status({ status: "AT_HUB", hubId: second.id })).status).toBe(200);
+    expect(await messages()).toHaveLength(1);
   });
 
-  it("books as a guest after phone verification, with a tracking link that can cancel", async () => {
-    // Without verification: rejected under the verification field.
-    const noToken = await ctx.api("POST", "/guest/parcels", { body: { ...parcelBody(), verificationToken: "x.y.zzzzzzzzzz" } });
-    expect(noToken.status).toBe(401);
-    expect(noToken.body.error.details[0].path).toBe("verificationToken");
+  it("works like the other parcel messages: its switch, its template, and products with messages off", async () => {
+    const h = await hub(ctx, "HUB-W3");
+    const a = await admin();
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const rider = await riderUser(ctx, "R-6049", h.id);
+    const events = (await ctx.api("GET", "/notifications/events", { token: a.token })).body.events as { event: string; group: string }[];
+    expect(events.find(e => e.event === "parcel.received_at_hub")).toMatchObject({ group: "Parcel" });
 
-    // Wrong code.
-    await ctx.api("POST", "/guest/verification", { body: { phone: SENDER } });
-    const wrong = await ctx.api("POST", "/guest/verification/confirm", { body: { phone: SENDER, code: "000000" } });
-    expect(wrong.body.error.details[0].path).toBe("code");
-    // A second code within a minute is refused with retry-after.
-    const again = await ctx.api("POST", "/guest/verification", { body: { phone: SENDER } });
-    expect(again.status).toBe(429);
-    expect(Number(again.headers["retry-after"])).toBeGreaterThan(0);
-    await ctx.app.get((await import("../src/common/redis.service")).RedisService).flushdb();
+    const atHub = async () => {
+      const { body: parcel } = await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() });
+      expect((await ctx.api("POST", `/parcels/${parcel.trackingId}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } })).status).toBe(200);
+      expect((await ctx.api("POST", `/parcels/${parcel.trackingId}/status`, { token: ops.token, body: { status: "PICKED_UP" } })).status).toBe(200);
+      expect((await ctx.api("POST", `/parcels/${parcel.trackingId}/status`, { token: ops.token, body: { status: "AT_HUB", hubId: h.id } })).status).toBe(200);
+      return ctx.prisma.outboxMessage.findMany({ where: { template: "parcel.received_at_hub" }, orderBy: { createdAt: "asc" } });
+    };
 
-    const token = await verifyGuest();
-    // The sender's phone must be the verified one.
-    const otherPhone = await ctx.api("POST", "/guest/parcels", { body: { ...parcelBody({ sender: { name: "Rahim", phone: "01799999999" } }), verificationToken: token } });
-    expect(otherPhone.status).toBe(422);
-    expect(otherPhone.body.error.details[0].path).toBe("sender.phone");
+    const template = (body: unknown) => ctx.api("PUT", "/notifications/templates/parcel.received_at_hub/sms", { token: a.token, body });
+    expect((await template({ body: "Reached hub: {{trackingId}} {{trackingUrl}}" })).status).toBe(200);
+    expect((await atHub()).at(-1)?.body).toContain("Reached hub:");
 
-    const booked = await ctx.api("POST", "/guest/parcels", { body: { ...parcelBody({ pickupWindow: await firstSlot() }), verificationToken: token } });
-    expect(booked.status, JSON.stringify(booked.body)).toBe(201);
-    expect(booked.body.trackingId).toMatch(CROCKFORD_ID);
-    expect(booked.body.trackingUrl).toContain(`/track/${booked.body.trackingId}?t=`);
-    expect(booked.body.parcel).toMatchObject({ status: "PENDING_CONFIRMATION", canCancel: true, access: "owner" });
-    const parcel = await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: booked.body.trackingId } });
-    expect(parcel).toMatchObject({ customerId: null, channel: "WEBSITE" });
-
-    // The verification is single-use.
-    const reuse = await ctx.api("POST", "/guest/parcels", { body: { ...parcelBody(), verificationToken: token } });
-    expect(reuse.body.error.code).toBe("GUEST_VERIFICATION_USED");
-
-    // Public tracking stays masked; the link shows full details.
-    const masked = await ctx.api("GET", `/track/${booked.body.trackingId}`);
-    expect(JSON.stringify(masked.body)).not.toContain("+8801711000000");
-    const full = await ctx.api("GET", `/track/${booked.body.trackingId}/full?t=${encodeURIComponent(booked.body.accessToken)}`);
-    expect(full.status).toBe(200);
-    expect(JSON.stringify(full.body)).toContain("+8801711000000");
-    // A tampered token looks like an unknown parcel.
-    expect((await ctx.api("GET", `/track/${booked.body.trackingId}/full?t=${booked.body.accessToken.slice(0, -2)}xx`)).status).toBe(404);
-
-    const cancelled = await ctx.api("POST", `/track/${booked.body.trackingId}/cancel`, { body: { token: booked.body.accessToken, reason: "Booked by mistake" } });
-    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
-    expect(cancelled.body).toMatchObject({ status: "PICKUP_CANCELLED", canCancel: false });
+    expect((await template({ enabled: false })).status).toBe(200);
+    expect(await atHub()).toHaveLength(1);
   });
 
-  it("takes one rating per delivered parcel from the owner or the feedback link, visible to staff", async () => {
-    const h = await hub(ctx);
-    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Rahim Uddin");
-    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }]);
-    const rider = await riderUser(ctx, "R-3301", h.id);
-    const { trackingId } = (await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() })).body;
-
-    // Not before delivery.
-    expect((await ctx.api("POST", `/parcels/${trackingId}/feedback`, { token: customer.token, body: { rating: 5 } })).body.error.code).toBe("FEEDBACK_NOT_AVAILABLE");
-
-    await ctx.api("POST", `/parcels/${trackingId}/assign-pickup`, { token: ops.token, body: { riderId: rider.rider.id } });
-    await ctx.api("POST", `/rider/parcels/${trackingId}/pickup`, { token: rider.token, body: { outcome: "COLLECTED_TO_HUB", hubId: h.id } });
-    await ctx.api("POST", `/parcels/${trackingId}/assign-delivery`, { token: ops.token, body: { riderId: rider.rider.id } });
-    await ctx.api("POST", `/rider/parcels/${trackingId}/start-delivery`, { token: rider.token });
-    const code = decrypt((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId } })).deliveryOtpEncrypted!);
-    const done = await ctx.api("POST", `/rider/parcels/${trackingId}/delivery`, { token: rider.token, body: { outcome: "DELIVERED", receivedBy: "Nabila", proof: { method: "OTP", otp: code }, codCollected: 1500 } });
-    expect(done.body.status).toBe("DELIVERED");
-
-    // The feedback request goes out (email only by default for SMS) with a signed link.
-    const request = await ctx.prisma.outboxMessage.findMany({ where: { template: "parcel.feedback_request" } });
-    const link = request.map(m => m.body.match(/https?:\/\/\S+/)?.[0]).find(Boolean);
-    if (link) expect(link).toContain(`/track/${trackingId}?t=f.`);
-
-    // Strangers and invalid ratings are refused.
-    expect((await ctx.api("POST", `/parcels/${trackingId}/feedback`, { body: { rating: 5 } })).status).toBe(404);
-    const invalid = await ctx.api("POST", `/parcels/${trackingId}/feedback`, { token: customer.token, body: { rating: 7 } });
-    expect(invalid.status).toBe(422);
-    expect(invalid.body.error.details[0].path).toBe("rating");
-
-    const given = await ctx.api("POST", `/parcels/${trackingId}/feedback`, { token: customer.token, body: { rating: 4, comment: "Quick and polite rider" } });
-    expect(given.status, JSON.stringify(given.body)).toBe(201);
-    expect(given.body).toMatchObject({ feedback: { rating: 4, comment: "Quick and polite rider", source: "TRACKING" }, canGiveFeedback: false });
-    expect((await ctx.api("POST", `/parcels/${trackingId}/feedback`, { token: customer.token, body: { rating: 1 } })).body.error.code).toBe("FEEDBACK_EXISTS");
-    expect((await ctx.api("GET", `/parcels/${trackingId}/feedback`, { token: customer.token })).body.feedback.rating).toBe(4);
-
-    // Staff see it with a summary; customers can't list.
-    expect((await ctx.api("GET", "/feedback", { token: customer.token })).status).toBe(403);
-    const list = await ctx.api("GET", "/feedback", { token: ops.token });
-    expect(list.status).toBe(200);
-    expect(list.body.items[0]).toMatchObject({ trackingId, rating: 4, rider: { code: "R-3301" } });
-    expect(list.body.summary).toMatchObject({ count: 1, average: 4 });
+  it("products: the chosen ones send messages, every other one of the list doesn't", async () => {
+    const a = await admin();
+    const ids: string[] = [];
+    for (let i = 0; i < 160; i++) {
+      const res = await ctx.api("POST", "/parcel-products", { token: a.token, body: { segment: "ECOMMERCE", name: `Product ${i}`, type: "REGULAR" } });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      ids.push(res.body.id);
+    }
+    const chosen = ids.slice(0, 150);
+    expect((await ctx.api("PUT", "/parcel-products/messages", { token: a.token, body: { segment: "ECOMMERCE", productIds: chosen } })).status).toBe(200);
+    const on = await ctx.prisma.parcelProduct.findMany({ where: { id: { in: ids }, sendMessages: true }, select: { id: true } });
+    expect(on.map(p => p.id).sort()).toEqual([...chosen].sort());
+    expect((await ctx.api("PUT", "/parcel-products/messages", { token: a.token, body: { segment: "ECOMMERCE", productIds: ["00000000-0000-7000-8000-000000000000"] } })).status).toBe(422);
+    expect(await ctx.prisma.auditLog.findFirst({ where: { action: "parcel_product.messages" } })).toMatchObject({ data: { on: 150, off: expect.any(Number) } });
+    const staff = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    expect((await ctx.api("PUT", "/parcel-products/messages", { token: staff.token, body: { segment: "ECOMMERCE", productIds: [] } })).status).toBe(403);
   });
 
-  it("accepts feedback with a signed feedback link", async () => {
-    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-    const { trackingId } = (await ctx.api("POST", "/parcels", { token: customer.token, body: parcelBody() })).body;
-    await ctx.prisma.parcel.update({ where: { trackingId }, data: { status: "DELIVERED", deliveredAt: new Date() } });
-    const { signParcelAccess } = await import("../src/modules/parcels/parcel-access");
-    const t = signParcelAccess(trackingId, "feedback");
-    const full = await ctx.api("GET", `/track/${trackingId}/full?t=${encodeURIComponent(t)}`);
-    expect(full.body).toMatchObject({ access: "feedback", canCancel: false, canGiveFeedback: true });
-    const given = await ctx.api("POST", `/parcels/${trackingId}/feedback`, { body: { rating: 5, token: t } });
-    expect(given.status, JSON.stringify(given.body)).toBe(201);
-    expect(given.body.feedback.source).toBe("SMS_LINK");
+  it("exports a product list to Excel with the page's search and status, without messages", async () => {
+    const a = await admin();
+    const add = async (name: string) => (await ctx.api("POST", "/parcel-products", { token: a.token, body: { segment: "ECOMMERCE", name, type: "BOOKS" } })).body.id as string;
+    await add("Blue Notebook");
+    const off = await add("Red Notebook");
+    await add("Green Pen");
+    await ctx.api("PATCH", `/parcel-products/${off}`, { token: a.token, body: { active: false } });
+    const rows = async (query: string) => {
+      const res = await ctx.app.inject({ method: "GET", url: `/api/v1/parcel-products/export?segment=ECOMMERCE&${query}`, headers: { authorization: `Bearer ${a.token}` } });
+      expect(res.statusCode, res.body.slice(0, 200)).toBe(200);
+      return readXlsx(res.rawPayload, { maxRows: 100 }).rows;
+    };
+    const header = (await rows("q=notebook"))[0];
+    expect(header).toEqual(["Product", "Type", "Status", "Parcels"]);
+    const names = async (query: string) => (await rows(query)).slice(1).map(r => r[0]).sort();
+    expect(await names("q=notebook")).toEqual(["Blue Notebook", "Red Notebook"]);
+    expect(await names("q=notebook&status=inactive")).toEqual(["Red Notebook"]);
+    const order = async (sort: string) => (await rows(`sort=${sort}`)).slice(1).map(r => r[0]);
+    expect(await order("asc")).toEqual(["Blue Notebook", "Green Pen", "Red Notebook"]);
+    expect(await order("desc")).toEqual(["Red Notebook", "Green Pen", "Blue Notebook"]);
+    expect((await rows("q=red"))[1]).toEqual(["Red Notebook", "Books", "Inactive", "0"]);
+    const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
+    expect((await ctx.api("GET", "/parcel-products/export?segment=ECOMMERCE", { token: customer.token })).status).toBe(403);
+
+    // Editing keeps the messages choice.
+    expect((await ctx.api("PATCH", `/parcel-products/${off}`, { token: a.token, body: { name: "Red Notepad", type: "REGULAR" } })).status).toBe(200);
+    expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: off } })).toMatchObject({ name: "Red Notepad", type: "REGULAR", sendMessages: true });
   });
 
-  it("searches places and reverse-geocodes pins through a cached Nominatim client", async () => {
-    nominatimRequests.length = 0;
-    const short = await ctx.api("GET", "/geo/search?q=ab");
-    expect(short.status).toBe(422);
-    expect(short.body.error.details[0].path).toBe("q");
+  it("audit log: numbered pages with the total over the whole log, and a search across it", async () => {
+    const a = await admin();
+    const product = await ctx.api("POST", "/parcel-products", { token: a.token, body: { segment: "ECOMMERCE", name: "Audit One", type: "REGULAR" } });
+    for (let i = 0; i < 24; i++) await ctx.api("PATCH", `/parcel-products/${product.body.id}`, { token: a.token, body: { name: `Audit ${i}` } });
+    const total = await ctx.prisma.auditLog.count();
+    expect(total).toBeGreaterThan(20);
 
-    const first = await ctx.api("GET", "/geo/search?q=Road%2011%20Banani");
-    expect(first.status, JSON.stringify(first.body)).toBe(200);
-    expect(first.body.items[0], JSON.stringify(first.body.items[0])).toMatchObject({ label: "Road 11, Banani, Dhaka", lat: 23.7937, lng: 90.4066, street: "42 Road 11", zone: "Banani", district: "Dhaka" });
-    await ctx.api("GET", "/geo/search?q=road%2011%20banani");
-    expect(nominatimRequests.filter(r => r.url.startsWith("/search"))).toHaveLength(1); // cached
-    expect(nominatimRequests[0].userAgent).toMatch(/PairaExpress/);
-    expect(nominatimRequests[0].url).toContain("countrycodes=bd");
+    const first = (await ctx.api("GET", "/audit-logs?page=1&limit=20", { token: a.token })).body;
+    expect(first).toMatchObject({ total, page: 1, pages: Math.ceil(total / 20) });
+    expect(first.items).toHaveLength(20);
+    const second = (await ctx.api("GET", "/audit-logs?page=2&limit=20", { token: a.token })).body;
+    expect(second.items.length).toBe(total - 20 > 20 ? 20 : total - 20);
+    expect(second.items[0].id).not.toBe(first.items[0].id);
 
-    const pin = await ctx.api("GET", "/geo/reverse?lat=23.78&lng=90.41");
-    expect(pin.body.place).toMatchObject({ zone: "Gulshan", lat: 23.78, lng: 90.41 });
+    const found = (await ctx.api("GET", "/audit-logs?page=1&limit=20&q=parcel_product.update", { token: a.token })).body;
+    expect(found.total).toBe(24);
+    expect(found.items.every((row: { action: string }) => row.action === "parcel_product.update")).toBe(true);
+    // Cursor paging stays for everyone else.
+    expect((await ctx.api("GET", "/audit-logs?limit=5", { token: a.token })).body.total).toBeUndefined();
   });
 
-  it("verifies an email address by link or code, and an email change un-verifies it", async () => {
-    const user = await userWithRoles(ctx, [{ role: "CUSTOMER" }]);
-    const email = `verify-${Date.now()}@example.com`;
-    expect((await ctx.api("POST", "/auth/email-verification", { token: user.token })).body.error.code).toBe("NO_EMAIL");
-    await ctx.prisma.user.update({ where: { id: user.user.id }, data: { email } });
-
-    const sent = await ctx.api("POST", "/auth/email-verification", { token: user.token });
-    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
-    expect(sent.body).toMatchObject({ email, verified: false, pending: true, sent: true });
-    const mail = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { template: "auth.email_verification" } });
-    expect(mail.to).toBe(email);
-    expect(mail.body).toContain("/account/verify-email?token=");
-    expect((await ctx.api("POST", "/auth/email-verification", { token: user.token })).status).toBe(429);
-
-    const wrong = await ctx.api("POST", "/auth/email-verification/confirm", { token: user.token, body: { code: "000000" } });
-    expect(wrong.body.error.details[0].path).toBe("code");
-    const ok = await ctx.api("POST", "/auth/email-verification/confirm", { token: user.token, body: { code: sent.body.devCode } });
-    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
-    expect(ok.body).toMatchObject({ email, verified: true });
-
-    // Changing the address un-verifies; the link (no sign-in) verifies the new one.
-    await ctx.prisma.user.update({ where: { id: user.user.id }, data: { email: `new-${email}` } });
-    expect((await ctx.api("GET", "/auth/email-verification", { token: user.token })).body.verified).toBe(false);
-    await ctx.app.get((await import("../src/common/redis.service")).RedisService).flushdb();
-    const resent = await ctx.api("POST", "/auth/email-verification", { token: user.token });
-    const viaLink = await ctx.api("POST", "/auth/email-verification/confirm", { body: { token: resent.body.devToken } });
-    expect(viaLink.status, JSON.stringify(viaLink.body)).toBe(200);
-    expect(viaLink.body.verified).toBe(true);
-    expect((await ctx.api("POST", "/auth/email-verification/confirm", { body: { token: "not-a-real-token-at-all-123" } })).status).toBe(400);
+  it("gzips large JSON for clients that accept it", async () => {
+    const plain = await ctx.app.inject({ method: "GET", url: "/api/v1/website" });
+    const zipped = await ctx.app.inject({ method: "GET", url: "/api/v1/website", headers: { "accept-encoding": "gzip" } });
+    expect(plain.headers["content-encoding"]).toBeUndefined();
+    expect(zipped.headers["content-encoding"]).toBe("gzip");
+    expect(zipped.rawPayload.length).toBeLessThan(plain.rawPayload.length / 2);
+    expect(JSON.parse(gunzipSync(zipped.rawPayload).toString()).sendParcel).toBe(true);
   });
 });

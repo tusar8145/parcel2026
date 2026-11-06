@@ -162,6 +162,14 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     },
     defaultOff: ["sms"],
   },
+  "parcel.received_at_hub": {
+    label: "Received at first hub",
+    group: "Parcel",
+    audience: "Recipient",
+    vars: ["trackingId", "trackingUrl"],
+    sample: track,
+    sms: "Your parcel {{trackingId}} has reached our hub and is on its way to you. Track: {{trackingUrl}}",
+  },
   "parcel.out_for_delivery": {
     label: "Out for delivery",
     group: "Parcel",

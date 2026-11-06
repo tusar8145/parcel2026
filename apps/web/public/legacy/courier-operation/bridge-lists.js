@@ -148,6 +148,8 @@
   const hostOf = list => document.querySelector(`#mainContent [data-list="${CSS.escape(list.id)}"]`);
   const visibleLists = () => [...lists.values()].filter(hostOf);
   const pageSize = list => list.size || list.cfg.limit || PAGE;
+  /** Every list has numbered pages, except short feeds (cfg.more === false). */
+  const isNumbered = list => list.cfg.more !== false;
 
   /** The query for GET /parcels (without the cursor). */
   function query(list) {
@@ -206,7 +208,7 @@
     if (!Ops.ready) return;
     const params = query(list);
     const key = params.toString();
-    const numbered = !!list.cfg.register;
+    const numbered = isNumbered(list);
     if (numbered) {
       // New filters start again from the first page.
       list.page = key === list.key ? page || list.page : 1;
@@ -299,7 +301,7 @@
     }
     const n = list.ids.length;
     const noun = list.cfg.noun || "parcel";
-    if (list.cfg.register) return pager(list, foot, noun);
+    if (isNumbered(list)) return pager(list, foot, noun);
     const more = list.cursor && list.cfg.more !== false;
     const text = list.loading && !n ? "Loading…" : `Showing ${Ops.num(n)} ${noun}${n === 1 ? "" : "s"}${more ? " · more on the server" : ""} · updates live`;
     foot.innerHTML = `<span data-list-count>${esc(text)}</span>${more ? ` <button class="button button-sm" type="button" data-list-more="${esc(list.id)}"${list.loading ? " disabled" : ""}>${list.loading ? "Loading…" : `Load ${pageSize(list)} more`}</button>` : ""}`;
@@ -600,7 +602,7 @@
             list.ids.splice(at, 1);
             tr?.remove();
             // A numbered page fills up again from the next one, and its total drops.
-            if (list.cfg.register) reload = true;
+            if (isNumbered(list)) reload = true;
             continue;
           }
           const row = rowFor(id);

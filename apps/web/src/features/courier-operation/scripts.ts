@@ -90,5 +90,7 @@ export const scripts = [
   // Super admins: a link back to the super admin panel at the bottom of the sidebar.
   "/legacy/courier-operation/bridge-admin-link.js",
   // Period filter on Today and Analytics & SLA (after the navigation has laid the page out).
-  "/legacy/courier-operation/bridge-period.js"
+  "/legacy/courier-operation/bridge-period.js",
+  // Numbered pages for long tables (the parcel lists page on the server).
+  "/legacy/shared/table-pager.js"
 ];

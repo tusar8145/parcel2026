@@ -1,5 +1,6 @@
 /*
- * Super admin › SMS, Email & Push › "Push notifications" (window.DFPushTab, opened by bridge-notifications.js):
+ * Super admin push (window.DFPushTab, opened by bridge-notifications.js). The Firebase part is on Integration
+ * settings; sending and the history are on Notification settings › Push notifications:
  *
  * - Firebase: the service account file (uploaded or pasted; stored encrypted, never shown again), on / off,
  *   status (project, phones registered per app, last success / error) and a test push to a chosen person
@@ -124,7 +125,7 @@
     if (card) card.outerHTML = historyCard();
   }
 
-  async function draw(box) {
+  async function draw(box, part) {
     try {
       const [status, history] = await Promise.all([DF.api("/notifications/push"), DF.api("/notifications/push/broadcasts?limit=50")]);
       S.status = status;
@@ -134,15 +135,21 @@
       return;
     }
     if (!S.stillHere() || !box.isConnected) return;
-    box.innerHTML = `${statusCard()}${composeCard()}${historyCard()}`;
+    if (part === "integration") box.innerHTML = statusCard();
+    else {
+      const ready = S.status.configured && S.status.enabled;
+      const notice = ready ? "" : `<p class="panel-subtitle" id="pushNotReady" style="margin:0 0 12px">Firebase isn't sending yet, so messages reach notifications only. <button type="button" class="button button-sm" data-page-link="Integration settings">Set it up</button></p>`;
+      box.innerHTML = `${notice}${composeCard()}${historyCard()}`;
+    }
     drawChosen();
     const testChosen = document.getElementById("pushTestChosen");
     if (testChosen && S.testUser) testChosen.textContent = `To: ${S.testUser.name}`;
   }
 
-  window.DFPushTab = (box, stillHere) => {
+  /** part: "integration" (Firebase: key, on/off, test) or "messages" (send, history). */
+  window.DFPushTab = (box, stillHere, part = "messages") => {
     S.stillHere = stillHere || (() => true);
-    void draw(box);
+    void draw(box, part);
   };
 
   document.addEventListener("change", async event => {

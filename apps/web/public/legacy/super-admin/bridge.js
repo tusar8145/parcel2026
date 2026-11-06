@@ -308,6 +308,8 @@
     if (a.data?.code) return a.data.code;
     return a.entityType && a.entityId ? `${a.entityType.replace(/_/g, " ")} ${a.entityId.length > 20 ? a.entityId.slice(-6) : a.entityId}` : "Platform";
   }
+  /** A log entry as a row of the Audit & security log (bridge-audit.js pages them from the server). */
+  window.DFAdminAudit = { row: a => [auditTitle(a), a.actorLabel || "System", auditScope(a), when(a.createdAt), auditSource(a), "Success"] };
   const auditSource = a => (a.actorType === "API_KEY" ? "Merchant API" : a.actorType === "SYSTEM" ? "Automation" : a.ip ? `Web · ${a.ip}` : "Web");
   function auditKind(a) {
     if (

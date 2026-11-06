@@ -14,7 +14,7 @@ const list = { margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 } as 
 const cards = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 14 } as const;
 const tiles = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 14 } as const;
 
-function Block({ block, first }: { block: AboutBlock; first: boolean }) {
+export function Block({ block, first }: { block: AboutBlock; first: boolean }) {
   switch (block.kind) {
     case "heading":
       return <H2>{block.text}</H2>;

@@ -95,12 +95,7 @@
             ${field("brWhatsapp", "WhatsApp", s.whatsapp, { type: "url", placeholder: "https://wa.me/8801…", full: true })}
           </div></section>
       </div>
-      <section class="panel" style="margin-top:14px"><div class="panel-heading"><div><h2 class="panel-title">About page</h2><p class="panel-subtitle">The website's <a href="/about" target="_blank" rel="noopener">/about</a> page: change any part of it.</p></div><button class="button" type="button" data-about-reset>Restore original About text</button></div>
-        <div class="form-grid" style="margin-top:12px">
-          ${field("brAboutTitle", "Title", b.about?.title === `About ${b.companyName}` ? "" : b.about?.title, { full: true, placeholder: "About <company name>" })}
-          ${field("brAboutIntro", "Line under the title", b.about?.intro, { full: true, area: true, rows: 2, hint: "Empty: the original line." })}
-          ${field("brAboutBody", "Text", b.about?.body, { full: true, area: true, rows: 22, hint: ABOUT_FORMAT })}
-        </div></section>
+      <p class="panel-subtitle" style="margin:14px 0 0">The About page's text is in the About Us tab.</p>
       <div class="modal-actions"><button class="button button-primary" type="submit" ${S.saving ? "disabled" : ""}>${S.saving ? "Saving…" : "Save branding"}</button></div>
       <p class="panel-subtitle" style="margin:6px 0 0;text-align:right">Pages show the change within a minute. The mobile apps' names and icons are set when the apps are built.</p>
     </form>`;
@@ -116,7 +111,6 @@
       website: v("brWebsite"),
       contact: { phone: v("brPhone"), email: v("brEmail"), address: v("brAddress"), hours: v("brHours") },
       social: { facebook: v("brFacebook"), instagram: v("brInstagram"), linkedin: v("brLinkedin"), youtube: v("brYoutube"), whatsapp: v("brWhatsapp") },
-      about: { title: v("brAboutTitle"), intro: v("brAboutIntro"), body: $("brAboutBody").value.trim() },
     };
   }
 
@@ -185,8 +179,8 @@
       const typed = values();
       // Paira Express's own text is kept as "the default", so it follows a later change of the company name.
       const d = defaultAbout(typed.companyName);
-      if (typed.about.body === d.body) typed.about.body = "";
-      if (typed.about.intro === d.intro) typed.about.intro = "";
+      if (typed.about?.body === d.body) typed.about.body = "";
+      if (typed.about?.intro === d.intro) typed.about.intro = "";
       const body = {
         ...typed,
         ...(S.logo !== undefined ? { logo: S.logo } : {}),
@@ -197,12 +191,13 @@
       form.querySelector("[type=submit]").textContent = "Saving…";
       try {
         S.b = await DF.api("/branding", { method: "PUT", body });
+        await DF.clearSiteCache().catch(() => undefined); // the website's cached pages show the company too
         S.draft = null;
         S.logo = S.icon = undefined;
         try {
           localStorage.setItem("df.branding.v1", JSON.stringify(S.b));
         } catch {}
-        toast("Branding saved. Reload a page to see it there.");
+        toast("Company & branding saved. Reload a page to see it there.");
       } catch (error) {
         toast(DF.describe(error));
       }
@@ -232,6 +227,19 @@
     S.error = error;
     paint();
   }
+
+  /** The Company & branding tab of Website & branding (bridge-website.js): draws into #brHost. */
+  window.DFBranding = {
+    mount() {
+      S.open = true;
+      paint();
+      void load();
+    },
+    leave() {
+      S.open = false;
+      S.draft = S.logo = S.icon = undefined;
+    },
+  };
 
   const baseShowPage = window.showPage;
   window.showPage = showPage = function (page) { // eslint-disable-line no-global-assign, no-undef -- the page's own showPage (01.js)

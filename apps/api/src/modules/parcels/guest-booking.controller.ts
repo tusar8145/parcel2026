@@ -8,6 +8,7 @@ import { ApiZodBody, ZBody } from "../../common/zod";
 import { PrismaService } from "../../common/prisma.service";
 import { withIdempotency } from "../../common/idempotency";
 import { GuestBookingService } from "./guest-booking.service";
+import { WebsiteService } from "../website/website.service";
 
 const guestParcelSchema = createParcelSchema.extend({
   /** From POST /guest/verification/confirm. */
@@ -24,6 +25,7 @@ export class GuestBookingController {
   constructor(
     private readonly guest: GuestBookingService,
     private readonly prisma: PrismaService,
+    private readonly website: WebsiteService,
   ) {}
 
   /** Sends a 6-digit code to the sender's phone (60 s between codes; 429 with retryAfterSeconds). */
@@ -32,7 +34,8 @@ export class GuestBookingController {
   @Post("guest/verification")
   @HttpCode(200)
   @ApiZodBody(guestVerificationRequestSchema)
-  request(@ZBody(guestVerificationRequestSchema) body: z.infer<typeof guestVerificationRequestSchema>, @ReqMeta() meta: RequestMeta) {
+  async request(@ZBody(guestVerificationRequestSchema) body: z.infer<typeof guestVerificationRequestSchema>, @ReqMeta() meta: RequestMeta) {
+    await this.website.assertSendParcelOpen();
     return this.guest.requestCode(body.phone, meta);
   }
 
@@ -54,6 +57,7 @@ export class GuestBookingController {
   @ApiZodBody(guestParcelSchema)
   async book(@ZBody(guestParcelSchema) body: z.infer<typeof guestParcelSchema>, @Headers("idempotency-key") idempotencyKey: string | undefined, @ReqMeta() meta: RequestMeta) {
     const { verificationToken, ...input } = body;
+    await this.website.assertSendParcelOpen();
     const verification = idempotencyKey ? await this.guest.verificationFor(verificationToken).catch(() => null) : null;
     // Retries of a successful booking (same key) get the original response even though the verification is used up.
     const scope = `guest:${verification?.id ?? verificationToken.split(".")[0]}`;

@@ -34,10 +34,10 @@ button { cursor: pointer; }
 .fr-workspace span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .fr-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--amber-soft); color: var(--amber); white-space: nowrap; }
 .fr-nav { display: grid; gap: 2px; }
-.fr-nav button { display: flex; align-items: center; gap: 10px; border: 0; background: none; border-radius: 9px; padding: 9px 10px; text-align: left; color: #475467; font-weight: 600; }
-.fr-nav button svg { width: 18px; height: 18px; flex: none; }
-.fr-nav button:hover { background: #f3f6fb; }
-.fr-nav button[aria-current="page"] { background: var(--blue-soft); color: var(--blue); }
+.fr-nav a { text-decoration: none; display: flex; align-items: center; gap: 10px; border: 0; background: none; border-radius: 9px; padding: 9px 10px; text-align: left; color: #475467; font-weight: 600; }
+.fr-nav a svg { width: 18px; height: 18px; flex: none; }
+.fr-nav a:hover { background: #f3f6fb; }
+.fr-nav a[aria-current="page"] { background: var(--blue-soft); color: var(--blue); }
 .fr-nav .count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--amber-soft); color: var(--amber); font-size: 11px; text-align: center; }
 .fr-signout { margin-top: auto; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 9px; font-weight: 600; }
 

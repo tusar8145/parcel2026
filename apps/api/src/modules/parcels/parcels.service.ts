@@ -24,6 +24,7 @@ import { dateRangeWhere, failureWhere, forHubsWhere, merchantFiltersWhere, lineW
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
 import { PickupSlotsService } from "./pickup-slots.service";
+import { WebsiteService } from "../website/website.service";
 import { canSeeLiveLocation, signParcelAccess, trackingUrl } from "./parcel-access";
 import { returnChargeFor } from "../returns/return-charge";
 import { claimCn, linkCn } from "../cn-stock/cn-consume";
@@ -103,6 +104,7 @@ export class ParcelsService {
   /** Service packages: defaults, enforcement and prices (global module). */
   @Inject(PackagesService) private readonly packages!: PackagesService;
   @Inject(InboxService) private readonly inbox!: InboxService;
+  @Inject(WebsiteService) private readonly website!: WebsiteService;
 
   /** Parcels this actor may see. */
   scope(actor: Actor): Prisma.ParcelWhereInput {
@@ -126,6 +128,8 @@ export class ParcelsService {
   // ───────────── booking ─────────────
 
   async create(actor: Actor, input: CreateParcelInput, meta: RequestMeta, opts: BookingOptions = {}) {
+    // Website "Send a parcel" off: customers can't book; merchants and operations aren't affected.
+    if (actor.kind === "user" && actor.roles.every(r => r.role === "CUSTOMER")) await this.website.assertSendParcelOpen();
     const ctx = await this.bookingContext(actor, opts.merchantId);
     const parcel = await this.book(actor, ctx, input, meta, undefined, opts);
     return this.detail(actor, parcel.trackingId);

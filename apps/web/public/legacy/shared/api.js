@@ -164,6 +164,40 @@
   }
 
   /**
+   * Makes a panel's menu real links, so "Open in new tab", Ctrl+click and middle click work. A plain click stays
+   * as it was: the panel's own handler changes the page, without loading it again.
+   */
+  function menuLinks() {
+    const nav = document.getElementById("navigation");
+    if (!nav) return;
+    for (const button of nav.querySelectorAll("button.nav-item[data-page], button.nav-item[data-nav]")) {
+      const link = document.createElement("a");
+      for (const { name, value } of button.attributes) if (name !== "type") link.setAttribute(name, value);
+      link.href = `${location.pathname}?page=${DF.nav.slug(button.dataset.page || button.dataset.nav)}`;
+      link.append(...button.childNodes);
+      button.replaceWith(link);
+    }
+    if (document.getElementById("dfMenuLinksCss")) return;
+    document.head.insertAdjacentHTML("beforeend", `<style id="dfMenuLinksCss">a.nav-item{box-sizing:border-box;text-decoration:none}</style>`);
+    window.addEventListener(
+      "click",
+      event => {
+        if (!event.target.closest?.("#navigation a.nav-item")) return;
+        // Ctrl, Cmd or Shift: the browser opens the link; this tab stays as it is.
+        if (event.ctrlKey || event.metaKey || event.shiftKey) event.stopImmediatePropagation();
+        else event.preventDefault();
+      },
+      true,
+    );
+  }
+
+  /** After saving website content: clears the public pages' cache (app/site-cache/route.ts), so it shows at once. */
+  async function clearSiteCache() {
+    const response = await fetch("/site-cache", { method: "POST", headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {} });
+    if (!response.ok) throw new Error("Saved, but the website's cache could not be cleared. The change shows within 5 minutes.");
+  }
+
+  /**
    * Shows a button is working: spinner, disabled, aria-busy, until `work` ends (text: its words meanwhile).
    * A second click while it runs does nothing. Returns what `work` returns.
    */
@@ -318,7 +352,7 @@
     isWebsiteCustomer: () => !!state.user && state.user.roles.includes("CUSTOMER") && (!state.user.panel || state.user.panel === "/account"),
     /** Re-reads the session (e.g. after a merchant application adds the merchant role); resolves to the user or null. */
     refresh: () => refresh(),
-    requestOtp: (phone, purpose) => rawFetch("/auth/otp", { method: "POST", body: { phone, purpose }, auth: false }),
+    requestOtp: (phone, purpose, intent) => rawFetch("/auth/otp", { method: "POST", body: { phone, purpose, intent }, auth: false }),
     login: async (identifier, password) => sessionOrChallenge(await rawFetch("/auth/login", { method: "POST", body: { identifier, password }, auth: false })),
     loginWithOtp: async (phone, otp) => sessionOrChallenge(await rawFetch("/auth/login/otp", { method: "POST", body: { phone, otp }, auth: false })),
     /** Second step: an authenticator code or a recovery code. */
@@ -797,10 +831,13 @@
     }
     // Platform settings managed in super admin (GET /settings/platform-config, 404 until saved).
     const jobs = [];
+    // The sign-in pages use neither of the two large lists: they arrive in the background, not before the form.
+    const signingIn = app === "website" && !user && /^\/(login|signup|forgot-password)\/?$/.test(location.pathname);
+    const startUp = job => void (signingIn ? job : jobs.push(job));
     if (app !== "franchise" && app !== "courier-operation")
-      jobs.push(rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined));
+      startUp(rawFetch("/settings/platform-config", { auth: false }).then(c => (state.platformConfig = c)).catch(() => undefined));
     if (app === "website") {
-      jobs.push(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
+      startUp(rawFetch("/catalog", { auth: false }).then(c => (state.catalog = c)).catch(() => undefined));
       setCustomerSession(auth.isWebsiteCustomer() ? user : null);
       memory.set(PARCELS_KEY, "[]");
       memory.set(ADDRESS_KEY, "[]");
@@ -840,6 +877,8 @@
     apiRaw,
     download,
     busy,
+    clearSiteCache,
+    menuLinks,
     ApiError,
     auth,
     get supportAccess() {

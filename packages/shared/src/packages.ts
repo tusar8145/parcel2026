@@ -145,6 +145,7 @@ export const PARCEL_NOTIFICATIONS = [
   { code: "notify.booked", label: "Pickup request received", audience: "sender", events: ["parcel.booked"] },
   { code: "notify.pickup_assigned", label: "Pickup rider assigned", audience: "sender", events: ["parcel.pickup_assigned"] },
   { code: "notify.picked_up", label: "Parcel picked up", audience: "sender", events: ["parcel.picked_up"] },
+  { code: "notify.received_at_hub", label: "Received at first hub", audience: "recipient", events: ["parcel.received_at_hub"] },
   { code: "notify.out_for_delivery", label: "Out for delivery", audience: "recipient", events: ["parcel.out_for_delivery"] },
   { code: "notify.delivery_code", label: "Delivery code", audience: "recipient", events: ["parcel.delivery_code"] },
   { code: "notify.delivered", label: "Delivered", audience: "sender", events: ["parcel.delivered"] },

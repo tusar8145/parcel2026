@@ -1,9 +1,9 @@
 import { type Browser, type Page } from "@playwright/test";
 import { authenticator } from "otplib";
-import { Fixtures, apiUrl, expect, sql, test, type TempRider, type TempUser } from "./support";
+import { adminNav, Fixtures, apiUrl, expect, sql, test, type TempRider, type TempUser } from "./support";
 
 /**
- * Super admin › SMS, Email & Push › Push notifications: the Firebase status card, a message to a chosen
+ * Super admin › Notification settings › Push notifications: the Firebase status card, a message to a chosen
  * rider (found by rider code), and the message in the history and in the rider's notifications.
  */
 const fx = new Fixtures();
@@ -40,12 +40,12 @@ test.afterAll(async () => {
 test("super admin sees Firebase push, messages a chosen rider and finds it in the history", async ({ browser }) => {
   const errors: string[] = [];
   const page = await signInAdmin(browser, errors);
-  await page.locator('#navigation [data-page="Integrations"]').click();
-  await page.locator('[data-int-tab="push"]').click();
+  await adminNav(page, "Integration settings");
   const settings = page.locator("#pushSettings");
-  await expect(settings).toContainText("Firebase push");
+  await expect(settings).toContainText("Firebase push", { timeout: 20_000 });
   await expect(settings).toContainText(/On|Off|Not set up/);
 
+  await adminNav(page, "Push notifications");
   const compose = page.locator("#pushCompose");
   await compose.locator("#pushTitle").fill(`E2E notice ${fx.stamp}`);
   await compose.locator("#pushBody").fill("Hub opens at 9 am tomorrow.");

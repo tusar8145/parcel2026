@@ -9,6 +9,7 @@ import { AppError, unauthorized } from "../../common/errors";
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { UserActor } from "../../common/auth/actor";
 import { OtpService } from "./otp.service";
+import { WebsiteService } from "../website/website.service";
 import { MfaService, mfaRequiredFor } from "./mfa.service";
 import type { SessionTokens } from "./session.service";
 import { SessionService } from "./session.service";
@@ -100,6 +101,8 @@ export class AuthService {
 
   /** Security notices (property injection keeps the constructor stable for parallel edits). */
   @Inject(NotifyService) private readonly notices!: NotifyService;
+  /** Website settings: sign-up and customer sign-in switches. */
+  @Inject(WebsiteService) private readonly website!: WebsiteService;
 
   /** "Your password was changed" to the account holder; a notice that can't be queued never undoes the change. */
   private async passwordChangedNotice(userId: string) {
@@ -111,7 +114,8 @@ export class AuthService {
    * Doesn't reveal whether the number is registered: sign-in and reset codes are only
    * sent to existing accounts, sign-up codes only to new numbers.
    */
-  async requestOtp(phone: string, purpose: OtpPurpose, meta: RequestMeta) {
+  async requestOtp(phone: string, purpose: OtpPurpose, meta: RequestMeta, intent?: "merchant" | "rider" | "franchise") {
+    if (purpose === "SIGNUP") await this.website.assertOpen(intent ?? "customer");
     const exists = !!(await this.prisma.user.findUnique({ where: { phone }, select: { id: true } }));
     const message = "If this number can be used, we've sent a 6-digit code to it.";
     if (purpose === "SIGNUP" && exists) {
@@ -123,6 +127,7 @@ export class AuthService {
   }
 
   async signup(input: z.infer<typeof signupSchema>, meta: RequestMeta) {
+    await this.website.assertOpen(input.intent ?? "customer");
     await this.otp.verify(input.phone, "SIGNUP", input.otp);
     const user = await this.prisma.$transaction(async tx => {
       if (await tx.user.findUnique({ where: { phone: input.phone } }))
@@ -181,8 +186,19 @@ export class AuthService {
    * First factor passed. Users with two-step verification get a challenge instead of a
    * session; roles that require it but aren't enrolled yet must set it up first.
    */
+  /**
+   * Website customer sign-in off: only accounts that are nothing but a customer are refused. Staff, merchants,
+   * riders and franchises keep signing in, and so does anyone with a partner application in progress.
+   */
+  private async assertCustomerSignIn(user: UserRecord) {
+    if (user.roles.some(r => r.role !== "CUSTOMER") || (await this.website.isOpen("customer"))) return;
+    if (await this.prisma.partnerApplication.count({ where: { applicantId: user.id } })) return;
+    throw new AppError("CUSTOMER_LOGIN_OFF", "Customer sign-in is turned off right now.", HttpStatus.FORBIDDEN);
+  }
+
   private async beginLogin(user: UserRecord, meta: RequestMeta, method: "password" | "otp"): Promise<LoginResult> {
     if (user.status !== "ACTIVE") throw unauthorized("ACCOUNT_INACTIVE", "This account is suspended. Contact support.");
+    await this.assertCustomerSignIn(user);
     const enrolled = !!user.mfa?.enabledAt;
     if (!enrolled && !mfaRequiredFor(user.roles.map(r => r.role))) return this.startSession(user, meta);
     if (user.failedLoginCount || user.lockedUntil) await this.prisma.user.update({ where: { id: user.id }, data: { failedLoginCount: 0, lockedUntil: null } });

@@ -487,6 +487,7 @@ export const NOTIFICATION_GUIDE: {
     { stage: "First mile", moment: "Pickup request submitted / Booked for drop-off", sms: "প্রেরক: বুকিং পাওয়া গেছে", email: "প্রেরক: বুকিং পাওয়া গেছে", push: "Operations: নতুন অর্ডার বা পিকআপ অনুরোধ (Ops manager ও ওই হাবের অপারেটর)" },
     { stage: "First mile", moment: "Pickup accepted", sms: "— (চালু করা যায়)", email: "প্রেরক: রাইডার আসছেন", push: "Rider: New pickup" },
     { stage: "First mile", moment: "Picked up", sms: "— (চালু করা যায়)", email: "প্রেরক: পার্সেল নেওয়া হয়েছে", push: "—" },
+    { stage: "First mile", moment: "Received at first hub", sms: "প্রাপক: পার্সেল প্রথম হাবে পৌঁছেছে, ট্র্যাকিং লিংকসহ (বন্ধ করা যায়)", email: "—", push: "—" },
     { stage: "Middle mile", moment: "In transit / At hub", sms: "—", email: "—", push: "—" },
     { stage: "Last mile", moment: "Assigned to delivery rider", sms: "—", email: "—", push: "Rider: New delivery" },
     { stage: "Last mile", moment: "Out for delivery", sms: "প্রাপক: Delivery code (OTP), সবসময় যায়, বন্ধ করা যায় না", email: "প্রাপক: ডেলিভারিতে বের হয়েছে", push: "—" },

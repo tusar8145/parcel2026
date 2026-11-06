@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { type Browser, type Page } from "@playwright/test";
-import { API_ORIGIN, confirmDialog, expect, test } from "./support";
+import { adminNav, API_ORIGIN, confirmDialog, expect, test } from "./support";
 import { hash as argonHash } from "@node-rs/argon2";
 import { authenticator } from "otplib";
 import pg from "pg";
@@ -54,11 +54,11 @@ async function open(browser: Browser, errors: string[]) {
   expect(enabled.ok(), await enabled.text()).toBe(true);
   await page.goto("/super-admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
-  await expect(page.locator('#navigation [data-page="Integrations"]')).toBeVisible();
+  await expect(page.locator('#navigation [data-page="Integration settings"]')).toBeVisible();
   return page;
 }
 
-const nav = (page: Page, name: string) => page.click(`#navigation [data-page="${name}"]`);
+const nav = adminNav;
 const toast = (page: Page) => page.locator("#toast");
 /** Calls the API as the signed-in admin. */
 const api = (page: Page, path: string, method = "GET", body?: unknown) =>
@@ -159,7 +159,7 @@ test.describe.serial("super admin notifications", () => {
     await api(page, "/notifications/templates/parcel.changed_to_drop_off/sms", "PUT", { body: "{{trackingId}}: bring it to {{hub}}. Tk {{charge}}." });
     try {
       // Global notifications: every group but Parcel, one tab each with its count.
-      await nav(page, "Integrations");
+      await nav(page, "Integration settings");
       await nav(page, "Platform settings");
       const table = page.locator("#notificationEventsTable");
       const rows = table.locator("tr[data-nt-event]");
@@ -241,8 +241,7 @@ test.describe.serial("super admin notifications", () => {
   });
 
   test("validates and saves SMS limits (SMS, Email & Push › Channels & limits)", async () => {
-    await nav(page, "Integrations");
-    await page.click('[data-int-tab="settings"]');
+    await nav(page, "Channels & limits");
     const form = page.locator("#notificationLimitsForm");
     const perHour = await form.locator("#ntPerHour").inputValue();
     const perDay = form.locator("#ntPerDay");
@@ -258,14 +257,12 @@ test.describe.serial("super admin notifications", () => {
   });
 
   test("shows real gateway status cards on Integrations", async () => {
-    // SMS, Email & Push. Tabs: Channels & limits (first) · Recent messages · Gateway Settings · Push notifications.
-    await nav(page, "Integrations");
-    await expect(page.locator("#mainContent .page-heading h1")).toHaveText("SMS, Email & Push");
-    await expect(page.locator("[data-int-tab]")).toHaveText(["Channels & limits", "Recent messages", "Gateway Settings", "Push notifications"]);
+    await nav(page, "Channels & limits");
+    await expect(page.locator("#mainContent .page-heading h1")).toHaveText("Channel & limits");
     await expect(page.locator("#sysChannelsForm")).toBeVisible();
-    await page.click('[data-int-tab="messages"]');
+    await nav(page, "Recent messages");
     await expect(page.locator("#outboxTable")).toBeVisible();
-    await page.click('[data-int-tab="gateways"]');
+    await nav(page, "Integration settings");
     const sms = page.locator('[data-gateway="SMS"]');
     const email = page.locator('[data-gateway="EMAIL"]');
     await expect(sms).toContainText("SMS gateway · mram");

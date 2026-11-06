@@ -44,7 +44,7 @@ interface DFClient {
     /** Re-reads the session (new roles after a merchant application); the user or null. */
     refresh(): Promise<SessionUser | null>;
     logout(): Promise<void>;
-    requestOtp(phone: string, purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET"): Promise<OtpSent>;
+    requestOtp(phone: string, purpose: "SIGNUP" | "LOGIN" | "PASSWORD_RESET", intent?: "merchant" | "rider" | "franchise"): Promise<OtpSent>;
     login(identifier: string, password: string): Promise<SessionUser | MfaChallenge>;
     loginWithOtp(phone: string, otp: string): Promise<SessionUser | MfaChallenge>;
     loginMfa(mfaToken: string, code: string): Promise<SessionUser>;

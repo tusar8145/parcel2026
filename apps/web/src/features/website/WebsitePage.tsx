@@ -17,6 +17,8 @@ import WebsiteApp from "./react/WebsiteApp";
 import PanelAssetPrefetch from "./PanelAssetPrefetch";
 import { WEBSITE_ROUTES } from "./routes";
 import { scripts } from "./scripts";
+import SiteSwitches from "./SiteSwitches";
+import { siteContent } from "./siteContent";
 
 /** The path table the browser router (DF.route in public/legacy/shared/api.js) reads. */
 const ROUTE_TABLE = JSON.stringify({ routes: WEBSITE_ROUTES.map(({ legacy, path, title }) => ({ legacy, path, title })) });
@@ -26,10 +28,12 @@ const ROUTE_TABLE = JSON.stringify({ routes: WEBSITE_ROUTES.map(({ legacy, path,
  * then show the route's view. Server-only pages (privacy, terms) pass their content as
  * `staticPage`, which replaces the home sections.
  */
-export default function WebsitePage({ staticPage }: { staticPage?: { name: string; content: ReactNode } } = {}) {
+export default async function WebsitePage({ staticPage }: { staticPage?: { name: string; content: ReactNode } } = {}) {
+  const site = await siteContent();
   return (
     <>
       {" "}
+      <SiteSwitches site={site} />
       <TopNote /> <SiteHeader legacy />{" "}
       {staticPage ? (
         <main data-static-page={staticPage.name}>{staticPage.content}</main>
@@ -37,7 +41,7 @@ export default function WebsitePage({ staticPage }: { staticPage?: { name: strin
         <main>
           {" "}
           <Hero /> <StatStrip /> <TrackingSection legacy /> <ServicesSection /> <PricingSection legacy /> <PartnersSection />{" "}
-          <StepsBand /> <FaqSection /> <CtaBand />{" "}
+          <StepsBand /> <FaqSection faqs={site.faqs} /> <CtaBand />{" "}
         </main>
       )}{" "}
       <SiteFooter /> <Toast />{" "}

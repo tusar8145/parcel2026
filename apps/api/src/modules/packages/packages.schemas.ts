@@ -88,6 +88,21 @@ export const productSchema = z.object({
   /** "Send SMS & email for this product": false = its parcels get no parcel messages at all. */
   sendMessages: z.boolean().default(true),
 });
+/** Operational settings › Products › Export: a list, with the page's search and status. */
+export const exportProductsQuerySchema = z.object({
+  segment: z.enum(["ECOMMERCE", "BANKING_FINANCIAL"]),
+  q: z.string().trim().max(120).optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  /** By name, as the page's table shows it. */
+  sort: z.enum(["asc", "desc"]).optional(),
+});
+
+/** Super admin › Service plans › Products: the segment's products with messages on; every other one is off. */
+export const productMessagesSchema = z.object({
+  segment: z.enum(["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"]),
+  productIds: z.array(z.uuid()).max(5000),
+});
+
 // Explicit (not `.partial()`): zod applies defaults inside optional fields, which would reset type / sendMessages on every edit.
 export const updateProductSchema = z.object({
   name: productSchema.shape.name.optional(),

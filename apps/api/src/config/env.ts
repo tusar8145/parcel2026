@@ -6,6 +6,8 @@ const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().positive().default(4000),
+    /** Address the API listens on; 127.0.0.1 when only the web server on this machine should reach it. */
+    HOST: z.string().default("0.0.0.0"),
     APP_URL: z.url(),
     CORS_ORIGINS: z.string().default("").transform(s => s.split(",").map(o => o.trim()).filter(Boolean)),
     DATABASE_URL: z.string().startsWith("postgres"),

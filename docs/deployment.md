@@ -46,6 +46,7 @@ Create `apps/api/.env` (the API and the worker read it from their working direct
 ```env
 NODE_ENV=production
 PORT=4000
+HOST=127.0.0.1
 APP_URL=https://yourdomain.com
 CORS_ORIGINS=https://yourdomain.com
 DATABASE_URL=postgresql://pairaexpress:strong-password@localhost:5432/pairaexpress

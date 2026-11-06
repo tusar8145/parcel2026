@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.11.4 — 2026-11-07
+- Installation: the API can be set to accept connections only from the same server.
+
 ## 1.11.3 — 2026-11-06
 - Website: Terms, Privacy and About open at once, and the other pages open sooner.
 - Website: visitors no longer download the panels on every page. Only the sign-in page does that, after it has opened, so panels still open quickly after signing in.

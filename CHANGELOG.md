@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.13.1 — 2026-11-07
+- Merchant, Rider and Operations apps: new versions (1.4.1, 1.3.1, 1.1.1) that connect to deliveryfast.com.bd. Install the new APK over the old app, then sign in with your Delivery Fast account.
+
 ## 1.13.0 — 2026-11-07
 - Super admin › Hubs: each hub can have an in-charge name and phone, both optional, shown in the hub list.
 

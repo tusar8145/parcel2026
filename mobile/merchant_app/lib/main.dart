@@ -18,7 +18,7 @@ Future<void> main() async {
 void configureMerchantApp() {
   AppConfig.role = 'Merchant';
   AppConfig.appName = 'Merchant';
-  AppConfig.version = '1.4.0';
+  AppConfig.version = '1.4.1';
   AppConfig.allows = (user) => user['merchant'] != null;
   AppConfig.notAllowed = 'This app is for merchants. Your account is not a merchant account.';
   AppConfig.home = () => const HomeShell();

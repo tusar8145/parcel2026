@@ -82,12 +82,13 @@
       .map(
         h => `<tr data-hub-row="${esc(h.id)}"${h.id === S.central ? ' data-central-hub style="background:#eff4ff;box-shadow:inset 3px 0 0 #2f55c9"' : ""}><td class="primary-cell">${esc(h.name)}${h.type === "FRANCHISE" ? ` <span class="status status-blue" data-hub-tag>Franchise</span>` : ""}${h.id === S.central ? ` <span class="status status-blue" data-central-tag style="background:#2f55c9;color:#fff">★ Central hub</span>` : ""}<span class="subcell">${esc(h.code)}</span></td>
           <td>${esc([h.zone, h.district].filter(Boolean).join(", "))}<span class="subcell">${esc(h.address)}</span></td>
+          <td>${h.inChargeName || h.inChargePhone ? `${esc(h.inChargeName || "—")}<span class="subcell">${esc(h.inChargePhone || "")}</span>` : "—"}</td>
           <td>${h.capacity ? num(h.capacity) : "—"}</td>
           <td>${pill(h.active ? "Active" : "Inactive", h.active)}</td>
           <td style="white-space:nowrap">${h.id !== S.central && h.active && h.type !== "FRANCHISE" ? `<button class="mini-button" data-hz-central="${esc(h.id)}">Make central hub</button> ` : ""}<button class="mini-button" data-hz-edit="${esc(h.id)}">Edit</button> <button class="mini-button" data-hz-toggle="${esc(h.id)}">${h.active ? "Deactivate" : "Activate"}</button> <button class="mini-button" data-hz-delete="${esc(h.id)}">Delete</button></td></tr>`,
       )
       .join("");
-    return `<section class="panel table-panel"><div class="panel-heading"><div><h2 class="panel-title">Hubs</h2><p class="panel-subtitle">${S.hubs.filter(h => h.active).length} active of ${S.hubs.length}. A hub's place sets where drop-offs are priced from; its capacity is used for planning.</p><p class="panel-subtitle" data-central-note style="margin-top:4px;${central ? "" : "color:#b42318;font-weight:600"}">${central ? `Central hub: <strong>${esc(central.name)}</strong>. Hubs send riders' cash here (Accounts › Hub transfers); only cash that reached it is settled with merchants and customers.` : "No central hub yet: choose one with “Make central hub” so hubs can send riders' cash and settlements can be paid."}</p></div><div class="table-tools"><button class="button button-primary" id="hzNewHub">Add hub</button></div></div><div class="table-scroll"><table><thead><tr><th>HUB</th><th>PLACE</th><th>CAPACITY</th><th>STATUS</th><th></th></tr></thead><tbody id="hzHubs">${rows || `<tr><td colspan="5" class="empty-state">No hubs yet.</td></tr>`}</tbody></table></div></section>`;
+    return `<section class="panel table-panel"><div class="panel-heading"><div><h2 class="panel-title">Hubs</h2><p class="panel-subtitle">${S.hubs.filter(h => h.active).length} active of ${S.hubs.length}. A hub's place sets where drop-offs are priced from; its capacity is used for planning.</p><p class="panel-subtitle" data-central-note style="margin-top:4px;${central ? "" : "color:#b42318;font-weight:600"}">${central ? `Central hub: <strong>${esc(central.name)}</strong>. Hubs send riders' cash here (Accounts › Hub transfers); only cash that reached it is settled with merchants and customers.` : "No central hub yet: choose one with “Make central hub” so hubs can send riders' cash and settlements can be paid."}</p></div><div class="table-tools"><button class="button button-primary" id="hzNewHub">Add hub</button></div></div><div class="table-scroll"><table><thead><tr><th>HUB</th><th>PLACE</th><th>IN-CHARGE</th><th>CAPACITY</th><th>STATUS</th><th></th></tr></thead><tbody id="hzHubs">${rows || `<tr><td colspan="5" class="empty-state">No hubs yet.</td></tr>`}</tbody></table></div></section>`;
   }
 
   function zonesMarkup() {
@@ -149,6 +150,7 @@
        <div class="field"><label for="hzDistrict">District</label><select id="hzDistrict" required><option value="">Choose</option>${districts.map(d => `<option ${d === h?.district ? "selected" : ""}>${esc(d)}</option>`).join("")}</select></div>
        <div class="field"><label for="hzZone">Zone (thana / upazila)</label><select id="hzZone" required><option value="">Choose</option>${zones.map(z => `<option ${z === h?.zone ? "selected" : ""}>${esc(z)}</option>`).join("")}</select></div>
        <div style="grid-column:1/-1">${field("hzAddress", "Address", h?.address, 'required maxlength="300"')}</div>
+       ${field("hzInChargeName", "In-charge name (optional)", h?.inChargeName, 'maxlength="120"')}${field("hzInChargePhone", "In-charge phone (optional)", h?.inChargePhone, 'maxlength="20" inputmode="tel"')}
        ${field("hzCapacity", "Capacity (parcels at once)", h?.capacity ?? "", 'type="number" min="1" step="1"')}${field("hzLat", "Latitude (optional)", h?.lat ?? "", 'type="number" step="any" min="20" max="27"')}${field("hzLng", "Longitude (optional)", h?.lng ?? "", 'type="number" step="any" min="88" max="93"')}`,
     );
     $("hzDistrict").addEventListener("change", () => {
@@ -180,7 +182,7 @@
     $("hzError").textContent = "";
     try {
       if (f.kind === "hub") {
-        const body = { name: $("hzName").value.trim(), district: $("hzDistrict").value, zone: $("hzZone").value || null, address: $("hzAddress").value.trim(), capacity: optNum("hzCapacity"), lat: optNum("hzLat"), lng: optNum("hzLng") };
+        const body = { name: $("hzName").value.trim(), district: $("hzDistrict").value, zone: $("hzZone").value || null, address: $("hzAddress").value.trim(), inChargeName: $("hzInChargeName").value.trim() || null, inChargePhone: $("hzInChargePhone").value.trim() || null, capacity: optNum("hzCapacity"), lat: optNum("hzLat"), lng: optNum("hzLng") };
         if (f.id) await DF.api(`/hubs/${f.id}`, { method: "PATCH", body });
         else await DF.api("/hubs", { method: "POST", body: { ...body, code: $("hzCode").value.trim() } });
         toast(f.id ? `${body.name} saved.` : `${body.name} added.`);

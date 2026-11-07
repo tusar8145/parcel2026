@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.13.0 — 2026-11-07
+- Super admin › Hubs: each hub can have an in-charge name and phone, both optional, shown in the hub list.
+
 ## 1.12.0 — 2026-11-07
 - Delivery Fast: a new name and logo everywhere, on the website, panels, documents, emails and the browser tab icon.
 

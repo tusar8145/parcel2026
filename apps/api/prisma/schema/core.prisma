@@ -327,6 +327,9 @@ model Hub {
   /// The catalog zone (of `district`) the hub stands in: drop-offs are priced from it.
   zone              String?
   address           String
+  /// The person in charge of the hub (optional); the phone may be a landline.
+  inChargeName      String?
+  inChargePhone     String?
   active            Boolean               @default(true)
   /// Most parcels the hub can hold at once (null = not set); planning location (WGS84).
   capacity          Int?

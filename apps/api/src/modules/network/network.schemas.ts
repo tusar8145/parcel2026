@@ -8,6 +8,9 @@ export const hubSchema = z.object({
   /** The catalog zone of `district` the hub stands in (drop-offs are priced from it); null = not set. */
   zone: z.string().trim().min(1).max(80).nullable().optional(),
   address: z.string().trim().min(2).max(300),
+  /** The person in charge of the hub (optional). The phone may be a landline. */
+  inChargeName: z.string().trim().max(120).nullable().optional(),
+  inChargePhone: z.string().trim().regex(/^[0-9+() -]{6,20}$/, "Enter a phone number").nullable().optional(),
   active: z.boolean().default(true),
   /** Most parcels the hub can hold at once (planning); null = not set. */
   capacity: z.number().int().min(1).max(1_000_000).nullable().optional(),

@@ -17,7 +17,7 @@ export class NetworkController {
   @Get("hubs")
   listHubs(@CurrentActor() actor: Actor, @Query("includeInactive") includeInactive?: string) {
     if (includeInactive === "true" && !actor.permissions.has("hub:manage")) throw forbidden();
-    return this.network.listHubs(includeInactive === "true");
+    return this.network.listHubs(includeInactive === "true", actor.permissions.has("hub:manage"));
   }
 
   @RequirePermissions("hub:manage")

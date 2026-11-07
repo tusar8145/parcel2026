@@ -284,7 +284,10 @@ describe("Geography admin", () => {
     const o = as(ops.token);
     const created = await o.post("/hubs", { code: "GEO-NEW", name: "Geo New Hub", district: "dhaka north", zone: "banani", address: "Road 11", lat: 23.79, lng: 90.4 });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
-    expect(created.body).toMatchObject({ district: "Dhaka North", zone: "Banani", active: true });
+    expect(created.body).toMatchObject({ district: "Dhaka North", zone: "Banani", active: true, inChargeName: null, inChargePhone: null });
+    const inCharge = await o.patch(`/hubs/${created.body.id}`, { inChargeName: "Md Karim", inChargePhone: "02-84531417" });
+    expect(inCharge.body).toMatchObject({ inChargeName: "Md Karim", inChargePhone: "02-84531417" });
+    expect((await o.patch(`/hubs/${created.body.id}`, { inChargePhone: "call him" })).status).toBe(422);
     expect((await o.post("/hubs", { code: "GEO-DUP", name: "geo new hub", district: "Dhaka North", address: "x road" })).body.error.code).toBe("HUB_NAME_TAKEN");
     expect((await o.post("/hubs", { code: "GEO-BAD", name: "Bad District Hub", district: "Atlantis", address: "x road" })).body.error.code).toBe("HUB_DISTRICT_INVALID");
     expect((await o.post("/hubs", { code: "GEO-BAD", name: "Bad Zone Hub", district: "Dhaka North", zone: "Mirpur", address: "x road" })).body.error.code).toBe("HUB_ZONE_INVALID");

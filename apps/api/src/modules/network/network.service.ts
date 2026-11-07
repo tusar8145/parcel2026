@@ -90,8 +90,10 @@ export class NetworkService {
     if (clash) throw new AppError("HUB_NAME_TAKEN", `Hub ${clash.code} already has the name ${name.trim()}`, HttpStatus.CONFLICT, { field: "name" });
   }
 
-  listHubs(includeInactive: boolean) {
-    return this.prisma.hub.findMany({ where: includeInactive ? {} : { active: true }, orderBy: { name: "asc" } });
+  /** Every signed-in user lists hubs; the in-charge's name and phone are only for those who manage them. */
+  async listHubs(includeInactive: boolean, canManage = false) {
+    const hubs = await this.prisma.hub.findMany({ where: includeInactive ? {} : { active: true }, orderBy: { name: "asc" } });
+    return canManage ? hubs : hubs.map(({ inChargeName: _name, inChargePhone: _phone, ...hub }) => hub);
   }
 
   async createHub(actor: Actor, input: z.infer<typeof hubSchema>, meta: RequestMeta) {

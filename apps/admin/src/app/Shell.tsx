@@ -110,9 +110,9 @@ function Sidebar() {
           );
         })}
         <div className="nav-extras">
-          <a className="foot-link" href="/ops/" title="Open courier operations console" style={{ padding: "6px 8px", fontSize: 11.5, gap: 6 }}>
+          <a className="foot-link" href="/ops/" title="Open operations console" style={{ padding: "6px 8px", fontSize: 11.5, gap: 6 }}>
             <Icon name="truck" size={14} />
-            <span>Open courier operations console ↗</span>
+            <span>Open operations console ↗</span>
           </a>
         </div>
       </nav>

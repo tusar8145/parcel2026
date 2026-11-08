@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.22.1 — 2026-11-09
+- The menu links between the panels are now "Open admin console ↗" (in the Operations console) and "Open operations console ↗" (in the super admin panel).
+
 ## 1.22.0 — 2026-11-09
 - Super admins now use the new super admin panel: signing in, notifications and every link to the old panel open the same page there. The classic panel is no longer in its menu.
 - New super admin panel: the large icons in the notes at the top of Registrations, Admin users & roles and Import Template settings are the normal size again; "Open courier operations console ↗" in the menu is smaller.

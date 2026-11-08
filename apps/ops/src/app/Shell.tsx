@@ -160,12 +160,12 @@ function Sidebar() {
             <span>Classic console</span>
           </a>
         </div>
-        {/* At the end of the menu (they scroll with it), like the super admin panel's "Open courier operations console". */}
+        {/* At the end of the menu (they scroll with it), like the super admin panel's "Open operations console". */}
         <div className="nav-extras">
           {hasRole("SUPER_ADMIN") ? (
             <a className="foot-link" href="/super-admin" title="Back to the super admin panel">
               <Icon name="lock" />
-              <span>Open super admin console ↗</span>
+              <span>Open admin console ↗</span>
             </a>
           ) : null}
           {/* Same as the classic console's "Get the apps" card: /apps lists the Merchant, Rider and Operations APKs. */}

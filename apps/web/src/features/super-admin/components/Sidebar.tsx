@@ -230,7 +230,7 @@ export default function Sidebar() {
           <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
             <use href="#i-truck" />
           </svg>
-          {" Open courier operations console ↗"}
+          {" Open operations console ↗"}
         </a>
         <a className="ops-link" href="/admin/">
           <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">

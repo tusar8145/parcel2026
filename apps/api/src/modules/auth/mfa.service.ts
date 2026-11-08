@@ -33,7 +33,15 @@ export interface MfaChallenge {
   method: "password" | "otp";
 }
 
-export const mfaRequiredFor = (roles: readonly Role[]) => roles.some(r => MFA_REQUIRED_ROLES.includes(r));
+/**
+ * SUPER_ADMIN_MFA=off (API environment) pauses two-step verification for super admin accounts: it isn't required,
+ * and an enrolled authenticator isn't asked for. The enrolment is kept, so removing the setting turns it back on
+ * with the same authenticator app. Other accounts that turned it on for themselves are not affected.
+ */
+const pausedFor = (roles: readonly Role[]) => process.env.SUPER_ADMIN_MFA === "off" && roles.includes("SUPER_ADMIN");
+export const mfaRequiredFor = (roles: readonly Role[]) => !pausedFor(roles) && roles.some(r => MFA_REQUIRED_ROLES.includes(r));
+/** Sign-in asks for a code: the account enrolled (and it isn't paused for its role), or its role requires it. */
+export const mfaNeeded = (enabledAt: Date | null | undefined, roles: readonly Role[]) => (!!enabledAt && !pausedFor(roles)) || mfaRequiredFor(roles);
 
 const invalidCode = () => new AppError("INVALID_MFA_CODE", "That code isn't right. Enter the current 6-digit code from your authenticator app, or a recovery code.", HttpStatus.BAD_REQUEST);
 const normalizeRecovery = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");

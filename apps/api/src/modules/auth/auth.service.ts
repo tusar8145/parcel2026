@@ -10,7 +10,7 @@ import type { RequestMeta } from "../../common/auth/decorators";
 import type { UserActor } from "../../common/auth/actor";
 import { OtpService } from "./otp.service";
 import { WebsiteService } from "../website/website.service";
-import { MfaService, mfaRequiredFor } from "./mfa.service";
+import { MfaService, mfaNeeded, mfaRequiredFor } from "./mfa.service";
 import type { SessionTokens } from "./session.service";
 import { SessionService } from "./session.service";
 import { NotifyService } from "../notifications/notify.service";
@@ -200,7 +200,7 @@ export class AuthService {
     if (user.status !== "ACTIVE") throw unauthorized("ACCOUNT_INACTIVE", "This account is suspended. Contact support.");
     await this.assertCustomerSignIn(user);
     const enrolled = !!user.mfa?.enabledAt;
-    if (!enrolled && !mfaRequiredFor(user.roles.map(r => r.role))) return this.startSession(user, meta);
+    if (!mfaNeeded(user.mfa?.enabledAt, user.roles.map(r => r.role))) return this.startSession(user, meta);
     if (user.failedLoginCount || user.lockedUntil) await this.prisma.user.update({ where: { id: user.id }, data: { failedLoginCount: 0, lockedUntil: null } });
     const mfaToken = await this.mfa.createChallenge({ userId: user.id, purpose: enrolled ? "login" : "setup", method });
     await this.audit.record(

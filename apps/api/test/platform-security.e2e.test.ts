@@ -137,6 +137,37 @@ describe("platform security (super admin)", () => {
       expect((await login(legacy.phone)).body.mfaSetupRequired).toBe(true);
     });
 
+    it("can be paused for super admins with SUPER_ADMIN_MFA=off, keeping the enrolment for when it is turned back on", async () => {
+      const { user, phone } = await rawUser([{ role: "SUPER_ADMIN" }], "Paused Admin");
+      const customer = await rawUser([{ role: "CUSTOMER" }], "Own MFA");
+      // Enrol both while it is on.
+      const first = await login(phone);
+      const secret = (await ctx.api("POST", "/auth/mfa/setup", { body: { mfaToken: first.body.mfaToken } })).body.secret as string;
+      expect((await ctx.api("POST", "/auth/mfa/enable", { body: { mfaToken: first.body.mfaToken, code: authenticator.generate(secret) } })).status).toBe(200);
+      const signedIn = (await login(customer.phone)).body;
+      const own = await ctx.api("POST", "/auth/mfa/setup", { token: signedIn.accessToken, body: {} });
+      expect((await ctx.api("POST", "/auth/mfa/enable", { token: signedIn.accessToken, body: { code: authenticator.generate(own.body.secret) } })).status).toBe(200);
+
+      process.env.SUPER_ADMIN_MFA = "off";
+      try {
+        // A new super admin signs in without enrolment; an enrolled one without a code; sessions refresh.
+        const fresh = await rawUser([{ role: "SUPER_ADMIN" }], "Fresh Admin");
+        expect((await login(fresh.phone)).body.accessToken).toEqual(expect.any(String));
+        const paused = await login(phone);
+        expect(paused.body.accessToken, JSON.stringify(paused.body)).toEqual(expect.any(String));
+        const session = await ctx.app.get((await import("../src/modules/auth/session.service")).SessionService).create(user.id, { ip: "127.0.0.1", requestId: "t" });
+        expect((await ctx.api("POST", "/auth/refresh", { body: { refreshToken: session.refreshToken } })).status).toBe(200);
+        // Someone who turned it on for themselves still needs a code.
+        expect((await login(customer.phone)).body.mfaRequired).toBe(true);
+      } finally {
+        delete process.env.SUPER_ADMIN_MFA;
+      }
+      // Back on: the same authenticator works, no new setup.
+      const again = await login(phone);
+      expect(again.body).toMatchObject({ mfaRequired: true });
+      expect((await ctx.api("POST", "/auth/login/mfa", { body: { mfaToken: again.body.mfaToken, code: await freshCode(user.id, secret) } })).status).toBe(200);
+    });
+
     it("lets a super admin reset another user's MFA (audited, sessions ended), never their own", async () => {
       const a = await admin("Admin A");
       const b = await admin("Admin B");

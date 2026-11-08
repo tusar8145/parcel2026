@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { MFA_REQUIRED_ROLES } from "@delivery-fast/shared";
+import { mfaNeeded } from "./mfa.service";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../common/prisma.service";
 import { TokenService } from "../../common/auth/token.service";
@@ -60,7 +60,7 @@ export class SessionService {
     if (user?.status !== "ACTIVE") throw unauthorized("ACCOUNT_INACTIVE", "This account is not active");
     // Sessions that never passed two-step verification can't continue once it's needed
     // (MFA enabled elsewhere, or a role that requires it was granted).
-    const needsMfa = !!user.mfa?.enabledAt || user.roles.some(r => MFA_REQUIRED_ROLES.includes(r.role));
+    const needsMfa = mfaNeeded(user.mfa?.enabledAt, user.roles.map(r => r.role));
     if (needsMfa && !session.mfaVerifiedAt) {
       await this.revokeFamily(session.familyId, "mfa_required");
       throw unauthorized("MFA_REQUIRED", "Sign in again to complete two-step verification");

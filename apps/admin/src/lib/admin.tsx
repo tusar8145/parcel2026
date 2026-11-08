@@ -143,8 +143,20 @@ export interface Overview {
   merchantActivity: { merchantId: string; parcelsThisMonth: number; lastParcelAt?: string | null }[];
   riderActivity: { riderId: string; deliveredToday: number; pickedUpToday: number }[];
 }
+const overviewQuery = (query = "") => ({ queryKey: ["admin", "overview", query], queryFn: () => api<Overview>(`/admin/overview${query ? `?${query}` : ""}`), staleTime: 30_000 });
 export function useOverview(query = "") {
-  return useQuery({ queryKey: ["admin", "overview", query], queryFn: () => api<Overview>(`/admin/overview${query ? `?${query}` : ""}`), staleTime: 30_000, refetchInterval: 30_000 });
+  return useQuery({ ...overviewQuery(query), refetchInterval: 30_000 });
+}
+const staffQuery = () => ({ queryKey: ["admin", "staff"], queryFn: () => all<Staff>(`/users?roles=${STAFF_ROLES.join(",")}`), staleTime: 20_000 });
+
+/**
+ * Starts loading the Platform overview's figures as soon as the super admin is signed in, while the page's own code
+ * is still downloading: the page then finds them ready (or on the way) and its counts start at once.
+ */
+export function prefetchOverview(periodQuery: string) {
+  void queryClient.prefetchQuery(overviewQuery(""));
+  void queryClient.prefetchQuery(overviewQuery(periodQuery));
+  void queryClient.prefetchQuery(staffQuery());
 }
 
 // ───────────── staff, hubs ─────────────
@@ -168,7 +180,7 @@ export interface Staff {
   roles: { role: string; hub?: { id: string; name: string } | null }[];
 }
 export function useStaff() {
-  return useQuery({ queryKey: ["admin", "staff"], queryFn: () => all<Staff>(`/users?roles=${STAFF_ROLES.join(",")}`), staleTime: 20_000 });
+  return useQuery(staffQuery());
 }
 export interface Hub {
   id: string;

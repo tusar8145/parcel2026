@@ -16,7 +16,8 @@ import { allowedViews, legacyPath, pathFor, tabBySlug, viewBySlug, type ViewDef 
 import { Classic } from "./Classic";
 import ParcelDrawer from "@/features/parcels/ParcelDrawer";
 
-const Today = lazy(() => import("@/pages/Today"));
+// Today is the first page: part of the main code (no lazy load), so it shows at once.
+import Today from "@/pages/Today";
 const Dispatch = lazy(() => import("@/pages/Dispatch"));
 const Parcels = lazy(() => import("@/pages/ParcelPages").then(m => ({ default: m.ParcelRoutes })));
 const StagePages = lazy(() => import("@/pages/StagePages"));

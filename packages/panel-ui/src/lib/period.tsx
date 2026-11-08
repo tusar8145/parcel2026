@@ -87,6 +87,23 @@ export const periodLabel = (s: PeriodState) => (s.key === "custom" ? span(s.from
 
 const storageKey = (page: string) => `deliveryfast-period:${page}`;
 
+/** The period a page will open with (URL, then the remembered choice, then the default), outside React: lets a
+ *  panel start loading the page's figures before the page itself has loaded. Same rules as usePeriod. */
+export function periodQueryOf(page: string, defaultKey = "today") {
+  const params = new URLSearchParams(location.search);
+  const key = params.get("period");
+  const from = params.get("from") ?? undefined;
+  const to = params.get("to") ?? undefined;
+  let raw: Partial<PeriodState> | null = key === "custom" || (!key && from && to) ? { key: "custom", from, to } : key ? { key } : null;
+  if (!raw)
+    try {
+      raw = JSON.parse(localStorage.getItem(storageKey(page)) || "null");
+    } catch {
+      raw = null;
+    }
+  return periodQuery(normalize(raw, defaultKey));
+}
+
 /** The page's period: URL first (deep link), then the remembered choice, then the default. */
 export function usePeriod(page: string, defaultKey = "today") {
   const [params, setParams] = useSearchParams();

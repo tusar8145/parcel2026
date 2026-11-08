@@ -11,12 +11,16 @@ import { Loading } from "@panel/ui/kit";
 import Login from "@panel/ui/Login";
 import Shell from "./Shell";
 import { legacyPath, pageBySlug } from "./nav";
+import { prefetchOverview } from "@/lib/admin";
+import Overview from "@/pages/Overview";
+import { periodQueryOf } from "@panel/lib/period";
 import { Classic } from "./Classic";
 
 const Notifications = lazy(() => import("@/pages/Notifications"));
 /** The pages rebuilt so far, by menu id; the others open in the classic panel. */
-const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>> = {
-  Overview: lazy(() => import("@/pages/Overview")),
+// The Platform overview is the first page: part of the main code (no lazy load), so it shows at once.
+const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>> | ComponentType<{ tab?: string }>> = {
+  Overview,
   Registrations: lazy(() => import("@/pages/Registrations")),
   Approvals: lazy(() => import("@/pages/Registrations")),
   "E-commerce merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.EcommerceMerchants }))),
@@ -46,6 +50,11 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
 
 export default function App() {
   const { state, user, hasRole } = useAuth();
+  const admin = !!user && hasRole("SUPER_ADMIN");
+  // The first page's figures start loading the moment sign-in is known, alongside the page's code.
+  useEffect(() => {
+    if (admin && /^\/admin\/?(overview\/?)?$/.test(location.pathname)) prefetchOverview(periodQueryOf("admin-overview", "this_month"));
+  }, [admin]);
   if (state.status === "loading") return <Centered spinner />;
   if (state.status === "offline") return <Offline />;
   if (state.status === "signed-out") return <Login product="Super admin" heading="Sign in to Super admin" />;

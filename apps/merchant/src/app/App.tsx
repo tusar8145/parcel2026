@@ -17,7 +17,8 @@ import { Classic } from "./Classic";
 import ParcelDrawer from "@/features/parcels/ParcelDrawer";
 
 const Verification = lazy(() => import("@/pages/Verification"));
-const Overview = lazy(() => import("@/pages/Overview"));
+// Overview is the first page: part of the main code (no lazy load), so it shows at once.
+import Overview from "@/pages/Overview";
 const Pickups = lazy(() => import("@/pages/Pickups"));
 const Recipients = lazy(() => import("@/pages/Recipients"));
 const Products = lazy(() => import("@/pages/Products"));

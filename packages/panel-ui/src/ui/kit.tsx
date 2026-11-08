@@ -103,7 +103,7 @@ export function Pill({ children, tone }: { children: ReactNode; tone?: Tone }) {
  * changes; while the figure is still loading ("—") it shows 0, so counting starts the moment it arrives): every number in the text ("৳ 155,109", "98% · 95%") runs, the rest stays. Ends on the exact text.
  */
 const NUMBER = /\d[\d,]*(?:\.\d+)?/g;
-export function CountUp({ value, ms = 900 }: { value: string; ms?: number }) {
+export function CountUp({ value, ms = 600 }: { value: string; ms?: number }) {
   const [shown, setShown] = useState(() => value.replace(NUMBER, "0"));
   const from = useRef<number[] | null>(null);
   useEffect(() => {

@@ -48,6 +48,46 @@ interface SessionResult {
 
 let accessToken: string | null = null;
 let accessExpiresAt = 0;
+
+/**
+ * Support access ("view as" from super admin, "Log in as" from the Operations console), as legacy/shared/api.js:
+ * the tab opened with ?support-access=1 collects a short-lived, non-refreshable token once from its opener
+ * (window.opener.DF.takeSupportAccess) and keeps it for this tab only (sessionStorage). The administrator's own
+ * session (the refresh cookie) is never used or touched here.
+ */
+export interface SupportAccess {
+  id: string;
+  userId: string;
+  accessToken: string;
+  expiresAt: number;
+}
+const SUPPORT_KEY = "df-support-access";
+let support: SupportAccess | null = null;
+try {
+  const params = new URLSearchParams(location.search);
+  if (params.has("support-access")) {
+    const handed = (window.opener as { DF?: { takeSupportAccess?: () => SupportAccess | null } } | null)?.DF?.takeSupportAccess?.();
+    if (handed) sessionStorage.setItem(SUPPORT_KEY, JSON.stringify(handed));
+    params.delete("support-access");
+    history.replaceState(history.state, "", `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`);
+  }
+  const stored = JSON.parse(sessionStorage.getItem(SUPPORT_KEY) || "null") as SupportAccess | null;
+  if (stored?.accessToken && stored.expiresAt > Date.now()) support = stored;
+  else sessionStorage.removeItem(SUPPORT_KEY);
+} catch {
+  /* storage blocked */
+}
+/** The support access this tab runs on (without its token), or null. */
+export const supportAccess = () => (support ? { id: support.id, userId: support.userId, expiresAt: support.expiresAt } : null);
+function endSupport() {
+  try {
+    sessionStorage.removeItem(SUPPORT_KEY);
+  } catch {
+    /* storage blocked */
+  }
+  support = null;
+  accessToken = null;
+}
 let refreshing: Promise<SessionUser | null> | null = null;
 let operationTime: string | null = null;
 const sessionListeners = new Set<(user: SessionUser | null) => void>();
@@ -112,6 +152,26 @@ export function acceptSession(result: SessionResult) {
 
 /** One refresh at a time; resolves to the user, or null when signed out. Throws only when the server can't be reached. */
 export function refresh(): Promise<SessionUser | null> {
+  if (support) {
+    // Support access can't be refreshed: it ends when its token expires.
+    if (Date.now() >= support.expiresAt) {
+      endSupport();
+      announce(null);
+      return Promise.resolve(null);
+    }
+    accessToken = support.accessToken;
+    accessExpiresAt = support.expiresAt;
+    refreshing ??= rawFetch<SessionUser>("/auth/me")
+      .then(user => (announce(user), user))
+      .catch(error => {
+        if (!(error instanceof ApiError)) throw error;
+        endSupport();
+        announce(null);
+        return null;
+      })
+      .finally(() => (refreshing = null));
+    return refreshing;
+  }
   refreshing ??= rawFetch<SessionResult>("/auth/refresh", { method: "POST", auth: false })
     .then(acceptSession)
     .catch(error => {
@@ -194,6 +254,13 @@ export const authApi = {
   mfaSetup: (mfaToken: string) => rawFetch<{ otpauthUrl: string; qrDataUrl: string; secret: string }>("/auth/mfa/setup", { method: "POST", body: { mfaToken }, auth: false }),
   mfaEnable: (mfaToken: string, code: string) => rawFetch<SessionResult & { recoveryCodes?: string[] }>("/auth/mfa/enable", { method: "POST", body: { mfaToken, code }, auth: false }),
   async logout() {
+    if (support) {
+      // Ends support access only; the administrator's own session is untouched.
+      await rawFetch(`/admin/impersonations/${support.id}/end`, { method: "POST" }).catch(() => undefined);
+      endSupport();
+      announce(null);
+      return;
+    }
     await rawFetch("/auth/logout", { method: "POST", auth: false }).catch(() => undefined);
     accessToken = null;
     announce(null);

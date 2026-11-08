@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.23.6 — 2026-11-09
+- "Log in as" (Operations console) and "View as" (Admin users & roles › Support access) open the merchant's new panel as that merchant again, instead of "No merchant workspace". The new panels show the support bar ("Viewing as … · ends in … min · End"); End or the time running out closes the tab, and your own sign-in stays.
+
 ## 1.23.5 — 2026-11-09
 - First-page figures show 0 (not "—") while they load.
 

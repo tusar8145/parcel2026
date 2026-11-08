@@ -86,6 +86,15 @@ h1, h2, h3, h4 { color: var(--ink); margin: 0; font-weight: 650; letter-spacing:
 .nav-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 12px; font-weight: 620; text-align: center; }
 .nav-item[aria-current="page"] .nav-count { background: #fff; color: var(--primary); }
 .sidebar-foot { border-top: 1px solid var(--line); padding: 10px; display: grid; gap: 8px; }
+.foot-link { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2, #f7f8fa); color: var(--ink-2); font-size: 13px; font-weight: 600; text-decoration: none; }
+.foot-link:hover { border-color: var(--primary); color: var(--primary); }
+.foot-link svg { width: 16px; height: 16px; flex: none; }
+.app-card { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: inherit; text-decoration: none; }
+.app-card:hover { border-color: var(--primary); }
+.app-card-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: var(--primary); color: #fff; }
+.app-card-text { min-width: 0; }
+.app-card-text strong { display: block; font-size: 13px; color: var(--ink); }
+.app-card-text small { color: var(--faint); font-size: 12px; }
 .profile { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; }
 .profile-meta { min-width: 0; flex: 1; }
 .profile-meta strong { display: block; color: var(--ink); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

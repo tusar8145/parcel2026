@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.16.1 — 2026-11-08
+- New Operations console: "Get the apps" (Merchant, Rider and Operations apps) is back at the bottom of the menu, and super admins have "Super admin panel" there too, always in sight.
+
 ## 1.16.0 — 2026-11-08
 - Operations staff now open the new Operations console: signing in, notifications and every link to the Operations console go to the same page there.
 - The classic console stays one click away ("Classic console" in the menu) and keeps opening on reload; "Open the new Operations console" in its menu goes back.

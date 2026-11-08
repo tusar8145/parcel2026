@@ -149,12 +149,6 @@ function Sidebar() {
               </span>
             ) : null}
           </NavLink>
-          {hasRole("SUPER_ADMIN") ? (
-            <a className="nav-item" href="/super-admin" title="Back to the super admin panel">
-              <Icon name="lock" />
-              <span>Super admin panel</span>
-            </a>
-          ) : null}
           <a className="nav-item" href="/courier-operation?classic=1" title="The previous Operations console (same data)" onClick={chooseClassic}>
             <Icon name="external" />
             <span>Classic console</span>
@@ -162,6 +156,22 @@ function Sidebar() {
         </div>
       </nav>
       <div className="sidebar-foot">
+        {hasRole("SUPER_ADMIN") ? (
+          <a className="foot-link" href="/super-admin" title="Back to the super admin panel">
+            <Icon name="lock" />
+            <span>Super admin panel</span>
+          </a>
+        ) : null}
+        {/* Same as the classic console's "Get the apps" card: /apps lists the Merchant, Rider and Operations APKs. */}
+        <a className="app-card" href="/apps" target="_blank" rel="noopener" title="Download the Android apps">
+          <span className="app-card-icon" aria-hidden="true">
+            <Icon name="phoneScan" size={18} />
+          </span>
+          <span className="app-card-text">
+            <strong>Get the apps ↗</strong>
+            <small>Merchant · Rider · Operations</small>
+          </span>
+        </a>
         <div className="profile">
           <div className="avatar">{initials}</div>
           <div className="profile-meta">

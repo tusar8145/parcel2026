@@ -49,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout: async () => {
       events.stop();
       await authApi.logout();
+      // Like the classic console: signing out goes to the website's sign-in page.
+      location.assign("/login");
     },
     retry: () => setAttempt(n => n + 1),
   };

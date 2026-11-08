@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.23.4 — 2026-11-09
+- The first-page figures show their value straight away again, without counting up; the pages still open as fast as in 1.23.3.
+
 ## 1.23.3 — 2026-11-09
 - The first page of each new panel opens faster: its figures start loading as soon as you are signed in, the page shows without waiting for extra code, and the count-up takes 0.6 seconds instead of 0.9.
 

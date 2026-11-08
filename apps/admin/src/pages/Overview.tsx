@@ -65,16 +65,16 @@ export default function Overview() {
         }
       />
       <div className="metrics">
-        <Metric label="Merchant accounts" icon="box" value={o ? num(o.merchants.active + o.merchants.suspended) : "—"} foot={p ? `${num(p.newMerchants)} new` : o ? `${num(o.merchants.newThisMonth)} new` : ""} note={`${period.words} · accounts now`} />
-        <Metric label="Awaiting approval" icon="sheet" value={merchants.data ? num(pending.length) : "—"} foot={`${pending.length} need review`} note="registration queue" onClick={() => navigate("/registrations")} />
-        <Metric label="Active platform admins" icon="users" value={o ? num(o.staff.active) : "—"} foot={`${groups} role group${groups === 1 ? "" : "s"}`} note="staff accounts" />
-        <Metric label="Platform GMV" icon="chart" value={p ? taka(p.gmv) : "—"} foot={p ? change(p.gmv, p.previous.gmv) : ""} note={`COD + charges · ${period.words}`} />
+        <Metric countUp label="Merchant accounts" icon="box" value={o ? num(o.merchants.active + o.merchants.suspended) : "—"} foot={p ? `${num(p.newMerchants)} new` : o ? `${num(o.merchants.newThisMonth)} new` : ""} note={`${period.words} · accounts now`} />
+        <Metric countUp label="Awaiting approval" icon="sheet" value={merchants.data ? num(pending.length) : "—"} foot={`${pending.length} need review`} note="registration queue" onClick={() => navigate("/registrations")} />
+        <Metric countUp label="Active platform admins" icon="users" value={o ? num(o.staff.active) : "—"} foot={`${groups} role group${groups === 1 ? "" : "s"}`} note="staff accounts" />
+        <Metric countUp label="Platform GMV" icon="chart" value={p ? taka(p.gmv) : "—"} foot={p ? change(p.gmv, p.previous.gmv) : ""} note={`COD + charges · ${period.words}`} />
       </div>
       <div className="metrics">
-        <Metric label="Bookings" icon="check" value={p ? num(p.bookings) : "—"} foot={p ? change(p.bookings, p.previous.bookings) : ""} note={period.versus} />
-        <Metric label="Revenue" icon="chart" value={p ? taka(p.charges) : "—"} foot={p ? change(p.charges, p.previous.charges) : ""} note={`delivery charges · ${period.words}`} />
-        <Metric label="Active merchants" icon="box" value={p ? num(p.activeMerchants) : "—"} foot={p ? change(p.activeMerchants, p.previous.activeMerchants) : ""} note={`booked ${period.words}`} />
-        <Metric label="Delivered" icon="check" value={p ? num(p.delivered) : "—"} foot={p ? change(p.delivered, p.previous.delivered) : ""} note={period.words} />
+        <Metric countUp label="Bookings" icon="check" value={p ? num(p.bookings) : "—"} foot={p ? change(p.bookings, p.previous.bookings) : ""} note={period.versus} />
+        <Metric countUp label="Revenue" icon="chart" value={p ? taka(p.charges) : "—"} foot={p ? change(p.charges, p.previous.charges) : ""} note={`delivery charges · ${period.words}`} />
+        <Metric countUp label="Active merchants" icon="box" value={p ? num(p.activeMerchants) : "—"} foot={p ? change(p.activeMerchants, p.previous.activeMerchants) : ""} note={`booked ${period.words}`} />
+        <Metric countUp label="Delivered" icon="check" value={p ? num(p.delivered) : "—"} foot={p ? change(p.delivered, p.previous.delivered) : ""} note={period.words} />
       </div>
       <div className="grid-main" style={{ marginBottom: 16 }}>
         <Panel title="Bookings" subtitle={`Parcels booked per ${p?.series.bucket || "day"} · ${period.text} vs. the previous period`}>

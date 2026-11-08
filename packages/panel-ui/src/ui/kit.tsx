@@ -98,14 +98,56 @@ export function Pill({ children, tone }: { children: ReactNode; tone?: Tone }) {
   return <span className={`pill ${auto === "info" ? "" : auto}`}>{children}</span>;
 }
 
-export function Metric({ label, value, icon, foot, note, onClick, href }: { label: string; value: ReactNode; icon?: IconName; foot?: ReactNode; note?: ReactNode; onClick?: () => void; href?: string }) {
+/**
+ * A figure that counts up from 0 to its value when it first appears (and from the old to the new value when it
+ * changes): every number in the text ("৳ 155,109", "98% · 95%") runs, the rest stays. Ends on the exact text.
+ */
+const NUMBER = /\d[\d,]*(?:\.\d+)?/g;
+export function CountUp({ value, ms = 900 }: { value: string; ms?: number }) {
+  const [shown, setShown] = useState(() => value.replace(NUMBER, "0"));
+  const from = useRef<number[] | null>(null);
+  useEffect(() => {
+    const targets = [...value.matchAll(NUMBER)].map(m => Number(m[0].replace(/,/g, "")));
+    const start = from.current ?? targets.map(() => 0);
+    const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !targets.length || targets.every((t, i) => t === start[i])) {
+      from.current = targets;
+      return void setShown(value);
+    }
+    let frame = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      const ease = 1 - Math.pow(1 - k, 3);
+      if (k >= 1) {
+        from.current = targets;
+        return setShown(value);
+      }
+      let i = 0;
+      setShown(
+        value.replace(NUMBER, m => {
+          const decimals = m.includes(".") ? m.split(".")[1].length : 0;
+          const n = (start[i] ?? 0) + (targets[i] - (start[i] ?? 0)) * ease;
+          i++;
+          return n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: m.includes(",") || n >= 1000 });
+        }),
+      );
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value, ms]);
+  return <>{shown}</>;
+}
+
+export function Metric({ label, value, icon, foot, note, onClick, href, countUp }: { label: string; value: ReactNode; icon?: IconName; foot?: ReactNode; note?: ReactNode; onClick?: () => void; href?: string; countUp?: boolean }) {
   const body = (
     <>
       <div className="metric-head">
         <span>{label}</span>
         {icon ? <Icon name={icon} /> : null}
       </div>
-      <div className="metric-value">{value}</div>
+      <div className="metric-value">{countUp && (typeof value === "string" || typeof value === "number") && /\d/.test(String(value)) ? <CountUp value={String(value)} /> : value}</div>
       {foot || note ? (
         <div className="metric-foot">
           <span>{foot}</span>

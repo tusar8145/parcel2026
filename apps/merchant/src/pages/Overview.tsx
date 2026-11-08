@@ -72,6 +72,7 @@ export default function Overview() {
   const openParcel = (id: string) => setParams(p => (p.set("parcel", id), p));
   const card = (label: string, value: string, icon: IconName, foot: string, t?: { text: string; down?: boolean } | null) => (
     <Metric
+      countUp
       key={label}
       label={label}
       value={st ? value : "—"}

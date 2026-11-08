@@ -79,7 +79,7 @@ export default function Today() {
       </p>
       <div className="stage-grid" aria-label="Parcel journey">
         {JOURNEY.filter(j => allowed.has(j.view)).map(j => (
-          <Metric key={j.view} label={j.view} value={stages ? num(stages[j.stage]) : "—"} icon={j.icon} foot={j.hint} note="Open ›" onClick={() => navigate(pathFor(j.view))} />
+          <Metric key={j.view} label={j.view} value={stages ? num(stages[j.stage]) : "0"} icon={j.icon} foot={j.hint} note="Open ›" onClick={() => navigate(pathFor(j.view))} />
         ))}
       </div>
       {o && s ? (
@@ -94,11 +94,11 @@ export default function Today() {
       </p>
       <div className="metrics" aria-label={`Figures for ${period.text}`}>
         {figures.isError ? <div className="callout bad" style={{ gridColumn: "1 / -1" }}>Figures could not be loaded.</div> : null}
-        <Metric label="Booked" value={m ? num(m.booked) : "—"} icon="box" foot={m ? change(m.booked, m.previous.booked) : ""} note={m ? period.versus : period.words} />
-        <Metric label="Picked up" value={m ? num(m.pickedUp) : "—"} icon="truck" foot={m ? change(m.pickedUp, m.previous.pickedUp) : ""} note={m ? period.versus : period.words} />
-        <Metric label="Delivered" value={m ? num(m.delivered) : "—"} icon="check" foot={m ? `${num(m.returned)} returned` : ""} note={period.words} />
-        <Metric label="COD collected" value={m ? money(m.codCollected) : "—"} icon="wallet" foot={m ? `${num(m.codCollections)} collection${m.codCollections === 1 ? "" : "s"}` : ""} note={period.words} />
-        <Metric label="Success · SLA met" value={m ? `${pct(m.successRate)} · ${pct(m.slaMetRate)}` : "—"} icon="clock" foot={m ? points(m.slaMetRate, m.previous.slaMetRate) || `${num(m.slaSample)} with a promise` : ""} note="delivered vs returned · on time" />
+        <Metric label="Booked" value={m ? num(m.booked) : "0"} icon="box" foot={m ? change(m.booked, m.previous.booked) : ""} note={m ? period.versus : period.words} />
+        <Metric label="Picked up" value={m ? num(m.pickedUp) : "0"} icon="truck" foot={m ? change(m.pickedUp, m.previous.pickedUp) : ""} note={m ? period.versus : period.words} />
+        <Metric label="Delivered" value={m ? num(m.delivered) : "0"} icon="check" foot={m ? `${num(m.returned)} returned` : ""} note={period.words} />
+        <Metric label="COD collected" value={m ? money(m.codCollected) : "৳ 0"} icon="wallet" foot={m ? `${num(m.codCollections)} collection${m.codCollections === 1 ? "" : "s"}` : ""} note={period.words} />
+        <Metric label="Success · SLA met" value={m ? `${pct(m.successRate)} · ${pct(m.slaMetRate)}` : "0% · 0%"} icon="clock" foot={m ? points(m.slaMetRate, m.previous.slaMetRate) || `${num(m.slaSample)} with a promise` : ""} note="delivered vs returned · on time" />
       </div>
       <Panel title="Live network map" subtitle="Rider positions, hubs, open parcels and vehicles on the road">
         <NetworkMap height={440} onParcel={id => actions.openParcel(id)} />

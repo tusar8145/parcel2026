@@ -74,7 +74,7 @@ export default function Overview() {
     <Metric
       key={label}
       label={label}
-      value={st ? value : "—"}
+      value={st ? value : "0"}
       icon={icon}
       foot={t ? <span style={{ color: t.down ? "var(--bad)" : "var(--good)", fontWeight: 650 }}>{t.text}</span> : null}
       note={foot}

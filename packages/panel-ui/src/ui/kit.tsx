@@ -100,7 +100,7 @@ export function Pill({ children, tone }: { children: ReactNode; tone?: Tone }) {
 
 /**
  * A figure that counts up from 0 to its value when it first appears (and from the old to the new value when it
- * changes): every number in the text ("৳ 155,109", "98% · 95%") runs, the rest stays. Ends on the exact text.
+ * changes; while the figure is still loading ("—") it shows 0, so counting starts the moment it arrives): every number in the text ("৳ 155,109", "98% · 95%") runs, the rest stays. Ends on the exact text.
  */
 const NUMBER = /\d[\d,]*(?:\.\d+)?/g;
 export function CountUp({ value, ms = 900 }: { value: string; ms?: number }) {
@@ -147,7 +147,7 @@ export function Metric({ label, value, icon, foot, note, onClick, href, countUp 
         <span>{label}</span>
         {icon ? <Icon name={icon} /> : null}
       </div>
-      <div className="metric-value">{countUp && (typeof value === "string" || typeof value === "number") && /\d/.test(String(value)) ? <CountUp value={String(value)} /> : value}</div>
+      <div className="metric-value">{countUp && (typeof value === "string" || typeof value === "number") && (value === "—" || /\d/.test(String(value))) ? <CountUp value={value === "—" ? "0" : String(value)} /> : value}</div>
       {foot || note ? (
         <div className="metric-foot">
           <span>{foot}</span>

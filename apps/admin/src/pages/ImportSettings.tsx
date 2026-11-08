@@ -96,7 +96,7 @@ export default function ImportSettings({ tab: initial }: { tab?: string }) {
     <>
       <PageHeading eyebrow="Platform control · Excel and CSV" title="Import Template settings" subtitle="Required columns, defaults, default destination and limits for the merchant and operations imports." />
       <div className="callout">
-        <Icon name="box" />
+        <Icon name="box" size={18} />
         <span>
           Services and prices:{" "}
           <Button size="sm" onClick={() => navigate("/service-plans")} style={{ marginLeft: 6 }}>

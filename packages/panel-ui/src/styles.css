@@ -418,6 +418,7 @@ button.metric:hover, a.metric:hover { border-color: var(--primary-line); box-sha
 .mini span { display: block; font-size: 12px; color: var(--muted); }
 .mini strong { font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .callout { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border: 1px solid var(--primary-line); border-radius: 9px; background: var(--primary-soft); color: #1f3d8f; font-size: 13px; margin-bottom: 14px; }
+.callout > svg { width: 18px; height: 18px; flex: none; }
 .callout.warn { border-color: #f3d48f; background: var(--warn-soft); color: var(--warn); }
 .callout.bad { border-color: #f3b9b9; background: var(--bad-soft); color: var(--bad); }
 .callout.good { border-color: #a9dcbc; background: var(--good-soft); color: var(--good); }

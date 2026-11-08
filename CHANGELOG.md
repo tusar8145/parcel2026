@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.22.0 — 2026-11-09
+- Super admins now use the new super admin panel: signing in, notifications and every link to the old panel open the same page there. The classic panel is no longer in its menu.
+- New super admin panel: the large icons in the notes at the top of Registrations, Admin users & roles and Import Template settings are the normal size again; "Open courier operations console ↗" in the menu is smaller.
+
 ## 1.21.0 — 2026-11-08
 - New super admin panel (preview) at /admin: every page of the classic panel rebuilt on the same data and rules — Platform overview, Registrations and approvals (review, approve, reject, ask for information, KYC, invitations), E-commerce and Banking & Financial merchants, Franchises, Service plans & pricing (packages, price preview, merchants, simulator, messages, Hub Pickup), Rider earning plans, Platform activity, Audit & security log, Admin users & roles (approvals, permissions, custom roles, support access, two-step verification), every notification setting, Push notifications, Website & branding, Return reasons, Receiver relations, Products, Invoice settings, Import Template settings, Address, Hubs & zones, Integration settings and the System guide. The classic panel stays where it is; "Open the new super admin panel" in its menu opens the new one.
 

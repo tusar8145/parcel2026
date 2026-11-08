@@ -147,6 +147,17 @@ export default function nextConfig(phase: string): NextConfig {
           destination: "/merchant",
           permanent: false,
         })),
+        // Super admins use the new super admin panel (apps/admin): sign-in, notifications and links to /super-admin open
+        // it, query kept (?page=&tab= open the same page there). The classic panel stays at /super-admin?classic=1.
+        {
+          source: "/super-admin",
+          missing: [
+            { type: "query", key: "classic" },
+            { type: "cookie", key: "df-classic-admin" },
+          ],
+          destination: "/admin",
+          permanent: false,
+        },
         ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),
         // The document merchant panel became the Banking & Financial merchant panel.
         { source: "/document-merchant", destination: "/banking-merchant", permanent: true },

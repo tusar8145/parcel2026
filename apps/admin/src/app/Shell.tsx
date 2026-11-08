@@ -109,15 +109,9 @@ function Sidebar() {
             </div>
           );
         })}
-        <div className="nav-group">
-          <a className="nav-item" href="/super-admin?classic=1" title="The previous super admin panel (same data)" onClick={() => (document.cookie = "df-classic-admin=1; path=/; SameSite=Lax")}>
-            <Icon name="external" />
-            <span>Classic panel</span>
-          </a>
-        </div>
         <div className="nav-extras">
-          <a className="foot-link" href="/ops/" title="The Operations console">
-            <Icon name="truck" />
+          <a className="foot-link" href="/ops/" title="Open courier operations console" style={{ padding: "6px 8px", fontSize: 11.5, gap: 6 }}>
+            <Icon name="truck" size={14} />
             <span>Open courier operations console ↗</span>
           </a>
         </div>

@@ -166,7 +166,7 @@ function Administrators() {
   return (
     <>
       <div className="callout">
-        <Icon name="lock" />
+        <Icon name="lock" size={18} />
         <span>{`Super admin actions are audited. Two-step verification is required for super admins (${on(supers)} of ${supers.length} set up) and optional for other staff (${on(active) - on(supers)} of ${active.length - supers.length}). Sensitive changes need a second super admin's approval.`}</span>
       </div>
       <Panel

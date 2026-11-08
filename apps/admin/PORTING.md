@@ -4,8 +4,8 @@ Rebuild of the classic super admin panel (`/super-admin`, legacy scripts in `app
 and `apps/web/public/legacy/shared/*`) in React at `/admin/`. Same API, same rules and wording; nothing removed.
 Shared UI and helpers: `packages/panel-ui` (also used by `apps/ops` and `apps/merchant`).
 
-Every page is rebuilt (2026-11-08). The classic panel stays at `/super-admin` (linked from the menu as "Classic
-panel"; it links back with "Open the new super admin panel"). `/super-admin` is not redirected here yet.
+Every page is rebuilt (2026-11-08). Since 2026-11-09 `/super-admin` redirects here (query kept); the classic panel
+is still reachable at `/super-admin?classic=1` but is no longer linked from the menu.
 
 | Page | Classic source | Status |
 | --- | --- | --- |

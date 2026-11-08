@@ -102,7 +102,7 @@ export default function Registrations() {
         <Metric label="Rejected" icon="x" value={merchants.data ? num(rows.filter(r => r.status === "Rejected").length) : "—"} foot="not approved" note="can apply again" />
       </div>
       <div className="callout warn">
-        <Icon name="alert" />
+        <Icon name="alert" size={18} />
         <span>Merchant approval grants workspace access. Review business registration, authorized owner details, service scope, and settlement requirements before approving.</span>
       </div>
       <Panel

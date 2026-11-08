@@ -16,6 +16,7 @@ import { Icon, type IconName } from "@panel/ui/Icon";
 import { Button, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { useMerchant } from "@/lib/merchant";
 import { openNewRequest } from "@/features/booking/NewRequest";
+import { ImportButtons } from "@/pages/Requests";
 import { splitContents, type Parcel } from "@/features/parcels/model";
 
 interface Range {
@@ -91,6 +92,7 @@ export default function Overview() {
             <Button icon="wallet" onClick={() => navigate("/balance")}>
               Billing
             </Button>
+            <ImportButtons />
             <Button variant="primary" icon="plus" onClick={() => void openNewRequest(openParcel)}>
               New delivery request
             </Button>

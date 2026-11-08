@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.19.1 — 2026-11-08
+- New merchant panel: "Import batch" is now "Import Excel", with "Import history" beside it, on Overview, New requests and All requests.
+
 ## 1.19.0 — 2026-11-08
 - Banking & Financial merchants now open the new merchant panel: signing in, notifications and every link to the old panel go to the same page there. The classic panel stays one click away ("Classic panel" in the menu) and keeps opening on reload; "Open the new merchant panel" in its menu goes back.
 

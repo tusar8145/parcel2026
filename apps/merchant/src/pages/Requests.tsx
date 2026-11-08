@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router";
 import { Button } from "@panel/ui/kit";
 import { RequestList } from "@/features/parcels/RequestList";
 import { openNewRequest } from "@/features/booking/NewRequest";
-import { openImport } from "@panel/ui/Importer";
+import { openImport, openImportHistory } from "@panel/ui/Importer";
 import { printLabels } from "@panel/lib/print";
 import { useMerchant } from "@/lib/merchant";
 import { refreshMerchant } from "@/features/parcels/actions";
@@ -19,14 +19,25 @@ function ReturnsButton() {
   );
 }
 
-/** "Import batch" (merchant-bridge.js importConfig): the merchant's template, its package's services, preview, labels. */
-function ImportButton() {
+/** The import settings of this merchant (merchant-bridge.js importConfig): its template, its package's services, labels. */
+function useImportConfig() {
   const m = useMerchant();
   const hub = (m.merchant.pickupHub as { id?: string } | null | undefined)?.id;
+  return { kind: "document", merchantId: m.merchant.id, hubId: hub || undefined, noun: "consignments", printLabels: (ids: string[]) => void printLabels(ids), onDone: refreshMerchant };
+}
+
+/** "Import Excel" (the classic panel's "Import batch") and its history. */
+export function ImportButtons() {
+  const cfg = useImportConfig();
   return (
-    <Button icon="upload" onClick={() => void openImport({ kind: "document", merchantId: m.merchant.id, hubId: hub || undefined, noun: "consignments", printLabels: ids => void printLabels(ids), onDone: refreshMerchant })}>
-      Import batch
-    </Button>
+    <>
+      <Button icon="upload" title="Book many requests at once from an Excel or CSV file" onClick={() => void openImport(cfg)}>
+        Import Excel
+      </Button>
+      <Button icon="history" title="Past imports with their results and downloads" onClick={() => void openImportHistory(cfg)}>
+        Import history
+      </Button>
+    </>
   );
 }
 
@@ -50,7 +61,7 @@ export function NewRequests() {
         actions={
           <>
             <NewRequestButton />
-            <ImportButton />
+            <ImportButtons />
           </>
         }
       />
@@ -69,7 +80,7 @@ export function AllRequests() {
           <>
             <ReturnsButton />
             <NewRequestButton />
-            <ImportButton />
+            <ImportButtons />
           </>
         }
       />

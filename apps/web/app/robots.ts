@@ -20,6 +20,7 @@ export default function robots(): MetadataRoute.Robots {
         "/ecommerce-merchant",
         "/banking-merchant",
         "/super-admin",
+        "/admin",
       ],
     },
     sitemap: `${siteUrl()}/sitemap.xml`,

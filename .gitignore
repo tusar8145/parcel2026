@@ -18,3 +18,5 @@ apps/web/public/vendor/
 apps/web/public/ops/
 # Built by apps/merchant (npm run build -w @delivery-fast/merchant)
 apps/web/public/merchant/
+# Built by apps/admin (npm run build -w @delivery-fast/admin)
+apps/web/public/admin/

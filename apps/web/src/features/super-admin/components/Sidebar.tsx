@@ -232,6 +232,12 @@ export default function Sidebar() {
           </svg>
           {" Open courier operations console ↗"}
         </a>
+        <a className="ops-link" href="/admin/">
+          <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7">
+            <use href="#i-settings" />
+          </svg>
+          {" Open the new super admin panel ↗"}
+        </a>
         <div className="admin-profile">
           <div className="avatar">AM</div>
           <div className="profile-meta">

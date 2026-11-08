@@ -85,6 +85,11 @@ h1, h2, h3, h4 { color: var(--ink); margin: 0; font-weight: 650; letter-spacing:
 .nav-item.journey[aria-current="page"] .nav-step { border-color: var(--primary); background: var(--primary); color: #fff; box-shadow: 0 0 0 3px var(--primary-soft); }
 .nav-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 12px; font-weight: 620; text-align: center; }
 .nav-item[aria-current="page"] .nav-count { background: #fff; color: var(--primary); }
+/* Collapsible sub-menus (super admin: Notification / Operational / Location settings). */
+.nav-sub-toggle { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.nav-sub-toggle > svg:last-child { margin-left: auto; width: 14px; height: 14px; }
+.nav-sub-toggle.has-active { color: var(--primary); }
+.nav-sub-items { display: grid; gap: 2px; margin: 2px 0 4px 18px; padding-left: 8px; border-left: 1px solid var(--line); }
 .sidebar-foot { border-top: 1px solid var(--line); padding: 10px; display: grid; gap: 8px; }
 /* "Paste a message" box at the top of a booking form (merchant panel). */
 .paste-box { margin-bottom: 14px; padding: 10px 12px; border: 1px dashed var(--primary-line, #c7d4f5); border-radius: 10px; background: var(--surface-2); }

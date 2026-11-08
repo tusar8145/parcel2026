@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.21.0 — 2026-11-08
+- New super admin panel (preview) at /admin: every page of the classic panel rebuilt on the same data and rules — Platform overview, Registrations and approvals (review, approve, reject, ask for information, KYC, invitations), E-commerce and Banking & Financial merchants, Franchises, Service plans & pricing (packages, price preview, merchants, simulator, messages, Hub Pickup), Rider earning plans, Platform activity, Audit & security log, Admin users & roles (approvals, permissions, custom roles, support access, two-step verification), every notification setting, Push notifications, Website & branding, Return reasons, Receiver relations, Products, Invoice settings, Import Template settings, Address, Hubs & zones, Integration settings and the System guide. The classic panel stays where it is; "Open the new super admin panel" in its menu opens the new one.
+
 ## 1.20.0 — 2026-11-08
 - E-commerce merchants now use the new merchant panel too, with every page of their classic panel: New / All orders (COD amount, product and payment filters, POS invoices), Create order (cash on delivery, weight, open box, paste a message), Excel import, Customers, Products, Balance (COD ready to pay, with riders, settlements and paid history), the payout account in Settings, and the rest. Signing in and every link to the old panel open the new one; the classic panel stays one click away ("Classic panel" in the menu).
 

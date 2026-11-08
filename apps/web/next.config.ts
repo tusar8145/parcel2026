@@ -98,6 +98,10 @@ export default function nextConfig(phase: string): NextConfig {
         { source: "/merchant/assets/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
         { source: "/merchant", headers: [{ key: "Cache-Control", value: "no-cache" }] },
         { source: "/merchant/:path((?!assets/).*)", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+        // The React super admin panel (apps/admin, built into public/admin): the same rules.
+        { source: "/admin/assets/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+        { source: "/admin", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+        { source: "/admin/:path((?!assets/).*)", headers: [{ key: "Cache-Control", value: "no-cache" }] },
       ];
     },
     async rewrites() {
@@ -109,6 +113,9 @@ export default function nextConfig(phase: string): NextConfig {
         // The React merchant panel is a single-page app too (/merchant/overview, /merchant/all-requests…).
         { source: "/merchant", destination: "/merchant/index.html" },
         { source: "/merchant/:path*", destination: "/merchant/index.html" },
+        // The React super admin panel too (/admin/overview, /admin/registrations…).
+        { source: "/admin", destination: "/admin/index.html" },
+        { source: "/admin/:path*", destination: "/admin/index.html" },
       ];
     },
     // Keep old .html links working.

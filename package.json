@@ -10,9 +10,10 @@
     "dev": "npm run build:shared && npm run dev -w @delivery-fast/web",
     "dev:api": "npm run build:shared && npm run dev -w @delivery-fast/api",
     "db:up": "npm run db:up -w @delivery-fast/api",
-    "build": "npm run build:shared && npm run build -w @delivery-fast/api && npm run build -w @delivery-fast/ops && npm run build -w @delivery-fast/merchant && npm run build -w @delivery-fast/web",
+    "build": "npm run build:shared && npm run build -w @delivery-fast/api && npm run build -w @delivery-fast/ops && npm run build -w @delivery-fast/merchant && npm run build -w @delivery-fast/admin && npm run build -w @delivery-fast/web",
     "dev:ops": "npm run build:shared && npm run dev -w @delivery-fast/ops",
     "dev:merchant": "npm run build:shared && npm run dev -w @delivery-fast/merchant",
+    "dev:admin": "npm run build:shared && npm run dev -w @delivery-fast/admin",
     "start": "npm run start -w @delivery-fast/web",
     "test": "npm run build:shared && npm test -w @delivery-fast/shared && npm test -w @delivery-fast/api",
     "test:visual": "npm run test:visual -w @delivery-fast/web"

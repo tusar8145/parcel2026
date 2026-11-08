@@ -90,16 +90,37 @@ export default function nextConfig(phase: string): NextConfig {
           source: "/legacy/:path*",
           headers: [{ key: "Cache-Control", value: dev ? "no-cache" : "public, max-age=31536000, immutable" }],
         },
+        // The React Operations console (apps/ops, built into public/ops): hashed assets forever, the page itself always fresh.
+        { source: "/ops/assets/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+        { source: "/ops", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+        { source: "/ops/:path((?!assets/).*)", headers: [{ key: "Cache-Control", value: "no-cache" }] },
       ];
     },
     async rewrites() {
-      return [{ source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` }];
+      return [
+        { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },
+        // The React Operations console is a single-page app: its routes (/ops/today, /ops/problems/…) load its index.html.
+        { source: "/ops", destination: "/ops/index.html" },
+        { source: "/ops/:path*", destination: "/ops/index.html" },
+      ];
     },
     // Keep old .html links working.
     async redirects() {
       return [
         { source: "/website.html", destination: "/", permanent: true },
         { source: "/courier.html", destination: "/courier-operation", permanent: true },
+        // Staff use the new Operations console (apps/ops): sign-in, notifications and panel links to /courier-operation
+        // open it, with the query kept (?page=&tab=&parcel= opens the same view there). The classic console stays at
+        // /courier-operation?classic=1; the df-classic cookie (set by its link) keeps it on reload.
+        {
+          source: "/courier-operation",
+          missing: [
+            { type: "query", key: "classic" },
+            { type: "cookie", key: "df-classic" },
+          ],
+          destination: "/ops",
+          permanent: false,
+        },
         ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),
         // The document merchant panel became the Banking & Financial merchant panel.
         { source: "/document-merchant", destination: "/banking-merchant", permanent: true },

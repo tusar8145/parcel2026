@@ -7,6 +7,24 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.16.0 — 2026-11-08
+- Operations staff now open the new Operations console: signing in, notifications and every link to the Operations console go to the same page there.
+- The classic console stays one click away ("Classic console" in the menu) and keeps opening on reload; "Open the new Operations console" in its menu goes back.
+
+## 1.15.1 — 2026-11-08
+- New Operations console: buttons no longer keep spinning while the window they opened is up.
+- New Operations console: the menu keeps its place when you open a page, Support tickets and Notifications included.
+- New Operations console: long dropdowns (hubs, riders, merchants, zones…) have a search box, also inside pop-up windows, where they now open properly.
+- New Operations console: printing opens the same "Preparing…" page and PDF viewer with a Download button as the classic console, and every dropdown has the new look.
+- New Operations console: bigger close (×) buttons on every pop-up window, a styled "Choose file" button, and form fields that keep their normal height.
+
+## 1.15.0 — 2026-11-08
+- New Operations console at /ops: every page is rebuilt, including Scan desk, Parcel queue, Transfers, Returns, Scheduled pickups, Hub desk › End of day, Accounts, Reports, Riders, Merchants, CN stock, Settings, Support tickets and Notifications.
+- New Operations console: New order and walk-in booking, Excel import and bulk updates, Scan with phone, Suggest riders, Share files, Phone scanner, Log in as, two-step verification and the system guide work there too. The classic console stays available from the menu.
+
+## 1.14.0 — 2026-11-08
+- New Operations console (preview) at /ops: Today, New orders, All parcels, Problems, Pickup, Delivery (map and route planner), Hub desk › At my hub, Transfers › On the road and the parcel details panel, on the same data and rules. Tabs not rebuilt yet open in the classic console.
+
 ## 1.13.1 — 2026-11-07
 - Merchant, Rider and Operations apps: new versions (1.4.1, 1.3.1, 1.1.1) that connect to deliveryfast.com.bd. Install the new APK over the old app, then sign in with your Delivery Fast account.
 

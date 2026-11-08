@@ -112,6 +112,13 @@ export default function Sidebar() {
         </div>{" "}
       </nav>{" "}
       <div className="sidebar-bottom">
+        <a
+          className="ops-link"
+          href="/ops"
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: 10, border: "1px solid var(--line, #e3e7ee)", textDecoration: "none" }}
+        >
+          {"Open the new Operations console ↗"}
+        </a>
         <AppDownloadCard app="all" />
         <InstallAppButton />
         <div className="support-card">

@@ -14,3 +14,5 @@ dist/
 .env.docker
 apps/api/prisma/.schema-lock/
 apps/web/public/vendor/
+# Built by apps/ops (npm run build -w @delivery-fast/ops)
+apps/web/public/ops/

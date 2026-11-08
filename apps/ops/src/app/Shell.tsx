@@ -13,6 +13,9 @@ import { ago, num } from "@/lib/format";
 import { useOps } from "@/lib/ops";
 import { Icon } from "@/ui/Icon";
 import { toast, toastError } from "@/ui/toast";
+import { confirm } from "@/ui/dialogs";
+import { Select } from "@/ui/Select";
+import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
 import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, VIEWS, type ViewDef } from "./nav";
 import { chooseClassic, internalLink } from "./links";
 import { findParcels, useCatalog } from "@/features/parcels/search";
@@ -115,6 +118,9 @@ function Sidebar() {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+  const signOut = async () => {
+    if (await confirm({ title: "Sign out?", message: `Sign out ${user?.name ?? "this account"} on this device?`, ok: "Sign out" })) await logout();
+  };
   return (
     <aside className="sidebar" aria-label="Main menu">
       <div className="brand">
@@ -154,31 +160,37 @@ function Sidebar() {
             <span>Classic console</span>
           </a>
         </div>
+        {/* At the end of the menu (they scroll with it), like the super admin panel's "Open courier operations console". */}
+        <div className="nav-extras">
+          {hasRole("SUPER_ADMIN") ? (
+            <a className="foot-link" href="/super-admin" title="Back to the super admin panel">
+              <Icon name="lock" />
+              <span>Open super admin console ↗</span>
+            </a>
+          ) : null}
+          {/* Same as the classic console's "Get the apps" card: /apps lists the Merchant, Rider and Operations APKs. */}
+          <a className="app-card" href="/apps" target="_blank" rel="noopener" title="Download the Android apps">
+            <span className="app-card-icon" aria-hidden="true">
+              <Icon name="phoneScan" size={18} />
+            </span>
+            <span className="app-card-text">
+              <strong>Get the apps ↗</strong>
+              <small>Merchant · Rider · Operations</small>
+            </span>
+          </a>
+        </div>
       </nav>
       <div className="sidebar-foot">
-        {hasRole("SUPER_ADMIN") ? (
-          <a className="foot-link" href="/super-admin" title="Back to the super admin panel">
-            <Icon name="lock" />
-            <span>Super admin panel</span>
-          </a>
-        ) : null}
-        {/* Same as the classic console's "Get the apps" card: /apps lists the Merchant, Rider and Operations APKs. */}
-        <a className="app-card" href="/apps" target="_blank" rel="noopener" title="Download the Android apps">
-          <span className="app-card-icon" aria-hidden="true">
-            <Icon name="phoneScan" size={18} />
-          </span>
-          <span className="app-card-text">
-            <strong>Get the apps ↗</strong>
-            <small>Merchant · Rider · Operations</small>
-          </span>
-        </a>
         <div className="profile">
-          <div className="avatar">{initials}</div>
-          <div className="profile-meta">
-            <strong>{user?.name}</strong>
-            <small>{ops.roleName}</small>
-          </div>
-          <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={() => void logout()}>
+          {/* Like the other panels: clicking your name asks to sign out. */}
+          <button type="button" className="profile-button" title="Sign out" onClick={signOut}>
+            <span className="avatar">{initials}</span>
+            <span className="profile-meta">
+              <strong>{user?.name}</strong>
+              <small>{ops.roleName}</small>
+            </span>
+          </button>
+          <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={signOut}>
             <Icon name="logout" />
           </button>
         </div>
@@ -205,6 +217,7 @@ function Topbar({ crumb, onMenu }: { crumb: string; onMenu: () => void }) {
             <span className="hide-sm">Share files</span>
           </button>
         ) : null}
+        <PeriodPicker />
         <PhoneScannerButton />
         <span className="live-chip" data-state={state} role="status" aria-live="polite" title={state === "live" ? "Live updates are on: changes by others appear without reloading" : "Live updates are reconnecting; lists refresh when the connection is back"}>
           <i />
@@ -214,6 +227,20 @@ function Topbar({ crumb, onMenu }: { crumb: string; onMenu: () => void }) {
         <Bell />
       </div>
     </header>
+  );
+}
+
+/** Which parcels every list and count shows (booked in the last 30 days…); remembered in this browser. A search still finds older parcels. */
+function PeriodPicker() {
+  const { period } = useOps();
+  return (
+    <Select className="select sm" searchable={false} icon="clock" value={period.value} onChange={e => period.set(e.target.value as ParcelPeriod)} aria-label="Parcels booked in" title="Lists and counts show parcels booked in this period. Searching by ID finds older parcels too." style={{ width: 150 }}>
+      {PARCEL_PERIODS.map(p => (
+        <option key={p.value} value={p.value}>
+          {p.label}
+        </option>
+      ))}
+    </Select>
   );
 }
 

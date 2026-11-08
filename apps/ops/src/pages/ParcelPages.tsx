@@ -93,13 +93,14 @@ export function AllParcels({ tab }: { tab: string }) {
   const list = useParcelList({ id: `all-${tab}`, params: t.line ? { line: t.line } : {}, register: true, empty: "No parcels match." });
   const s = ops.overview?.shipments;
   const active = t.activeKey ? ops.overview?.serviceLines?.[t.activeKey] : null;
+  const periodText = ops.period.value === "all" ? "every date" : ops.period.label.toLowerCase();
   const newLabel = tab === "Customer" ? "New walk-in order" : tab === "E-commerce" ? "New e-commerce order" : tab === "Banking & Financial" ? "New Banking & Financial order" : "New order";
   return (
     <>
       <PageHeading
         eyebrow="Network operations"
         title="All parcels"
-        subtitle="Every parcel, newest first · the last month unless you choose other dates · search and filters run on the server"
+        subtitle={`Every parcel, newest first · ${periodText} unless you choose other dates · a search finds older parcels too`}
         actions={
           <>
             {ops.can("dispatch") ? (
@@ -137,7 +138,7 @@ export function AllParcels({ tab }: { tab: string }) {
         list={list}
         options={{
           title: tab === "All" ? "Network shipment register" : `${t.page} shipment queue`,
-          subtitle: `${active == null ? "" : `${num(active)} active · `}newest first · the last month unless you choose other dates · search and filters run on the server`,
+          subtitle: `${active == null ? "" : `${num(active)} active · `}newest first · ${periodText} unless you choose other dates · a search finds older parcels too`,
           statuses: "register",
           dates: true,
           merchants: t.merchants !== false,

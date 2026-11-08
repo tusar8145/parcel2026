@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.17.0 — 2026-11-08
+- New Operations console: a period in the top bar (Last 30 days, 60 days, 90 days, 6 months, 1 year, All time) sets which parcels every list and menu count shows, by booking date. It opens on Last 30 days and remembers your choice; searching by ID still finds older parcels.
+- New Operations console: "Open super admin console ↗" and "Get the apps" now sit at the end of the menu and scroll with it; clicking your name asks "Sign out?" first, as in the super admin panel.
+
 ## 1.16.3 — 2026-11-08
 - Super admins: two-step verification can be paused for now (server setting SUPER_ADMIN_MFA=off). Super admins then sign in without a code; when it is turned back on, the same authenticator app works again.
 

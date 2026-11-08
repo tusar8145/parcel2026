@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, apiRaw } from "@/lib/api";
-import { dayKey, num } from "@/lib/format";
+import { num } from "@/lib/format";
 import { useOps } from "@/lib/ops";
 import { toast } from "@/ui/toast";
 import type { Parcel } from "./model";
@@ -33,8 +33,10 @@ export interface ListConfig {
   limit?: number;
   /** false: a short feed without paging (Today). */
   paged?: boolean;
-  /** All parcels: the last month by default, a Date field, every status, Excel export. */
+  /** All parcels: a Date field, every status, Excel export. */
   register?: boolean;
+  /** true: ignore the top bar's period (every parcel). */
+  allTime?: boolean;
   /** false: ignore the "My hub" scope. */
   scoped?: boolean;
   noun?: string;
@@ -50,18 +52,11 @@ interface Answer {
 
 const remembered = new Map<string, { filters: ListFilters; page: number; size: number }>();
 
-/** The last calendar month up to today ("2026-10-05" to "2026-11-05"). */
-function lastMonth() {
-  const to = new Date();
-  const from = new Date(to.getFullYear(), to.getMonth() - 1, 1);
-  from.setDate(Math.min(to.getDate(), new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate()));
-  return { from: dayKey(from), to: dayKey(to) };
-}
-
 export function useParcelList(cfg: ListConfig) {
   const ops = useOps();
   const start = remembered.get(cfg.id);
-  const [filters, setFiltersState] = useState<ListFilters>(start?.filters ?? (cfg.register ? { ...lastMonth(), dateField: "pickup" } : {}));
+  // All parcels used to open on the last month; the top bar's period ("Last 30 days"…) now applies to every list.
+  const [filters, setFiltersState] = useState<ListFilters>(start?.filters ?? (cfg.register ? { dateField: "pickup" } : {}));
   const [page, setPageState] = useState(start?.page ?? 1);
   const [size, setSizeState] = useState(start?.size ?? cfg.limit ?? 100);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
@@ -69,6 +64,7 @@ export function useParcelList(cfg: ListConfig) {
   const remember = (f = filters, p = page, s = size) => remembered.set(cfg.id, { filters: f, page: p, size: s });
 
   const scopeHubs = cfg.scoped === false ? null : ops.scope.hubIds;
+  const since = cfg.allTime ? null : ops.period.since;
   const fixedKey = JSON.stringify(cfg.params ?? {});
   /** The query for GET /parcels without paging (also the export's and the print's). */
   const base = useMemo(() => {
@@ -76,10 +72,13 @@ export function useParcelList(cfg: ListConfig) {
     const fixed = cfg.params ?? {};
     for (const [k, v] of Object.entries(fixed)) if (v != null && v !== "") params.set(k, String(v));
     const f = filters;
-    if (f.q && f.q.trim().length >= 2) params.set("q", f.q.trim());
+    const searching = !!f.q && f.q.trim().length >= 2;
+    if (searching) params.set("q", f.q!.trim());
     if (f.status === "Needs info") params.set("incomplete", "true");
     else if (f.status) params.set("status", f.status);
     if (f.from) params.set("from", new Date(`${f.from}T00:00:00`).toISOString());
+    // The top bar's period, unless the list has its own dates or a search (an old parcel's ID still finds it).
+    else if (!f.to && !searching && since) params.set("from", since);
     if (f.to) params.set("to", new Date(`${f.to}T23:59:59.999`).toISOString());
     if (f.dateField === "status" && (f.from || f.to)) params.set("dateField", "status");
     if (f.line && !fixed.line) params.set("line", f.line);
@@ -89,7 +88,7 @@ export function useParcelList(cfg: ListConfig) {
     if (scopeHubs && !f.hubId) params.set("forHubIds", scopeHubs.join(","));
     return params;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fixedKey, filters, scopeHubs?.join(",")]);
+  }, [fixedKey, filters, scopeHubs?.join(","), since]);
 
   const pageQuery = new URLSearchParams(base);
   pageQuery.set("limit", String(size));

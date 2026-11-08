@@ -15,10 +15,12 @@ import { periodMetricsWithPrevious } from "./period-metrics";
 export class StageCountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async counts(query: z.infer<typeof stageCountsQuerySchema> & { from?: string; to?: string }) {
+  async counts(query: z.infer<typeof stageCountsQuerySchema> & { from?: string; to?: string; createdSince?: Date }) {
     const now = new Date();
     const hubIds = query.forHubIds?.length ? query.forHubIds : null;
-    const scope: Prisma.ParcelWhereInput = hubIds ? await forHubsWhere(this.prisma, hubIds) : {};
+    const hubScope: Prisma.ParcelWhereInput = hubIds ? await forHubsWhere(this.prisma, hubIds) : {};
+    // createdSince: only parcels booked since then, as the lists show them (GET /parcels?from=).
+    const scope: Prisma.ParcelWhereInput = query.createdSince ? { AND: [hubScope, { createdAt: { gte: query.createdSince } }] } : hubScope;
     const count = (where: Prisma.ParcelWhereInput) => this.prisma.parcel.count({ where: { AND: [scope, where] } });
     const stage = (s: ParcelStage) => count(stageWhere(s, now));
     const [newOrders, pickupWaiting, pickingUp, hub, transfers, deliveryWaiting, delivery, exceptions, failed, needsInfo, slaRisk, problems, returnsScheduled, returnRequests, backAfterFailure] = await Promise.all([

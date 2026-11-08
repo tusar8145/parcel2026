@@ -56,7 +56,7 @@ export class OpsService {
   // ───────────── live overview ─────────────
 
   /** Counters behind the command center, nav badges and alerts, computed in the database. */
-  async overview(actor: Actor, query: PeriodQuery = {}) {
+  async overview(actor: Actor, query: PeriodQuery & { createdSince?: Date } = {}) {
     const db = this.prisma;
     const now = new Date();
     const period = resolvePeriod(query, "today", now);
@@ -98,7 +98,8 @@ export class OpsService {
       cash,
       metrics,
     ] = await Promise.all([
-      db.parcel.groupBy({ by: ["status"], _count: { _all: true } }),
+      // Parcels per status (All parcels' counters): booked since createdSince when it is sent.
+      db.parcel.groupBy({ by: ["status"], ...(query.createdSince ? { where: { createdAt: { gte: query.createdSince } } } : {}), _count: { _all: true } }),
       db.parcel.count({ where: { createdAt: { gte: today } } }),
       db.parcel.count({ where: { createdAt: { gte: yesterday, lt: today } } }),
       db.parcel.count({ where: { status: "DELIVERED", deliveredAt: { gte: today } } }),

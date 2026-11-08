@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { Controller, Get, Post, Query } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
@@ -17,8 +17,11 @@ import { StageCountsService } from "./stage-counts.service";
 import { stageCountsQuerySchema } from "../parcels/parcel-stages";
 import { periodQueryShape, periodChecks, periodQuerySchema, type PeriodQuery } from "../../common/period";
 
+/** Only parcels booked on or after this time (the Operations console's "Last 30 days…" choice); none = every parcel. */
+const createdSinceShape = { createdSince: z.coerce.date().optional() };
 /** Stage counts, plus the period's metrics when from / to are sent. */
-const opsStageCountsQuerySchema = stageCountsQuerySchema.extend(periodQueryShape).superRefine(periodChecks);
+const opsStageCountsQuerySchema = stageCountsQuerySchema.extend(periodQueryShape).extend(createdSinceShape).superRefine(periodChecks);
+const opsOverviewQuerySchema = z.object(periodQueryShape).extend(createdSinceShape).superRefine(periodChecks);
 
 /** Courier Operations console: network counters, dispatch, analytics, reports and bookings by staff. */
 @ApiTags("operations")
@@ -35,8 +38,8 @@ export class OpsController {
    */
   @RequirePermissions("parcel:read:any")
   @Get("overview")
-  @ApiZodQuery(periodQuerySchema)
-  overview(@CurrentActor() actor: Actor, @Query(new ZodPipe(periodQuerySchema)) query: PeriodQuery) {
+  @ApiZodQuery(opsOverviewQuerySchema)
+  overview(@CurrentActor() actor: Actor, @Query(new ZodPipe(opsOverviewQuerySchema)) query: z.infer<typeof opsOverviewQuerySchema>) {
     return this.ops.overview(actor, query);
   }
 

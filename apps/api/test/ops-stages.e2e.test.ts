@@ -131,4 +131,26 @@ describe("journey stages: paged list filters and stage counts", () => {
     expect(second.body.items[0].trackingId).not.toBe(first.body.items[0].trackingId);
     expect(second.body.nextCursor).toBeNull();
   });
+
+  it("counts and lists only parcels booked since createdSince (the console's period), while a search still finds older ones", async () => {
+    const s = await setup();
+    const recent = await book(s, s.shop.id);
+    const old = await book(s, s.shop.id);
+    await ctx.prisma.parcel.update({ where: { trackingId: old }, data: { createdAt: new Date(Date.now() - 45 * 86_400_000) } });
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+    expect((await counts(s.ops.token)).stages.newOrders).toBe(2);
+    expect((await counts(s.ops.token, `?createdSince=${encodeURIComponent(since)}`)).stages.newOrders).toBe(1);
+    expect((await counts(s.ops.token, `?forHubIds=${s.gulshan.id}&createdSince=${encodeURIComponent(since)}`)).hubIds).toEqual([s.gulshan.id]);
+    // The All parcels counters follow it too.
+    const overview = (since?: string) => ctx.api("GET", `/ops/overview${since ? `?createdSince=${encodeURIComponent(since)}` : ""}`, { token: s.ops.token });
+    const all = (await overview()).body.shipments.byStatus as Record<string, number>;
+    const period = (await overview(since)).body.shipments.byStatus as Record<string, number>;
+    expect(Object.values(all).reduce((a, b) => a + b, 0)).toBe(2);
+    expect(Object.values(period).reduce((a, b) => a + b, 0)).toBe(1);
+    // The list with the same start (from=), and a search without it finds the old parcel.
+    expect(await ids(s.ops.token, `stage=new&from=${encodeURIComponent(since)}`)).toEqual([recent]);
+    expect(await ids(s.ops.token, `q=${old}`)).toEqual([old]);
+    expect((await ctx.api("GET", "/ops/stage-counts?createdSince=yesterday-ish", { token: s.ops.token })).status).toBe(422);
+  });
 });

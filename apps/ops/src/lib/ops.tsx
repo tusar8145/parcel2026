@@ -13,6 +13,27 @@ import { useStored } from "@/ui/kit";
 import type { MenuContext } from "@/app/nav";
 import { toast } from "@/ui/toast";
 
+/** Which parcels the console shows (top bar): booked in the last 30 days by default; remembered per browser. */
+export type ParcelPeriod = "30d" | "60d" | "90d" | "6m" | "1y" | "all";
+export const PARCEL_PERIODS: { value: ParcelPeriod; label: string }[] = [
+  { value: "30d", label: "Last 30 days" },
+  { value: "60d", label: "Last 60 days" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "6m", label: "Last 6 months" },
+  { value: "1y", label: "Last 1 year" },
+  { value: "all", label: "All time" },
+];
+/** The start of the period (local midnight, as an ISO time; the same all day so queries stay cached), or null for all time. */
+function periodStart(p: ParcelPeriod): string | null {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (p === "30d" || p === "60d" || p === "90d") d.setDate(d.getDate() - Number(p.slice(0, -1)));
+  else if (p === "6m") d.setMonth(d.getMonth() - 6);
+  else if (p === "1y") d.setFullYear(d.getFullYear() - 1);
+  else return null;
+  return d.toISOString();
+}
+
 export type StageCounts = { stages: Record<string, number>; detail?: Record<string, number>; [key: string]: unknown };
 
 interface OpsApi {
@@ -25,6 +46,8 @@ interface OpsApi {
   /** Says why an action isn't available before calling the API (Ops.require). */
   require: (permission: keyof OpsCan, action: string) => boolean;
   roleName: string;
+  /** Lists and counts show parcels booked since `since` (null: every parcel); a search finds older parcels too. */
+  period: { value: ParcelPeriod; set: (v: ParcelPeriod) => void; since: string | null; label: string };
   scope: { available: boolean; value: "mine" | "all"; set: (v: "mine" | "all") => void; hubIds: string[] | null; label: string };
   hubById: (id?: string | null) => Hub | undefined;
   myHubs: Hub[] | null;
@@ -39,8 +62,17 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const { user, hasRole } = useAuth();
   const qc = useQueryClient();
   const [scopeValue, setScope] = useStored<"mine" | "all">("deliveryfast-ops-scope", "mine");
+  const [storedPeriod, setPeriod] = useStored<ParcelPeriod>("deliveryfast-ops-period", "30d");
+  const periodValue = PARCEL_PERIODS.some(p => p.value === storedPeriod) ? storedPeriod : "30d";
+  const since = periodStart(periodValue);
+  const sinceQuery = since ? `createdSince=${encodeURIComponent(since)}` : "";
 
-  const overview = useQuery({ queryKey: ["ops", "overview"], queryFn: () => api<OpsOverview>("/ops/overview"), staleTime: 15_000 });
+  const overview = useQuery({
+    queryKey: ["ops", "overview", since ?? "all"],
+    queryFn: () => api<OpsOverview>(`/ops/overview${sinceQuery ? `?${sinceQuery}` : ""}`),
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
   const me = overview.data?.me ?? null;
   const hubs = useQuery({ queryKey: ["hubs"], queryFn: () => api<Hub[]>("/hubs"), staleTime: 5 * 60_000 });
   const canListRiders = hasRole("SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "SUPPORT_AGENT");
@@ -56,8 +88,8 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const scopeAvailable = !!me?.hubIds?.length;
   const scopeHubIds = scopeAvailable && scopeValue !== "all" ? me!.hubIds : null;
   const stageCounts = useQuery({
-    queryKey: ["ops", "stage-counts", scopeHubIds?.join(",") ?? "all"],
-    queryFn: () => api<StageCounts>(`/ops/stage-counts${scopeHubIds ? `?forHubIds=${scopeHubIds.join(",")}` : ""}`),
+    queryKey: ["ops", "stage-counts", scopeHubIds?.join(",") ?? "all", since ?? "all"],
+    queryFn: () => api<StageCounts>(`/ops/stage-counts?${[scopeHubIds ? `forHubIds=${scopeHubIds.join(",")}` : "", sinceQuery].filter(Boolean).join("&")}`),
     enabled: !!me,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
@@ -91,13 +123,14 @@ export function OpsProvider({ children }: { children: ReactNode }) {
         return false;
       },
       roleName,
+      period: { value: periodValue, set: setPeriod, since, label: PARCEL_PERIODS.find(p => p.value === periodValue)!.label },
       scope: { available: scopeAvailable, value: scopeValue, set: setScope, hubIds: scopeHubIds, label: me?.hubIds?.length === 1 ? "My hub" : "My hubs" },
       hubById: id => hubList.find(h => h.id === id),
       myHubs,
       menu: { roles: new Set(user?.roles ?? []), me, centralHubId: accountsConfig.data?.centralHub?.id ?? null },
       refreshAll,
     };
-  }, [me, overview.data, hubs.data, riders.data, stageCounts.data, user, scopeAvailable, scopeValue, setScope, scopeHubIds, accountsConfig.data, refreshAll]);
+  }, [me, overview.data, hubs.data, riders.data, stageCounts.data, user, scopeAvailable, scopeValue, setScope, scopeHubIds, accountsConfig.data, refreshAll, periodValue, setPeriod, since]);
 
   return <OpsContext.Provider value={value}>{children}</OpsContext.Provider>;
 }

@@ -2,7 +2,7 @@
  * Sign-in state. On start the session is restored from the refresh cookie. Each panel decides who may open it
  * (Operations: OPS_ROLES in apps/ops). The API still decides every action.
  */
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { authApi, onSessionChange, refresh, type SessionUser } from "./api";
 import { events } from "./events";
 
@@ -25,9 +25,11 @@ const AuthContext = createContext<AuthApi | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  /** Signing out: the page goes to the website's sign-in, so the panel's own sign-in form must not flash first. */
+  const leaving = useRef(false);
 
   useEffect(() => {
-    const off = onSessionChange(user => setState(user ? { status: "signed-in", user } : { status: "signed-out" }));
+    const off = onSessionChange(user => !leaving.current && setState(user ? { status: "signed-in", user } : { status: "signed-out" }));
     refresh()
       .then(user => setState(user ? { status: "signed-in", user } : { status: "signed-out" }))
       .catch(() => setState({ status: "offline" }));
@@ -45,6 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     hasRole: (...roles) => !!user && user.roles.some(r => roles.includes(r)),
     logout: async () => {
+      leaving.current = true;
+      setState({ status: "loading" });
       events.stop();
       await authApi.logout();
       // Like the classic console: signing out goes to the website's sign-in page.

@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.23.1 — 2026-11-09
+- Signing out of the new panels (super admin, Operations console, merchant panel) goes straight to the website's sign-in page; the panel's own sign-in form no longer shows on the way.
+
 ## 1.23.0 — 2026-11-09
 - The figures on the first page of the super admin panel (Platform overview), the Operations console (Today) and the merchant panel (Overview) now count up from 0 to their value when the page opens, and roll to the new value when it changes.
 

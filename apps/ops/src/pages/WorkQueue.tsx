@@ -70,24 +70,27 @@ export default function WorkQueue() {
   const box = useRef<ScanInputHandle>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const own = ops.myHubs?.length === 1 ? ops.myHubs[0] : null;
+  const since = ops.period.since;
   const qs = (extra: Record<string, string | undefined> = {}) => {
     const p = new URLSearchParams();
     if (hubId) p.set("hubId", hubId);
+    // The top bar's period (parcels booked since); scanning a parcel ignores it.
+    if (since) p.set("createdSince", since);
     for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
     const s = p.toString();
     return s ? `?${s}` : "";
   };
 
-  const overview = useQuery({ queryKey: ["work-queue", "overview", hubId], queryFn: () => api<Overview>(`/work-queue${qs()}`) });
+  const overview = useQuery({ queryKey: ["work-queue", "overview", hubId, since], queryFn: () => api<Overview>(`/work-queue${qs()}`) });
   const groupsOf = (key: string | null | undefined) => ({
-    queryKey: ["work-queue", "groups", key, hubId],
+    queryKey: ["work-queue", "groups", key, hubId, since],
     queryFn: () => api<Groups>(`/work-queue/${key}${qs()}`),
     enabled: !!key,
   });
   const openGroups = useQuery(groupsOf(open));
   const selGroups = useQuery(groupsOf(sel?.task));
   const list = useQuery({
-    queryKey: ["work-queue", "list", sel?.task, sel?.group, hubId],
+    queryKey: ["work-queue", "list", sel?.task, sel?.group, hubId, since],
     queryFn: () => api<{ items: Row[]; total: number }>(`/work-queue/${sel!.task}/parcels${qs({ group: sel!.group })}`),
     enabled: !!sel,
   });

@@ -4,6 +4,8 @@ import { scanSourceSchema } from "../ops/ops-common";
 /** Optional hub filter (operations managers: one hub; hub staff are always limited to their hubs). */
 export const queueQuerySchema = z.object({
   hubId: z.uuid().optional(),
+  /** Only parcels booked on or after this time (the Operations console's "Last 30 days…"); none = every parcel. */
+  createdSince: z.coerce.date().optional(),
 });
 
 export const queueListQuerySchema = queueQuerySchema.extend({

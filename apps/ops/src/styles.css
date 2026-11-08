@@ -398,7 +398,8 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-3); b
   .page-heading > .heading-actions { flex: 0 1 auto; max-width: 66%; margin-left: auto; }
 }
 /* Medium screens: the find box gives way first, so the page name in the bar stays readable. */
-@media (max-width: 1280px) { .top-actions .search { width: min(260px, 24vw); } }
+@media (max-width: 1600px) { .top-actions .search { width: min(280px, 22vw); } }
+@media (max-width: 1280px) { .top-actions .search { width: min(240px, 20vw); } }
 
 /* The panel's dropdown (ui/SearchSelect.tsx): a button like the inputs, and a floating list. */
 .dropdown-button { display: inline-flex; align-items: center; gap: 7px; text-align: left; cursor: pointer; transition: border-color .12s, box-shadow .12s; }

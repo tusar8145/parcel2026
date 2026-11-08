@@ -48,8 +48,8 @@ function useMenuCounts() {
   const { me } = ops;
   const qc = useQueryClient();
   const workQueue = useQuery({
-    queryKey: ["work-queue", "nav"],
-    queryFn: () => api<{ tasks: { count?: number }[] }>("/work-queue"),
+    queryKey: ["work-queue", "nav", ops.period.since ?? "all"],
+    queryFn: () => api<{ tasks: { count?: number }[] }>(`/work-queue${ops.period.since ? `?createdSince=${encodeURIComponent(ops.period.since)}` : ""}`),
     enabled: !!me,
     staleTime: 30_000,
     retry: false,
@@ -211,13 +211,13 @@ function Topbar({ crumb, onMenu }: { crumb: string; onMenu: () => void }) {
         Delivery Fast <span aria-hidden="true">/</span> <strong>{crumb}</strong>
       </div>
       <div className="top-actions">
+        <PeriodPicker />
         {ops.me && ops.can("dispatch") ? (
           <button type="button" className="button sm" aria-haspopup="dialog" title="Receive files from a phone or another computer (QR code)" onClick={() => void openShareFiles()}>
             <Icon name="upload" />
             <span className="hide-sm">Share files</span>
           </button>
         ) : null}
-        <PeriodPicker />
         <PhoneScannerButton />
         <span className="live-chip" data-state={state} role="status" aria-live="polite" title={state === "live" ? "Live updates are on: changes by others appear without reloading" : "Live updates are reconnecting; lists refresh when the connection is back"}>
           <i />

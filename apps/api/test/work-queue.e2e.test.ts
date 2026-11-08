@@ -115,4 +115,19 @@ describe("work queue", () => {
     expect((await ctx.api("GET", `/work-queue?hubId=${s.gulshan.id}`, { token: s.dhnOp.token })).status).toBe(403);
     expect((await ctx.api("GET", "/work-queue/nope", { token: s.ops.token })).status).toBe(404);
   });
+
+  it("shows only parcels booked since createdSince (the console's period), while scanning still finds older ones", async () => {
+    const s = await setup();
+    await book(s.ops.token, s.shop.id);
+    const old = await book(s.ops.token, s.shop.id);
+    await ctx.prisma.parcel.update({ where: { trackingId: old }, data: { createdAt: new Date(Date.now() - 45 * 86_400_000) } });
+    const since = `?createdSince=${encodeURIComponent(new Date(Date.now() - 30 * 86_400_000).toISOString())}`;
+    expect(await counts(s.ops.token)).toMatchObject({ "pickup-assign": 2 });
+    expect(await counts(s.ops.token, since)).toMatchObject({ "pickup-assign": 1 });
+    expect((await ctx.api("GET", `/work-queue/pickup-assign${since}`, { token: s.ops.token })).body.total).toBe(1);
+    const list = await ctx.api("GET", `/work-queue/pickup-assign/parcels${since}`, { token: s.ops.token });
+    expect(list.body.items.map((p: { trackingId: string }) => p.trackingId)).not.toContain(old);
+    // A scan isn't limited by the period.
+    expect(await scan(s.ops.token, "pickup-assign", { code: old, riderId: s.pickupRider.rider.id })).toMatchObject({ ok: true, outcome: "DONE" });
+  });
 });

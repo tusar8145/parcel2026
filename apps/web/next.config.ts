@@ -128,18 +128,18 @@ export default function nextConfig(phase: string): NextConfig {
           destination: "/ops",
           permanent: false,
         },
-        // Banking & Financial merchants use the new merchant panel (apps/merchant): sign-in, notifications and links
-        // to /banking-merchant open it, query kept (?page=&parcel=&merchant= open the same place). The classic panel
-        // stays at /banking-merchant?classic=1; the df-classic-merchant cookie (set by its link) keeps it on reload.
-        {
-          source: "/banking-merchant",
+        // Merchants (Banking & Financial and E-commerce) use the new merchant panel (apps/merchant): sign-in,
+        // notifications and links to the classic panels open it, query kept (?page=&parcel=&merchant= open the same
+        // place). The classic panels stay at ?classic=1; the df-classic-merchant cookie (set by the link) keeps them on reload.
+        ...["/banking-merchant", "/ecommerce-merchant"].map(source => ({
+          source,
           missing: [
-            { type: "query", key: "classic" },
-            { type: "cookie", key: "df-classic-merchant" },
+            { type: "query" as const, key: "classic" },
+            { type: "cookie" as const, key: "df-classic-merchant" },
           ],
           destination: "/merchant",
           permanent: false,
-        },
+        })),
         ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),
         // The document merchant panel became the Banking & Financial merchant panel.
         { source: "/document-merchant", destination: "/banking-merchant", permanent: true },

@@ -66,18 +66,19 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   const [view, setView] = useState<PackageView | null>(null);
   const [pkgError, setPkgError] = useState("");
   const [slots, setSlots] = useState<Slots["days"]>([]);
-  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", openBox: false, off: new Set<string>() });
+  const doc = m.doc;
+  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", openBox: false, cod: true, codAmount: "", off: new Set<string>() });
   const [recipient, setRecipient] = useState({ name: "", phone: "" });
-  const [place, setPlace] = useState({ street: "", district: "", zone: "", area: "", category: "Office" });
-  const [req, setReq] = useState({ product: "", value: "", ref: "", contents: "", cn: "", window: "" });
+  const [place, setPlace] = useState({ street: "", district: "", zone: "", area: "", category: doc ? "Office" : "Home" });
+  const [req, setReq] = useState({ product: "", value: "", ref: "", contents: "", cn: "", window: "", weight: "0.5" });
   const [quote, setQuote] = useState<{ q?: Quote; text?: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const pending = useRef<{ json: string; key: string } | null>(null);
   // "From your catalogue" (merchant-features.js addProductPicker): an active product prefills the request.
-  const [catalogue, setCatalogue] = useState<{ id: string; name: string; sku: string; price: number; active: boolean }[]>([]);
-  const [refHint, setRefHint] = useState("e.g. CARD-2026-0012");
+  const [catalogue, setCatalogue] = useState<{ id: string; name: string; sku: string; price: number; active: boolean; category?: string | null; weightKg?: number | null }[]>([]);
+  const [refHint, setRefHint] = useState(doc ? "e.g. CARD-2026-0012" : "e.g. ORDER-1001");
 
   useEffect(() => {
     api<PackageView>("/packages/me").then(
@@ -88,7 +89,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       },
       e => setPkgError(describe(e)),
     );
-    api<{ items: { id: string; name: string; sku: string; price: number; active: boolean }[] }>(`/merchants/me/products?limit=200${m.q("&")}`).then(
+    api<{ items: { id: string; name: string; sku: string; price: number; active: boolean; category?: string | null; weightKg?: number | null }[] }>(`/merchants/me/products?limit=200${m.q("&")}`).then(
       r => setCatalogue(r.items.filter(p => p.active).sort((a, b) => a.name.localeCompare(b.name))),
       () => setCatalogue([]),
     );
@@ -116,8 +117,10 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       speed: (o.speeds.length > 1 ? svc.speed : "") || "REGULAR",
       ...(req.product ? { product: req.product } : {}),
       openBox: o.openBox ? svc.openBox : false,
+      // Cash on delivery (E-commerce): only when the package offers it and it is ticked.
+      codOn: !doc && o.cod ? svc.cod : false,
       ...(all.length && ticked.length !== all.length && !silent ? { notifications: ticked } : {}),
-    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; product?: string; openBox: boolean; notifications?: string[] };
+    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; product?: string; openBox: boolean; codOn: boolean; notifications?: string[] };
   }, [view, svc, req.product, silent]);
   const drop = service?.firstMile === "HUB_DROP";
   const hubCollect = service?.lastMile === "HUB_COLLECT";
@@ -126,8 +129,10 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   const body = () => {
     const pickup = mm.pickup as { zone?: string; area?: string; lat?: number | null; lng?: number | null } | undefined;
     const [start, end] = req.window ? req.window.split("|") : [];
+    const { codOn, ...choices } = service ?? ({ codOn: false } as NonNullable<typeof service>);
+    const codAmount = codOn ? Number(svc.codAmount) || 0 : 0;
     return {
-      ...(service ?? {}),
+      ...choices,
       sender: { name: mm.name, phone: (mm.pickupContactPhone as string) || (mm.contactPhone as string) },
       pickup: {
         category: "Office",
@@ -139,11 +144,12 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       },
       recipient: { name: recipient.name.trim(), phone: recipient.phone.trim() ? normalizeBdPhone(recipient.phone.trim()) ?? recipient.phone.trim() : "" },
       delivery: { category: place.category || "Office", street: place.street.trim(), area: place.area || undefined, zone: place.zone, district: place.district },
-      type: "DOCUMENT",
+      type: doc ? "DOCUMENT" : "ECOMMERCE",
       // Banking & Financial has no weight in pricing: the API needs one, 0.5 kg (the included weight).
-      weightKg: 0.5,
+      weightKg: doc ? 0.5 : Number(req.weight) || 0.5,
       declaredValue: Number(req.value) || undefined,
-      codAmount: 0,
+      // Cash on delivery: the separate COD amount, only when the package offers COD and it is ticked.
+      codAmount: doc ? 0 : codAmount,
       merchantOrderRef: req.ref.trim() || undefined,
       contents: req.contents.trim() || undefined,
       cn: req.cn.trim().toUpperCase() || undefined,
@@ -163,7 +169,8 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       deliveryDistrict: b.delivery.district,
       ...(b.delivery.zone ? { deliveryZone: b.delivery.zone } : {}),
       ...(b.delivery.area ? { deliveryArea: b.delivery.area } : {}),
-      codAmount: 0,
+      ...(doc ? {} : { weightKg: b.weightKg }),
+      codAmount: b.codAmount,
       ...(service ? { firstMile: service.firstMile, dropHubId: service.dropHubId, lastMile: service.lastMile, speed: service.speed, openBox: service.openBox, product: service.product } : {}),
     };
   })();
@@ -192,6 +199,18 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
     if (req.value && !(Number(req.value) >= 0)) e.value = "Enter a value of ৳0 or more";
     if (req.cn.trim() && !/^[A-Za-z]{2,4}-\d{6}-[0-9A-Za-z]{4,8}$/.test(req.cn.trim())) e.cn = "Enter the consignment number printed on the label";
     if (view && drop && !svc.dropHubId) e.dropHub = "Choose the hub the sender brings the parcel to";
+    if (!doc) {
+      const w = req.weight.trim();
+      if (!w) e.weight = "Enter the weight";
+      else if (!(Number(w) >= 0.01)) e.weight = "At least 0.01 kg";
+      else if (Number(w) > 50) e.weight = "At most 50 kg";
+      if (service?.codOn) {
+        const n = Number(svc.codAmount);
+        if (!svc.codAmount.trim()) e.codAmount = "Enter the cash to collect, or untick COD";
+        else if (!(n >= 1)) e.codAmount = "Enter an amount of at least ৳1";
+        else if (n > 1_000_000) e.codAmount = "The amount is too large";
+      }
+    }
     return e;
   };
   useEffect(() => {
@@ -217,7 +236,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       const p = await api<{ trackingId: string; charges: { total: number } }>(`/parcels${m.q()}`, { method: "POST", body: b, headers: { "Idempotency-Key": pending.current.key } });
       pending.current = null;
       refreshMerchant();
-      toast(`Request ${p.trackingId} created · delivery charge ${taka(p.charges.total)}.`, "good");
+      toast(`${doc ? "Request" : "Order"} ${p.trackingId} created · delivery charge ${taka(p.charges.total)}.`, "good");
       close();
       onDone(p.trackingId);
     } catch (error) {
@@ -251,7 +270,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
     <form onSubmit={submit} noValidate>
       <div className="dialog-head">
         <div>
-          <h2>Create a new delivery request</h2>
+          <h2>{doc ? "Create a new delivery request" : "Create a new order"}</h2>
           <p>
             From {mm.name} · {String(mm.pickupAddress ?? "")}
           </p>
@@ -262,12 +281,16 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       </div>
       <div className="dialog-body">
         <PasteMessage
+          kind={doc ? "document" : "ecommerce"}
           apply={f => {
             const filled: string[] = [];
             const local = (p: string) => String(p || "").replace(/^\+?880/, "").replace(/^0(?=1)/, "");
             if (f.recipient_name && !recipient.name.trim()) (setRecipient(r => ({ ...r, name: String(f.recipient_name) })), filled.push("name"));
             if (f.recipient_phone && !recipient.phone.trim()) (setRecipient(r => ({ ...r, phone: local(String(f.recipient_phone)) })), filled.push("phone"));
             if (f.address && !place.street.trim()) (setPlace(p => ({ ...p, street: String(f.address) })), filled.push("full address"));
+            // COD (E-commerce): switch it on with the amount.
+            if (!doc && view?.options.cod && f.cod_amount && Number(f.cod_amount) > 0 && !svc.codAmount) (setSvc(x => ({ ...x, cod: true, codAmount: String(Number(f.cod_amount)) })), filled.push(`COD ৳${Number(f.cod_amount).toLocaleString("en-US")}`));
+            if (!doc && f.weight_kg && (!req.weight || req.weight === "0.5")) (setReq(r => ({ ...r, weight: String(f.weight_kg) })), filled.push("weight"));
             if (f.order_ref && !req.ref.trim()) (setReq(r => ({ ...r, ref: String(f.order_ref) })), filled.push("reference"));
             return filled;
           }}
@@ -329,6 +352,21 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                   </Select>,
                 )
               : null}
+            {!doc && o.cod ? (
+              <>
+                <label className="full" style={{ display: "flex", flexDirection: "row", gap: 7, alignItems: "center", fontWeight: 600, gridColumn: "1 / -1" }}>
+                  <input type="checkbox" checked={svc.cod} onChange={e => setSvc(x => ({ ...x, cod: e.target.checked }))} /> Collect cash on delivery (COD)
+                </label>
+                {svc.cod
+                  ? field(
+                      "codAmount",
+                      "COD amount (৳)",
+                      <input id="nr_codAmount" className="input" type="number" min={1} max={1000000} step={1} inputMode="numeric" placeholder="Cash to collect from the recipient" value={svc.codAmount} aria-invalid={errors.codAmount ? true : undefined} onChange={e => setSvc(x => ({ ...x, codAmount: e.target.value }))} />,
+                      { req: true },
+                    )
+                  : null}
+              </>
+            ) : null}
             {o.openBox ? (
               <label className="full" style={{ display: "flex", flexDirection: "row", gap: 7, alignItems: "center", fontWeight: 600, gridColumn: "1 / -1" }}>
                 <input type="checkbox" checked={svc.openBox} onChange={e => setSvc(s => ({ ...s, openBox: e.target.checked }))} /> Open box / check before pay
@@ -398,7 +436,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
             </div>,
             { req: true },
           )}
-          <Street value={place.street} catalog={catalog} invalid={!!errors.street} error={errors.street} onChange={street => setPlace(p => ({ ...p, street }))} onPlace={found => setPlace(p => ({ ...p, ...found }))} />
+          <Street doc={doc} value={place.street} catalog={catalog} invalid={!!errors.street} error={errors.street} onChange={street => setPlace(p => ({ ...p, street }))} onPlace={found => setPlace(p => ({ ...p, ...found }))} />
           {field(
             "district",
             "District",
@@ -420,15 +458,15 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
             "category",
             "Address category",
             <Select id="nr_category" className="select" searchable={false} value={place.category} onChange={e => setPlace(p => ({ ...p, category: e.target.value }))}>
-              <option>Office</option>
-              <option>Home</option>
-              <option>Other</option>
+              {(doc ? ["Office", "Home", "Other"] : ["Home", "Office", "Other"]).map(c => (
+                <option key={c}>{c}</option>
+              ))}
             </Select>,
           )}
         </div>
 
         <h3 className="section-title" style={{ marginTop: 16 }}>
-          Request
+          {doc ? "Request" : "Order"}
         </h3>
         <div className="form-grid">
           {catalogue.length
@@ -444,8 +482,12 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                     const p = catalogue.find(x => x.id === id);
                     if (!p) return;
                     // The product dropdown lists only the package's products: pick one only when the saved item matches it.
-                    if (products.some(x => x.name === p.name)) setReq(r => ({ ...r, product: p.name }));
+                    const wanted = doc ? p.name : p.category || p.name;
+                    if (products.some(x => x.name === wanted)) setReq(r => ({ ...r, product: wanted }));
+                    if (!doc && p.weightKg) setReq(r => ({ ...r, weight: String(p.weightKg) }));
+                    // The catalogue price is the product value; with COD ticked it is also the cash to collect.
                     if (p.price) setReq(r => ({ ...r, value: String(p.price) }));
+                    if (!doc && p.price && service?.codOn && !svc.codAmount) setSvc(x => ({ ...x, codAmount: String(p.price) }));
                     setRefHint(`e.g. ${p.sku}-${new Date().getDate()}`);
                   }}
                   options={catalogue.map(p => ({ value: p.id, label: `${p.name} · ${p.sku}${p.price ? ` · ${taka(p.price)}` : ""}` }))}
@@ -467,9 +509,12 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                 />,
               )
             : null}
-          {field("value", "Declared value (optional)", <input id="nr_value" className="input" type="number" min={0} placeholder="0" value={req.value} aria-invalid={errors.value ? true : undefined} onChange={e => setReq(r => ({ ...r, value: e.target.value }))} />)}
-          {field("ref", "Internal reference / cost center (optional)", <input id="nr_ref" className="input" maxLength={80} placeholder={refHint} value={req.ref} onChange={e => setReq(r => ({ ...r, ref: e.target.value }))} />)}
-          {field("contents", "Item description (optional)", <input id="nr_contents" className="input" maxLength={200} value={req.contents} onChange={e => setReq(r => ({ ...r, contents: e.target.value }))} />)}
+          {doc
+            ? null
+            : field("weight", "Weight (kg)", <input id="nr_weight" className="input" type="number" min={0.01} max={50} step={0.01} value={req.weight} aria-invalid={errors.weight ? true : undefined} onChange={e => setReq(r => ({ ...r, weight: e.target.value }))} />, { req: true })}
+          {field("value", doc ? "Declared value (optional)" : "Product value (optional)", <input id="nr_value" className="input" type="number" min={0} placeholder={doc ? "0" : "Declared value of the goods"} value={req.value} aria-invalid={errors.value ? true : undefined} onChange={e => setReq(r => ({ ...r, value: e.target.value }))} />)}
+          {field("ref", doc ? "Internal reference / cost center (optional)" : "Order reference (optional)", <input id="nr_ref" className="input" maxLength={80} placeholder={refHint} value={req.ref} onChange={e => setReq(r => ({ ...r, ref: e.target.value }))} />)}
+          {field("contents", doc ? "Item description (optional)" : "Contents (optional)", <input id="nr_contents" className="input" maxLength={200} value={req.contents} onChange={e => setReq(r => ({ ...r, contents: e.target.value }))} />)}
           {field("cn", "Pre-printed CN (optional)", <input id="nr_cn" className="input" placeholder="Label from your CN stock" value={req.cn} aria-invalid={errors.cn ? true : undefined} onChange={e => setReq(r => ({ ...r, cn: e.target.value }))} />)}
         </div>
 
@@ -503,7 +548,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
           Cancel
         </button>
         <button type="submit" className="button primary" aria-busy={busy || undefined} disabled={busy}>
-          Create request
+          {doc ? "Create request" : "Create order"}
         </button>
       </div>
     </form>
@@ -511,7 +556,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
 }
 
 /** The full address: after a pause (or on leaving it) GET /catalog/place picks the district / zone / area it names. */
-function Street({ value, catalog, invalid, error, onChange, onPlace }: { value: string; catalog: Catalog | undefined; invalid: boolean; error?: string; onChange: (v: string) => void; onPlace: (p: { district: string; zone: string; area: string }) => void }) {
+function Street({ doc, value, catalog, invalid, error, onChange, onPlace }: { doc: boolean; value: string; catalog: Catalog | undefined; invalid: boolean; error?: string; onChange: (v: string) => void; onPlace: (p: { district: string; zone: string; area: string }) => void }) {
   const read = useRef("");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const current = useRef(value);
@@ -541,7 +586,7 @@ function Street({ value, catalog, invalid, error, onChange, onPlace }: { value: 
         id="nr_street"
         className="input"
         maxLength={200}
-        placeholder="e.g. Level 5, Tower 2, Road 11, Gulshan 2, Dhaka"
+        placeholder={doc ? "e.g. Level 5, Tower 2, Road 11, Gulshan 2, Dhaka" : "e.g. Flat 4B, House 22, Road 7, Block C, Banani, Dhaka"}
         value={value}
         aria-invalid={invalid || undefined}
         onChange={e => {
@@ -558,7 +603,7 @@ function Street({ value, catalog, invalid, error, onChange, onPlace }: { value: 
 }
 
 /** "Got the customer's details in a message? Paste it" (paste-message.js): POST /parse-message fills the empty fields. */
-function PasteMessage({ apply }: { apply: (fields: Record<string, unknown>) => string[] }) {
+function PasteMessage({ apply, kind }: { apply: (fields: Record<string, unknown>) => string[]; kind: "document" | "ecommerce" }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -567,7 +612,7 @@ function PasteMessage({ apply }: { apply: (fields: Record<string, unknown>) => s
     if (text.trim().length < 5) return setNote({ ok: false, text: "Paste the message first." });
     setBusy(true);
     try {
-      const { fields } = await api<{ fields: Record<string, unknown> }>("/parse-message", { method: "POST", body: { text, kind: "document" } });
+      const { fields } = await api<{ fields: Record<string, unknown> }>("/parse-message", { method: "POST", body: { text, kind } });
       const filled = apply(fields);
       setNote(
         filled.length

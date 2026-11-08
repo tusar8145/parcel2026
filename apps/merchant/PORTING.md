@@ -1,5 +1,11 @@
 # Merchant panel (React) — porting status
 
+Both merchant types are served (2026-11-08): Banking & Financial and E-commerce. The type decides the words,
+columns and features (`useMerchant().doc`, `panel`; page names and addresses in `app/nav.ts`). E-commerce adds COD
+(booking, list amount, payment filter), weight, POS invoices, customers with lifetime value, the COD Balance
+(ready to pay, with riders, settlements, paid history) and the payout account in Settings. Classic panels:
+`/banking-merchant?classic=1`, `/ecommerce-merchant?classic=1`.
+
 Rebuild of the classic Banking & Financial merchant panel (`/banking-merchant`, legacy scripts in
 `apps/web/public/legacy/banking-merchant/*` and `apps/web/public/legacy/shared/merchant-*.js`) in React at `/merchant/`.
 Same API, same rules and wording; nothing removed. The e-commerce merchant panel can move here later

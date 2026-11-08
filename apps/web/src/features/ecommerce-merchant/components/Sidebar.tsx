@@ -97,6 +97,13 @@ export default function Sidebar() {
       </nav>{" "}
       <div className="sidebar-bottom">
         {" "}
+        <a
+          className="ops-link"
+          href="/merchant/"
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: 10, margin: "0 2px 10px", border: "1px solid var(--line, #e3e7ee)", borderRadius: 8, textDecoration: "none" }}
+        >
+          {"Open the new merchant panel ↗"}
+        </a>
         <AppDownloadCard app="merchant" />
         <div className="help-card">
           <strong>Need a hand?</strong>

@@ -12,7 +12,7 @@ import { api, ApiError, describe } from "@panel/lib/api";
 import { Icon } from "@panel/ui/Icon";
 import { toast } from "@panel/ui/toast";
 import { useMerchant } from "@/lib/merchant";
-import { PAGES } from "@/app/nav";
+import { labelOf, PAGES, slugOf } from "@/app/nav";
 
 const TRACKING_ID = /^[A-Z]{2,4}-?\d{6}-?[0-9A-Z]{4,8}$/;
 
@@ -78,8 +78,8 @@ export function GlobalSearch() {
     try {
       const found = await search(text);
       if (!found.length) {
-        const page = /api|webhook/i.test(text) ? PAGES.find(p => p.id === "API & Webhooks") : PAGES.find(p => p.label.toLowerCase().includes(text.toLowerCase()));
-        if (page) navigate(`/${page.slug}`);
+        const page = /api|webhook/i.test(text) ? PAGES.find(p => p.id === "API & Webhooks") : PAGES.find(p => labelOf(p, m.doc).toLowerCase().includes(text.toLowerCase()));
+        if (page) navigate(`/${slugOf(page, m.doc)}`);
         else toast(`No parcel found for “${text}” in your account.`);
         return;
       }

@@ -48,21 +48,22 @@ export default function Products() {
   const shown = t ? items.filter(p => `${p.name} ${p.sku} ${p.category ?? ""} ${p.packaging ?? ""}`.toLowerCase().includes(t)) : items;
   const pages = Math.max(1, Math.ceil(shown.length / size));
   const rows = shown.slice((page - 1) * size, page * size);
-  const columns = ["Document class", "Code", "Category", "Price", "Default weight / packaging", "Status"];
-  const values = (p: Product) => [p.name, p.sku, p.category || "—", !p.price ? "Per service package" : money(p.price), [p.weightKg ? `${p.weightKg} kg` : "", p.packaging || ""].filter(Boolean).join(" · ") || "—", p.active ? "Active" : "Inactive"];
+  const doc = m.doc;
+  const columns = doc ? ["Document class", "Code", "Category", "Price", "Default weight / packaging", "Status"] : ["Product", "SKU", "Category", "Price", "Default weight / packaging", "Status"];
+  const values = (p: Product) => [p.name, p.sku, p.category || "—", doc && !p.price ? "Per service package" : money(p.price), [p.weightKg ? `${p.weightKg} kg` : "", p.packaging || ""].filter(Boolean).join(" · ") || "—", p.active ? "Active" : "Inactive"];
   const reload = () => qc.invalidateQueries({ queryKey: ["m", "products"] });
 
   function edit(p: Product | null) {
     const optional = (v: string) => (v.trim() ? v.trim() : p ? null : undefined);
     return openForm({
-      title: p ? `Edit ${p.name}` : "Add document class",
+      title: p ? `Edit ${p.name}` : doc ? "Add document class" : "Add product",
       description: "Prefills the order form: item, weight, packaging and value.",
       submit: "Save",
       fields: [
-        { id: "name", label: "Document class", value: p?.name ?? "", required: true, maxLength: 160 },
-        { id: "sku", label: "Code", value: p?.sku ?? "", required: true, maxLength: 60 },
+        { id: "name", label: doc ? "Document class" : "Product name", value: p?.name ?? "", required: true, maxLength: 160 },
+        { id: "sku", label: doc ? "Code" : "SKU", value: p?.sku ?? "", required: true, maxLength: 60 },
         { id: "category", label: "Category", value: p?.category ?? "", maxLength: 80 },
-        { id: "price", label: "Declared value (BDT)", type: "number", value: String(p?.price ?? 0), min: 0, step: 0.01, required: true },
+        { id: "price", label: doc ? "Declared value (BDT)" : "Price (BDT)", type: "number", value: String(p?.price ?? 0), min: 0, step: 0.01, required: true },
         { id: "weight", label: "Default weight (kg)", type: "number", value: p?.weightKg != null ? String(p.weightKg) : "", min: 0.01, max: 50, step: 0.01 },
         { id: "packaging", label: "Default packaging", value: p?.packaging ?? "", maxLength: 80 },
         { id: "active", label: "Active (offered in the order form)", type: "checkbox", value: p?.active !== false, full: true },
@@ -102,20 +103,20 @@ export default function Products() {
   return (
     <>
       <PageHeading
-        eyebrow="Banking & Financial workspace"
-        title="Product catalogue"
-        subtitle="Document classes you send often. They prefill new delivery requests."
+        eyebrow={doc ? "Banking & Financial workspace" : "Merchant workspace"}
+        title={doc ? "Product catalogue" : "Products"}
+        subtitle={doc ? "Approved document classes and secure handling requirements for your account." : "Keep your catalogue and shipping-ready inventory up to date."}
         actions={
           <>
             <Button variant="primary" icon="plus" onClick={() => void edit(null)}>
-              Add document class
+              {doc ? "Add document class" : "Add product"}
             </Button>
             <Button
               icon="download"
               onClick={() => {
-                if (!shown.length) return toast("There are no document classes to export.");
-                saveCsv("product-catalogue.csv", [columns, ...shown.map(values)]);
-                toast(`${num(shown.length)} document class${shown.length === 1 ? "" : "es"} exported.`, "good");
+                if (!shown.length) return toast(`There are no ${doc ? "document classes" : "products"} to export.`);
+                saveCsv(doc ? "product-catalogue.csv" : "products.csv", [columns, ...shown.map(values)]);
+                toast(`${num(shown.length)} ${doc ? `document class${shown.length === 1 ? "" : "es"}` : `product${shown.length === 1 ? "" : "s"}`} exported.`, "good");
               }}
             >
               Export
@@ -124,7 +125,7 @@ export default function Products() {
         }
       />
       <div className="metrics">
-        <Metric label="Document classes" value={list.data ? num(items.length) : "—"} icon="box" />
+        <Metric label={doc ? "Document classes" : "Products"} value={list.data ? num(items.length) : "—"} icon="box" />
         <Metric label="Active" value={list.data ? num(items.filter(p => p.active).length) : "—"} icon="check" />
         <Metric label="Categories" value={list.data ? num(new Set(items.map(p => p.category).filter(Boolean)).size) : "—"} icon="sheet" />
       </div>
@@ -170,7 +171,7 @@ export default function Products() {
               {!rows.length ? (
                 <tr>
                   <td colSpan={7} className="empty-cell">
-                    {list.isLoading ? "Loading…" : t ? "No document classes match." : "No document classes yet. Add the ones you send most often."}
+                    {list.isLoading ? "Loading…" : t ? `No ${doc ? "document classes" : "products"} match.` : doc ? "No document classes yet. Add the ones you send most often." : "No products yet. Add products to prefill orders with their weight, packaging and price."}
                   </td>
                 </tr>
               ) : null}

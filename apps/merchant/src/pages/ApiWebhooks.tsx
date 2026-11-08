@@ -72,6 +72,8 @@ export default function ApiWebhooks() {
   const [revealed, setRevealed] = useState<Revealed | null>(null);
   const reload = () => qc.invalidateQueries({ queryKey: ["m"] });
   const base = `${location.origin}/api/v1`;
+  const doc = m.doc;
+  const ref = doc ? "CARD-2026-0012" : "ORDER-1001";
   const activeKeys = (keys.data ?? []).filter(k => !k.revokedAt && (!k.expiresAt || new Date(k.expiresAt) > new Date()));
 
   async function act<T>(work: () => Promise<T>, success: string | ((r: T) => string), opts = { reload: true }) {
@@ -106,31 +108,29 @@ export default function ApiWebhooks() {
     ) : null;
 
   const example = {
-    create: `curl -X POST ${base}/parcels \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: CARD-2026-0012" \\\n  -d '${JSON.stringify({
+    create: `curl -X POST ${base}/parcels \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "Idempotency-Key: ${doc ? "CARD-2026-0012" : "order-1001"}" \\\n  -d '${JSON.stringify({
       sender: { name: mm.name, phone: String(mm.contactPhone || "").replace(/^\+88/, "") },
       pickup: { category: "Office", street: mm.pickupAddress, area: mm.pickupArea, zone: (mm.pickup as { zone?: string } | undefined)?.zone || mm.pickupArea, district: mm.pickupDistrict },
-      recipient: { name: "Ayesha Rahman", phone: "01712345678" },
-      delivery: { category: "Office", street: "House 7, Road 2", zone: "Dhanmondi", district: "Dhaka Central" },
-      type: "DOCUMENT",
-      serviceLevel: "Express",
-      weightKg: 0.5,
-      packaging: "Security pouch",
-      contents: "Cheque book",
-      codAmount: 0,
-      merchantOrderRef: "CARD-2026-0012",
+      recipient: { name: doc ? "Ayesha Rahman" : "Sophie Williams", phone: "01712345678" },
+      delivery: { category: doc ? "Office" : "Home", street: "House 7, Road 2", zone: "Dhanmondi", district: "Dhaka Central" },
+      type: doc ? "DOCUMENT" : "ECOMMERCE",
+      serviceLevel: doc ? "Express" : "Regular",
+      weightKg: doc ? 0.5 : 1,
+      ...(doc ? { packaging: "Security pouch", contents: "Cheque book", codAmount: 0 } : { contents: "Everyday Tote Bag", codAmount: 2450 }),
+      merchantOrderRef: ref,
     })}'`,
     status: `curl -H "Authorization: Bearer YOUR_API_KEY" \\\n  ${base}/parcels/PP-261015-0001`,
     list: `curl -H "Authorization: Bearer YOUR_API_KEY" \\\n  "${base}/parcels?status=OUT_FOR_DELIVERY&limit=50&cursor=NEXT_CURSOR"`,
     cancel: `curl -X POST ${base}/parcels/PP-261015-0001/cancel \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"reason":"Customer cancelled the order"}'`,
-    webhook: `POST https://your-domain.com/webhooks/delivery-fast HTTP/1.1\nContent-Type: application/json\nUser-Agent: DeliveryFast-Webhooks/1.0\nX-DeliveryFast-Event: shipment.status_updated\nX-DeliveryFast-Delivery: 0199f0c2-7b1e-7d4a-9c55-3f1a2b4c5d6e\nX-DeliveryFast-Signature: t=1791977880,v1=HMAC_SHA256_HEX\n\n{"id":"0199f0c2-7b1e-7d4a-9c55-3f1a2b4c5d6e","event":"shipment.status_updated","createdAt":"2026-10-15T11:42:00.000Z","data":{"trackingId":"PP-261015-0001","merchantOrderRef":"CARD-2026-0012","from":"AT_HUB","status":"OUT_FOR_DELIVERY","statusLabel":"Out for delivery","at":"2026-10-15T11:42:00.000Z"}}`,
+    webhook: `POST https://your-domain.com/webhooks/delivery-fast HTTP/1.1\nContent-Type: application/json\nUser-Agent: DeliveryFast-Webhooks/1.0\nX-DeliveryFast-Event: shipment.status_updated\nX-DeliveryFast-Delivery: 0199f0c2-7b1e-7d4a-9c55-3f1a2b4c5d6e\nX-DeliveryFast-Signature: t=1791977880,v1=HMAC_SHA256_HEX\n\n{"id":"0199f0c2-7b1e-7d4a-9c55-3f1a2b4c5d6e","event":"shipment.status_updated","createdAt":"2026-10-15T11:42:00.000Z","data":{"trackingId":"PP-261015-0001","merchantOrderRef":"${ref}","from":"AT_HUB","status":"OUT_FOR_DELIVERY","statusLabel":"Out for delivery","at":"2026-10-15T11:42:00.000Z"}}`,
     verify:
       '// Node.js: verify before trusting the body (use the raw request body)\nconst [t, v1] = header.split(",").map(part => part.split("=")[1]);\nconst expected = crypto.createHmac("sha256", WEBHOOK_SECRET).update(`${t}.${rawBody}`).digest("hex");\nconst valid = crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected))\n  && Math.abs(Date.now() / 1000 - Number(t)) < 300;',
-    requested: `{"id":"…","event":"pickup.requested","createdAt":"2026-10-15T09:12:00.000Z","data":{"trackingId":"PP-261015-0001","merchantOrderRef":"CARD-2026-0012","totalCharge":120}}`,
+    requested: `{"id":"…","event":"pickup.requested","createdAt":"2026-10-15T09:12:00.000Z","data":{"trackingId":"PP-261015-0001","merchantOrderRef":"${ref}","totalCharge":120}}`,
   };
 
   return (
     <>
-      <PageHeading eyebrow="Developer tools" title="API & Webhooks" subtitle="Book parcels and track them from your business systems with the Delivery Fast API." actions={<Pill tone={activeKeys.length ? "good" : undefined}>{activeKeys.length ? `${activeKeys.length} active API key${activeKeys.length === 1 ? "" : "s"}` : "No API keys yet"}</Pill>} />
+      <PageHeading eyebrow="Developer tools" title="API & Webhooks" subtitle={`Book parcels and track them from your ${doc ? "business systems" : "store"} with the Delivery Fast API.`} actions={<Pill tone={activeKeys.length ? "good" : undefined}>{activeKeys.length ? `${activeKeys.length} active API key${activeKeys.length === 1 ? "" : "s"}` : "No API keys yet"}</Pill>} />
       <div className="metrics">
         <Metric label="API version" value="v1" icon="settings" foot="Versioned REST API" note="stable" />
         <Metric label="Authentication" value="Bearer" icon="users" foot="API key in Authorization header" note="HTTPS" />
@@ -205,7 +205,7 @@ export default function ApiWebhooks() {
         <Panel title="API reference" subtitle="REST over HTTPS · JSON request and response bodies" tools={<span className="pill info">Base URL · {base}</span>}>
           <div className="panel-body form-grid">
             <Code label="Authentication" code={"Authorization: Bearer YOUR_API_KEY\nContent-Type: application/json\nIdempotency-Key: unique-request-id"} />
-            <Code label={<>Book a document consignment <span className="pill good">POST /parcels · 201 Created</span></>} code={example.create} note="The server prices the parcel from your service package. Keep the Idempotency-Key stable when retrying: a repeat returns the original parcel. merchantOrderRef must be unique (409 if it was already booked)." />
+            <Code label={<>Book a {doc ? "document consignment" : "parcel"} <span className="pill good">POST /parcels · 201 Created</span></>} code={example.create} note="The server prices the parcel from your service package. Keep the Idempotency-Key stable when retrying: a repeat returns the original parcel. merchantOrderRef must be unique (409 if it was already booked)." />
             <Code label={<>Get status and tracking history <span className="pill info">GET /parcels/{"{trackingId}"}</span></>} code={example.status} note="Includes status, charges, COD and the full event history." />
             <Code label={<>List parcels <span className="pill info">GET /parcels</span></>} code={example.list} note="Newest first. Filter by status, q (tracking ID, order reference, name or phone), from and to; pass the returned nextCursor for the next page." />
             <Code label={<>Cancel before pickup is confirmed <span className="pill info">POST /parcels/{"{trackingId}"}/cancel</span></>} code={example.cancel} />

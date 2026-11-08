@@ -18,6 +18,7 @@ import { useMerchant } from "@/lib/merchant";
 import { openNewRequest } from "@/features/booking/NewRequest";
 import { ImportButtons } from "@/pages/Requests";
 import { splitContents, type Parcel } from "@/features/parcels/model";
+import { pathOf } from "@/app/nav";
 
 interface Range {
   created: number;
@@ -27,8 +28,11 @@ interface Range {
   pickedUp: number;
   deliverySuccessRate: number | null;
   deliveryCharges: number;
+  codValue?: number;
+  /** E-commerce owners: the period's COD money. */
+  money?: { codCollected: number; collections: number; payable: number; chargesOnCollected: number; paidOut: number; payouts: number } | null;
   series: Series;
-  previous: { created: number; delivered: number; deliverySuccessRate: number | null; deliveryCharges: number };
+  previous: { created: number; delivered: number; deliverySuccessRate: number | null; deliveryCharges: number; codValue?: number; money?: { codCollected: number } | null };
 }
 interface Series {
   bucket: string;
@@ -39,7 +43,7 @@ interface Series {
 interface Stats {
   parcels: { inTransit: number; awaitingPickup: number; awaitingDropOff?: number; needsAttention: number };
   today: { shipments: number; delivered: number; completionRate: number | null };
-  money: { unbilled: { charges: number; parcels: number } } | null;
+  money: { unbilled: { charges: number; parcels: number }; payouts?: { lastPaid?: { amount: number; paidAt: string } | null } } | null;
   range?: Range;
 }
 
@@ -56,6 +60,7 @@ export default function Overview() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [, setParams] = useSearchParams();
+  const doc = m.doc;
   const period = usePeriod("merchant-banking-overview", "this_month");
   const stats = useQuery({ queryKey: ["m", "stats", "overview", period.query], queryFn: () => api<Stats>(`/merchants/me/stats?period=7d${m.q("&")}&${period.query}`), staleTime: 20_000 });
   const recent = useQuery({ queryKey: ["m", "parcels", "recent"], queryFn: () => api<{ items: Parcel[] }>(`/parcels?limit=20${m.q("&")}`), staleTime: 20_000 });
@@ -85,50 +90,68 @@ export default function Overview() {
             {greeting}, {String(user?.name || "").split(/\s+/)[0]} <span style={{ fontSize: 20 }}>{hour < 17 ? "☀️" : "🌙"}</span>
           </>
         }
-        subtitle={`${period.text} · documents, deliveries and COD in this period; "now" figures are live`}
+        subtitle={`${period.text} · ${doc ? "documents" : "orders"}, deliveries and COD in this period; "now" figures are live`}
         actions={
           <>
             <PeriodSelect period={period} />
-            <Button icon="wallet" onClick={() => navigate("/balance")}>
-              Billing
-            </Button>
+            {doc ? (
+              <Button icon="wallet" onClick={() => navigate("/balance")}>
+                Billing
+              </Button>
+            ) : null}
             <ImportButtons />
             <Button variant="primary" icon="plus" onClick={() => void openNewRequest(openParcel)}>
-              New delivery request
+              {doc ? "New delivery request" : "Create order"}
             </Button>
           </>
         }
       />
       <div className="metrics">
-        {card("Documents booked", num(r?.created), "box", r?.previous.created ? period.versus : period.words, r ? trend(r.created, r.previous.created) : null)}
+        {card(doc ? "Documents booked" : "Orders booked", num(r?.created), "box", r?.previous.created ? period.versus : period.words, r ? trend(r.created, r.previous.created) : null)}
         {card("Delivered", num(r?.delivered), "truck", r?.previous.delivered ? period.versus : period.words, r ? trend(r.delivered, r.previous.delivered) : null)}
         {card("Returned", num(r?.returned), "box", `${num(r?.cancelled)} cancelled · ${period.words}`)}
         {card("Delivery success", pct(r?.deliverySuccessRate), "chart", "delivered vs. returned", r ? pts(r.deliverySuccessRate, r.previous.deliverySuccessRate) : null)}
       </div>
       <div className="metrics">
-        {card("Delivery charges", money(r?.deliveryCharges), "wallet", `documents booked ${period.words}`, r ? trend(r.deliveryCharges, r.previous.deliveryCharges) : null)}
-        {card("Unbilled charges", st?.money ? money(st.money.unbilled.charges) : "—", "wallet", st?.money ? "now · ready for monthly bill" : "visible to owners", st?.money ? { text: `${st.money.unbilled.parcels} consignment${st.money.unbilled.parcels === 1 ? "" : "s"}` } : null)}
-        {card("Picked up", num(r?.pickedUp), "pin", period.words)}
+        {doc ? (
+          <>
+            {card("Delivery charges", money(r?.deliveryCharges), "wallet", `documents booked ${period.words}`, r ? trend(r.deliveryCharges, r.previous.deliveryCharges) : null)}
+            {card("Unbilled charges", st?.money ? money(st.money.unbilled.charges) : "—", "wallet", st?.money ? "now · ready for monthly bill" : "visible to owners", st?.money ? { text: `${st.money.unbilled.parcels} consignment${st.money.unbilled.parcels === 1 ? "" : "s"}` } : null)}
+            {card("Picked up", num(r?.pickedUp), "pin", period.words)}
+          </>
+        ) : r?.money ? (
+          <>
+            {card("COD collected", money(r.money.codCollected), "wallet", `${r.money.collections} collection${r.money.collections === 1 ? "" : "s"} · ${period.words}`, trend(r.money.codCollected, r.previous.money?.codCollected))}
+            {card("Payable to you", money(r.money.payable), "wallet", `COD less ${money(r.money.chargesOnCollected)} charges`)}
+            {card("Paid out", money(r.money.paidOut), "check", `${r.money.payouts} payout${r.money.payouts === 1 ? "" : "s"} · ${period.words}`)}
+          </>
+        ) : (
+          <>
+            {card("Gross sales", money(r?.codValue), "wallet", `COD order value · ${period.words}`, r ? trend(r.codValue ?? 0, r.previous.codValue) : null)}
+            {card("Delivery charges", money(r?.deliveryCharges), "wallet", period.words)}
+            {card("Picked up", num(r?.pickedUp), "pin", period.words)}
+          </>
+        )}
         {card("In transit", num(st?.parcels.inTransit), "truck", "now · live")}
       </div>
       <div className="content-grid">
-        <Panel title="Document volume & delivery charges" subtitle={r ? `Documents per ${r.series.bucket} · ${period.text} vs. the previous period` : "Corporate consignments across branches"}>
+        <Panel title={doc ? "Document volume & delivery charges" : "Orders & sales"} subtitle={r ? `${doc ? "Documents" : "Orders"} per ${r.series.bucket} · ${period.text} vs. the previous period` : doc ? "Corporate consignments across branches" : "Track your store performance over time"}>
           <div className="panel-body">{r ? <Chart series={r.series} /> : <div className="skeleton" style={{ height: 220 }} />}</div>
         </Panel>
-        <Panel title="Document delivery overview" subtitle="Live now · not affected by the period">
+        <Panel title={doc ? "Document delivery overview" : "Delivery overview"} subtitle="Live now · not affected by the period">
           <div className="panel-body">
           <div className="dispatch-summary">
             <div>
               <strong>{num(st?.today.shipments)}</strong>
-              <span>Today's documents</span>
+              <span>{doc ? "Today's documents" : "Total shipments"}</span>
             </div>
             <div>
               <strong>{num(st?.today.delivered)}</strong>
-              <span>Delivered</span>
+              <span>{doc ? "Delivered" : "Completed today"}</span>
             </div>
             <div>
               <strong>{num(st?.parcels.needsAttention)}</strong>
-              <span>Exceptions</span>
+              <span>{doc ? "Exceptions" : "Need attention"}</span>
             </div>
           </div>
           <div className="progress-label">
@@ -144,7 +167,7 @@ export default function Overview() {
                 ["#1d5fd0", "In transit", st?.parcels.inTransit],
                 ["#0b7a3b", "Delivered", st?.today.delivered],
                 ["#d4a13b", "Pickup scheduled", st?.parcels.awaitingPickup],
-                ["#c02f2f", "Signature / delivery issue", st?.parcels.needsAttention],
+                ["#c02f2f", doc ? "Signature / delivery issue" : "Delivery issue", st?.parcels.needsAttention],
                 ["#7c5cc4", "Awaiting drop-off", st?.parcels.awaitingDropOff ?? 0],
               ] as [string, string, number | undefined][]
             ).map(([color, label, n]) => (
@@ -162,10 +185,10 @@ export default function Overview() {
       </div>
       <div className="content-grid">
         <Panel
-          title="Recent delivery requests"
+          title={doc ? "Recent delivery requests" : "Recent orders"}
           tools={
-            <Button size="sm" onClick={() => navigate("/all-requests")}>
-              View all requests
+            <Button size="sm" onClick={() => navigate(pathOf("All requests", m.doc))}>
+              {doc ? "View all requests" : "View all orders"}
             </Button>
           }
         >
@@ -173,10 +196,10 @@ export default function Overview() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Consignment</th>
-                  <th>Recipient</th>
-                  <th>Document type</th>
-                  <th>Delivery fee</th>
+                  <th>{doc ? "Consignment" : "Order"}</th>
+                  <th>{doc ? "Recipient" : "Customer"}</th>
+                  <th>{doc ? "Document type" : "Item / service"}</th>
+                  <th>{doc ? "Delivery fee" : "Amount"}</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -189,8 +212,8 @@ export default function Overview() {
                       </button>
                     </td>
                     <td>{p.recipient?.name || "Recipient not set"}</td>
-                    <td>{splitContents(p.contents)[0] || "Business document"}</td>
-                    <td>{money(p.charges?.total)}</td>
+                    <td>{doc ? splitContents(p.contents)[0] || "Business document" : p.contents || "Domestic parcel"}</td>
+                    <td>{money(doc ? p.charges?.total : Number(p.codAmount) > 0 ? p.codAmount : p.declaredValue || 0)}</td>
                     <td>
                       <Pill>{p.statusLabel}</Pill>
                     </td>
@@ -199,7 +222,7 @@ export default function Overview() {
                 {recent.data && !recent.data.items.length ? (
                   <tr>
                     <td colSpan={5} className="empty-cell">
-                      No delivery requests yet.
+                      {doc ? "No delivery requests yet." : "No orders yet."}
                     </td>
                   </tr>
                 ) : null}
@@ -209,7 +232,7 @@ export default function Overview() {
         </Panel>
         <Panel title="Recent activity">
           <div className="panel-body">
-            <Activity parcels={recent.data?.items ?? []} openParcel={openParcel} />
+            <Activity doc={doc} paid={st?.money?.payouts?.lastPaid ?? null} parcels={recent.data?.items ?? []} openParcel={openParcel} />
           </div>
         </Panel>
       </div>
@@ -221,14 +244,26 @@ const AWAITING = ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"]
 const MOVING = ["PICKED_UP", "AT_HUB", "IN_TRANSIT", "ASSIGNED", "OUT_FOR_DELIVERY"];
 
 /** The newest tracking events of the newest requests (merchant-bridge.js activityItems). */
-function Activity({ parcels, openParcel }: { parcels: Parcel[]; openParcel: (id: string) => void }) {
+function Activity({ doc, paid, parcels, openParcel }: { doc: boolean; paid: { amount: number; paidAt: string } | null; parcels: Parcel[]; openParcel: (id: string) => void }) {
   const items = parcels
     .flatMap(p => (p.events ?? []).map(e => ({ p, e, at: e.at || e.createdAt || "" })))
     .sort((a, b) => (a.at < b.at ? 1 : -1))
     .slice(0, 4);
-  if (!items.length) return <div className="empty-cell">No activity yet. New orders and delivery updates appear here.</div>;
+  const payout = !doc && paid ? paid : null;
+  if (!items.length && !payout) return <div className="empty-cell">No activity yet. New orders and delivery updates appear here.</div>;
   return (
     <div className="activity-list">
+      {payout ? (
+        <div className="activity-item">
+          <span className="activity-icon">
+            <Icon name="wallet" />
+          </span>
+          <span className="activity-copy">
+            <strong>Payout completed</strong> — {money(payout.amount)}
+            <small>{ago(payout.paidAt)}</small>
+          </span>
+        </div>
+      ) : null}
       {items.map(({ p, e, at }, i) => {
         const status = e.status || "";
         const icon: IconName = status === "DELIVERED" || MOVING.includes(status) ? "truck" : AWAITING.includes(status) ? "pin" : "box";
@@ -244,7 +279,7 @@ function Activity({ parcels, openParcel }: { parcels: Parcel[]; openParcel: (id:
                 </>
               ) : status === "PENDING_CONFIRMATION" ? (
                 <>
-                  <strong>New document request</strong> for {p.recipient?.name}
+                  <strong>{doc ? "New document request" : "New order"}</strong> for {p.recipient?.name}
                 </>
               ) : (
                 <>
@@ -252,7 +287,7 @@ function Activity({ parcels, openParcel }: { parcels: Parcel[]; openParcel: (id:
                 </>
               )}
               <small>
-                {ago(at)} · {status === "PENDING_CONFIRMATION" ? money(p.charges?.total) : e.location || p.delivery?.zone}
+                {ago(at)} · {status === "PENDING_CONFIRMATION" ? money(doc ? p.charges?.total : p.codAmount || p.declaredValue || 0) : e.location || p.delivery?.zone}
               </small>
             </span>
           </button>

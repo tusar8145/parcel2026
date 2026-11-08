@@ -12,7 +12,7 @@ import { Loading } from "@panel/ui/kit";
 import Login from "@panel/ui/Login";
 import { MERCHANT_ROLES, MerchantProvider, useMerchant } from "@/lib/merchant";
 import Shell from "./Shell";
-import { legacyPath, pageBySlug } from "./nav";
+import { labelOf, legacyPath, pageBySlug } from "./nav";
 import { Classic } from "./Classic";
 import ParcelDrawer from "@/features/parcels/ParcelDrawer";
 
@@ -102,6 +102,7 @@ function Offline() {
 }
 
 function Router() {
+  const m = useMerchant();
   const location = useLocation();
   const navigate = useNavigate();
   // Old links: ?page=<classic slug>[&parcel=…][&ticket=…].
@@ -109,15 +110,15 @@ function Router() {
     const params = new URLSearchParams(location.search);
     const page = params.get("page");
     if (!page) return;
-    const path = legacyPath(page);
+    const path = legacyPath(page, m.doc);
     params.delete("page");
     params.delete("tab");
     params.delete("period");
     navigate({ pathname: path ?? location.pathname, search: params.toString() ? `?${params}` : "" }, { replace: true });
-  }, [location.search, location.pathname, navigate]);
+  }, [location.search, location.pathname, navigate, m.doc]);
 
   const first = location.pathname.split("/")[1];
-  const crumb = first === "notifications" ? "Notifications" : (pageBySlug(first)?.label ?? "");
+  const crumb = first === "notifications" ? "Notifications" : (pageBySlug(first) ? labelOf(pageBySlug(first)!, m.doc) : "");
   return (
     <Shell crumb={crumb}>
       <Suspense fallback={<Loading rows={6} />}>

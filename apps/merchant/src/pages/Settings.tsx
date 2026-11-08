@@ -32,6 +32,7 @@ const KYC_STATUS: Record<string, string> = { NOT_SUBMITTED: "Not submitted", PEN
 const TIMES: Record<string, string> = { MORNING: "Morning (9am–12pm)", MIDDAY: "Midday (12pm–3pm)", AFTERNOON: "Afternoon (3pm–6pm)" };
 const HANDOVER: Record<string, string> = { RIDER_PICKUP: "Rider pickup", HUB_DROP: "Drop at hub" };
 const OTHER = "__other__";
+const PAYOUT_LABEL: Record<string, string> = { BKASH: "bKash", NAGAD: "Nagad", BANK: "Bank account" };
 const dateOnly = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—");
 type M = Merchant & Record<string, unknown>;
 
@@ -49,9 +50,12 @@ export default function Settings() {
   const kyc = mm.kyc;
   const activeKeys = keys.data ? keys.data.filter(k => !k.revokedAt).length : 0;
   const owner = (what: string, run: () => unknown) => () => (m.isOwner ? run() : toast(`Only workspace owners can ${what}.`));
+  const payout = mm.payoutAccount as { method: string; accountNumber: string; accountName: string } | null | undefined;
   const rows: [string, string, string, () => unknown][] = [
-    ["Corporate account", `${mm.name} · ${mm.addressComplete === false ? `${mm.pickupArea}, ${mm.pickupDistrict} · complete your address` : `${pickup?.zone || mm.pickupArea}, ${mm.pickupDistrict}${hub ? ` · hub ${hub.name}` : ""}`}`, dateOnly(mm.updatedAt as string), owner("change the profile", () => openCustom(close => <Profile close={() => close()} />, "wide"))],
-    ["Billing profile", "Monthly consolidated invoices · due 15 days after issue", "—", () => navigate("/balance")],
+    [m.doc ? "Corporate account" : "Store profile", `${mm.name} · ${mm.addressComplete === false ? `${mm.pickupArea}, ${mm.pickupDistrict} · complete your address` : `${pickup?.zone || mm.pickupArea}, ${mm.pickupDistrict}${hub ? ` · hub ${hub.name}` : ""}`}`, dateOnly(mm.updatedAt as string), owner("change the profile", () => openCustom(close => <Profile close={() => close()} />, "wide"))],
+    m.doc
+      ? ["Billing profile", "Monthly consolidated invoices · due 15 days after issue", "—", () => navigate("/balance")]
+      : ["Payout account", payout ? `${PAYOUT_LABEL[payout.method] || payout.method} · ••••${String(payout.accountNumber).slice(-4)} · ${payout.accountName}` : "Not set · add one to receive COD payouts", "—", owner("change the payout account", () => openCustom(close => <Payout close={() => close()} />))],
     ["Service package", pk ? `${pk.name} · version ${pk.version}${pk.isDefault ? " (default)" : ""}` : "Your service package", "—", () => toast("Service packages are assigned by Delivery Fast. Contact your account manager to change your package.")],
     ["Business verification", `${KYC_STATUS[kyc?.status ?? ""] || "Not submitted"}${kyc?.status === "REJECTED" && kyc.rejectionReason ? ` · ${kyc.rejectionReason}` : " · trade license, owner NID and payout proof"}`, dateOnly(kyc?.reviewedAt || kyc?.submittedAt), () => openCustom(close => <Kyc close={() => close()} />, "wide")],
     ["Notification settings", `SMS updates to ${phoneText(mm.contactPhone as string)} · choose which messages you get`, "—", () => void openNotifications(mm.contactPhone as string)],
@@ -60,7 +64,7 @@ export default function Settings() {
   ];
   return (
     <>
-      <PageHeading eyebrow="Banking & Financial workspace" title="Settings" subtitle="Your corporate account, billing, verification, notifications, team and integrations." />
+      <PageHeading eyebrow={m.doc ? "Banking & Financial workspace" : "Merchant workspace"} title="Settings" subtitle={m.doc ? "Configure corporate billing, branch access, notifications, and integrations." : "Configure your store, delivery preferences, team, and notifications."} />
       <Panel title="Settings list" subtitle="Live data">
         <div className="table-wrap">
           <table className="table">
@@ -210,7 +214,7 @@ function Profile({ close }: { close: () => void }) {
     <form onSubmit={submit} noValidate>
       <div className="dialog-head">
         <div>
-          <h2>Corporate account</h2>
+          <h2>{m.doc ? "Corporate account" : "Store profile"}</h2>
           <p>
             {mm.name} · {mm.code}
           </p>
@@ -852,6 +856,109 @@ function PrefsForm({ prefs, close }: { prefs: Prefs; close: () => void }) {
         </button>
         <button type="submit" className="button primary" disabled={busy}>
           Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ───────────── Payout account (E-commerce) ─────────────
+
+function Payout({ close }: { close: () => void }) {
+  const m = useMerchant();
+  const qc = useQueryClient();
+  const p = ((m.merchant as M).payoutAccount || {}) as { method?: string; accountNumber?: string; accountName?: string; bankName?: string; branch?: string; routingNumber?: string };
+  const [v, setV] = useState({ method: p.method || "BKASH", number: p.accountNumber || "", name: p.accountName || "", bank: p.bankName || "", branch: p.branch || "", routing: p.routingNumber || "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof v, value: string) => setV(x => ({ ...x, [k]: value }));
+  const bank = v.method === "BANK";
+  async function save(payoutAccount: Record<string, unknown> | null, done: string) {
+    setBusy(true);
+    try {
+      await api(`/merchants/me${m.q()}`, { method: "PATCH", body: { payoutAccount } });
+      await m.reload();
+      void qc.invalidateQueries({ queryKey: ["m"] });
+      toast(done, "good");
+      close();
+    } catch (e) {
+      toast(describe(e), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form
+      onSubmit={e => {
+        e.preventDefault();
+        if (!v.number.trim()) return toast("Enter the account or wallet number.", "bad");
+        if (v.name.trim().length < 2) return toast("Enter the account name.", "bad");
+        void save(
+          { method: v.method, accountNumber: v.number.trim(), accountName: v.name.trim(), ...(bank ? { bankName: v.bank.trim(), branch: v.branch.trim() || undefined, routingNumber: v.routing.trim() || undefined } : {}) },
+          "Payout account saved. We've texted your contact phone about the change.",
+        );
+      }}
+      noValidate
+    >
+      <div className="dialog-head">
+        <div>
+          <h2>Payout account</h2>
+          <p>Where your COD settlements are paid. We text your contact phone whenever it changes.</p>
+        </div>
+        <button type="button" className="button ghost icon dialog-close" aria-label="Close" onClick={close}>
+          <Icon name="x" size={18} />
+        </button>
+      </div>
+      <div className="dialog-body">
+        <div className="form-grid">
+          <label className="field">
+            <span>Method</span>
+            <Select className="select" searchable={false} value={v.method} onChange={e => set("method", e.target.value)}>
+              {Object.entries(PAYOUT_LABEL).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span>Account / wallet number</span>
+            <input className="input" value={v.number} onChange={e => set("number", e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Account name</span>
+            <input className="input" value={v.name} onChange={e => set("name", e.target.value)} />
+          </label>
+          {bank ? (
+            <>
+              <label className="field">
+                <span>Bank name</span>
+                <input className="input" value={v.bank} onChange={e => set("bank", e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Branch (optional)</span>
+                <input className="input" value={v.branch} onChange={e => set("branch", e.target.value)} />
+              </label>
+              <label className="field">
+                <span>Routing number (optional)</span>
+                <input className="input" inputMode="numeric" maxLength={11} placeholder="9 digits, e.g. 225261725" value={v.routing} onChange={e => set("routing", e.target.value)} />
+              </label>
+            </>
+          ) : null}
+        </div>
+      </div>
+      <div className="dialog-foot">
+        {(m.merchant as M).payoutAccount ? (
+          <button type="button" className="button" style={{ marginRight: "auto" }} disabled={busy} onClick={async () => {
+              if (await confirm({ title: "Remove the payout account?", message: "COD settlements can't be paid until you add one.", ok: "Remove account", danger: true })) void save(null, "Payout account removed.");
+            }}>
+            Remove
+          </button>
+        ) : null}
+        <button type="button" className="button" onClick={close} disabled={busy}>
+          Cancel
+        </button>
+        <button type="submit" className="button primary" disabled={busy} aria-busy={busy || undefined}>
+          Save payout account
         </button>
       </div>
     </form>

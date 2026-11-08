@@ -13,8 +13,8 @@ import { ago, num } from "@panel/lib/format";
 import { Icon } from "@panel/ui/Icon";
 import { confirm, openForm } from "@panel/ui/dialogs";
 import { toast, toastError } from "@panel/ui/toast";
-import { PANEL, useMerchant } from "@/lib/merchant";
-import { GROUP_LABEL, legacyPath, PAGES } from "./nav";
+import { useMerchant } from "@/lib/merchant";
+import { GROUP_LABEL, labelOf, legacyPath, PAGES, slugOf } from "./nav";
 import { GlobalSearch } from "@/features/parcels/GlobalSearch";
 
 export default function Shell({ children, crumb }: { children: ReactNode; crumb: string }) {
@@ -91,7 +91,7 @@ function Sidebar() {
     <aside className="sidebar" aria-label="Main menu">
       <div className="brand">
         <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Delivery Fast" width={528} height={100} />
-        <small>{PANEL.typeLabel}</small>
+        <small>{m.panel.typeLabel}</small>
       </div>
       <button type="button" className="workspace-card" onClick={() => void switchWorkspace()} title={`${m.merchant.name} · ${m.merchant.code}`}>
         <span className="avatar">{initialsOf(m.merchant.name)}</span>
@@ -110,9 +110,9 @@ function Sidebar() {
             {pages.map(p => {
               const n = counts[p.id];
               return (
-                <NavLink key={p.id} to={`/${p.slug}`} className="nav-item">
+                <NavLink key={p.id} to={`/${slugOf(p, m.doc)}`} className="nav-item">
                   <Icon name={p.icon} />
-                  <span>{p.label}</span>
+                  <span>{labelOf(p, m.doc)}</span>
                   {n ? (
                     <span className="nav-count" title={`${num(n)} ${p.id === "Support" ? "open" : "waiting"}`}>
                       {num(n)}
@@ -124,7 +124,7 @@ function Sidebar() {
           </div>
         ))}
         <div className="nav-group">
-          <a className="nav-item" href="/banking-merchant?classic=1" title="The previous merchant panel (same data)" onClick={() => (document.cookie = "df-classic-merchant=1; path=/; SameSite=Lax")}>
+          <a className="nav-item" href={`${m.panel.classic}?classic=1`} title="The previous merchant panel (same data)" onClick={() => (document.cookie = "df-classic-merchant=1; path=/; SameSite=Lax")}>
             <Icon name="external" />
             <span>Classic panel</span>
           </a>
@@ -147,7 +147,7 @@ function Sidebar() {
             <span className="avatar">{initialsOf(user?.name)}</span>
             <span className="profile-meta">
               <strong>{user?.name}</strong>
-              <small>{m.isOwner ? PANEL.ownerLabel : PANEL.staffLabel}</small>
+              <small>{m.isOwner ? m.panel.ownerLabel : m.panel.staffLabel}</small>
             </span>
           </button>
           <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={() => void signOut()}>
@@ -194,7 +194,7 @@ interface Notification {
 }
 
 /** "/banking-merchant?page=orders&parcel=FD-1" (a notification's link) → "/all-requests?parcel=FD-1" inside this panel. */
-export function internalLink(link: string): string | null {
+export function internalLink(link: string, doc = true): string | null {
   let url: URL;
   try {
     url = new URL(link, location.origin);
@@ -203,11 +203,11 @@ export function internalLink(link: string): string | null {
   }
   if (url.origin !== location.origin) return null;
   if (url.pathname.startsWith("/merchant")) return url.pathname.slice(9) + url.search || "/";
-  if (url.pathname !== "/banking-merchant") return null;
+  if (url.pathname !== "/banking-merchant" && url.pathname !== "/ecommerce-merchant") return null;
   const keep = new URLSearchParams();
   for (const k of ["parcel", "ticket"]) if (url.searchParams.get(k)) keep.set(k, url.searchParams.get(k)!);
   const page = url.searchParams.get("page");
-  const path = page ? legacyPath(page) : "/overview";
+  const path = page ? legacyPath(page, doc) : "/overview";
   return `${path ?? "/overview"}${keep.toString() ? `?${keep}` : ""}`;
 }
 
@@ -216,6 +216,7 @@ function Bell() {
   const button = useRef<HTMLButtonElement>(null);
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const m = useMerchant();
   const count = useQuery({ queryKey: ["notifications", "count"], queryFn: () => api<{ unread: number }>("/me/notifications/count"), staleTime: 30_000 });
   const latest = useQuery({ queryKey: ["notifications", "latest"], queryFn: () => api<{ items: Notification[] }>("/me/notifications?limit=8"), enabled: open });
   useLive(["notification.created", "notification.read"], () => void qc.invalidateQueries({ queryKey: ["notifications"] }), { fallbackMs: 180_000 });
@@ -237,7 +238,7 @@ function Bell() {
     if (!n.readAt) await api(`/me/notifications/${n.id}/read`, { method: "POST" }).catch(() => undefined);
     void qc.invalidateQueries({ queryKey: ["notifications"] });
     if (!n.link) return;
-    const inside = internalLink(n.link);
+    const inside = internalLink(n.link, m.doc);
     if (inside) navigate(inside);
     else location.assign(n.link);
   }

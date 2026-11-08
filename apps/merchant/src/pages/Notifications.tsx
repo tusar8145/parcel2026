@@ -10,6 +10,7 @@ import { useLive } from "@panel/lib/events";
 import { Button, Loading, PageHeading, Panel, Tabs, useStored } from "@panel/ui/kit";
 import { toastError } from "@panel/ui/toast";
 import { internalLink } from "@/app/Shell";
+import { useMerchant } from "@/lib/merchant";
 
 interface Notification {
   id: string;
@@ -34,6 +35,7 @@ const ago = (iso: string) => {
 };
 
 export default function Notifications() {
+  const { doc } = useMerchant();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [filter, setFilter] = useStored<"all" | "unread">("deliveryfast-ops-notifications", "all");
@@ -56,7 +58,7 @@ export default function Notifications() {
     if (!n.readAt) await api(`/me/notifications/${n.id}/read`, { method: "POST" }).catch(() => undefined);
     void qc.invalidateQueries({ queryKey: ["notifications"] });
     if (!n.link) return;
-    const inside = internalLink(n.link);
+    const inside = internalLink(n.link, doc);
     if (inside) navigate(inside);
     else location.assign(n.link);
   }

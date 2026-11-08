@@ -1,8 +1,9 @@
 /**
- * The merchant workspace (shared/merchant-bridge.js resolveMerchant / boot):
+ * The merchant workspace (shared/merchant-bridge.js resolveMerchant / boot), for both merchant types:
  *   - GET /merchants/me (?merchantId= the workspace chosen before, kept for the browser session). Members of several
- *     merchants get MERCHANT_REQUIRED with their ids: each is loaded and the Banking & Financial one is opened.
- *   - Another type of merchant is sent to its own panel; an account that isn't active only gets "Account verification".
+ *     merchants get MERCHANT_REQUIRED with their ids: each is loaded and the first is opened (switch in the menu).
+ *   - Banking & Financial and E-commerce differ in words and features (`doc`, `panel`); an account that isn't
+ *     active only gets "Account verification".
  *   - Every /merchants/me/* and /parcels call carries ?merchantId= (q()), as the classic panel's did.
  *   - Live: merchant.updated (suspended → verification screen), parcel events refresh the lists and counts.
  */
@@ -11,14 +12,20 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, describe } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
 
-/** This panel's merchant type and its words (banking-merchant/bridge.js). */
-export const PANEL = {
-  type: "BANKING_FINANCIAL" as const,
-  typeLabel: "Banking & Financial merchant",
-  ownerLabel: "Corporate owner",
-  staffLabel: "Operations staff",
+/** Each merchant type's words (banking-merchant/bridge.js, ecommerce-merchant/bridge.js) and its classic panel. */
+export interface PanelWords {
+  type: "BANKING_FINANCIAL" | "ECOMMERCE";
+  typeLabel: string;
+  ownerLabel: string;
+  staffLabel: string;
+  classic: string;
+}
+const WORDS: Record<PanelWords["type"], PanelWords> = {
+  BANKING_FINANCIAL: { type: "BANKING_FINANCIAL", typeLabel: "Banking & Financial merchant", ownerLabel: "Corporate owner", staffLabel: "Operations staff", classic: "/banking-merchant" },
+  ECOMMERCE: { type: "ECOMMERCE", typeLabel: "E-commerce merchant", ownerLabel: "Store owner", staffLabel: "Store staff", classic: "/ecommerce-merchant" },
 };
-/** Who may open the panel: PANEL_ROLES["banking-merchant"] in shared/api.js. */
+export const panelFor = (type: string) => WORDS[type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"];
+/** Who may open the panel: PANEL_ROLES["banking-merchant"] / ["ecommerce-merchant"] in shared/api.js. */
 export const MERCHANT_ROLES = ["MERCHANT_OWNER", "MERCHANT_STAFF", "SUPER_ADMIN"];
 const WORKSPACE_KEY = "deliveryfast-merchant-workspace";
 
@@ -38,6 +45,9 @@ type State = { status: "loading" } | { status: "error"; message: string } | { st
 interface MerchantApi {
   merchant: Merchant;
   workspaces: Merchant[];
+  /** Banking & Financial (documents) or E-commerce: the words, columns and features differ. */
+  doc: boolean;
+  panel: PanelWords;
   isOwner: boolean;
   /** Not active (under review, information requested, not approved, suspended): only the verification screen. */
   locked: boolean;
@@ -79,13 +89,11 @@ async function resolve(): Promise<{ merchant: Merchant; workspaces: Merchant[] }
     }
     const ids = ((error.details as { merchantIds?: string[] } | undefined)?.merchantIds ?? []).filter(Boolean);
     const all = (await Promise.all(ids.map(m => api<Merchant>(`/merchants/me?merchantId=${m}`).catch(() => null)))).filter(Boolean) as Merchant[];
-    const merchant = all.find(m => m.type === PANEL.type) || all[0];
+    const merchant = all[0];
     return merchant ? { merchant, workspaces: all } : null;
   }
 }
 
-/** The classic panel of a merchant type (the e-commerce panel isn't rebuilt yet). */
-export const panelOf = (type: string) => (type === PANEL.type ? "/merchant/" : "/ecommerce-merchant");
 
 export function MerchantProvider({ children, fallback }: { children: ReactNode; fallback: (state: Exclude<State, { status: "ready" }>) => ReactNode }) {
   const [state, setState] = useState<State>({ status: "loading" });
@@ -95,10 +103,6 @@ export function MerchantProvider({ children, fallback }: { children: ReactNode; 
     try {
       const found = await resolve();
       if (!found) return setState({ status: "none" });
-      if (found.merchant.type !== PANEL.type) {
-        location.replace(panelOf(found.merchant.type));
-        return; // stay on "loading" while the other panel opens
-      }
       setState({ status: "ready", ...found });
     } catch (error) {
       setState({ status: "error", message: describe(error) });
@@ -127,6 +131,8 @@ export function MerchantProvider({ children, fallback }: { children: ReactNode; 
     return {
       merchant: m,
       workspaces: state.workspaces,
+      doc: m.type === "BANKING_FINANCIAL",
+      panel: panelFor(m.type),
       isOwner: m.myRole === "MERCHANT_OWNER",
       locked: m.status !== "ACTIVE",
       q: (sep = "?") => `${sep}merchantId=${m.id}`,
@@ -140,7 +146,7 @@ export function MerchantProvider({ children, fallback }: { children: ReactNode; 
         } catch {
           /* private mode */
         }
-        location.href = panelOf(other.type);
+        location.href = "/merchant/";
       },
     };
   }, [state]);

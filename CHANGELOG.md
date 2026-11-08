@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.20.0 — 2026-11-08
+- E-commerce merchants now use the new merchant panel too, with every page of their classic panel: New / All orders (COD amount, product and payment filters, POS invoices), Create order (cash on delivery, weight, open box, paste a message), Excel import, Customers, Products, Balance (COD ready to pay, with riders, settlements and paid history), the payout account in Settings, and the rest. Signing in and every link to the old panel open the new one; the classic panel stays one click away ("Classic panel" in the menu).
+
 ## 1.19.1 — 2026-11-08
 - New merchant panel: "Import batch" is now "Import Excel", with "Import history" beside it, on Overview, New requests and All requests.
 

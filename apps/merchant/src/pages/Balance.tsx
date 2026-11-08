@@ -1,5 +1,8 @@
 /**
- * Balance (shared/merchant-balance.js, Financial account): delivery charges, bills and payments (modules/money).
+ * Balance (shared/merchant-balance.js): the merchant's account (modules/money).
+ * E-commerce (COD account): ready to pay you, with riders, at hubs, being paid, last payment; Parcels (COD, charges,
+ * net, where the cash is), Being paid / Paid history (settlements with PDF and receipt photo), Statement.
+ * Banking & Financial (Financial account): delivery charges, bills and payments:
  *   Cards     due now (spelled out), not billed yet, unpaid bills, last payment, adjustments
  *   Parcels   delivered / returned parcels with their charge and bill (GET /accounts/:id/parcels)
  *   Bills     unpaid (default) or all in dates (GET /bills), PDF
@@ -35,6 +38,7 @@ const METHODS: [string, string][] = [
   ["OTHER", "Other"],
 ];
 const methodLabel = (m: string) => (METHODS.find(x => x[0] === m) || [m, m])[1];
+const PAYOUT: Record<string, [string, string]> = { UNPAID: ["Being paid", "warn"], PAID: ["Paid", "good"], CANCELLED: ["Cancelled", ""] };
 const BILL: Record<string, [string, string]> = { ISSUED: ["Unpaid", "warn"], PARTLY_PAID: ["Partly paid", "info"], PAID: ["Paid", "good"], VOID: ["Void", ""] };
 const PAYMENT: Record<string, [string, string]> = { PENDING: ["Waiting for confirmation", "warn"], CONFIRMED: ["Confirmed", "good"], REJECTED: ["Not confirmed", "bad"] };
 const pill = (map: Record<string, [string, string]>, s: string) => <span className={`pill ${(map[s] || [])[1] || ""}`}>{(map[s] || [s])[0]}</span>;
@@ -47,6 +51,16 @@ const qs = (o: Record<string, unknown>) =>
 interface Account {
   id: string;
   kind: "FINANCIAL" | "ECOMMERCE" | string;
+  payTo?: { method: string; accountName?: string; accountNumber?: string } | null;
+  cod: {
+    ready: number;
+    withRider: number;
+    atHubs: number;
+    inSettlement: number;
+    unpaidSettlements: number;
+    lastPayout: { amount: number; paidAt: string; number: string } | null;
+    paidThisMonth: number;
+  };
   financial: {
     due: number;
     notBilled: number;
@@ -77,7 +91,7 @@ function openFile(id: string) {
     .catch(error => (tab?.close(), toast(describe(error), "bad")));
 }
 
-type Sub = "parcels" | "documents" | "payments" | "statement";
+type Sub = "parcels" | "documents" | "history" | "payments" | "statement";
 
 export default function Balance() {
   const m = useMerchant();
@@ -88,7 +102,7 @@ export default function Balance() {
   const [stmt, setStmt] = useState({ from: monthStart(), to: today() });
   const a = account.data;
 
-  const heading = <PageHeading eyebrow="Money" title="Balance" subtitle="Your delivery charges, bills and payments." />;
+  const heading = <PageHeading eyebrow="Money" title="Balance" subtitle={(account.data?.kind ?? (m.doc ? "FINANCIAL" : "ECOMMERCE")) === "FINANCIAL" ? "Your delivery charges, bills and payments." : "Your COD: where it is, what's ready and what's been paid to you."} />;
   if (!m.isOwner)
     return (
       <>
@@ -103,7 +117,9 @@ export default function Balance() {
         {account.isLoading ? <div className="panel empty-cell">Loading your balance…</div> : account.isError ? <div className="panel empty-cell">{describe(account.error)}</div> : <div className="callout">Your balance appears here after your first delivery.</div>}
       </>
     );
+  const fin = a.kind === "FINANCIAL";
   const f = a.financial;
+  const c = a.cod;
   const card = (label: string, value: string, foot: string, cls = "") => (
     <div className={`mb-card ${cls}`}>
       <small>{label}</small>
@@ -111,42 +127,65 @@ export default function Balance() {
       {foot ? <span>{foot}</span> : null}
     </div>
   );
-  const subs: [Sub, string][] = [
-    ["parcels", "Parcels"],
-    ["documents", "Bills"],
-    ["payments", "Payments"],
-    ["statement", "Statement"],
-  ];
+  const subs: [Sub, string][] = fin
+    ? [
+        ["parcels", "Parcels"],
+        ["documents", "Bills"],
+        ["payments", "Payments"],
+        ["statement", "Statement"],
+      ]
+    : [
+        ["parcels", "Parcels"],
+        ["documents", "Being paid"],
+        ["history", "Paid history"],
+        ["statement", "Statement"],
+      ];
+  const shown: Sub = subs.some(x => x[0] === sub) ? sub : "parcels";
   return (
     <>
       {heading}
       <div className="mb">
+        {fin ? null : <div className="callout">Paid to: {a.payTo ? `${methodLabel(a.payTo.method)} · ${a.payTo.accountName || ""} · ${a.payTo.accountNumber || ""}` : "no payout account yet: add it in Settings › Payout account"}.</div>}
         <div className="mb-cards">
-          {card("Due now", tk(f.due), dueParts(f), f.due > 0 ? "due" : "good")}
-          {card("Not billed yet", tk(f.notBilled), "delivered, waiting for a bill")}
-          {card("Unpaid bills", tk(f.unpaidBills.amount), `${f.unpaidBills.count} bill(s)${f.pending.count ? ` · ${f.pending.count} payment(s) waiting for confirmation` : ""}`)}
-          {card("Last payment", f.lastPayment ? tk(f.lastPayment.amount) : "—", f.lastPayment ? `${day(f.lastPayment.paidOn)} · ${f.lastPayment.number} · this month ${tk(f.paidThisMonth)}` : "no payment yet")}
-          {f.openAdjustments ? card("Adjustments", `${f.openAdjustments > 0 ? "−" : "+"}${tk(Math.abs(f.openAdjustments))}`, f.openAdjustments > 0 ? "credit, on your next bill" : "extra charge, on your next bill") : null}
+          {fin ? (
+            <>
+              {card("Due now", tk(f.due), dueParts(f), f.due > 0 ? "due" : "good")}
+              {card("Not billed yet", tk(f.notBilled), "delivered, waiting for a bill")}
+              {card("Unpaid bills", tk(f.unpaidBills.amount), `${f.unpaidBills.count} bill(s)${f.pending.count ? ` · ${f.pending.count} payment(s) waiting for confirmation` : ""}`)}
+              {card("Last payment", f.lastPayment ? tk(f.lastPayment.amount) : "—", f.lastPayment ? `${day(f.lastPayment.paidOn)} · ${f.lastPayment.number} · this month ${tk(f.paidThisMonth)}` : "no payment yet")}
+              {f.openAdjustments ? card("Adjustments", `${f.openAdjustments > 0 ? "−" : "+"}${tk(Math.abs(f.openAdjustments))}`, f.openAdjustments > 0 ? "credit, on your next bill" : "extra charge, on your next bill") : null}
+            </>
+          ) : (
+            <>
+              {card("Ready to pay you", tk(c.ready), "cash at our central hub, less charges", "key")}
+              {card("With riders", tk(c.withRider), "collected from your customers")}
+              {card("At hubs / on the way", tk(c.atHubs), "")}
+              {card("Being paid", tk(c.inSettlement), c.unpaidSettlements ? `${c.unpaidSettlements} settlement(s) on the way` : "nothing waiting")}
+              {card("Last payment to you", c.lastPayout ? tk(c.lastPayout.amount) : "—", c.lastPayout ? `${day(c.lastPayout.paidAt)} · ${c.lastPayout.number} · this month ${tk(c.paidThisMonth)}` : "nothing paid yet")}
+            </>
+          )}
         </div>
         <div className="mb-bar">
           <div className="seg-tabs" role="tablist">
             {subs.map(([k, l]) => (
-              <button key={k} type="button" role="tab" aria-selected={sub === k} className={sub === k ? "on" : ""} onClick={() => setSub(k)}>
+              <button key={k} type="button" role="tab" aria-selected={shown === k} className={shown === k ? "on" : ""} onClick={() => setSub(k)}>
                 {l}
               </button>
             ))}
           </div>
           <div className="row" style={{ gap: 8 }}>
+            {fin ? (
             <button type="button" className="button sm primary" onClick={() => void paidDialog(a, () => (setSub("payments"), void qc.invalidateQueries({ queryKey: ["m"] })))}>
               I've paid
             </button>
+            ) : null}
             <button type="button" className="button sm" onClick={() => void openDocument(`/documents/account-statement/${a.id}?${qs(stmt)}`, { title: "Preparing your statement…" })}>
               Statement PDF
             </button>
           </div>
         </div>
         <section className="panel">
-          {sub === "parcels" ? <Parcels a={a} /> : sub === "documents" ? <Bills a={a} /> : sub === "payments" ? <Payments a={a} /> : <Statement a={a} stmt={stmt} setStmt={setStmt} />}
+          {shown === "parcels" ? <Parcels a={a} /> : shown === "documents" ? fin ? <Bills a={a} /> : <Payouts a={a} view="open" /> : shown === "history" ? <Payouts a={a} view="history" /> : shown === "payments" ? <Payments a={a} /> : <Statement a={a} stmt={stmt} setStmt={setStmt} />}
         </section>
       </div>
     </>
@@ -188,10 +227,15 @@ function Body({ q, cols, empty, children }: { q: { isLoading: boolean; isError: 
 }
 
 function Parcels({ a }: { a: Account }) {
+  const fin = a.kind === "FINANCIAL";
   const [f, setF] = useState({ from: monthStart(), to: today(), status: "all", q: "" });
   const q = useDebounced(f.q, 350);
   const key = qs({ ...f, q });
-  const data = useQuery({ queryKey: ["m", "account-parcels", a.id, key], queryFn: () => api<{ items: { trackingId: string; orderRef?: string; recipient?: string; outcome: string; date: string; charge: number; returnCharge: number; bill?: { status: string; number: string } | null }[] }>(`/accounts/${a.id}/parcels?${key}`) });
+  const data = useQuery({
+    queryKey: ["m", "account-parcels", a.id, key],
+    queryFn: () =>
+      api<{ items: { trackingId: string; orderRef?: string; recipient?: string; outcome: string; date: string; charge: number; returnCharge: number; cod?: number; net?: number; ready?: boolean; cash?: { label?: string } | null; payout?: { status: string; number: string } | null; bill?: { status: string; number: string } | null }[] }>(`/accounts/${a.id}/parcels?${key}`),
+  });
   return (
     <>
       <Head
@@ -201,10 +245,24 @@ function Parcels({ a }: { a: Account }) {
           <>
             <Dates v={f} set={v => setF({ ...f, ...v })} />
             <Select className="select sm" aria-label="Status" value={f.status} onChange={e => setF({ ...f, status: e.target.value })} searchable={false}>
-              <option value="all">All</option>
-              <option value="not_billed">Not billed</option>
-              <option value="billed">Billed, unpaid</option>
-              <option value="paid">Paid</option>
+              {(fin
+                ? [
+                    ["all", "All"],
+                    ["not_billed", "Not billed"],
+                    ["billed", "Billed, unpaid"],
+                    ["paid", "Paid"],
+                  ]
+                : [
+                    ["all", "All"],
+                    ["open", "Not paid yet"],
+                    ["ready", "Ready to pay"],
+                    ["settled", "Paid"],
+                  ]
+              ).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
             </Select>
             <input className="input sm" type="search" placeholder="Tracking ID" aria-label="Search" value={f.q} onChange={e => setF({ ...f, q: e.target.value })} style={{ width: 160 }} />
           </>
@@ -213,14 +271,25 @@ function Parcels({ a }: { a: Account }) {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr>
-              <th>Parcel</th>
-              <th>Outcome</th>
-              <th className="num">Charge</th>
-              <th>Bill</th>
-            </tr>
+            {fin ? (
+              <tr>
+                <th>Parcel</th>
+                <th>Outcome</th>
+                <th className="num">Charge</th>
+                <th>Bill</th>
+              </tr>
+            ) : (
+              <tr>
+                <th>Parcel</th>
+                <th>Outcome</th>
+                <th className="num">COD</th>
+                <th className="num">Charges</th>
+                <th className="num">Net</th>
+                <th>Status</th>
+              </tr>
+            )}
           </thead>
-          <Body q={data} cols={4} empty="No parcels in these dates.">
+          <Body q={data} cols={fin ? 4 : 6} empty="No parcels in these dates.">
             {data.data?.items.map(p => (
               <tr key={p.trackingId}>
                 <td>
@@ -231,9 +300,27 @@ function Parcels({ a }: { a: Account }) {
                   {p.outcome}
                   <div className="sub">{day(p.date)}</div>
                 </td>
-                <td className="num">{tk(p.charge + p.returnCharge)}</td>
+                {fin ? <td className="num">{tk(p.charge + p.returnCharge)}</td> : null}
+                {fin ? null : (
+                  <>
+                    <td className="num">{tk(p.cod)}</td>
+                    <td className="num">−{tk(p.charge + p.returnCharge)}</td>
+                    <td className="num strong">{tk(p.net)}</td>
+                  </>
+                )}
                 <td>
-                  {p.bill ? (
+                  {!fin ? (
+                    p.payout ? (
+                      <>
+                        {pill(PAYOUT, p.payout.status === "PAID" ? "PAID" : "UNPAID")}
+                        <div className="sub">{p.payout.number}</div>
+                      </>
+                    ) : p.ready ? (
+                      <span className="pill info">Ready to pay</span>
+                    ) : (
+                      <span className="pill">{p.cash?.label || "Waiting"}</span>
+                    )
+                  ) : p.bill ? (
                     <>
                       {pill(BILL, p.bill.status)}
                       <div className="sub">{p.bill.number}</div>
@@ -313,6 +400,65 @@ function Bills({ a }: { a: Account }) {
   );
 }
 
+function Payouts({ a, view }: { a: Account; view: "open" | "history" }) {
+  const [d, setD] = useState({ from: monthStart(), to: today() });
+  const key = view === "open" ? qs({ accountId: a.id, status: "UNPAID" }) : qs({ accountId: a.id, status: "PAID", ...d });
+  const data = useQuery({ queryKey: ["m", "payouts", key], queryFn: () => api<{ items: { id: string; number: string; parcels: number; createdAt: string; codTotal: number; chargesTotal: number; amount: number; status: string; method?: string; reference?: string; paidAt?: string | null; receipt?: { fileId: string } | null }[] }>(`/payouts?${key}`) });
+  return (
+    <>
+      <Head title={view === "open" ? "Being paid" : "Paid history"} text={view === "open" ? "Settlements on their way to you." : "Paid to you in these dates, with the receipt."} tools={view === "open" ? undefined : <Dates v={d} set={setD} />} />
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Settlement</th>
+              <th>Created</th>
+              <th className="num">COD</th>
+              <th className="num">Charges</th>
+              <th className="num">Paid</th>
+              <th>Status</th>
+              <th />
+            </tr>
+          </thead>
+          <Body q={data} cols={7} empty={view === "open" ? "Nothing being paid right now." : "Nothing paid in these dates."}>
+            {data.data?.items.map(p => (
+              <tr key={p.id}>
+                <td>
+                  <div className="strong">{p.number}</div>
+                  <div className="sub">{p.parcels} parcel(s)</div>
+                </td>
+                <td className="nowrap">{when(p.createdAt)}</td>
+                <td className="num">{tk(p.codTotal)}</td>
+                <td className="num">−{tk(p.chargesTotal)}</td>
+                <td className="num strong">{tk(p.amount)}</td>
+                <td>
+                  {pill(PAYOUT, p.status)}
+                  {p.paidAt ? (
+                    <div className="sub">
+                      {methodLabel(p.method || "")}
+                      {p.reference ? ` · ${p.reference}` : ""} · {day(p.paidAt)}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="nowrap">
+                  <button type="button" className="button sm" onClick={() => void openDocument(`/documents/payout/${p.id}`, { title: "Preparing the settlement…" })}>
+                    PDF
+                  </button>{" "}
+                  {p.receipt ? (
+                    <button type="button" className="button sm" onClick={() => openFile(p.receipt!.fileId)}>
+                      Receipt photo
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </Body>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function Payments({ a }: { a: Account }) {
   const [d, setD] = useState({ from: monthStart(), to: today() });
   const key = qs({ accountId: a.id, ...d });
@@ -371,7 +517,7 @@ function Statement({ a, stmt, setStmt }: { a: Account; stmt: { from: string; to:
   const st = data.data;
   return (
     <>
-      <Head title="Statement" text="Charges minus, payments plus. A minus balance is what you owe." tools={<Dates v={stmt} set={setStmt} />} />
+      <Head title="Statement" text={a.kind === "FINANCIAL" ? "Charges minus, payments plus. A minus balance is what you owe." : "COD plus, charges and payments to you minus. The balance is what we still owe you."} tools={<Dates v={stmt} set={setStmt} />} />
       <div className="table-wrap">
         <table className="table">
           <thead>

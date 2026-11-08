@@ -89,7 +89,7 @@ export default function Pickups() {
     <>
       <PageHeading
         title="Pickup requests"
-        subtitle="Collections from your branches and offices. Every request you create is collected from your pickup address."
+        subtitle={m.doc ? "Schedule branch document pickups and manage recurring courier collections." : "Schedule, review, and manage parcel and document collections."}
         actions={
           <>
             <Button icon="clock" onClick={() => void openCustom(close => <Recurring close={() => close()} />, "wide")}>
@@ -181,9 +181,9 @@ function PickupList({ openParcel }: { openParcel: (id: string) => void }) {
           <thead>
             <tr>
               <th>Request ID</th>
-              <th>Origin branch</th>
+              <th>{m.doc ? "Origin branch" : "Merchant contact"}</th>
               <th>Pickup location</th>
-              <th>Document batches</th>
+              <th>{m.doc ? "Document batches" : "Packages"}</th>
               <th>Requested</th>
               <th>Status</th>
             </tr>
@@ -196,7 +196,7 @@ function PickupList({ openParcel }: { openParcel: (id: string) => void }) {
                     {p.trackingId}
                   </button>
                 </td>
-                <td>{p.originBranchCode || p.sender?.name || "—"}</td>
+                <td>{m.doc ? p.originBranchCode || p.sender?.name || "—" : p.sender?.name || "—"}</td>
                 <td>{[p.pickup?.area, p.pickup?.zone, p.pickup?.district].filter(Boolean).join(", ") || "—"}</td>
                 <td>{p.type === "DOCUMENT" ? "1 document" : "1 parcel"}</td>
                 <td className="nowrap">{when(p.createdAt)}</td>

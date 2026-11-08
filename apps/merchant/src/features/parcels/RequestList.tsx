@@ -24,13 +24,25 @@ import { destination, documentOf, EDITABLE_INCOMPLETE, NEEDS_INFO, splitContents
 
 const PAGE_SIZES = [25, 50, 100];
 const PRINT_CAP = 1000;
-export const PRINT_OPTIONS = [
-  { value: "invoice", label: "Invoices · A4" },
-  { value: "invoice-4", label: "4 invoices · A4" },
-  { value: "invoice-8", label: "8 invoices · A4" },
-  { value: "label", label: "Shipment labels" },
-  { value: "orders", label: "Consignment list" },
-];
+/** The print formats of each merchant type (merchant-orders.js printOptions). */
+export const printOptions = (doc: boolean) =>
+  doc
+    ? [
+        { value: "invoice", label: "Invoices · A4" },
+        { value: "invoice-4", label: "4 invoices · A4" },
+        { value: "invoice-8", label: "8 invoices · A4" },
+        { value: "label", label: "Shipment labels" },
+        { value: "orders", label: "Consignment list" },
+      ]
+    : [
+        { value: "invoice", label: "Invoices · A4" },
+        { value: "invoice-4", label: "4 invoices · A4" },
+        { value: "invoice-8", label: "8 invoices · A4" },
+        { value: "pos", label: "Invoice · POS 80mm" },
+        { value: "label", label: "Shipment labels" },
+        { value: "orders", label: "Order list" },
+      ];
+const TYPE_LABEL: Record<string, string> = { ECOMMERCE: "E-commerce parcel", DOCUMENT: "Document delivery", PARCEL: "Domestic parcel", FRAGILE: "Fragile parcel" };
 
 export type ListKind = "new" | "all";
 interface Filters {
@@ -40,6 +52,7 @@ interface Filters {
   from: string;
   to: string;
   contents: string;
+  payment: string;
   district: string;
   branch: string;
 }
@@ -51,7 +64,7 @@ function lastMonth() {
   from.setDate(Math.min(to.getDate(), new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate()));
   return { from: dayKey(from), to: dayKey(to) };
 }
-const defaults = (kind: ListKind): Filters => ({ q: "", status: "", dateField: "pickup", from: "", to: "", contents: "", district: "", branch: "", ...(kind === "all" ? lastMonth() : {}) });
+const defaults = (kind: ListKind): Filters => ({ q: "", status: "", dateField: "pickup", from: "", to: "", contents: "", payment: "", district: "", branch: "", ...(kind === "all" ? lastMonth() : {}) });
 /** Kept while the panel is open: filters and page come back when the page is opened again. */
 const kept = new Map<ListKind, { filters: Filters; page: number; size: number }>();
 
@@ -64,7 +77,7 @@ function query(kind: ListKind, f: Filters) {
   if (f.from) params.set("from", new Date(`${f.from}T00:00:00`).toISOString());
   if (f.to) params.set("to", new Date(`${f.to}T23:59:59.999`).toISOString());
   if (f.dateField === "status" && (f.from || f.to)) params.set("dateField", "status");
-  for (const key of ["contents", "district", "branch"] as const) if (f[key]) params.set(key, f[key]);
+  for (const key of ["contents", "payment", "district", "branch"] as const) if (f[key]) params.set(key, f[key]);
   return params;
 }
 
@@ -121,10 +134,10 @@ export function RequestList({ kind }: { kind: ListKind }) {
   const choices = useMemo(() => {
     const pool = [...(recent.data?.items ?? []), ...rows];
     const unique = (values: (string | null | undefined)[]) => [...new Set(values.filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b));
-    return { contents: unique(pool.map(documentOf)), branch: unique(pool.map(p => p.originBranchCode)), district: unique(pool.map(p => p.delivery?.district)), needs: pool.filter(p => p.incomplete).length };
+    return { contents: unique(pool.map(p => (m.doc ? documentOf(p) : p.contents))), branch: unique(pool.map(p => p.originBranchCode)), district: unique(pool.map(p => p.delivery?.district)), needs: pool.filter(p => p.incomplete).length };
   }, [recent.data, rows]);
 
-  const noun = "request";
+  const noun = m.doc ? "request" : "order";
   const allTicked = rows.length > 0 && rows.every(r => ticked.has(r.trackingId));
   const toggle = (id: string) => setTicked(s => (s.has(id) ? (s.delete(id), new Set(s)) : new Set(s.add(id))));
 
@@ -145,7 +158,7 @@ export function RequestList({ kind }: { kind: ListKind }) {
   async function print() {
     const ids = await printIds();
     if (!ids.length) return toast(`There are no ${noun}s to print. Change the filters.`);
-    await printFormat(format, ids, "Consignment list");
+    await printFormat(format, ids, m.doc ? "Consignment list" : "Order list");
   }
   async function exportList() {
     if (!ticked.size && !total) return toast(`There are no ${noun}s to export. Change the dates or filters.`);
@@ -171,7 +184,7 @@ export function RequestList({ kind }: { kind: ListKind }) {
   const statusOptions = [...STATUSES[kind].map(s => ({ value: s, label: s })), { value: NEEDS_INFO, label: `Needs info${choices.needs ? ` (${choices.needs})` : ""}` }];
   const first = (page - 1) * size + 1;
   const near = [...new Set([1, page - 1, page, page + 1, pages])].filter(p => p >= 1 && p <= pages).sort((a, b) => a - b);
-  const title = kind === "new" ? "New requests" : "All requests";
+  const title = kind === "new" ? (m.doc ? "New requests" : "New orders") : m.doc ? "All requests" : "All orders";
   return (
     <section className="panel">
       <div className="panel-head">
@@ -180,18 +193,18 @@ export function RequestList({ kind }: { kind: ListKind }) {
           <div className="panel-subtitle">{kind === "all" ? "Newest first · the last month unless you choose other dates · updates live" : "Newest first · updates live"}</div>
         </div>
         <div className="tools">
-          <input className="input sm" type="search" placeholder="Search ID, reference, phone, name" aria-label="Search requests" value={search} onChange={e => setSearch(e.target.value)} style={{ width: "min(300px, 100%)" }} />
-          <Select className="select sm" searchable={false} icon="print" aria-label="Document print format" value={format} onChange={e => setFormat(e.target.value)} style={{ width: 190 }}>
-            {PRINT_OPTIONS.map(o => (
+          <input className="input sm" type="search" placeholder="Search ID, reference, phone, name" aria-label={`Search ${noun}s`} value={search} onChange={e => setSearch(e.target.value)} style={{ width: "min(300px, 100%)" }} />
+          <Select className="select sm" searchable={false} icon="print" aria-label={m.doc ? "Document print format" : "Order print format"} value={format} onChange={e => setFormat(e.target.value)} style={{ width: 190 }}>
+            {printOptions(m.doc).map(o => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
           </Select>
-          <Button size="sm" icon="print" onClick={print} title={ticked.size ? `Print the ${ticked.size} ticked` : "Print every matching request"}>
+          <Button size="sm" icon="print" onClick={print} title={ticked.size ? `Print the ${ticked.size} ticked` : `Print every matching ${noun}`}>
             Print
           </Button>
-          <Button size="sm" icon="download" onClick={exportList} title={ticked.size ? `Export the ${ticked.size} ticked` : "Export every matching request"}>
+          <Button size="sm" icon="download" onClick={exportList} title={ticked.size ? `Export the ${ticked.size} ticked` : `Export every matching ${noun}`}>
             Export
           </Button>
         </div>
@@ -213,8 +226,12 @@ export function RequestList({ kind }: { kind: ListKind }) {
           <input className="input sm" type="date" aria-label="To date" value={filters.to} onChange={e => setFilters({ to: e.target.value })} style={{ width: 140 }} />
         </label>
         <SearchSelect size="sm" label="Status" emptyLabel="All statuses" options={statusOptions} value={filters.status} onChange={v => setFilters({ status: v })} width={190} search={false} />
-        <SearchSelect size="sm" label="Document" emptyLabel="All documents" options={choices.contents.map(v => ({ value: v, label: v }))} value={filters.contents} onChange={v => setFilters({ contents: v })} width={170} />
-        <SearchSelect size="sm" label="Origin branch" emptyLabel="All branches" options={choices.branch.map(v => ({ value: v, label: v }))} value={filters.branch} onChange={v => setFilters({ branch: v })} width={150} />
+        <SearchSelect size="sm" label={m.doc ? "Document" : "Product"} emptyLabel={m.doc ? "All documents" : "All products"} options={choices.contents.map(v => ({ value: v, label: v }))} value={filters.contents} onChange={v => setFilters({ contents: v })} width={170} />
+        {m.doc ? (
+          <SearchSelect size="sm" label="Origin branch" emptyLabel="All branches" options={choices.branch.map(v => ({ value: v, label: v }))} value={filters.branch} onChange={v => setFilters({ branch: v })} width={150} />
+        ) : (
+          <SearchSelect size="sm" label="Payment" emptyLabel="COD and prepaid" search={false} options={[{ value: "cod", label: "Cash on delivery" }, { value: "prepaid", label: "Prepaid" }]} value={filters.payment} onChange={v => setFilters({ payment: v })} width={170} />
+        )}
         <SearchSelect size="sm" label="District" emptyLabel="All districts" options={choices.district.map(v => ({ value: v, label: v }))} value={filters.district} onChange={v => setFilters({ district: v })} width={160} />
         {filtered ? (
           <Button size="sm" onClick={() => (setSearch(""), setFiltersState(defaults(kind)), setPage(1), setTicked(new Set()))}>
@@ -229,24 +246,24 @@ export function RequestList({ kind }: { kind: ListKind }) {
               <th className="check-cell">
                 <input type="checkbox" aria-label="Select visible records" checked={allTicked} onChange={() => setTicked(allTicked ? new Set() : new Set(rows.map(r => r.trackingId)))} />
               </th>
-              <th>Consignment ID</th>
-              <th>Recipient</th>
+              <th>{m.doc ? "Consignment ID" : "Order ID"}</th>
+              <th>{m.doc ? "Recipient" : "Customer"}</th>
               <th>Destination</th>
-              <th>Document type</th>
+              <th>{m.doc ? "Document type" : "Item / service"}</th>
               <th>Created</th>
-              <th>Delivery fee</th>
+              <th>{m.doc ? "Delivery fee" : "Amount"}</th>
               <th>Status</th>
               <th>History</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(p => (
-              <Row key={p.trackingId} p={p} ticked={ticked.has(p.trackingId)} onTick={() => toggle(p.trackingId)} onOpen={() => setParams(s => (s.set("parcel", p.trackingId), s))} />
+              <Row key={p.trackingId} doc={m.doc} p={p} ticked={ticked.has(p.trackingId)} onTick={() => toggle(p.trackingId)} onOpen={() => setParams(s => (s.set("parcel", p.trackingId), s))} />
             ))}
             {!rows.length ? (
               <tr>
                 <td colSpan={9} className="empty-cell">
-                  {list.isLoading ? "Loading…" : list.isError ? describe(list.error) : filtered ? `No ${noun}s match these filters.` : kind === "new" ? `No new ${noun}s. Create one or import a file.` : "No delivery requests yet. Create one with “New delivery request”."}
+                  {list.isLoading ? "Loading…" : list.isError ? describe(list.error) : filtered ? `No ${noun}s match these filters.` : kind === "new" ? `No new ${noun}s. Create one or import a file.` : m.doc ? "No delivery requests yet. Create one with “New delivery request”." : "No orders yet. Create your first order or import a batch."}
                 </td>
               </tr>
             ) : null}
@@ -291,7 +308,7 @@ export function RequestList({ kind }: { kind: ListKind }) {
   );
 }
 
-function Row({ p, ticked, onTick, onOpen }: { p: Parcel; ticked: boolean; onTick: () => void; onOpen: () => void }) {
+function Row({ p, doc, ticked, onTick, onOpen }: { p: Parcel; doc: boolean; ticked: boolean; onTick: () => void; onOpen: () => void }) {
   const [docType] = splitContents(p.contents);
   return (
     <tr className={ticked ? "ticked" : undefined}>
@@ -309,9 +326,9 @@ function Row({ p, ticked, onTick, onOpen }: { p: Parcel; ticked: boolean; onTick
         <div className="sub">{localPhone(p.recipient?.phone)}</div>
       </td>
       <td>{destination(p)}</td>
-      <td>{docType || "Business document"}</td>
+      <td>{doc ? docType || "Business document" : p.contents || TYPE_LABEL[p.type] || "Domestic parcel"}</td>
       <td className="nowrap">{when(p.createdAt)}</td>
-      <td className="nowrap">{money(p.charges?.total)}</td>
+      <td className="nowrap">{money(doc ? p.charges?.total : Number(p.codAmount) > 0 ? p.codAmount : p.declaredValue || 0)}</td>
       <td>
         <Pill>{p.statusLabel}</Pill>
         {p.incomplete ? (

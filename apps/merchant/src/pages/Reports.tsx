@@ -134,7 +134,7 @@ export default function Reports() {
 
   return (
     <>
-      <PageHeading eyebrow="Banking & Financial workspace" title="Reports" subtitle="Open a report on screen or download it to Excel. Everything comes from your live data." />
+      <PageHeading eyebrow={m.doc ? "Banking & Financial workspace" : "Merchant workspace"} title="Reports" subtitle="Open a report on screen or download it to Excel. Everything comes from your live data." />
       <Panel>
         <div className="panel-body row" style={{ gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <label className="field" style={{ minWidth: 180 }}>

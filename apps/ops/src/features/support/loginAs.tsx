@@ -8,10 +8,10 @@
  * token once through window.opener.DF.takeSupportAccess() — never through storage or the URL. This tab's own
  * session is untouched.
  */
-import { api, describe } from "@/lib/api";
-import { localPhone } from "@/lib/format";
-import { openForm, type FormField } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { api, describe } from "@panel/lib/api";
+import { localPhone } from "@panel/lib/format";
+import { openForm, type FormField } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 
 interface Target {
   userId: string;

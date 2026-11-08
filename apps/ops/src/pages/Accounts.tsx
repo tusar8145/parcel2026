@@ -11,17 +11,17 @@
  *   Franchise      franchise deposits to receive; commission invoices to approve and pay; bill due franchises
  * Each tab shows what waits there (GET /accounts/tab-counts). Live: account.updated, cash.slip, cash.transfer.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiRaw, describe } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import { useLive } from "@/lib/events";
-import { localPhone } from "@/lib/format";
+import { api, apiRaw, describe } from "@panel/lib/api";
+import { useAuth } from "@panel/lib/auth";
+import { useLive } from "@panel/lib/events";
+import { localPhone } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Empty, PageHeading, Pill, useDebounced } from "@/ui/kit";
-import { confirm, openForm, prompt } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { Button, Empty, PageHeading, Pill, useDebounced } from "@panel/ui/kit";
+import { confirm, openForm, prompt } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { moneyStaff } from "@/app/nav";
 import { openDocument } from "@/features/parcels/actions";

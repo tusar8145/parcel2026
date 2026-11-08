@@ -1,12 +1,10 @@
 /**
- * Sign-in state. On start the session is restored from the refresh cookie; who may open the panel is the
- * same list as the legacy panel (PANEL_ROLES["courier-operation"]). The API still decides every action.
+ * Sign-in state. On start the session is restored from the refresh cookie. Each panel decides who may open it
+ * (Operations: OPS_ROLES in apps/ops). The API still decides every action.
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { authApi, onSessionChange, refresh, type SessionUser } from "./api";
 import { events } from "./events";
-
-export const OPS_ROLES = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
 
 type AuthState =
   | { status: "loading" }

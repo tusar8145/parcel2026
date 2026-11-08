@@ -4,8 +4,8 @@
  * until stopped or the trip arrives (the server answers { stopped: true }). Only while the page is open.
  */
 import { useSyncExternalStore } from "react";
-import { api, describe } from "@/lib/api";
-import { toast } from "@/ui/toast";
+import { api, describe } from "@panel/lib/api";
+import { toast } from "@panel/ui/toast";
 
 const MIN_GAP_MS = 15_000;
 const MAX_ACCURACY_M = 1000;

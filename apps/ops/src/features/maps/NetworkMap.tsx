@@ -8,9 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { api } from "@/lib/api";
-import { events, useLive } from "@/lib/events";
-import { ago, num } from "@/lib/format";
+import { api } from "@panel/lib/api";
+import { events, useLive } from "@panel/lib/events";
+import { ago, num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
 
 const DHAKA: L.LatLngExpression = [23.7808, 90.4093];

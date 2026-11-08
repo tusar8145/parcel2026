@@ -3,14 +3,14 @@
  * tracking ID, merchant / recipient, destination, rider, status (+ failed badge), SLA, then the next action,
  * "Details" (the drawer) and More. The last column stays pinned while the table scrolls sideways.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Empty, Loading, MoreMenu, Pill, useDebounced } from "@/ui/kit";
-import { SearchSelect } from "@/ui/SearchSelect";
+import { Button, Empty, Loading, MoreMenu, Pill, useDebounced } from "@panel/ui/kit";
+import { SearchSelect } from "@panel/ui/SearchSelect";
 import { useEffect, useState } from "react";
 import { ALL_STATUSES, LINES, failedDelivery, failureBadge, failureText, lineLabel, lineOf, riderOf, serviceOf, slaOf, type Parcel } from "./model";
 import type { ParcelListState } from "./useParcelList";

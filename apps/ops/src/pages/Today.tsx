@@ -4,13 +4,13 @@
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { api } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { ago, money, num, when } from "@/lib/format";
+import { api } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { ago, money, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { PeriodSelect, usePeriod } from "@/lib/period";
-import { Icon, type IconName } from "@/ui/Icon";
-import { Button, Metric, PageHeading, Panel } from "@/ui/kit";
+import { PeriodSelect, usePeriod } from "@panel/lib/period";
+import { Icon, type IconName } from "@panel/ui/Icon";
+import { Button, Metric, PageHeading, Panel } from "@panel/ui/kit";
 import { allowedViews, JOURNEY, pathFor } from "@/app/nav";
 import NetworkMap from "@/features/maps/NetworkMap";
 import ParcelTable from "@/features/parcels/ParcelTable";

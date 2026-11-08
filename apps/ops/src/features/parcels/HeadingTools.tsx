@@ -1,11 +1,11 @@
 /** Parcel list heading tools: Print… (formats), Export (Excel), and links to tools still served by the classic console. */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { chooseClassic } from "@/app/links";
 import { useState } from "react";
-import { Icon, type IconName } from "@/ui/Icon";
-import { Button } from "@/ui/kit";
-import { toast, toastError } from "@/ui/toast";
-import { num } from "@/lib/format";
+import { Icon, type IconName } from "@panel/ui/Icon";
+import { Button } from "@panel/ui/kit";
+import { toast, toastError } from "@panel/ui/toast";
+import { num } from "@panel/lib/format";
 import { PDF_LIMITS, PRINT_FORMATS, printFormat } from "./actions";
 import type { ParcelListState } from "./useParcelList";
 

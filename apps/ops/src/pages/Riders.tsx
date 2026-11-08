@@ -7,19 +7,19 @@
  *                        corrections (GET/POST/PATCH /shifts/…)
  *   Verification         rider KYC documents: approve / reject each, then approve the rider or ask for changes
  */
-import { Select } from "@/ui/Select";
-import { Icon } from "@/ui/Icon";
+import { Select } from "@panel/ui/Select";
+import { Icon } from "@panel/ui/Icon";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { saveCsv } from "@/lib/csv";
-import { useLive } from "@/lib/events";
-import { date as fmtDate, dayKey, localPhone, num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { saveCsv } from "@panel/lib/csv";
+import { useLive } from "@panel/lib/events";
+import { date as fmtDate, dayKey, localPhone, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Empty, Loading, Metric, PageHeading, Panel, Pill } from "@/ui/kit";
-import { confirm, openCustom, openForm, prompt } from "@/ui/dialogs";
-import { toast, toastError } from "@/ui/toast";
+import { Button, Empty, Loading, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { confirm, openCustom, openForm, prompt } from "@panel/ui/dialogs";
+import { toast, toastError } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { useCatalog } from "@/features/parcels/search";
 import { loginAs } from "@/features/support/loginAs";

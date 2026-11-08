@@ -8,18 +8,18 @@
  * live price (POST /packages/quote with the same body the booking sends). The full address picks its district / zone /
  * area (GET /catalog/place). After booking the parcel's drawer opens (Print label there).
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
-import { api, describe } from "@/lib/api";
-import { addressText } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { addressText } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { openCustom } from "@/ui/dialogs";
-import { Button } from "@/ui/kit";
-import { Icon } from "@/ui/Icon";
-import { SearchSelect } from "@/ui/SearchSelect";
-import { toast } from "@/ui/toast";
+import { openCustom } from "@panel/ui/dialogs";
+import { Button } from "@panel/ui/kit";
+import { Icon } from "@panel/ui/Icon";
+import { SearchSelect } from "@panel/ui/SearchSelect";
+import { toast } from "@panel/ui/toast";
 import { useCatalog, type Catalog } from "@/features/parcels/search";
 import { openCamera } from "@/features/scan/scanner";
 

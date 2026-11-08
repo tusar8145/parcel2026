@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { dialogOpened } from "./dialogSignal";
 import { Icon } from "./Icon";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
-import { describe } from "@/lib/api";
+import { describe } from "../lib/api";
 import { toast } from "./toast";
 
 export interface FieldOption {

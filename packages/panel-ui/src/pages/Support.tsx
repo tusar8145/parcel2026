@@ -7,17 +7,17 @@
  * Attachments are fetched with the access token (GET /files/:id as JSON) and saved from a blob URL. Lists reload on
  * live ticket.updated / application.updated events; ?ticket=<number> opens that ticket.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "../ui/Select";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import { useLive } from "@/lib/events";
-import { localPhone } from "@/lib/format";
-import { Button, Empty, Loading, Metric, PageHeading, Panel, Pill } from "@/ui/kit";
-import { prompt } from "@/ui/dialogs";
-import { toast, toastError } from "@/ui/toast";
+import { api, describe } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { useLive } from "../lib/events";
+import { localPhone } from "../lib/format";
+import { Button, Empty, Loading, Metric, PageHeading, Panel, Pill } from "../ui/kit";
+import { prompt } from "../ui/dialogs";
+import { toast, toastError } from "../ui/toast";
 
 const STATUSES = ["Open", "In progress", "Waiting for requester", "Resolved", "Closed"];
 const CATEGORIES = ["Delivery issue", "Pickup or collection", "COD / payment", "Account / API", "Rider or safety", "Other"];
@@ -124,13 +124,18 @@ async function downloadAttachment(id: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export default function Support() {
+/**
+ * `inbox`: whether staff roles see the service-desk inbox here (Operations console: yes; the merchant panel: no,
+ * everyone sees their own tickets). ?compose=1&subject=&category=&related=&message= opens the new-ticket form prefilled.
+ */
+export default function Support({ inbox = true }: { inbox?: boolean } = {}) {
   const { user, hasRole } = useAuth();
   const qc = useQueryClient();
-  const staff = hasRole(...STAFF_ROLES);
+  const staff = inbox && hasRole(...STAFF_ROLES);
   const allowed = hasRole(...REQUESTER_ROLES);
   const [params, setParams] = useSearchParams();
-  const [composer, setComposer] = useState(false);
+  const prefill = params.get("compose") ? { subject: params.get("subject") || "", category: params.get("category") || "", relatedRef: params.get("related") || "", message: params.get("message") || "" } : null;
+  const [composer, setComposer] = useState(!!prefill);
   const tickets = useQuery({
     queryKey: ["support", "tickets", user?.id],
     queryFn: async () => {
@@ -213,7 +218,7 @@ export default function Support() {
         <Metric label="Needs attention" value={loading ? "–" : openCount} icon="alert" />
         <Metric label="Waiting for requester" value={loading ? "–" : list.filter(t => t.statusLabel === "Waiting for requester").length} icon="clock" />
       </div>
-      {composer && !staff ? <Composer done={d => (setComposer(false), changed(d))} /> : null}
+      {composer && !staff ? <Composer prefill={prefill} done={d => (setComposer(false), changed(d))} /> : null}
       <div className="support-layout">
         <Panel title="Tickets" subtitle={staff ? "All support requests" : "Your support conversations"} className="support-list">
           {loading ? (
@@ -260,8 +265,14 @@ export default function Support() {
   );
 }
 
-function Composer({ done }: { done: (d: Detail) => void }) {
-  const [form, setForm] = useState({ subject: "", category: CATEGORIES[0], priority: "Normal", relatedRef: "", message: "" });
+function Composer({ done, prefill }: { done: (d: Detail) => void; prefill?: { subject: string; category: string; relatedRef: string; message: string } | null }) {
+  const [form, setForm] = useState({
+    subject: prefill?.subject ?? "",
+    category: prefill?.category && CATEGORIES.includes(prefill.category) ? prefill.category : CATEGORIES[0],
+    priority: "Normal",
+    relatedRef: prefill?.relatedRef ?? "",
+    message: prefill?.message ?? "",
+  });
   const files = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

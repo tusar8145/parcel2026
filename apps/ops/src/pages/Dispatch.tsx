@@ -5,10 +5,10 @@
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { num } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Metric, PageHeading, Panel, Pill } from "@/ui/kit";
+import { Button, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { viewById } from "@/app/nav";
 import ViewTabs from "@/app/ViewTabs";
 import NetworkMap, { type MapHandle } from "@/features/maps/NetworkMap";

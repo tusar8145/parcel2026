@@ -9,19 +9,19 @@
  *                        last position, parcels, CSV
  *   Hub transfer report  parcels moved hub to hub by route and by hub, with parcels and CSV
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { saveCsv } from "@/lib/csv";
-import { useLive } from "@/lib/events";
-import { dayKey, localPhone, num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { saveCsv } from "@panel/lib/csv";
+import { useLive } from "@panel/lib/events";
+import { dayKey, localPhone, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { PeriodSelect, usePeriod } from "@/lib/period";
-import { Button, Metric, PageHeading, Panel, Pill } from "@/ui/kit";
-import { confirm, openForm, prompt } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { PeriodSelect, usePeriod } from "@panel/lib/period";
+import { Button, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { confirm, openForm, prompt } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { openDocument, resolveException } from "@/features/parcels/actions";
 import { useParcelActions } from "@/features/parcels/useParcelActions";

@@ -3,10 +3,10 @@
  * roles and where things are changed. The guide is drawn by the same module the super admin console uses
  * (legacy/shared/system-guide.js, so both always show the same text); it only needs DF.api and DF.describe.
  */
-import { Icon } from "@/ui/Icon";
+import { Icon } from "@panel/ui/Icon";
 import { useEffect, useRef, useState } from "react";
-import { api, describe } from "@/lib/api";
-import { openCustom } from "@/ui/dialogs";
+import { api, describe } from "@panel/lib/api";
+import { openCustom } from "@panel/ui/dialogs";
 
 type Guide = { mount: (el: HTMLElement) => Promise<void> | void };
 const w = window as unknown as { DF?: Record<string, unknown> & { systemGuide?: Guide } };

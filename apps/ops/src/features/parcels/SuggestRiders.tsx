@@ -4,15 +4,15 @@
  *   GET  /routing/suggestions?kind=delivery|pickup|all&limit=100[&hubId]
  *   POST /routing/suggestions/accept { items: [{ trackingId, riderId }] }
  */
-import { Select } from "@/ui/Select";
-import { Icon } from "@/ui/Icon";
+import { Select } from "@panel/ui/Select";
+import { Icon } from "@panel/ui/Icon";
 import { useEffect, useState } from "react";
-import { api, describe } from "@/lib/api";
-import { when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { when } from "@panel/lib/format";
 import type { Hub } from "@/lib/types";
-import { openCustom } from "@/ui/dialogs";
-import { Button } from "@/ui/kit";
-import { toast } from "@/ui/toast";
+import { openCustom } from "@panel/ui/dialogs";
+import { Button } from "@panel/ui/kit";
+import { toast } from "@panel/ui/toast";
 
 interface Suggestion {
   trackingId: string;

@@ -15,6 +15,7 @@ export default function robots(): MetadataRoute.Robots {
         "/application-received",
         "/courier-operation",
         "/ops",
+        "/merchant",
         "/rider",
         "/ecommerce-merchant",
         "/banking-merchant",

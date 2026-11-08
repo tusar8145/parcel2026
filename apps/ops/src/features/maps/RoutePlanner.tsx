@@ -3,14 +3,14 @@
  * (POST /routing/optimize, OSRM with a straight-line fallback), drawn on the dispatch map; "Find missing pins"
  * geocodes addresses (POST /routing/geocode).
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import L from "leaflet";
-import { api } from "@/lib/api";
+import { api } from "@panel/lib/api";
 import { useOps } from "@/lib/ops";
-import { Button, Panel } from "@/ui/kit";
-import { toast } from "@/ui/toast";
+import { Button, Panel } from "@panel/ui/kit";
+import { toast } from "@panel/ui/toast";
 import type { MapHandle } from "./NetworkMap";
 
 interface Stop {

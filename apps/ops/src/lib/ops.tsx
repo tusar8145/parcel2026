@@ -5,13 +5,13 @@
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
-import { useAuth } from "./auth";
-import { useLive } from "./events";
+import { api } from "@panel/lib/api";
+import { useAuth } from "@panel/lib/auth";
+import { useLive } from "@panel/lib/events";
 import type { Hub, OpsCan, OpsMe, OpsOverview, Rider } from "./types";
-import { useStored } from "@/ui/kit";
+import { useStored } from "@panel/ui/kit";
 import type { MenuContext } from "@/app/nav";
-import { toast } from "@/ui/toast";
+import { toast } from "@panel/ui/toast";
 
 /** Which parcels the console shows (top bar): booked in the last 30 days by default; remembered per browser. */
 export type ParcelPeriod = "30d" | "60d" | "90d" | "6m" | "1y" | "all";
@@ -33,6 +33,9 @@ function periodStart(p: ParcelPeriod): string | null {
   else return null;
   return d.toISOString();
 }
+
+/** Who may open this console: the same list as the classic panel (PANEL_ROLES["courier-operation"]). */
+export const OPS_ROLES = ["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"];
 
 export type StageCounts = { stages: Record<string, number>; detail?: Record<string, number>; [key: string]: unknown };
 

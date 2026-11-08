@@ -5,13 +5,13 @@
  *      alive) and is listed with Download.
  *   3. Closing the dialog ends the link and deletes the files (DELETE /file-shares/:id). Nothing is kept.
  */
-import { Icon } from "@/ui/Icon";
+import { Icon } from "@panel/ui/Icon";
 import { useEffect, useRef, useState } from "react";
-import { api, apiRaw, describe } from "@/lib/api";
-import { events } from "@/lib/events";
-import { openCustom } from "@/ui/dialogs";
-import { Button } from "@/ui/kit";
-import { toast, toastError } from "@/ui/toast";
+import { api, apiRaw, describe } from "@panel/lib/api";
+import { events } from "@panel/lib/events";
+import { openCustom } from "@panel/ui/dialogs";
+import { Button } from "@panel/ui/kit";
+import { toast, toastError } from "@panel/ui/toast";
 
 interface Share {
   id: string;

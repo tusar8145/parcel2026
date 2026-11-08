@@ -4,18 +4,18 @@
  * journey page (only when this person can use that page's actions: GET /bulk-updates/kinds), and the Transfers
  * apply options (seal the bags, load them on a planned or new trip).
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
-import { api } from "@/lib/api";
+import { api } from "@panel/lib/api";
 import { useOps } from "@/lib/ops";
-import { Button } from "@/ui/kit";
-import { toast } from "@/ui/toast";
+import { Button } from "@panel/ui/kit";
+import { toast } from "@panel/ui/toast";
 import { printLabels, PDF_LIMITS, refreshParcels } from "@/features/parcels/actions";
 import { openDocument } from "@/features/parcels/actions";
-import { num } from "@/lib/format";
-import { openBulk, openBulkHistory, openImport, openImportHistory, type BulkFilters, type ImportConfig, type MerchantRef, type TransferResult } from "./Importer";
+import { num } from "@panel/lib/format";
+import { openBulk, openBulkHistory, openImport, openImportHistory, type BulkFilters, type ImportConfig, type MerchantRef, type TransferResult } from "@panel/ui/Importer";
 
 const PAGE_OF: Record<string, string> = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", transfers: "Transfers", all: "All parcels" };
 export const bulkLabel = (kind: string) => `Bulk update ${PAGE_OF[kind] || "All parcels"} by Excel`;

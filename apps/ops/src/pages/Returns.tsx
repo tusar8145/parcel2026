@@ -6,17 +6,17 @@
  *   Scheduled pickups  merchants' pickup requests (today & upcoming, or a day) → assign a rider, collected / missed,
  *                      generate from recurring schedules
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { addressText, money, num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { addressText, money, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Metric, PageHeading, Panel, Pill } from "@/ui/kit";
-import { confirm, openCustom, openForm, prompt } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { Button, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { confirm, openCustom, openForm, prompt } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { openDocument, refreshParcels } from "@/features/parcels/actions";
 import type { Handoff } from "@/features/parcels/useParcelActions";

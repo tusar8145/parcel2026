@@ -6,18 +6,18 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, describe, download } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { localPhone, money, when } from "@/lib/format";
+import { api, ApiError, describe, download } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { localPhone, money, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Icon } from "@/ui/Icon";
-import { Button, MoreMenu, Pill } from "@/ui/kit";
-import { toast } from "@/ui/toast";
+import { Icon } from "@panel/ui/Icon";
+import { Button, MoreMenu, Pill } from "@panel/ui/kit";
+import { toast } from "@panel/ui/toast";
 import { changeProductType, changeReturnCharge, printLabels, refreshParcels } from "./actions";
 import { CLOSED, PICKUP_STAGE, awaitingDropOff, failedDelivery, failureBadge, failureText, riderOf, slaOf, type Parcel } from "./model";
 import { useParcelActions } from "./useParcelActions";
 
-const PositionMap = lazy(() => import("./PositionMap"));
+const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
 export default function ParcelDrawer() {
   const [params, setParams] = useSearchParams();

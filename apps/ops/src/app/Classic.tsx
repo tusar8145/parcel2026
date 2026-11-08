@@ -1,4 +1,4 @@
-import { PageHeading } from "@/ui/kit";
+import { PageHeading } from "@panel/ui/kit";
 import { ClassicLink } from "@/features/parcels/HeadingTools";
 import ViewTabs from "./ViewTabs";
 import type { ViewDef } from "./nav";

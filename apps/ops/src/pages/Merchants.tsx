@@ -7,17 +7,17 @@
  *   - "Log in as" per merchant (support access)
  * Approving and changing addresses need `merchantAddress` (operations managers, super admins).
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { saveCsv } from "@/lib/csv";
-import { useLive } from "@/lib/events";
-import { num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { saveCsv } from "@panel/lib/csv";
+import { useLive } from "@panel/lib/events";
+import { num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Loading, PageHeading, Panel, Pill, Tabs, useDebounced } from "@/ui/kit";
-import { openCustom, prompt } from "@/ui/dialogs";
-import { toast, toastError } from "@/ui/toast";
+import { Button, Loading, PageHeading, Panel, Pill, Tabs, useDebounced } from "@panel/ui/kit";
+import { openCustom, prompt } from "@panel/ui/dialogs";
+import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog, type Catalog } from "@/features/parcels/search";
 import { loginAs } from "@/features/support/loginAs";
 

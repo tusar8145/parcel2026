@@ -8,15 +8,15 @@
  *               preview → apply (options from the page, e.g. Transfers: seal / trip) → progress → result
  *   History     past imports / bulk updates with View and downloads
  */
-import { Select } from "@/ui/Select";
-import { Icon } from "@/ui/Icon";
+import { Select } from "./Select";
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, apiRaw, describe, download } from "@/lib/api";
-import { events } from "@/lib/events";
-import { num } from "@/lib/format";
-import { openCustom } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
-import { SearchSelect } from "@/ui/SearchSelect";
+import { api, apiRaw, describe, download } from "../lib/api";
+import { events } from "../lib/events";
+import { num } from "../lib/format";
+import { openCustom } from "./dialogs";
+import { toast } from "./toast";
+import { SearchSelect } from "./SearchSelect";
 
 const PAGE_SIZE = 50;
 const ACCEPT = ".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";

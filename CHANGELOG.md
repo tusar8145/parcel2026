@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.19.0 — 2026-11-08
+- Banking & Financial merchants now open the new merchant panel: signing in, notifications and every link to the old panel go to the same page there. The classic panel stays one click away ("Classic panel" in the menu) and keeps opening on reload; "Open the new merchant panel" in its menu goes back.
+
+## 1.18.0 — 2026-11-08
+- New Banking & Financial merchant panel (preview) at /merchant: every page of the classic panel rebuilt on the same data and rules — Overview, New / All requests (filters, Excel export, printing), the request details panel, New delivery request (paste a message, services, pickup time, live price), Excel import, Returns, Pickup requests and recurring pickups, Recipients & branches, Product catalogue, Balance (bills, payments, "I've paid", statement), Reports, API & Webhooks, Services & pricing, Settings (corporate account and address, team, verification, notifications), Support and Notifications, and the account verification screen. The classic panel stays available from the menu.
+
 ## 1.17.1 — 2026-11-08
 - New Operations console: Parcel queue (its tasks, groups, lists, Excel and menu count) follows the period chosen in the top bar too; scanning a parcel still works whatever its age.
 - New Operations console: the period choice is now first in the top bar, before Share files.

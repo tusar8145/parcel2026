@@ -1,9 +1,9 @@
 /** The parcel actions with this person's context, and the "next action" runner (bridge-parcel.js Ops.runNext). */
 import { useNavigate, useSearchParams } from "react-router";
 import { pathFor } from "@/app/nav";
-import { when } from "@/lib/format";
+import { when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { toast } from "@/ui/toast";
+import { toast } from "@panel/ui/toast";
 import * as A from "./actions";
 import { nextAction, servingHub, type NextKind, type Parcel } from "./model";
 import { useCatalog } from "./search";

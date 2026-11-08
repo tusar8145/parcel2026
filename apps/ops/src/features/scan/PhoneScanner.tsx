@@ -6,15 +6,15 @@
  *   3. The link stays alive while this tab is open (every minute; kept across a reload) and Disconnect ends it.
  *      With no scan box open, the code is offered as "Open parcel".
  */
-import { Icon } from "@/ui/Icon";
+import { Icon } from "@panel/ui/Icon";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router";
-import { api, describe } from "@/lib/api";
-import { events } from "@/lib/events";
-import { openCustom } from "@/ui/dialogs";
-import { Button, Pill } from "@/ui/kit";
-import { toast } from "@/ui/toast";
+import { api, describe } from "@panel/lib/api";
+import { events } from "@panel/lib/events";
+import { openCustom } from "@panel/ui/dialogs";
+import { Button, Pill } from "@panel/ui/kit";
+import { toast } from "@panel/ui/toast";
 import { deliverScan } from "./scanner";
 
 interface Link {

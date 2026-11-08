@@ -1,0 +1,12 @@
+{
+  "name": "@delivery-fast/panel-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What the React panels share (Operations console, merchant panel): buttons, dropdowns, dialogs, toasts, icons, the API client, sign-in, live events, formatting and the panel stylesheet. Source only: each app's Vite build compiles it (alias @panel).",
+  "type": "module",
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.107.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

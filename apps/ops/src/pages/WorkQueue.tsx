@@ -3,16 +3,16 @@
  * by stage, with counts. A step opens into its groups (route, area, rider, hub); a group lists its parcels on the
  * right, exports them to Excel and has a scan box that does the step one parcel at a time. Counts follow live events.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe, download } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { localPhone, num, when } from "@/lib/format";
+import { api, describe, download } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { localPhone, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Empty, PageHeading, Panel, Pill } from "@/ui/kit";
-import { Icon } from "@/ui/Icon";
-import { toastError } from "@/ui/toast";
+import { Button, Empty, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { Icon } from "@panel/ui/Icon";
+import { toastError } from "@panel/ui/toast";
 import { useParcelActions } from "@/features/parcels/useParcelActions";
 import { OperationTimeBar } from "@/features/scan/OperationTime";
 import { ScanInput, type ScanInputHandle, type ScanSource } from "@/features/scan/scanner";

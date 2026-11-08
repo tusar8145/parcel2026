@@ -3,9 +3,9 @@
  * a view is one or more tabs; the address is /ops/<view>/<tab> (slugs). Who sees which view is the same
  * as allowedViews() there; the API still decides every action.
  */
-import type { IconName } from "@/ui/Icon";
+import type { IconName } from "@panel/ui/Icon";
 import type { OpsMe } from "@/lib/types";
-import { slug } from "@/lib/format";
+import { slug } from "@panel/lib/format";
 
 export type StageKey = "newOrders" | "pickup" | "hubDesk" | "transfers" | "delivery" | "problems" | "returns";
 

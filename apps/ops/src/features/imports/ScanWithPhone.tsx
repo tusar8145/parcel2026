@@ -8,17 +8,17 @@
  *      the rows go to the import dialog (first / last mile, hub, messages), and each booked parcel keeps its photo.
  * The link works only while this window is open: extended every minute, ended when it closes (also on leaving).
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, apiRaw, describe, download } from "@/lib/api";
-import { events } from "@/lib/events";
-import { confirm, openCustom } from "@/ui/dialogs";
-import { Button, Pill } from "@/ui/kit";
-import { Icon } from "@/ui/Icon";
-import { SearchSelect } from "@/ui/SearchSelect";
-import { toast } from "@/ui/toast";
+import { api, apiRaw, describe, download } from "@panel/lib/api";
+import { events } from "@panel/lib/events";
+import { confirm, openCustom } from "@panel/ui/dialogs";
+import { Button, Pill } from "@panel/ui/kit";
+import { Icon } from "@panel/ui/Icon";
+import { SearchSelect } from "@panel/ui/SearchSelect";
+import { toast } from "@panel/ui/toast";
 import type { Catalog } from "@/features/parcels/search";
-import { openImport, type ImportConfig } from "./Importer";
+import { openImport, type ImportConfig } from "@panel/ui/Importer";
 
 const KINDS: [string, string][] = [
   ["ecommerce", "E-commerce"],

@@ -5,10 +5,10 @@
  */
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { Button, Loading, PageHeading, Panel, Tabs, useStored } from "@/ui/kit";
-import { toastError } from "@/ui/toast";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { Button, Loading, PageHeading, Panel, Tabs, useStored } from "@panel/ui/kit";
+import { toastError } from "@panel/ui/toast";
 import { internalLink } from "@/app/links";
 
 interface Notification {

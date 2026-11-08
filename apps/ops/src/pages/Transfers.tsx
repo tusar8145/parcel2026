@@ -8,17 +8,17 @@
  *   Issues      missing / extra parcels, seal mismatches; resolve
  *   Vehicles    the linehaul fleet (hub managers add and edit)
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { ago, localPhone, money, num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { ago, localPhone, money, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Metric, PageHeading, Panel, Pill, useDebounced } from "@/ui/kit";
-import { confirm, openForm } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { Button, Metric, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
+import { confirm, openForm } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { pathFor } from "@/app/nav";
 import NetworkMap from "@/features/maps/NetworkMap";

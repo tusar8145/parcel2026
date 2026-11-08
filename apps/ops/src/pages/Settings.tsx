@@ -3,9 +3,9 @@
  * is the one personal setting here; the system guide opens in a dialog; platform settings link to super admin.
  */
 import { useNavigate } from "react-router";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@panel/lib/auth";
 import { useOps } from "@/lib/ops";
-import { Button, PageHeading, Panel } from "@/ui/kit";
+import { Button, PageHeading, Panel } from "@panel/ui/kit";
 import { allowedViews, pathFor } from "@/app/nav";
 import { useCatalog } from "@/features/parcels/search";
 import { manageMfa } from "@/features/account/Mfa";

@@ -2,14 +2,14 @@
  * The views made of parcel lists: New orders, All parcels (4 tabs), Problems (4 tabs), and the stage tables of
  * Pickup, Delivery, Hub desk › At my hub, Transfers › On the road and Returns (bridge-nav.js decorate()).
  */
-import { num } from "@/lib/format";
+import { num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { PageHeading } from "@/ui/kit";
+import { PageHeading } from "@panel/ui/kit";
 import { viewById } from "@/app/nav";
 import ParcelTable from "@/features/parcels/ParcelTable";
 import { useParcelList } from "@/features/parcels/useParcelList";
 import { ExportButton, PrintMenu } from "@/features/parcels/HeadingTools";
-import { Button } from "@/ui/kit";
+import { Button } from "@panel/ui/kit";
 import { openBooking, type BookingLine } from "@/features/booking/Booking";
 import { openScanWithPhone } from "@/features/imports/ScanWithPhone";
 import { useImportConfig } from "@/features/imports/ImportButtons";

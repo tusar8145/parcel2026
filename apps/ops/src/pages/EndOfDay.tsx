@@ -2,14 +2,14 @@
  * Hub desk › End of day (bridge-desk.js): arrivals expected vs received, dispatches, held now, ready for collection,
  * and cash on delivery (collected, handed over, still with riders) for a hub and a day (Dhaka time), with its PDF.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { num } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Metric, Panel } from "@/ui/kit";
+import { Button, Metric, Panel } from "@panel/ui/kit";
 import { openDocument } from "@/features/parcels/actions";
 
 const dhakaToday = () => new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);

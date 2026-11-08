@@ -5,8 +5,8 @@
  * code from the phone scanner (top bar) goes into the box in use, like a camera read.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Icon } from "@/ui/Icon";
-import { openCustom } from "@/ui/dialogs";
+import { Icon } from "@panel/ui/Icon";
+import { openCustom } from "@panel/ui/dialogs";
 
 export type ScanSource = "CAMERA" | "KEYBOARD" | "MANUAL";
 const FORMATS = ["code_39", "code_128", "qr_code", "ean_13", "ean_8", "upc_a", "itf", "codabar", "data_matrix"];

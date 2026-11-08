@@ -4,9 +4,9 @@
  * 30 days back, never ahead. It stays while you move between their tabs; other views use now.
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { setOperationTime } from "@/lib/api";
-import { Icon } from "@/ui/Icon";
-import { toast } from "@/ui/toast";
+import { setOperationTime } from "@panel/lib/api";
+import { Icon } from "@panel/ui/Icon";
+import { toast } from "@panel/ui/toast";
 
 const DAYS = 30;
 const store = { on: false, value: null as Date | null };

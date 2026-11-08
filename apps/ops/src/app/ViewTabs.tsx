@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { useOps } from "@/lib/ops";
-import { Tabs } from "@/ui/kit";
+import { Tabs } from "@panel/ui/kit";
 import { pathFor, viewById } from "./nav";
 
 /** The tabs of a view (hidden tabs: Accounts by role), each its own address. */

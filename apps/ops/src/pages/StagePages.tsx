@@ -3,7 +3,7 @@
  * (the day's reconciliation). Scanning work is on Scan desk.
  */
 import { useOps } from "@/lib/ops";
-import { PageHeading } from "@/ui/kit";
+import { PageHeading } from "@panel/ui/kit";
 import ViewTabs from "@/app/ViewTabs";
 import type { ViewDef } from "@/app/nav";
 import { StageTable } from "./ParcelPages";

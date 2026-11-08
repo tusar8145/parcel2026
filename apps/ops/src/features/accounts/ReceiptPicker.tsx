@@ -4,8 +4,8 @@
  * event, polled every 3 s). The link is deleted when the dialog closes.
  */
 import { useEffect, useRef, useState } from "react";
-import { api, describe } from "@/lib/api";
-import { events } from "@/lib/events";
+import { api, describe } from "@panel/lib/api";
+import { events } from "@panel/lib/events";
 
 export interface ReceiptValue {
   dataUrl: string | null;

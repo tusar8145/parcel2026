@@ -31,7 +31,14 @@ const websiteFiles = (): Plugin => ({
 export default defineConfig({
   base: "/ops/",
   plugins: [react(), websiteFiles()],
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // What the React panels share (packages/panel-ui): UI kit, API client, sign-in, live events, styles.
+      "@panel": fileURLToPath(new URL("../../packages/panel-ui/src", import.meta.url)),
+    },
+    dedupe: ["react", "react-dom", "@tanstack/react-query"],
+  },
   // The shared package is CommonJS (dist/): pre-bundled in development, converted in the build.
   optimizeDeps: { include: ["@delivery-fast/shared/dist/phone.js", "@delivery-fast/shared/dist/parcel-status.js"] },
   server: { port: 5174, proxy: { "/api": { target: api, changeOrigin: false } } },

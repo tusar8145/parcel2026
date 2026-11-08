@@ -4,12 +4,13 @@
  */
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
-import { useAuth, OPS_ROLES } from "@/lib/auth";
+import { useAuth } from "@panel/lib/auth";
+import { OPS_ROLES } from "@/lib/ops";
 import { OpsProvider, useOps } from "@/lib/ops";
-import { DialogHost } from "@/ui/dialogs";
-import { Toasts } from "@/ui/toast";
-import { Loading } from "@/ui/kit";
-import Login from "./Login";
+import { DialogHost } from "@panel/ui/dialogs";
+import { Toasts } from "@panel/ui/toast";
+import { Loading } from "@panel/ui/kit";
+import Login from "@panel/ui/Login";
 import Shell from "./Shell";
 import { allowedViews, legacyPath, pathFor, tabBySlug, viewBySlug, type ViewDef } from "./nav";
 import { Classic } from "./Classic";
@@ -29,7 +30,7 @@ const Riders = lazy(() => import("@/pages/Riders"));
 const Merchants = lazy(() => import("@/pages/Merchants"));
 const CnStock = lazy(() => import("@/pages/CnStock"));
 const Settings = lazy(() => import("@/pages/Settings"));
-const Support = lazy(() => import("@/pages/Support"));
+const Support = lazy(() => import("@panel/pages/Support"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const ScheduledPickups = lazy(() => import("@/pages/Returns").then(m => ({ default: m.ScheduledPickups })));
 

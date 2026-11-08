@@ -6,9 +6,9 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { api, ApiError, describe } from "@/lib/api";
-import { events } from "@/lib/events";
-import { ago } from "@/lib/format";
+import { api, ApiError, describe } from "../lib/api";
+import { events } from "../lib/events";
+import { ago } from "../lib/format";
 
 interface Position {
   kind: "rider" | "hub" | "vehicle" | "last" | "none";

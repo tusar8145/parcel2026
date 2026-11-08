@@ -6,10 +6,10 @@
  */
 import { useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api, apiRaw } from "@/lib/api";
-import { num } from "@/lib/format";
+import { api, apiRaw } from "@panel/lib/api";
+import { num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { toast } from "@/ui/toast";
+import { toast } from "@panel/ui/toast";
 import type { Parcel } from "./model";
 
 export interface ListFilters {

@@ -94,6 +94,10 @@ export default function nextConfig(phase: string): NextConfig {
         { source: "/ops/assets/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
         { source: "/ops", headers: [{ key: "Cache-Control", value: "no-cache" }] },
         { source: "/ops/:path((?!assets/).*)", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+        // The React merchant panel (apps/merchant, built into public/merchant): the same rules.
+        { source: "/merchant/assets/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+        { source: "/merchant", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+        { source: "/merchant/:path((?!assets/).*)", headers: [{ key: "Cache-Control", value: "no-cache" }] },
       ];
     },
     async rewrites() {
@@ -102,6 +106,9 @@ export default function nextConfig(phase: string): NextConfig {
         // The React Operations console is a single-page app: its routes (/ops/today, /ops/problems/…) load its index.html.
         { source: "/ops", destination: "/ops/index.html" },
         { source: "/ops/:path*", destination: "/ops/index.html" },
+        // The React merchant panel is a single-page app too (/merchant/overview, /merchant/all-requests…).
+        { source: "/merchant", destination: "/merchant/index.html" },
+        { source: "/merchant/:path*", destination: "/merchant/index.html" },
       ];
     },
     // Keep old .html links working.
@@ -119,6 +126,18 @@ export default function nextConfig(phase: string): NextConfig {
             { type: "cookie", key: "df-classic" },
           ],
           destination: "/ops",
+          permanent: false,
+        },
+        // Banking & Financial merchants use the new merchant panel (apps/merchant): sign-in, notifications and links
+        // to /banking-merchant open it, query kept (?page=&parcel=&merchant= open the same place). The classic panel
+        // stays at /banking-merchant?classic=1; the df-classic-merchant cookie (set by its link) keeps it on reload.
+        {
+          source: "/banking-merchant",
+          missing: [
+            { type: "query", key: "classic" },
+            { type: "cookie", key: "df-classic-merchant" },
+          ],
+          destination: "/merchant",
           permanent: false,
         },
         ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),

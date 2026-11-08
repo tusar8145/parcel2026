@@ -4,10 +4,10 @@
  *   GET /auth/mfa · POST /auth/mfa/setup · /auth/mfa/enable · /auth/mfa/recovery-codes · /auth/mfa/disable
  */
 import { useEffect, useRef, useState } from "react";
-import { api, describe } from "@/lib/api";
-import { saveText } from "@/lib/csv";
-import { openCustom } from "@/ui/dialogs";
-import { Button, Loading, Pill } from "@/ui/kit";
+import { api, describe } from "@panel/lib/api";
+import { saveText } from "@panel/lib/csv";
+import { openCustom } from "@panel/ui/dialogs";
+import { Button, Loading, Pill } from "@panel/ui/kit";
 
 interface Status {
   enabled: boolean;

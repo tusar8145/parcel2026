@@ -1,14 +1,14 @@
 /**
- * Sign in to Operations: password (email or phone) or a one-time SMS code, then two-step verification when the
+ * Sign in to a panel (Operations console, merchant panel): password (email or phone) or a one-time SMS code, then two-step verification when the
  * account uses it (or must set it up). Same endpoints and rules as the website's sign-in.
  */
 import { useState } from "react";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
-import { acceptSession, authApi, describe, isSession, type MfaChallenge } from "@/lib/api";
+import { acceptSession, authApi, describe, isSession, type MfaChallenge } from "../lib/api";
 
 type Step = { kind: "form" } | { kind: "mfa"; token: string } | { kind: "setup"; token: string; qr?: string; secret?: string } | { kind: "codes"; codes: string[]; finish: () => void };
 
-export default function Login({ notAllowed }: { notAllowed?: string }) {
+export default function Login({ notAllowed, product = "Operations console", heading = "Sign in to Operations" }: { notAllowed?: string; product?: string; heading?: string }) {
   const [mode, setMode] = useState<"password" | "otp">("password");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -45,7 +45,7 @@ export default function Login({ notAllowed }: { notAllowed?: string }) {
   const brand = (
     <div className="auth-brand">
       <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Delivery Fast" width={528} height={100} />
-      <small className="faint">Operations console</small>
+      <small className="faint">{product}</small>
     </div>
   );
 
@@ -100,7 +100,7 @@ export default function Login({ notAllowed }: { notAllowed?: string }) {
         {brand}
         {step.kind === "form" ? (
           <>
-            <h1>Sign in to Operations</h1>
+            <h1>{heading}</h1>
             {notAllowed ? <div className="callout warn">{notAllowed}</div> : <p style={{ margin: "6px 0 0" }}>For hub, dispatch, finance and support staff.</p>}
             <div className="segmented" role="group" aria-label="How to sign in">
               <button type="button" aria-pressed={mode === "password"} onClick={() => (setMode("password"), setError(""))}>

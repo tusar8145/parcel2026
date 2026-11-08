@@ -7,16 +7,16 @@
  *   Void lost labels       POST /cn/stock/void
  *   Check a label          GET /cn/stock/:cn (camera or USB scanner)
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { date, num, when } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { date, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Metric, PageHeading, Panel, Pill, useDebounced } from "@/ui/kit";
-import { openForm } from "@/ui/dialogs";
-import { toast } from "@/ui/toast";
+import { Button, Metric, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
+import { openForm } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import { openDocument } from "@/features/parcels/actions";
 import { ScanInput, type ScanInputHandle } from "@/features/scan/scanner";
 

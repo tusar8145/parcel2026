@@ -3,7 +3,7 @@
  * Custom range. Asia/Dhaka calendar days; weeks start on Saturday. Kept in the URL (?period=, or
  * ?period=custom&from=&to=) so a shared link opens the same period, and remembered per page.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "../ui/Select";
 import { useSearchParams } from "react-router";
 import { useState } from "react";
 

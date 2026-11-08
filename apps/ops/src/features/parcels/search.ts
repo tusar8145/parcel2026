@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, ApiError } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { queryClient } from "@/lib/queryClient";
+import { api, ApiError } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { queryClient } from "@panel/lib/queryClient";
 import type { Parcel } from "./model";
 
 /** Scanner input → a tracking ID / CN (trims, upper-cases, drops a tracking URL's path). */

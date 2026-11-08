@@ -3,15 +3,15 @@
  * bridge-collect.js). Everything is on the page (no dialogs); each scan does the step at once and the fields above
  * apply to the scans that follow. Logs, counters and choices stay while you switch tabs.
  */
-import { Select } from "@/ui/Select";
+import { Select } from "@panel/ui/Select";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@/lib/api";
-import { useLive } from "@/lib/events";
-import { localPhone, num } from "@/lib/format";
+import { api, describe } from "@panel/lib/api";
+import { useLive } from "@panel/lib/events";
+import { localPhone, num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
-import { Button, Empty, PageHeading, Panel, Pill } from "@/ui/kit";
-import { toast, toastError } from "@/ui/toast";
+import { Button, Empty, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { toast, toastError } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { viewById } from "@/app/nav";
 import { printLabels } from "@/features/parcels/actions";

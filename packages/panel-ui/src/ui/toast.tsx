@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 import { useSyncExternalStore } from "react";
-import { describe } from "@/lib/api";
+import { describe } from "../lib/api";
 
 type Tone = "default" | "good" | "bad";
 interface Toast {

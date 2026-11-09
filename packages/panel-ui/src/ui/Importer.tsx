@@ -528,7 +528,12 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         const hk = kindFilter ?? (bulkKind === "all" ? "" : bulkKind);
         setHistoryKind(hk);
         setHistory((await api<{ items: Job[] }>(qs("/bulk-updates", { limit: 50, kind: hk, action: actionFilter }))).items);
-      } else setHistory((await api<{ items: Job[] }>(qs("/imports", { merchantId: cfg.merchantId, kind: cfg.kind, limit: 50 }))).items);
+      } else {
+        // Pages that import several kinds (Operations › New orders, All parcels) show every import, of any kind;
+        // filtering by the kind on screen hid an import of another kind after it was booked.
+        const many = (initial.kinds?.length ?? 0) > 1;
+        setHistory((await api<{ items: Job[] }>(qs("/imports", { merchantId: cfg.merchantId, kind: many ? undefined : cfg.kind, limit: 50 }))).items);
+      }
     } catch (e) {
       toast(describe(e), "bad");
       close();
@@ -1278,7 +1283,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                     <tr key={j.id}>
                       <td>
                         <span className="strong">{j.number}</span>
-                        <span className="sub">{j.fileName || ""}</span>
+                        <span className="sub">{[!bulk && (initial.kinds?.length ?? 0) > 1 ? KIND_LABEL[j.kind || ""] || j.kind : "", j.fileName].filter(Boolean).join(" · ")}</span>
                       </td>
                       {bulk ? <td>{j.title || j.kindTitle || ""}</td> : null}
                       <td>

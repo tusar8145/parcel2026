@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.25.2 — 2026-11-10
+- Operations console: after an import, and on each import in Import history, "Print…" offers every print format of the parcel lists (all / e-commerce / document / customer invoices on A4, 4 or 8 invoices per A4 page, POS 80 mm invoice, shipment labels, the order / shipment list) for the parcels that import created, instead of labels only.
+
 ## 1.25.1 — 2026-11-10
 - Operations console: Import history on New orders and All parcels now lists every import (Customer parcel, E-commerce and Banking & Financial), each marked with its kind. Before, it showed only E-commerce imports, so a Customer or Banking & Financial import seemed to disappear when the history was opened again.
 

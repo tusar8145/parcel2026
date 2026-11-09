@@ -17,6 +17,7 @@ import { num } from "../lib/format";
 import { openCustom } from "./dialogs";
 import { toast } from "./toast";
 import { SearchSelect } from "./SearchSelect";
+import { PRINT_FORMATS, printFormat } from "../lib/print";
 
 const PAGE_SIZE = 50;
 const ACCEPT = ".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -1188,7 +1189,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                 {bulk ? "Download rows not applied (.xlsx)" : "Download rows not created (.xlsx)"}
               </button>
             ) : null}
-            {!bulk && r.created && cfg.printLabels ? (
+            {!bulk && r.created && cfg.forOps && job ? (
+              <PrintImport jobId={job.id} number={job.number} kind={job.kind} />
+            ) : !bulk && r.created && cfg.printLabels ? (
               <button type="button" className="button" onClick={run(() => labels())}>
                 {`Print labels (${num(r.created)})`}
               </button>
@@ -1313,7 +1316,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                               {bulk ? "Not applied (.xlsx)" : "Not created (.xlsx)"}
                             </button>
                           ) : null}
-                          {!bulk && j.result.created && cfg.printLabels ? (
+                          {!bulk && j.result.created && cfg.forOps ? (
+                            <PrintImport jobId={j.id} number={j.number} kind={j.kind} size="sm" />
+                          ) : !bulk && j.result.created && cfg.printLabels ? (
                             <button type="button" className="button sm" onClick={run(() => labels(j))}>
                               Labels
                             </button>
@@ -1677,5 +1682,49 @@ function BulkRowsTable({ job, rows, statuses }: { job: Job; rows: Rows; statuses
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Operations: "Print…" for an import's parcels, with every format of the parcel lists' Print menu (invoices A4 / 4 / 8
+ * per page / POS, shipment labels, the shipment list), the import's own parcels in each (GET /imports/:id/tracking-ids).
+ */
+function PrintImport({ jobId, number, kind, size = "md" }: { jobId: string; number?: string; kind?: string; size?: "sm" | "md" }) {
+  const [busy, setBusy] = useState(false);
+  const line = kind === "ecommerce" ? "ECOMMERCE" : kind === "document" ? "BANKING_FINANCIAL" : kind === "customer" ? "CUSTOMER" : undefined;
+  return (
+    <Select
+      className={`select${size === "sm" ? " sm" : ""}`}
+      searchable={false}
+      icon="print"
+      aria-label="Print this import's parcels"
+      title="Invoices, labels or the shipment list of the parcels this import created"
+      value=""
+      disabled={busy}
+      style={{ width: size === "sm" ? 110 : 130, fontWeight: 600 }}
+      onChange={async e => {
+        const format = e.target.value;
+        if (!format) return;
+        setBusy(true);
+        try {
+          const { trackingIds } = await api<{ trackingIds: string[] }>(`/imports/${jobId}/tracking-ids`);
+          if (!trackingIds.length) return void toast("This import didn't create any parcels.");
+          await printFormat(format, trackingIds, `Import ${number || ""}`.trim());
+        } catch (err) {
+          toast(describe(err), "bad");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <option value="" hidden>
+        {busy ? "Preparing…" : "Print…"}
+      </option>
+      {PRINT_FORMATS.map(f => (
+        <option key={f.value} value={f.value} disabled={!!f.line && !!line && f.line !== line}>
+          {f.label}
+        </option>
+      ))}
+    </Select>
   );
 }

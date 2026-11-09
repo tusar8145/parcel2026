@@ -17,6 +17,7 @@ import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
 import { queryClient } from "@panel/lib/queryClient";
 import { addressText } from "@panel/lib/format";
+import { editMerchantAddress } from "./merchantAddress";
 import { DialogFrame, Facts, packageLabel, phoneText, STATUS_LABEL, TYPE_LABEL, whenFull, dateOf, type Merchant, type MerchantType, type Place } from "@/lib/admin";
 
 const reload = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "merchants"] }), queryClient.invalidateQueries({ queryKey: ["admin", "overview"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] })]);
@@ -78,7 +79,7 @@ export function AddressSummary({ m }: { m: Merchant }) {
   rows.push(["Pickup contact", [m.pickupContactName || m.contactName, phoneText(m.pickupContactPhone || m.contactPhone)].filter(Boolean).join(" · ")]);
   rows.push(["Pickup time", TIMES[m.pickupTime ?? ""] || "Not set"]);
   rows.push(["Handover", HANDOVER[m.handover ?? ""] || "Rider pickup"]);
-  rows.push(["Serving hub", m.pickupHub ? `${m.pickupHub.name} (${m.pickupHub.code})${m.pickupHub.address ? ` · ${m.pickupHub.address}` : ""}` : <span style={{ color: "#b45309" }}>No hub serves this pickup zone yet</span>]);
+  rows.push(["Serving hub", m.pickupHub ? `${m.pickupHub.name} (${m.pickupHub.code})${m.pickupHub.address ? ` · ${m.pickupHub.address}` : ""}${m.pickupHubFixed ? " · chosen by a super admin" : ""}` : <span style={{ color: "#b45309" }}>No hub serves this pickup zone yet</span>]);
   rows.push(["Route district", m.routeDistrict || m.pickupDistrict || "—"]);
   return <Facts rows={rows} />;
 }
@@ -239,7 +240,18 @@ function Review({ m, close }: { m: Merchant; close: () => void }) {
           </div>
         ) : null}
         <div className="field full">
-          <span className="field-label">Addresses, pickup and serving hub</span>
+          <span className="field-label row" style={{ justifyContent: "space-between" }}>
+            Addresses, pickup and serving hub
+            <Button
+              size="sm"
+              onClick={() => {
+                close();
+                void editMerchantAddress(m);
+              }}
+            >
+              Change
+            </Button>
+          </span>
           <AddressSummary m={m} />
         </div>
         <div className="field full">
@@ -369,7 +381,18 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
           <textarea className="textarea" value={note} onChange={e => setNote(e.target.value)} placeholder="Reason for the status change" />
         </label>
         <div className="field full">
-          <span className="field-label">Addresses, pickup and serving hub</span>
+          <span className="field-label row" style={{ justifyContent: "space-between" }}>
+            Addresses, pickup and serving hub
+            <Button
+              size="sm"
+              onClick={() => {
+                close();
+                void editMerchantAddress(m);
+              }}
+            >
+              Change
+            </Button>
+          </span>
           <AddressSummary m={m} />
         </div>
         <div className="field full">

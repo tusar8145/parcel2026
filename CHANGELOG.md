@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.25.0 — 2026-11-10
+- Super admin › merchants › Manage › "Addresses, pickup and serving hub" › Change: edit a merchant's business and pickup addresses, pickup contact, pickup time and handover, and choose its hub. A chosen hub stays when the address or the network changes ("chosen by a super admin"); Automatic follows the pickup zone as before.
+- Excel import: choosing the merchant (Operations console) preselects the merchant's hub as the drop-off hub; the merchant panel already uses it.
+
 ## 1.24.0 — 2026-11-09
 - Excel imports: the customer / recipient phone is no longer always required. A row without it is created as "Needs info" (completed before delivery, like a missing address). Super admins can make it required per template in Import Template settings; then a row without it is not created.
 

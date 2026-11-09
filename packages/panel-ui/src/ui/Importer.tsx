@@ -65,6 +65,8 @@ export interface MerchantRef {
   code?: string;
   name: string;
   type?: string;
+  /** The merchant's hub (chosen by a super admin, or the hub serving its pickup zone): preselected as the drop-off hub. */
+  hubId?: string | null;
 }
 export interface BulkFilters {
   preset?: string;
@@ -222,9 +224,15 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const [merchantId, setMerchantId] = useState(initial.forOps && initial.merchantId && !bulk ? initial.merchantId : "");
   const [firstMile, setFirstMile] = useState("RIDER_PICKUP");
   const [lastMile, setLastMile] = useState("DOORSTEP");
-  const [hubId, setHubId] = useState(initial.hubId || "");
+  const [hubId, setHubId] = useState(() => (initial.forOps && initial.merchantId ? initial.merchants?.find(m => m.id === initial.merchantId)?.hubId : null) || initial.hubId || "");
   const [notifications, setNotifications] = useState<Set<string>>(new Set());
   const unticked = useRef<Set<string>>(new Set());
+  // Operations: choosing the merchant preselects its hub as the drop-off hub (when this person can use that hub).
+  useEffect(() => {
+    if (!cfg.forOps || !merchantId) return;
+    const hub = cfg.merchants?.find(m => m.id === merchantId)?.hubId;
+    if (hub && (!cfg.hubs?.length || cfg.hubs.some(h => h.id === hub))) setHubId(hub);
+  }, [merchantId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [job, setJob] = useState<Job | null>(null);

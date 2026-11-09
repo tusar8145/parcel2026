@@ -21,7 +21,7 @@ const PAGE_OF: Record<string, string> = { new_orders: "New orders", pickup: "Pic
 export const bulkLabel = (kind: string) => `Bulk update ${PAGE_OF[kind] || "All parcels"} by Excel`;
 
 function useMerchants() {
-  return useQuery({ queryKey: ["ops", "merchants"], queryFn: () => api<(MerchantRef & { status?: string })[]>("/ops/merchants"), staleTime: 5 * 60_000 });
+  return useQuery({ queryKey: ["ops", "merchants"], queryFn: () => api<(MerchantRef & { status?: string; pickupHub?: { id: string } | null })[]>("/ops/merchants"), staleTime: 5 * 60_000 });
 }
 /** The bulk templates this person can use. */
 export function useBulkKinds() {
@@ -34,12 +34,12 @@ export function useImportConfig(kind: "customer" | "ecommerce" | "document", kin
   const ops = useOps();
   const merchants = useMerchants();
   return async (): Promise<ImportConfig> => {
-    const list = merchants.data ?? (await api<(MerchantRef & { status?: string })[]>("/ops/merchants").catch(() => []));
+    const list = merchants.data ?? (await api<(MerchantRef & { status?: string; pickupHub?: { id: string } | null })[]>("/ops/merchants").catch(() => []));
     return {
       kind,
       kinds,
       forOps: true,
-      merchants: list.filter(m => !m.status || m.status === "ACTIVE").map(m => ({ id: m.id, code: m.code, name: m.name, type: m.type })),
+      merchants: list.filter(m => !m.status || m.status === "ACTIVE").map(m => ({ id: m.id, code: m.code, name: m.name, type: m.type, hubId: m.pickupHub?.id ?? null })),
       hubs: ops.myHubs || ops.hubs,
       hubId: ops.myHubs?.[0]?.id,
       printLabels: ids => {

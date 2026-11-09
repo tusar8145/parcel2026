@@ -6,8 +6,8 @@ import type { Prisma } from "../../generated/prisma/client";
 import { servingHub } from "./merchant-address";
 
 /**
- * A merchant's hub is always the hub serving its pickup zone (Merchant.pickupHubId, derived, never set by
- * hand). When the network changes under it (a zone gets another serving hub, a zone is added or removed,
+ * A merchant's hub is the hub serving its pickup zone (Merchant.pickupHubId, derived), unless a super admin fixed it
+ * (pickupHubFixed: then it never moves here). When the network changes under it (a zone gets another serving hub, a zone is added or removed,
  * a hub is switched off or on), the merchants of the affected zones are derived again here, each move audited.
  */
 
@@ -20,7 +20,7 @@ export const merchantsInZone = (district: string, zone: string): Prisma.Merchant
 /** Derives the hub of the matching merchants again; returns the ids of those that moved. */
 export async function rederiveMerchantHubs(db: Db, audit: AuditService, actor: Actor, meta: RequestMeta, where: Prisma.MerchantWhereInput, reason: string) {
   const merchants = await db.merchant.findMany({
-    where: { AND: [where, { pickupZone: { not: null } }] },
+    where: { AND: [where, { pickupZone: { not: null }, pickupHubFixed: false }] },
     select: { id: true, pickupDistrict: true, pickupZone: true, pickupArea: true, pickupHubId: true },
   });
   const moved: string[] = [];

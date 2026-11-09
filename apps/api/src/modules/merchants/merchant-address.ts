@@ -184,6 +184,8 @@ export function addressView(m: MerchantWithHub) {
     /** Older merchants: the free-text pickup address isn't matched to the catalog yet (Settings asks to complete it). */
     addressComplete: !!m.pickupZone,
     pickupHub: hub ? { id: hub.id, code: hub.code, name: hub.name, district: hub.district, address: hub.address } : null,
+    /** The hub was chosen by a super admin (it doesn't follow the pickup address). */
+    pickupHubFixed: m.pickupHubFixed,
     routeDistrict: routeDistrictOf(m, hub),
   };
 }

@@ -130,6 +130,8 @@ export const adminUpdateMerchantSchema = nonEmpty(
     contactName: contactFields.contactName.optional(),
     contactPhone: contactFields.contactPhone.optional(),
     contactEmail: contactFields.contactEmail.nullable().optional(),
+    /** Super admin: the merchant's hub. A hub id fixes it (it stays when the address or the network changes); null = automatic (the hub serving the pickup zone). */
+    pickupHubId: z.uuid("Choose a valid hub").nullable().optional(),
     ...addressUpdateShape,
   }),
 ).superRefine(addressChecks);

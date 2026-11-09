@@ -203,8 +203,11 @@ model Merchant {
   pickupContactPhone   String?
   pickupTime           PickupTimePreference?
   handover             MerchantHandover      @default(RIDER_PICKUP)
-  /// Derived from the pickup zone (delivery zone → hub); re-derived whenever the pickup address changes.
+  /// Derived from the pickup zone (delivery zone → hub); re-derived whenever the pickup address changes,
+  /// unless a super admin fixed it (pickupHubFixed).
   pickupHubId          String?               @db.Uuid
+  /// The hub was chosen by a super admin: it stays when the pickup address or the network changes.
+  pickupHubFixed       Boolean               @default(false)
   /// Business (registered / shop) address.
   businessDistrict     String?
   businessZone         String?

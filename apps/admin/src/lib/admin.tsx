@@ -86,6 +86,8 @@ export interface Merchant {
   pickupTime?: string | null;
   handover?: string | null;
   pickupHub?: { id: string; name: string; code: string; address?: string | null } | null;
+  /** The hub was chosen by a super admin (it doesn't follow the pickup address). */
+  pickupHubFixed?: boolean;
   routeDistrict?: string | null;
   businessCategory?: string | null;
   websiteUrl?: string | null;

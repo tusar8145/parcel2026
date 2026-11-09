@@ -154,6 +154,8 @@ export class MerchantsService {
     data.pickupSameAsBusiness = same;
     if (!pickup) return { data, pickupMoved: false, hub: undefined };
     Object.assign(data, pickupColumns(pickup));
+    // A hub fixed by a super admin stays; otherwise it follows the new pickup zone.
+    if (current?.pickupHubFixed) return { data, pickupMoved: false, hub: undefined };
     const hub = await servingHub(db, pickup);
     data.pickupHubId = hub?.id ?? null;
     return { data, pickupMoved: true, hub };
@@ -361,6 +363,23 @@ export class MerchantsService {
       const { status, planId, name, contactName, contactPhone, contactEmail } = input;
       const address = await this.addressData(tx, input, current);
       const data: Prisma.MerchantUncheckedUpdateInput = { status, planId, name, contactName, contactPhone, contactEmail, ...address.data };
+      // Super admin: fix the merchant's hub (it stays when the address or the network changes), or back to automatic.
+      let hubChange: { pickupHubId: string | null; previousPickupHubId: string | null; fixed: boolean } | null = null;
+      if (input.pickupHubId !== undefined) {
+        if (input.pickupHubId) {
+          const hub = await tx.hub.findUnique({ where: { id: input.pickupHubId } });
+          if (!hub) throw notFound("Hub");
+          if (!hub.active) throw new AppError("HUB_INACTIVE", `${hub.name} is deactivated: choose an active hub`, HttpStatus.UNPROCESSABLE_ENTITY);
+          data.pickupHubId = hub.id;
+          data.pickupHubFixed = true;
+        } else {
+          const zone = (data.pickupZone as string | undefined) ?? current.pickupZone;
+          const hub = zone ? await servingHub(tx, { district: (data.pickupDistrict as string | undefined) ?? current.pickupDistrict, zone, area: (data.pickupArea as string | undefined) ?? current.pickupArea }) : null;
+          data.pickupHubId = hub?.id ?? null;
+          data.pickupHubFixed = false;
+        }
+        hubChange = { pickupHubId: (data.pickupHubId as string | null) ?? null, previousPickupHubId: current.pickupHubId, fixed: !!input.pickupHubId };
+      }
       if (input.status && input.status !== "SUSPENDED") data.rejectionReason = null;
       const updated = await tx.merchant.update({ where: { id }, data });
       if (approved)
@@ -385,7 +404,7 @@ export class MerchantsService {
         });
       await this.audit.record(
         actor,
-        { action, entityType: "merchant", entityId: id, data: { changes: input, previousStatus: current.status, ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}) } },
+        { action, entityType: "merchant", entityId: id, data: { changes: input, previousStatus: current.status, ...(address.pickupMoved ? { pickupHubId: address.hub?.id ?? null, previousPickupHubId: current.pickupHubId } : {}), ...(hubChange ?? {}) } },
         meta,
         tx,
       );

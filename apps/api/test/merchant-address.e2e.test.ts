@@ -237,6 +237,35 @@ describe("merchant addresses", () => {
     expect((await ctx.api("GET", `/merchants?hubId=${bananiHub.id}`, { token: ops.token })).body.items).toEqual([]);
   });
 
+  it("a super admin fixes the merchant's hub: it stays when the address or the network changes; automatic again follows the address", async () => {
+    const owner = await applicant();
+    const id = (await ctx.api("POST", "/merchants/applications", { token: owner.token, body: application() })).body.merchant.id as string; // Gulshan
+    await ctx.prisma.merchant.update({ where: { id }, data: { status: "ACTIVE" } });
+    const sa = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }]);
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops Manager");
+    expect((await ctx.api("PATCH", `/merchants/${id}`, { token: ops.token, body: { pickupHubId: bananiHub.id } })).status).toBe(403);
+
+    const fixed = await ctx.api("PATCH", `/merchants/${id}`, { token: sa.token, body: { pickupHubId: bananiHub.id } });
+    expect(fixed.status, JSON.stringify(fixed.body)).toBe(200);
+    expect(fixed.body).toMatchObject({ pickup: { zone: "Gulshan" }, pickupHub: { id: bananiHub.id }, pickupHubFixed: true });
+    expect((await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: "merchant.update", entityId: id }, orderBy: { createdAt: "desc" } })).data).toMatchObject({ pickupHubId: bananiHub.id, previousPickupHubId: gulshanHub.id, fixed: true });
+
+    // A new pickup address (by operations, or in the same super admin save) keeps the fixed hub.
+    const moved = await ctx.api("PATCH", `/merchants/${id}/address`, { token: ops.token, body: { pickupSameAsBusiness: false, pickup: { district: "Dhaka North", zone: "Gulshan", area: "Road 4 Gulshan", street: "Warehouse 9, Road 4" } } });
+    expect(moved.body).toMatchObject({ pickup: { street: "Warehouse 9, Road 4" }, pickupHub: { id: bananiHub.id }, pickupHubFixed: true });
+    // The network changes (Gulshan zone gets another hub): a fixed hub doesn't move.
+    const zone = await ctx.prisma.deliveryZone.findFirstOrThrow({ where: { code: "DHN-GUL" } });
+    expect((await ctx.api("PATCH", `/zones/${zone.id}`, { token: ops.token, body: { hubId: bananiHub.id } })).status).toBe(200);
+    expect((await ctx.api("PATCH", `/zones/${zone.id}`, { token: ops.token, body: { hubId: gulshanHub.id } })).status).toBe(200);
+    expect((await ctx.prisma.merchant.findUniqueOrThrow({ where: { id } })).pickupHubId).toBe(bananiHub.id);
+
+    // An inactive hub can't be chosen; null = automatic again: the hub serving the pickup zone.
+    const off = await ctx.prisma.hub.create({ data: { code: "DHK-OFF", name: "Closed Hub", district: "Dhaka North", zone: "Gulshan", address: "Road 1", active: false } });
+    expect((await ctx.api("PATCH", `/merchants/${id}`, { token: sa.token, body: { pickupHubId: off.id } })).body.error.code).toBe("HUB_INACTIVE");
+    const auto = await ctx.api("PATCH", `/merchants/${id}`, { token: sa.token, body: { pickupHubId: null } });
+    expect(auto.body).toMatchObject({ pickupHub: { id: gulshanHub.id }, pickupHubFixed: false });
+  });
+
   it("older merchants keep their free text, get a best-effort suggestion and complete the address in Settings", async () => {
     const m = await ctx.prisma.merchant.create({
       data: { code: "MR-OLD", type: "ECOMMERCE", name: "Old Shop", status: "ACTIVE", contactName: "Owner", contactPhone: "+8801711111111", pickupAddress: "Road 1, Banani", pickupArea: "Banani Block C", pickupDistrict: "Dhaka North" },

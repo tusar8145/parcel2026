@@ -711,6 +711,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   } else if (step === "choose" && config && limits) {
     const columns = config.templates[cfg.kind || "ecommerce"].filter(c => c.inTemplate !== false && (!c.packageOnly || !pkg || pkg.options?.[c.packageOnly]));
     const required = columns.filter(c => c.required).map(c => c.header);
+    // Optional unless a super admin made it required (Import Template settings).
+    const phoneRequired = !!columns.find(c => c.key === "recipient_phone")?.required;
     const choose = needsMerchant && !merchantId;
     title = `Import ${noun} from Excel`;
     subtitle = `${KIND_LABEL[cfg.kind || ""] || cfg.kind} template${merchantId && needsMerchant ? ` · ${merchantsOf.find(m => m.id === merchantId)?.name || ""}` : ""} · the preview shows every row before anything is created.`;
@@ -725,7 +727,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           <br />
           Required columns: <strong>{required.join(", ") || "none"}</strong> (red headers with * in the template). Other columns may stay empty; a value you enter must be valid or the row is not created.
           <br />
-          The recipient phone is required. Rows missing the recipient name, address or destination are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.
+          {phoneRequired ? "The recipient phone is required. Rows missing the recipient name, address or destination" : "Rows missing the recipient phone, name, address or destination"} are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.
           <br />
           First mile, the drop-off hub, last mile and the messages are chosen here for the whole file{cfg.forOps ? (cfg.kind === "customer" ? " (Customer package); the sender and pickup are in each row" : " (the merchant's package)") : ""}.
         </div>

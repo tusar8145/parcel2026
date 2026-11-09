@@ -139,10 +139,11 @@ describe("imports", () => {
       // No place lists: district / zone / area are found from the full address (imports/import-places.ts).
       expect(t.workbook).not.toContain('<definedName name="L_districts">');
       expect(t.workbook).not.toMatch(/<definedName name="ZN_1">/);
-      // Exactly the E-commerce columns (the default package has COD and open box); the phone is required.
-      expect(t.header).toEqual(["Customer name", "Customer phone *", "Delivery address", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Service", "Open box", "Order ID", "Delivery instructions"]);
+      // Exactly the E-commerce columns (the default package has COD and open box); the phone is optional by default.
+      expect(t.header).toEqual(["Customer name", "Customer phone", "Delivery address", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Service", "Open box", "Order ID", "Delivery instructions"]);
       for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
-      expect(t.sheet).toContain('<c r="B1" s="1" t="inlineStr"><is><t>Customer phone *</t></is></c>');
+      // Optional by default (a super admin can make it required): the plain header style, no "*".
+      expect(t.sheet).toContain('<c r="B1" s="2" t="inlineStr"><is><t>Customer phone</t></is></c>');
       expect(t.sheet).toContain('state="frozen"');
       // Dropdowns: products, services, yes/no.
       expect(t.sheet).not.toContain("L_districts");
@@ -161,12 +162,13 @@ describe("imports", () => {
       // Instructions for this category: phone required, upload-screen choices, pricing by district, Express same day.
       const text = t.help.join("\n");
       expect(text).toContain("at most 5,000 rows");
-      expect(text).toContain("The customer phone is required");
+      expect(text).not.toContain("The customer phone is required");
+      expect(text).toContain('Rows missing the recipient name, the customer phone or the delivery address');
       expect(text).toContain("First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen");
       expect(text).toContain("Pricing is by district");
       expect(text).toContain("Express is same-day delivery, only inside the same district.");
       expect(text).not.toContain("pickup zone)\n");
-      expect(text).toContain("Customer phone | Yes | Bangladeshi mobile number");
+      expect(text).toContain("Customer phone | No | Bangladeshi mobile number");
       // The address column asks for the full address; district / zone / area are found from it.
       expect(text).toContain("Write the FULL address in the address column: house, road, area, thana and district");
       expect(t.help.find(l => l.startsWith("Delivery address | No |"))).toContain("The full address: house, road, area, thana and district");
@@ -186,7 +188,7 @@ describe("imports", () => {
         const t = await template(bank.owner.token, url);
         expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
         expect(t.workbook).toContain('<sheet name="Consignments"');
-        expect(t.header).toEqual(["Recipient name", "Recipient phone *", "Delivery address", "Product", "Service", "Reference no.", "Delivery instructions"]);
+        expect(t.header).toEqual(["Recipient name", "Recipient phone", "Delivery address", "Product", "Service", "Reference no.", "Delivery instructions"]);
         for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
         expect(t.sheet).not.toContain("Weight");
         expect(t.sheet).not.toContain("COD");
@@ -196,7 +198,7 @@ describe("imports", () => {
         const text = t.help.join("\n");
         expect(text).not.toMatch(/weight and service defaults|Weight \(kg\)|Express is same-day/);
         expect(text).toContain("no weight, no cash on delivery and no product-type charge");
-        expect(text).toContain("The recipient phone is required");
+        expect(text).toContain('Rows missing the recipient name, the recipient phone or the delivery address');
         expect(t.help.find(l => l.startsWith("Product | No |"))).toContain("| Credit Cards (Regular) |");
       }
       // A merchant only gets its own category's template.
@@ -242,7 +244,7 @@ describe("imports", () => {
         "Sender phone *",
         "Pickup address *",
         "Recipient name",
-        "Recipient phone *",
+        "Recipient phone",
         "Delivery address",
         "Product",
         "COD amount (৳)",
@@ -318,12 +320,12 @@ describe("imports", () => {
         full("ORD-14", { District: "", Zone: "mirpur", "Customer phone": "+8801912345678" }), // 15 zone alone finds its district
         full("ORD-15", { Product: "Fashion & Apparel (Regular)", Service: "Regular" }), // 16 the dropdown label
         full("ORD-16", { "Weight (kg)": "heavy" }), // 17 not a number
-        full("ORD-17", { "Customer phone": "" }), // 18 the phone is required
+        full("ORD-17", { "Customer phone": "" }), // 18 no phone: Needs info (required only when a super admin makes it so)
         ECOM_HEADER.map(() => ""), // empty row: not a candidate
       ]);
       const res = await upload(owner.token, { kind: "ecommerce" }, { name: "orders.csv", data: file });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
-      expect(res.body).toMatchObject({ status: "VALIDATED", kind: "ecommerce", kindLabel: "E-commerce", merchant: { id: m.id }, counts: { rows: 17, valid: 4, incomplete: 1, errors: 12 } });
+      expect(res.body).toMatchObject({ status: "VALIDATED", kind: "ecommerce", kindLabel: "E-commerce", merchant: { id: m.id }, counts: { rows: 17, valid: 4, incomplete: 2, errors: 11 } });
       expect(res.body.number).toMatch(/^IMP-\d{6}-\d{3}$/);
       const rows = (await allRows(owner.token, res.body.id)).items as { rowNumber: number; status: string; errors: { column: string; text: string; message: string }[]; missing: string[]; charge: number }[];
       const at = (n: number) => rows.find(r => r.rowNumber === n)!;
@@ -346,13 +348,13 @@ describe("imports", () => {
       expect(at(15)).toMatchObject({ status: "VALID" });
       expect(at(16)).toMatchObject({ status: "VALID" });
       expect(at(17).errors[0]).toMatchObject({ column: "weight_kg", message: '"heavy" is not a number' });
-      expect(at(18).errors[0]).toMatchObject({ column: "recipient_phone", message: "required", text: "Row 18 · Customer phone: required" });
+      expect(at(18)).toMatchObject({ status: "INCOMPLETE", errors: [], missing: ["recipientPhone"] });
 
       // Paginated preview with filters.
       const errorsPage = await ctx.api("GET", `/imports/${res.body.id}/rows?filter=error&page=2&pageSize=10`, { token: owner.token });
-      expect(errorsPage.body).toMatchObject({ total: 12, pages: 2, page: 2 });
-      expect(errorsPage.body.items).toHaveLength(2);
-      expect((await ctx.api("GET", `/imports/${res.body.id}/rows?filter=incomplete`, { token: owner.token })).body.items.map((r: { rowNumber: number }) => r.rowNumber)).toEqual([3]);
+      expect(errorsPage.body).toMatchObject({ total: 11, pages: 2, page: 2 });
+      expect(errorsPage.body.items).toHaveLength(1);
+      expect((await ctx.api("GET", `/imports/${res.body.id}/rows?filter=incomplete`, { token: owner.token })).body.items.map((r: { rowNumber: number }) => r.rowNumber)).toEqual([3, 18]);
       // Nothing booked by the dry run.
       expect(await ctx.prisma.parcel.count({ where: { merchantId: m.id } })).toBe(1);
 
@@ -630,21 +632,24 @@ describe("imports", () => {
       expect(bad.status).toBe(422);
       expect(bad.body.error.message).toContain("E-commerce template, Service default");
       expect((await ctx.api("PUT", "/imports/config", { token, body: { templates: { ecommerce: { packaging: { default: "Poly mailer" } } } } })).body.error.message).toBe('E-commerce template: unknown column "packaging"');
-      expect((await ctx.api("PUT", "/imports/config", { token, body: { templates: { ecommerce: { recipient_phone: { required: false } } } } })).body.error.message).toBe('E-commerce template: "Customer phone" is always required');
+      expect((await ctx.api("PUT", "/imports/config", { token, body: { templates: { customer: { sender_phone: { required: false } } } } })).body.error.message).toBe('Customer parcel template: "Sender phone" is always required');
       expect((await ctx.api("PUT", "/imports/config", { token, body: { limits: { merchantMaxRows: 50_000 } } })).status).toBe(422);
       const saved = await ctx.api("PUT", "/imports/config", {
         token,
-        body: { templates: { ecommerce: { district: { required: true }, recipient_name: { required: false }, service_level: { default: "Express" } }, customer: { recipient_name: { required: true } } } },
+        body: { templates: { ecommerce: { district: { required: true }, recipient_phone: { required: true }, recipient_name: { required: false }, service_level: { default: "Express" } }, customer: { recipient_name: { required: true } } } },
       });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body.templates.ecommerce.find((c: { key: string }) => c.key === "district")).toMatchObject({ required: true });
       expect(saved.body.templates.customer.find((c: { key: string }) => c.key === "recipient_name")).toMatchObject({ required: true });
+      expect(saved.body.templates.ecommerce.find((c: { key: string }) => c.key === "recipient_phone")).toMatchObject({ required: true, configurable: true });
       expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.update" } })).toBe(1);
 
-      const after = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, row, ecom({ "Order ID": "CFG-2", "Customer phone": "01812000000", District: "Dhaka North", Zone: "Banani" })]) });
+      const after = await upload(owner.token, { kind: "ecommerce" }, { name: "a.csv", data: csv([ECOM_HEADER, row, ecom({ "Order ID": "CFG-2", "Customer phone": "01812000000", District: "Dhaka North", Zone: "Banani" }), ecom({ "Order ID": "CFG-3", "Customer phone": "", District: "Dhaka North", Zone: "Banani" })]) });
       const rows = (await allRows(owner.token, after.body.id)).items;
       expect(rows[0].errors[0]).toMatchObject({ column: "district", message: "required", text: "Row 2 · District: required" });
       expect(rows[1].status).toBe("INCOMPLETE");
+      // Customer phone made required: a row without it is refused (it would otherwise be Needs info).
+      expect(rows[2].errors[0]).toMatchObject({ column: "recipient_phone", message: "required" });
       await ctx.api("POST", `/imports/${after.body.id}/commit`, { token: owner.token });
       expect((await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "CFG-2" } })).speedOption).toBe("EXPRESS"); // Express = same day (serviceLevel SAME_DAY)
       const t = await template(owner.token, "/imports/templates/ecommerce");
@@ -674,10 +679,10 @@ describe("imports", () => {
       const service = ctx.app.get(ImportConfigService);
       const removed = await service.migrateStored();
       expect(removed.sort()).toEqual(
-        ["ecommerce.merchant", "ecommerce.parcel_type", "ecommerce.packaging", "document.receiver_relationship", "document.branch_code", "document.document_type", "document.address_type", "document.recipient_phone.required"].sort(),
+        ["ecommerce.merchant", "ecommerce.parcel_type", "ecommerce.packaging", "document.receiver_relationship", "document.branch_code", "document.document_type", "document.address_type"].sort(),
       );
       const stored = (await ctx.prisma.setting.findUniqueOrThrow({ where: { key: "import-config" } })).value as { templates: Record<string, Record<string, unknown>>; limits: unknown };
-      expect(stored.templates).toEqual({ ecommerce: { district: { required: true }, weight_kg: { default: "1" } }, document: {} });
+      expect(stored.templates).toEqual({ ecommerce: { district: { required: true }, weight_kg: { default: "1" } }, document: { recipient_phone: { required: false } } });
       expect(stored.limits).toEqual({ merchantMaxRows: 3000 });
       expect(await ctx.prisma.auditLog.count({ where: { action: "import_config.migrate" } })).toBe(1);
       expect(await service.migrateStored()).toEqual([]);

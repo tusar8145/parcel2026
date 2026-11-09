@@ -159,7 +159,7 @@ test.describe.serial("spreadsheet imports", () => {
     expect(template.name).toBe("delivery-fast-ecommerce-orders-template.xlsx");
     const parts = unzip(template.buffer);
     expect(parts.get("xl/workbook.xml")).toMatch(/<sheet name="Lists"[^>]*state="hidden"/);
-    expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Customer phone *");
+    expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Customer phone");
     // No district / zone / area columns: they are found from the full address (the Instructions say so).
     expect(parts.get("xl/worksheets/sheet1.xml")).not.toContain("L_districts");
     expect(parts.get("xl/worksheets/sheet1.xml")).toContain("Delivery address");
@@ -180,7 +180,7 @@ test.describe.serial("spreadsheet imports", () => {
     await page.click("#merchantBulkImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 5,000 rows and 10 MB per file");
     await expect(page.locator("#dfiLimits")).toContainText("Customer phone");
-    await expect(page.locator("#dfiLimits")).toContainText("The recipient phone is required.");
+    await expect(page.locator("#dfiLimits")).toContainText("Rows missing the recipient phone, name, address or destination");
     await expect(page.locator("#dfiLimits")).not.toContainText("missing the recipient name, phone");
     await expect(page.locator("#dfiMerchant")).toHaveCount(0); // a merchant imports its own orders
     await page.setInputFiles("#dfiFile", { name: `orders-${tag}.csv`, mimeType: "text/csv", buffer: csv(rows) });
@@ -273,7 +273,7 @@ test.describe.serial("spreadsheet imports", () => {
   async function opsDialog(page: Page, merchant?: { id: string; code: string; name: string }) {
     await page.click("#courierImport");
     await expect(page.locator("#dfiLimits")).toContainText("Max 10,000 rows");
-    await expect(page.locator("#dfiLimits")).toContainText("The recipient phone is required.");
+    await expect(page.locator("#dfiLimits")).toContainText("Rows missing the recipient phone, name, address or destination");
     if (!merchant) return;
     // No per-row merchant: nothing can be checked until the merchant is chosen.
     await expect(page.locator("#dfiChooseMerchant")).toBeVisible();

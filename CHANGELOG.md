@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.24.0 — 2026-11-09
+- Excel imports: the customer / recipient phone is no longer always required. A row without it is created as "Needs info" (completed before delivery, like a missing address). Super admins can make it required per template in Import Template settings; then a row without it is not created.
+
 ## 1.23.6 — 2026-11-09
 - "Log in as" (Operations console) and "View as" (Admin users & roles › Support access) open the merchant's new panel as that merchant again, instead of "No merchant workspace". The new panels show the support bar ("Viewing as … · ends in … min · End"); End or the time running out closes the tab, and your own sign-in stays.
 

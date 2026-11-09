@@ -189,8 +189,9 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     `Write the FULL address in the address column: house, road, area, thana and district (e.g. Flat 4B, House 22, Road 7, Banani, Dhaka). The district, zone and area are found from it${customer ? " (the sender's too, from the pickup address)" : ""}; after "Check file" you see them in the preview and can correct any of them there.`,
     who,
     `Required columns have a red header with * (${required.length ? required.join(", ") : "none"}). Every other column may be left empty; a value you do enter must be valid, or the row is not created.`,
-    `The ${recipient} is required: a row without it (or with an invalid number) is not created.`,
-    `Rows missing the recipient name or the delivery address (or whose address names no known area) are created as "Needs info": priced as a delivery to ${destination}${banking ? "" : " with the weight and service defaults below"}, and held before delivery until you complete them.`,
+    // The recipient's phone is optional unless a super admin made it required (Import Template settings).
+    ...(settings.recipient_phone?.required ? [`The ${recipient} is required: a row without it (or with an invalid number) is not created.`] : []),
+    `Rows missing the recipient name${settings.recipient_phone?.required ? "" : `, the ${recipient}`} or the delivery address (or whose address names no known area) are created as "Needs info": priced as a delivery to ${destination}${banking ? "" : " with the weight and service defaults below"}, and held before delivery until you complete them.`,
     banking
       ? "Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus the service. Banking & Financial parcels have no weight, no cash on delivery and no product-type charge."
       : `Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus weight above 0.5 kg, the product type, the service${cols.some(c => c.key === "cod_amount") ? " and the COD fee" : ""}.${hasExpress ? " Express is same-day delivery, only inside the same district." : ""}`,

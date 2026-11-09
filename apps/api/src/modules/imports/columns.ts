@@ -186,10 +186,9 @@ const recipientPhone = (header: string) =>
     key: "recipient_phone",
     header,
     aliases: ["phone", "recipient_phone", "customer_phone", "receiver_phone", "mobile", "mobile_number", "phone_number", "contact"],
-    description: `${phoneText} Required: a row without it is not created.`,
+    description: `${phoneText} Leave empty if unknown: the parcel is created as "Needs info" and held before delivery until it is completed. Super admins can make it required (Import Template settings); then a row without it is not created.`,
     example: "01812345678",
-    required: true,
-    configurable: false,
+    required: false,
     text: true,
     width: 16,
   });

@@ -269,7 +269,7 @@
       <div id="dfiLimits" style="padding:12px 14px;border-radius:10px;background:#f6f8fb;font-size:13px;line-height:1.55">
         <strong>Max ${esc(fmt(limits.maxRows))} rows and ${esc(limits.maxFileMb)} MB per file</strong> · ${cfg.forOps ? "Excel (.xlsx) or CSV: our template or any merchant's own file (you match its columns next)." : "Excel (.xlsx) or CSV with the template's headers."}<br>
         Required columns: <strong>${esc(required.join(", ") || "none")}</strong> (red headers with * in the template). Other columns may stay empty; a value you enter must be valid or the row is not created.<br>
-        The recipient phone is required. Rows missing the recipient name, address or destination are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.<br>
+        ${columns.find(c => c.key === "recipient_phone")?.required ? "The recipient phone is required. Rows missing the recipient name, address or destination" : "Rows missing the recipient phone, name, address or destination"} are created as <strong>Needs info</strong>, priced with defaults and held before delivery until completed.<br>
         First mile, the drop-off hub, last mile and the messages are chosen here for the whole file${cfg.forOps ? (cfg.kind === "customer" ? " (Customer package); the sender and pickup are in each row" : " (the merchant's package)") : ""}.
       </div>
       ${options.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px">${options.join("")}</div>` : ""}

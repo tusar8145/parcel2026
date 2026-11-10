@@ -135,8 +135,8 @@ export async function printLabels(ids: string[]) {
 /** The Print… menu choices on parcel lists (02.js courierPrintFormat). */
 export const PRINT_FORMATS: { value: string; label: string; line?: string }[] = [
   { value: "invoice", label: "All invoices · A4" },
-  { value: "invoice-ecommerce", label: "E-commerce invoices · A4", line: "ECOMMERCE" },
   { value: "invoice-document", label: "Document invoices · A4", line: "BANKING_FINANCIAL" },
+  { value: "invoice-ecommerce", label: "E-commerce invoices · A4", line: "ECOMMERCE" },
   { value: "invoice-customer", label: "Customer parcel invoices · A4", line: "CUSTOMER" },
   { value: "invoice-4", label: "4 invoices · A4" },
   { value: "invoice-8", label: "8 invoices · A4" },

@@ -406,8 +406,8 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
 
 // ───────────── invitations ─────────────
 const INVITE_TYPES: [MerchantType, string][] = [
-  ["ECOMMERCE", "E-commerce"],
   ["BANKING_FINANCIAL", "Banking & Financial"],
+  ["ECOMMERCE", "E-commerce"],
 ];
 interface Invite {
   id: string;
@@ -423,7 +423,7 @@ interface Invite {
   link?: string;
 }
 
-export async function inviteMerchant(type: MerchantType = "ECOMMERCE") {
+export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
   let sent: Invite | null = null;
   await openForm({
     title: "Invite a merchant",

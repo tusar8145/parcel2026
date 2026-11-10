@@ -107,9 +107,9 @@ export const ALL_STATUSES = ["Pending operations confirmation", "Pickup assigned
 
 export type Line = "CUSTOMER" | "ECOMMERCE" | "BANKING_FINANCIAL";
 export const LINES: [Line, string][] = [
-  ["CUSTOMER", "Customer parcel"],
-  ["ECOMMERCE", "E-commerce"],
   ["BANKING_FINANCIAL", "Banking & Financial"],
+  ["ECOMMERCE", "E-commerce"],
+  ["CUSTOMER", "Customer parcel"],
 ];
 export const lineOf = (p: Parcel): Line => (!p.merchant ? "CUSTOMER" : p.merchant.type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE");
 const LINE_LABEL: Record<Line, string> = { CUSTOMER: "Customer parcels", ECOMMERCE: "E-commerce", BANKING_FINANCIAL: "Documents" };

@@ -20,9 +20,9 @@ import { savePlatformConfig, usePlatformConfig, type PlatformConfig } from "@/li
 
 type Line = "parcel" | "ecommerce" | "document";
 const LINES: [Line, string][] = [
-  ["parcel", "Customer parcels"],
-  ["ecommerce", "E-commerce"],
   ["document", "Documents"],
+  ["ecommerce", "E-commerce"],
+  ["parcel", "Customer parcels"],
 ];
 const TIERS = ["Starter", "Growth", "Business", "Enterprise"];
 const MODE: Record<string, string> = { perParcel: "Per parcel", monthlySalary: "Monthly salary", both: "Salary + per parcel" };
@@ -62,7 +62,7 @@ export default function RiderPlans() {
   const tab = TABS.some(([k]) => k === params.get("section")) ? params.get("section")! : "plans";
   const config = usePlatformConfig();
   const riders = useQuery({ queryKey: ["admin", "riders"], queryFn: () => api<Rider[]>("/riders") });
-  const [line, setLine] = useState<Line>("ecommerce");
+  const [line, setLine] = useState<Line>("document");
   const [tier, setTier] = useState("Starter");
   const savedPlans = (config.data?.riderPlans ?? {}) as Record<string, Record<string, Plan>>;
   const tiers = [...new Set([...TIERS, ...LINES.flatMap(([l]) => Object.keys(savedPlans[l] ?? {}))])];

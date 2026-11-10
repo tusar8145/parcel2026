@@ -24,7 +24,8 @@ import { useCatalog, type Catalog } from "@/features/parcels/search";
 import { openCamera } from "@/features/scan/scanner";
 
 export type BookingLine = "ecommerce" | "banking" | "walkin";
-const LINE_LABEL: Record<BookingLine, string> = { ecommerce: "E-commerce merchant", banking: "Banking & Financial merchant", walkin: "Walk-in sender (customer parcel)" };
+// Banking & Financial first (most of the work), and chosen when the form opens.
+const LINE_LABEL: Record<BookingLine, string> = { banking: "Banking & Financial merchant", ecommerce: "E-commerce merchant", walkin: "Walk-in sender (customer parcel)" };
 const LINE_TITLE: Record<BookingLine, string> = { ecommerce: "Create e-commerce order", banking: "Create Banking & Financial order", walkin: "Create walk-in order" };
 const AUTO_COLLECT = "The hub serving the delivery zone (choose the zone)";
 const TYPE_ORDER: Record<string, number> = { REGULAR: 0, DOCUMENT: 1, BOOKS: 2 };
@@ -68,7 +69,7 @@ interface Place {
 }
 const emptyPlace: Place = { street: "", district: "", zone: "", area: "" };
 
-/** Opens the booking form; `line` fixes the kind of sender (otherwise a "Booking for" select, E-commerce first). */
+/** Opens the booking form; `line` fixes the kind of sender (otherwise a "Booking for" select, Banking & Financial first). */
 export function openBooking(line?: BookingLine) {
   return openCustom(close => <BookingDialog fixed={line} close={() => close()} />, "wide");
 }
@@ -87,7 +88,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   const ops = useOps();
   const catalog = useCatalog();
   const [, setParams] = useSearchParams();
-  const [line, setLine] = useState<BookingLine>(fixed ?? "ecommerce");
+  const [line, setLine] = useState<BookingLine>(fixed ?? "banking");
   const [merchants, setMerchants] = useState<Merchant[] | null>(null);
   const [merchantId, setMerchantId] = useState("");
   const [sender, setSender] = useState({ name: "", phone: "" });

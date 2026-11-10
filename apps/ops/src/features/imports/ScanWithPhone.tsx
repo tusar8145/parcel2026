@@ -21,8 +21,8 @@ import type { Catalog } from "@/features/parcels/search";
 import { openImport, type ImportConfig } from "@panel/ui/Importer";
 
 const KINDS: [string, string][] = [
-  ["ecommerce", "E-commerce"],
   ["document", "Banking & Financial"],
+  ["ecommerce", "E-commerce"],
   ["customer", "Customer parcel"],
 ];
 const MERCHANT_TYPE: Record<string, string> = { ecommerce: "ECOMMERCE", document: "BANKING_FINANCIAL" };
@@ -77,7 +77,7 @@ function ScanDialog({ importConfig, close }: { importConfig: () => Promise<Impor
       return {};
     }
   })();
-  const [kind, setKind] = useState(KINDS.some(([k]) => k === pref.kind) ? pref.kind! : "ecommerce");
+  const [kind, setKind] = useState(KINDS.some(([k]) => k === pref.kind) ? pref.kind! : "document");
   const [merchantId, setMerchantId] = useState(pref.merchantId ?? "");
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);

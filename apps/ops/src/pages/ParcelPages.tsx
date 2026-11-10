@@ -23,7 +23,7 @@ export function NewOrders() {
   const view = viewById("New orders")!;
   const list = useParcelList({ id: "new-orders", params: { stage: "new" }, noun: "order", empty: "No orders are waiting for operations." });
   const ops = useOps();
-  const importConfig = useImportConfig("ecommerce", ["customer", "ecommerce", "document"]);
+  const importConfig = useImportConfig("document", ["document", "ecommerce", "customer"]);
   return (
     <>
       <PageHeading
@@ -36,7 +36,7 @@ export function NewOrders() {
                 New order
               </Button>
             ) : null}
-            <ImportButtons kind="ecommerce" kinds={["customer", "ecommerce", "document"]} />
+            <ImportButtons kind="document" kinds={["document", "ecommerce", "customer"]} />
             {ops.can("dispatch") ? (
               <Button icon="camera" title="Photograph parcel labels with a phone: each photo becomes an order row" onClick={() => void openScanWithPhone(importConfig)}>
                 Scan with phone
@@ -65,7 +65,7 @@ export function NewOrders() {
 }
 
 const ALL_TABS: Record<string, { page: string; line?: string; merchants?: boolean; activeKey?: string; kind: "customer" | "ecommerce" | "document"; bulkLine?: string; booking?: BookingLine }> = {
-  All: { page: "Shipments", kind: "ecommerce" },
+  All: { page: "Shipments", kind: "document" },
   "E-commerce": { page: "E-commerce operations", line: "ECOMMERCE", activeKey: "ecommerce", kind: "ecommerce", bulkLine: "ecommerce", booking: "ecommerce" },
   "Banking & Financial": { page: "Banking & Financial operations", line: "BANKING_FINANCIAL", activeKey: "documents", kind: "document", bulkLine: "document", booking: "banking" },
   Customer: { page: "Customer parcels", line: "CUSTOMER", merchants: false, activeKey: "customer", kind: "customer", bulkLine: "customer", booking: "walkin" },
@@ -108,7 +108,7 @@ export function AllParcels({ tab }: { tab: string }) {
                 {newLabel}
               </Button>
             ) : null}
-            <ImportButtons kind={t.kind} kinds={tab === "All" ? ["customer", "ecommerce", "document"] : undefined} />
+            <ImportButtons kind={t.kind} kinds={tab === "All" ? ["document", "ecommerce", "customer"] : undefined} />
             <BulkUpdateButton kind="all" label="Bulk update Excel" line={t.bulkLine} filters={bulkFilters(list.filters)} />
             <BulkUpdateButton kind="all" history line={t.bulkLine} />
             <PrintMenu list={list} line={t.line} title={tab === "All" ? "Courier shipment register" : t.page} />

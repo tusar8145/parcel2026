@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.29.1 — 2026-11-10
+- Banking & Financial comes first in the category dropdowns, and is chosen when they open: New order "Booking for", Excel import "Category", Scan with phone, Invite a merchant and Rider earning plans. The parcel type filter and the Print menu list it first too (the filter still starts at "All parcel types").
+
 ## 1.29.0 — 2026-11-10
 - Super admin › Operational settings › Scan with phone usage: how many label photos were scanned (by day and in any period), how many Claude read and how many the local reader did, the fields found, the time each took and Claude's estimated cost (in total, per photo and per model), with the full scan log and Export.
 - Scan balance (same page): turn on "Limit scans" and add scans or set the balance (e.g. 50). Each photo a phone sends takes 1; at 0 the phone can't send more until scans are added. The phone and the Operations console show the scans left. Off (the default) means no limit. Every change is in the audit log.

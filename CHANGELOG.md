@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.26.2 — 2026-11-10
+- 4 invoices per A4 page has its own, fuller layout (8 per page stays the compact slip): barcode with the cash-to-collect (or service) box, sender and recipient with phones and hubs, the shipment details, the price lines and totals, "Received by" lines with a signature line, and the tracking QR.
+- Invoices no longer print the parcel status (it changes after printing); the A4 invoice heading shows the service and delivery type instead.
+
 ## 1.26.1 — 2026-11-10
 - Invoices: "Received at hub" shows when the parcel was created while it has not reached a hub yet (instead of "—").
 - 8 invoices per A4 page: the "Received by (Name) / Relation / Date / Identification" lines are always printed; before, they were left out when the parcel details ran long.

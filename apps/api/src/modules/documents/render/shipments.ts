@@ -10,7 +10,6 @@ export interface ShipmentDoc extends LabelData {
   line: "ecommerce" | "document" | "customer";
   rider: string | null;
   deliveredAt: Date | null;
-  /** "Received at hub": when the parcel first reached a hub (its first AT_HUB scan). */
   /** First arrival at a hub; the creation time while the parcel has not reached one. */
   hubReceivedAt: Date;
   packaging: string | null;
@@ -71,7 +70,7 @@ const KIND: Record<ShipmentDoc["line"], string> = {
 /** One delivery invoice on a full A4 page. */
 function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta) {
   pdf.addPage();
-  const m: DocMeta = { ...meta, title: KIND[s.line], number: `Shipment ${s.trackingId}`, date: s.bookedAt, subtitle: `Status: ${s.statusLabel}` };
+  const m: DocMeta = { ...meta, title: KIND[s.line], number: `Shipment ${s.trackingId}`, date: s.bookedAt, subtitle: `${s.service} · ${s.deliveryMode}` };
   let y = header(pdf, brand, m);
   const x = MARGIN;
   const w = pdf.width - MARGIN * 2;
@@ -218,7 +217,140 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   pdf.text("Date & time:", rx, sy + 86, { size: 7, color: COLOR.faint, width: rw });
 }
 
-/** A compact invoice in a grid cell (4 or 8 per A4 page). */
+/** Shipment details by line (no status: it changes after printing). */
+const detailItems = (s: ShipmentDoc): [string, string][] =>
+  isDoc(s)
+    ? [
+        ["Service", s.service],
+        ["Delivery", s.deliveryMode],
+        ["Document type", s.product ?? s.contents ?? "—"],
+        ["Reference", s.orderRef ?? "—"],
+        ["Booked", fmtDateTime(s.bookedAt)],
+        ["Received at hub", fmtDateTime(s.hubReceivedAt)],
+      ]
+    : [
+        ["Service", s.service],
+        ["Delivery", s.deliveryMode],
+        ["Product type", s.productType],
+        ["Product", s.product ?? s.contents ?? "—"],
+        ["Weight", `${s.weightKg} kg`],
+        ["Order ref", s.orderRef ?? "—"],
+        ["Booked", fmtDateTime(s.bookedAt)],
+        ["Received at hub", fmtDateTime(s.hubReceivedAt)],
+      ];
+
+/**
+ * 4 per A4 page: a half-size invoice. Barcode with the COD (or service) box, sender and recipient with phones and
+ * hubs, the shipment details, the price lines and totals, the "Received by" lines and the tracking QR.
+ */
+function quarterInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y: number, w: number, h: number) {
+  const charge = brand.showDeliveryCharge !== false;
+  const pad = 10;
+  const ix = x + pad;
+  const iw = w - pad * 2;
+  const bottom = y + h - pad;
+  pdf.box(x, y, w, h, { stroke: "#aeb7c2", width: 0.8, radius: 3 });
+  let cy = y + pad;
+  pdf.logo(ix, cy - 1, 16);
+  pdf.text(brand.appName, ix + 20, cy, { size: 10, bold: true, width: iw * 0.5, maxLines: 1 });
+  pdf.text(KIND[s.line].toUpperCase(), ix + iw * 0.45, cy + 1, { size: 6.5, bold: true, width: iw * 0.55, align: "right", maxLines: 2 });
+  cy += 20;
+  pdf.line(ix, cy, ix + iw, cy, { color: "#d5dbe2", width: 0.6 });
+  cy += 6;
+
+  // Barcode on the left, the COD / service box on the right.
+  const bw = iw * 0.6;
+  const kx = ix + bw + 8;
+  const kw = iw - bw - 8;
+  pdf.barcode(s.trackingId, ix, cy, bw, 30);
+  pdf.text(s.trackingId, ix, cy + 32, { size: 9.5, bold: true, width: bw, align: "center" });
+  const cod = s.codAmount > 0;
+  if (isDoc(s)) {
+    pdf.box(kx, cy, kw, 42, { stroke: COLOR.ink, radius: 3, width: 0.8 });
+    pdf.text("SERVICE", kx, cy + 6, { size: 5.8, bold: true, color: COLOR.muted, width: kw, align: "center" });
+    pdf.text(s.service, kx + 3, cy + 17, { size: 10, bold: true, width: kw - 6, align: "center", maxLines: 1 });
+  } else {
+    pdf.box(kx, cy, kw, 42, cod ? { fill: COLOR.dark, radius: 3 } : { stroke: COLOR.ink, radius: 3, width: 0.8 });
+    pdf.text(cod ? "CASH TO COLLECT" : "NO CASH TO COLLECT", kx, cy + 6, { size: 5.8, bold: true, color: cod ? "#fff" : COLOR.muted, width: kw, align: "center" });
+    pdf.text(cod ? taka(s.codAmount) : "PREPAID", kx, cy + 16, { size: 13, bold: true, color: cod ? "#fff" : COLOR.ink, width: kw, align: "center", maxLines: 1 });
+  }
+  cy += 48;
+  if (s.incomplete) {
+    pdf.box(ix, cy, iw, 12, { fill: COLOR.danger, radius: 2 });
+    pdf.text(`DETAILS PENDING · ${s.missingLabels.join(", ") || "to be completed"}`, ix, cy + 2, { size: 6.5, bold: true, color: "#fff", width: iw, align: "center", maxLines: 1 });
+    cy += 16;
+  } else if (isDoc(s)) {
+    pdf.box(ix, cy, iw, 12, { fill: "#fff7dd", stroke: "#f0d47b", radius: 2 });
+    pdf.text("CONFIDENTIAL · AUTHORISED RECIPIENT ONLY · SIGN ON DELIVERY", ix, cy + 2.5, { size: 6, bold: true, width: iw, align: "center", maxLines: 1 });
+    cy += 16;
+  }
+
+  // Sender and recipient.
+  const half = iw / 2 - 4;
+  const tx = ix + half + 8;
+  pdf.text("FROM", ix, cy, { size: 5.5, bold: true, color: COLOR.faint });
+  pdf.text("DELIVER TO", tx, cy, { size: 5.5, bold: true, color: COLOR.faint });
+  cy += 7;
+  let fy = cy;
+  fy += pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, fy, { size: 7.8, bold: true, width: half, maxLines: 2 });
+  if (s.sender.phone) fy += pdf.text(s.sender.phone, ix, fy, { size: 7, width: half, maxLines: 1 });
+  const origin = s.intake === "DROP_OFF" ? `Dropped off at ${s.originHub?.name ?? "hub"}` : s.originHub ? `Origin hub: ${s.originHub.name}` : "";
+  if (origin) fy += pdf.text(origin, ix, fy, { size: 6.5, color: COLOR.muted, width: half, maxLines: 2 });
+  let ty = cy;
+  ty += pdf.text(s.recipient.name ?? "Recipient pending", tx, ty, { size: 7.8, bold: true, width: half, maxLines: 1 });
+  ty += pdf.text(s.recipient.phone ?? "Phone pending", tx, ty, { size: 7.5, bold: true, width: half, maxLines: 1 });
+  ty += pdf.text(addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending", tx, ty, { size: 6.8, color: COLOR.muted, width: half, maxLines: 3 });
+  if (s.destHub) ty += pdf.text(`Destination hub: ${s.destHub.name}`, tx, ty, { size: 6.5, color: COLOR.muted, width: half, maxLines: 1 });
+  cy = Math.max(fy, ty) + 5;
+  pdf.line(ix, cy, ix + iw, cy, { color: "#d5dbe2", width: 0.6 });
+  cy += 5;
+
+  // Shipment details, two columns of label: value.
+  const items = detailItems(s);
+  const colW = iw / 2;
+  items.forEach(([k, v], i) => {
+    const gx = ix + (i % 2) * colW;
+    const gy = cy + Math.floor(i / 2) * 11;
+    pdf.text(`${k}:`, gx, gy, { size: 6.3, color: COLOR.muted, width: colW * 0.46, maxLines: 1 });
+    pdf.text(v, gx + colW * 0.46, gy, { size: 6.6, bold: true, width: colW * 0.54 - 2, maxLines: 1 });
+  });
+  cy += Math.ceil(items.length / 2) * 11 + 3;
+
+  // The bottom: "Received by" lines on the left, QR on the right, payment under them.
+  const qr = 48;
+  const rrow = 13;
+  const rTop = bottom - 12 - rrow * 4;
+  const priceEnd = rTop - 6;
+  // Price lines and totals while there is room.
+  if (charge) {
+    pdf.line(ix, cy, ix + iw, cy, { color: "#d5dbe2", width: 0.6 });
+    cy += 4;
+    const totalRows = isDoc(s) ? 1 : 2;
+    for (const l of s.chargeLines) {
+      if (cy + 9 + totalRows * 12 > priceEnd) break;
+      pdf.text(l.label, ix, cy, { size: 6.5, color: COLOR.muted, width: iw * 0.72, maxLines: 1 });
+      pdf.text(fmtAmount(l.amount), ix + iw * 0.72, cy, { size: 6.5, width: iw * 0.28, align: "right" });
+      cy += 9;
+    }
+    if (cy + 11 <= priceEnd) {
+      pdf.box(ix, cy, iw, 11, { fill: COLOR.soft });
+      pdf.text(brand.vatRate > 0 ? `Delivery charge incl. VAT ${brand.vatRate}%` : "Delivery charge", ix + 3, cy + 2, { size: 7, bold: true, width: iw * 0.7 });
+      pdf.text(taka(s.total), ix + iw * 0.7, cy + 2, { size: 7, bold: true, width: iw * 0.3 - 3, align: "right" });
+      cy += 12;
+    }
+  }
+  if (!isDoc(s) && cy + 11 <= priceEnd) {
+    pdf.text("COD to collect", ix + 3, cy + 1, { size: 7, bold: true, width: iw * 0.7 });
+    pdf.text(taka(s.codAmount), ix + iw * 0.7, cy + 1, { size: 7, bold: true, width: iw * 0.3 - 3, align: "right" });
+    cy += 11;
+  }
+  receivedBy(pdf, ix, Math.max(cy + 4, rTop), iw - qr - 8, 6.5, { signature: true, row: rrow });
+  pdf.qr(s.trackingUrl, ix + iw - qr, bottom - 12 - qr, qr);
+  pdf.text("Scan to track", ix + iw - qr, bottom - 10, { size: 5.5, color: COLOR.muted, width: qr, align: "center" });
+  pdf.text(s.payment, ix, bottom - 8, { size: 6.8, bold: true, width: iw - qr - 8, maxLines: 1 });
+}
+
+/** 8 per A4 page: a compact slip in a grid cell (the dense layout). */
 function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y: number, w: number, h: number, dense: boolean) {
   const charge = brand.showDeliveryCharge !== false;
   const pad = dense ? 6 : 9;
@@ -256,7 +388,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
         ]) as [string, string][]),
     ...((charge ? [["Charge", taka(s.total)]] : []) as [string, string][]),
     ["Received at hub", hubReceived],
-    ...(dense ? [] : ((charge && brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] : [["Status", s.statusLabel]]) as [string, string][])),
+    ...(dense ? [] : ((charge && brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)]] : []) as [string, string][])),
   ];
   const cols = dense ? 4 : 3;
   const cw = iw / cols;
@@ -403,7 +535,8 @@ export function drawShipmentInvoices(pdf: PdfWriter, brand: Brand, items: Shipme
     items.slice(i, i + per).forEach((s, k) => {
       const cx = edge + (k % cols) * (cw + gap);
       const cy = edge + Math.floor(k / cols) * (ch + gap);
-      cellInvoice(pdf, brand, s, cx, cy, cw, ch, per === 8);
+      if (per === 8) cellInvoice(pdf, brand, s, cx, cy, cw, ch, true);
+      else quarterInvoice(pdf, brand, s, cx, cy, cw, ch);
     });
   }
 }

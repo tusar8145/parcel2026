@@ -456,7 +456,7 @@ export class OpsService {
     const scope = opsHubScope(actor);
     const riders = await this.prisma.rider.findMany({
       where: { ...(query.riderId ? { id: query.riderId } : { active: true }), ...(scope ? { hubId: { in: scope } } : {}) },
-      include: { user: { select: { name: true } }, hub: { select: { id: true, code: true, name: true } } },
+      include: { user: { select: { name: true } }, hub: { select: { id: true, code: true, name: true, type: true } } },
       orderBy: { code: "asc" },
     });
     const ids = riders.map(r => r.id);

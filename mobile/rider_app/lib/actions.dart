@@ -88,7 +88,7 @@ Future<ScanFeedback> failDelivery(String code, {required String reason, required
         id: Outbox.newId(),
         path: '/rider/parcels/${Uri.encodeComponent(code)}/delivery',
         body: {'outcome': 'FAILED', 'reason': reason, 'nextAction': nextAction, 'note': ?note},
-        label: 'Not delivered: $reason (${nextAction == 'RETRY' ? 'try again' : 'back to hub'})',
+        label: 'Not delivered: $reason (${nextAction == 'RETRY' ? 'try again' : 'return to sender'})',
         trackingId: code,
         kind: 'failed',
         createdAt: DateTime.now(),

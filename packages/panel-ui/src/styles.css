@@ -634,3 +634,12 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-3); b
 .dropdown-option.selected.active { background: #e2e9fd; }
 .dropdown-option > svg { flex: none; color: var(--primary); }
 .dropdown-option[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+/* On / off switch (kit Switch) */
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.switch[data-disabled] { cursor: not-allowed; opacity: .6; }
+.switch-track { position: relative; width: 40px; height: 22px; border-radius: 11px; border: 0; padding: 0; background: #c6cdd6; transition: background .15s; cursor: inherit; flex: none; }
+.switch-track.on { background: var(--good, #12a150); }
+.switch-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s; }
+.switch-track.on .switch-thumb { left: 21px; }
+.switch-track:focus-visible { outline: 2px solid var(--accent, #1d5fd0); outline-offset: 2px; }

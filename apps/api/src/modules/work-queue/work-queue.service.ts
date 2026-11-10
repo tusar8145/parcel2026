@@ -69,7 +69,16 @@ const riderLabel = (r: Rider) => (r ? `${r.user.name} (${r.code})` : null);
  * ParcelsService / HubIntakeService, so every lifecycle rule, scope check, SMS and webhook applies).
  */
 /** The console's period (createdSince): parcels booked since then. Scanning a parcel ignores it. */
-const since = (createdSince?: Date): Prisma.ParcelWhereInput | undefined => (createdSince ? { createdAt: { gte: createdSince } } : undefined);
+/** With the merchant type / merchant filters too. */
+const since = (q?: Date | { createdSince?: Date; merchantType?: "ECOMMERCE" | "BANKING_FINANCIAL" | "CUSTOMER"; merchantId?: string }): Prisma.ParcelWhereInput | undefined => {
+  const f = q instanceof Date || q === undefined ? { createdSince: q } : q;
+  const parts: Prisma.ParcelWhereInput[] = [];
+  if (f.createdSince) parts.push({ createdAt: { gte: f.createdSince } });
+  if (f.merchantType === "CUSTOMER") parts.push({ merchantId: null });
+  else if (f.merchantType) parts.push({ merchant: { type: f.merchantType } });
+  if (f.merchantId) parts.push({ merchantId: f.merchantId });
+  return parts.length ? (parts.length === 1 ? parts[0] : { AND: parts }) : undefined;
+};
 
 @Injectable()
 export class WorkQueueService {
@@ -91,16 +100,16 @@ export class WorkQueueService {
         stage: task.stage,
         action: task.action,
         actionLabel: task.actionLabel ?? null,
-        count: await this.count(task, hubIds, query.createdSince),
+        count: await this.count(task, hubIds, query),
       })),
     );
-    return { tasks, missingDetails: { key: MISSING_DETAILS.key, label: MISSING_DETAILS.label, hint: MISSING_DETAILS.hint, count: await this.count(MISSING_DETAILS, hubIds, query.createdSince) } };
+    return { tasks, missingDetails: { key: MISSING_DETAILS.key, label: MISSING_DETAILS.label, hint: MISSING_DETAILS.hint, count: await this.count(MISSING_DETAILS, hubIds, query) } };
   }
 
   /** One task's groups (route, area, rider, hub…), largest first. */
   async groups(actor: Actor, key: string, query: z.infer<typeof queueQuerySchema>) {
     const task = this.task(key);
-    const { rows, truncated } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query.createdSince));
+    const { rows, truncated } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query));
     const groups = new Map<string, { key: string; label: string; count: number; fromHubId?: string | null; toHubId?: string | null }>();
     for (const r of rows) {
       const g = groups.get(r.group.key) ?? { ...r.group, count: 0 };
@@ -118,7 +127,7 @@ export class WorkQueueService {
   /** The parcels of a task (or of one group), oldest first. */
   async list(actor: Actor, key: string, query: z.infer<typeof queueListQuerySchema>) {
     const task = this.task(key);
-    const { rows } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query.createdSince));
+    const { rows } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query));
     const picked = query.group ? rows.filter(r => r.group.key === query.group) : rows;
     const hubs = await this.hubNames();
     return { task: this.taskView(task), total: picked.length, items: picked.slice(0, MAX_LIST).map(r => this.view(r, hubs)) };
@@ -127,7 +136,7 @@ export class WorkQueueService {
   /** The same parcels as an Excel file. */
   async export(actor: Actor, key: string, query: z.infer<typeof queueListQuerySchema>) {
     const task = this.task(key);
-    const { rows } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query.createdSince));
+    const { rows } = await this.rows(task, this.hubFilter(actor, query.hubId), since(query));
     const picked = query.group ? rows.filter(r => r.group.key === query.group) : rows;
     const hubs = await this.hubNames();
     const groupLabel = query.group ? (picked[0]?.group.label ?? "") : "";
@@ -249,8 +258,8 @@ export class WorkQueueService {
     return { AND: [task.where, { OR: [...(Array.isArray(mine) ? mine : [mine]), { pickupHubId: { in: hubIds } }, { collectHubId: { in: hubIds } }] }] };
   }
 
-  private async count(task: QueueTask, hubIds: string[] | null, createdSince?: Date) {
-    const extra = since(createdSince);
+  private async count(task: QueueTask, hubIds: string[] | null, query?: Parameters<typeof since>[0]) {
+    const extra = since(query);
     if (task.refine || task.key === "transfer-receive") return (await this.rows(task, hubIds, extra)).rows.length;
     const where = await this.where(task, hubIds);
     return this.prisma.parcel.count({ where: extra ? { AND: [where, extra] } : where });

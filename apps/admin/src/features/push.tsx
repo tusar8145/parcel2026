@@ -1,5 +1,5 @@
 /**
- * Push (bridge-push.js). Integration settings shows the Firebase part; Notification settings › Push notifications
+ * Push (bridge-push.js). Integration settings shows the Firebase part; Messaging › Push messages
  * sends messages and shows the history:
  * - Firebase: the service account file (uploaded or pasted; stored encrypted, never shown again), on / off, status
  *   (project, phones per app, last success / error) and a test push to a chosen person
@@ -13,7 +13,7 @@ import { useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
 import { confirm } from "@panel/ui/dialogs";
-import { Button, Loading, Panel, Pill, useDebounced } from "@panel/ui/kit";
+import { Button, Loading, Panel, Pill, Switch, useDebounced } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
 
 const AUDIENCE: Record<string, string> = { ALL: "All merchants & riders", MERCHANTS: "All merchants", RIDERS: "All riders", USERS: "Chosen people" };
@@ -56,7 +56,7 @@ interface Broadcast {
 const usePushStatus = () => useQuery({ queryKey: ["admin", "push"], queryFn: () => api<PushStatus>("/notifications/push") });
 const useHistory = () => useQuery({ queryKey: ["admin", "push-history"], queryFn: async () => (await api<{ items: Broadcast[] }>("/notifications/push/broadcasts?limit=50")).items });
 
-function People({ placeholder, mode, onPick }: { placeholder: string; mode: "send" | "test"; onPick: (u: Recipient) => void }) {
+export function People({ placeholder, mode, onPick }: { placeholder: string; mode: "send" | "test"; onPick: (u: Recipient) => void }) {
   const [text, setText] = useState("");
   const q = useDebounced(text.trim(), 300);
   const found = useQuery({ queryKey: ["admin", "push-recipients", q], enabled: q.length >= 2, queryFn: async () => (await api<{ items: Recipient[] }>(`/notifications/push/recipients?q=${encodeURIComponent(q)}`)).items });
@@ -100,22 +100,20 @@ export function FirebasePush() {
   const qc = useQueryClient();
   const q = usePushStatus();
   const [key, setKey] = useState("");
-  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [testUser, setTestUser] = useState<Recipient | null>(null);
   const [busy, setBusy] = useState("");
   const s = q.data;
   if (!s) return <Panel title="Firebase push">{q.error ? <p className="panel-body faint">{describe(q.error)}</p> : <Loading rows={3} />}</Panel>;
   const [label, tone] = s.active ? (s.source === "file" ? ["On (development key file)", undefined] : ["On", "good"]) : s.configured ? ["Off", "warn"] : ["Not set up", "bad"];
   const apps = s.devicesByApp || {};
-  const on = enabled ?? s.enabled;
-  async function save() {
+  /** On / off (the switch) and the key: saved at once. */
+  async function save(body: { enabled?: boolean; serviceAccount?: string }, done: string) {
     setBusy("save");
     try {
-      const next = await api<PushStatus>("/notifications/push", { method: "PUT", body: { enabled: on, ...(key.trim() ? { serviceAccount: key.trim() } : {}) } });
+      const next = await api<PushStatus>("/notifications/push", { method: "PUT", body });
       qc.setQueryData(["admin", "push"], next);
       setKey("");
-      setEnabled(null);
-      toast("Push settings saved.", "good");
+      toast(done, "good");
     } catch (e) {
       toastError(e);
     } finally {
@@ -136,7 +134,11 @@ export function FirebasePush() {
     }
   }
   return (
-    <Panel title="Firebase push" subtitle="Push notifications for the Delivery Fast Merchant, Rider and Operations apps (Firebase Cloud Messaging).">
+    <Panel
+      title="Firebase push"
+      subtitle="Push notifications for the Delivery Fast Merchant, Rider and Operations apps (Firebase Cloud Messaging). Off: no push is sent."
+      tools={<Switch checked={s.enabled} disabled={busy === "save"} label={s.enabled ? "On" : "Off"} onChange={on => void save({ enabled: on }, `Push notifications ${on ? "on" : "off"}.`)} />}
+    >
       <div className="panel-body" style={{ display: "grid", gap: 12 }}>
         <p className="faint" style={{ margin: 0 }}>
           <Pill tone={tone as "good" | "warn" | "bad" | undefined}>{label}</Pill> <Pill tone={s.configured ? "good" : "warn"}>{s.configured ? "Key saved" : "No key"}</Pill>
@@ -154,12 +156,9 @@ export function FirebasePush() {
           <input type="file" accept=".json,application/json" onChange={async e => e.target.files?.[0] && setKey(await e.target.files[0].text())} />
           <textarea className="textarea" rows={3} style={{ fontFamily: "monospace", fontSize: 12 }} value={key} onChange={e => setKey(e.target.value)} placeholder={s.configured ? `Saved for ${s.clientEmail || ""} · choose a new file or paste it only to replace the key` : "…or paste the file's contents here"} />
         </label>
-        <label className="check">
-          <input type="checkbox" checked={on} onChange={e => setEnabled(e.target.checked)} /> Send push notifications
-        </label>
         <div>
-          <Button variant="primary" disabled={busy === "save"} onClick={() => void save()}>
-            Save
+          <Button variant="primary" disabled={busy === "save" || !key.trim()} onClick={() => void save({ serviceAccount: key.trim() }, "Firebase key saved.")}>
+            Save key
           </Button>
         </div>
         <hr style={{ border: 0, borderTop: "1px solid var(--line)", margin: "4px 0" }} />
@@ -179,7 +178,7 @@ export function FirebasePush() {
   );
 }
 
-/** Notification settings › Push notifications: send a message and the history. */
+/** Messaging › Push messages: send a message and the history. */
 export function PushMessages() {
   const navigate = useNavigate();
   const status = usePushStatus();
@@ -196,7 +195,14 @@ export function PushMessages() {
     if (!body.trim()) return toast("Write the message.", "bad");
     if (audience === "USERS" && !chosen.size) return toast("Choose at least one person.", "bad");
     const who = audience === "USERS" ? `${chosen.size} chosen people` : AUDIENCE[audience].toLowerCase();
-    if (!(await confirm({ title: "Send this message?", message: `Send "${title.trim()}" to ${who}?`, ok: "Send message" }))) return;
+    let count = "";
+    try {
+      const p = await api<{ matched: number }>("/notifications/messages/sms/preview", { method: "POST", body: { audience, userIds: audience === "USERS" ? [...chosen.keys()] : [] } });
+      count = ` That is ${p.matched} ${p.matched === 1 ? "person" : "people"}.`;
+    } catch {
+      /* the count is a help only */
+    }
+    if (!(await confirm({ title: "Send this message?", message: `Send "${title.trim()}" to ${who}?${count}`, ok: "Send message" }))) return;
     setBusy("send");
     try {
       const r = await api<{ recipients: number }>("/notifications/push/broadcasts", { method: "POST", body: { title: title.trim(), body: body.trim(), audience, userIds: audience === "USERS" ? [...chosen.keys()] : [] } });

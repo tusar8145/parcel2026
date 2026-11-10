@@ -195,7 +195,7 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     expect(Number(after.totalCharge)).toBe(Number(before.totalCharge));
     // The receive desk takes it like any arrival (the rider released).
     const back = await ctx.api("POST", "/ops/hub-receive", { token: s.desk.token, body: { code: id, hubId: s.gulshan.id } });
-    expect(back.body).toMatchObject({ ok: true, outcome: "RECEIVED", message: `${id} received back at Test Hub HUB-GUL.` });
+    expect(back.body).toMatchObject({ ok: true, outcome: "RECEIVED", message: `${id} received back at Test Hub HUB-GUL: to deliver again.` });
     expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: id } })).toMatchObject({ status: "AT_HUB", deliveryRiderId: null });
 
     // Failed delivery, back at the hub in one step.

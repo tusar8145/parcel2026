@@ -1,6 +1,6 @@
 import { Controller, Get, HttpCode, Param, Post } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma.service";
-import { receiverRelations } from "./receiver-relations";
+import { failReasons, receiverRelations } from "./receiver-relations";
 import { ApiTags } from "@nestjs/swagger";
 import type { z } from "zod";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
@@ -21,6 +21,12 @@ export class ParcelCorrectionsController {
   @Get("delivery/receiver-relations")
   async relations() {
     return { relations: await receiverRelations(this.prisma) };
+  }
+
+  /** Why a delivery attempt failed (super admin's Fail delivery reasons, in their order; "Other" last). */
+  @Get("delivery/fail-reasons")
+  async failReasons() {
+    return { reasons: await failReasons(this.prisma) };
   }
 
   /** What is sent, as priced (Regular / Document / Books): the delivery charge is re-priced with the frozen package. */

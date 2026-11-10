@@ -1,11 +1,11 @@
 import type { z } from "zod";
-import { Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
-import { hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
+import { hubAssignSchema, hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
 import { HubIntakeService } from "./hub-intake.service";
 
 /** Hub drop-off intake: the receive desk, spreadsheet import batches and shipping labels. */
@@ -25,6 +25,16 @@ export class HubIntakeController {
   @ApiZodBody(hubReceiveSchema)
   receive(@CurrentActor() actor: Actor, @ZBody(hubReceiveSchema) body: z.infer<typeof hubReceiveSchema>, @ReqMeta() meta: RequestMeta) {
     return this.intake.receive(actor, body, meta);
+  }
+
+  /** Receive at hub & assign rider in one scan (received first when it isn't yet; another rider: it moves to them). */
+  @RequirePermissions("parcel:dispatch")
+  @Throttle({ default: { limit: 600, ttl: 60_000 } })
+  @Post("hub-assign")
+  @HttpCode(200)
+  @ApiZodBody(hubAssignSchema)
+  assign(@CurrentActor() actor: Actor, @ZBody(hubAssignSchema) body: z.infer<typeof hubAssignSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.intake.receiveAndAssign(actor, body, meta);
   }
 
   /** Spreadsheet imports, newest first, with expected and received counts. */

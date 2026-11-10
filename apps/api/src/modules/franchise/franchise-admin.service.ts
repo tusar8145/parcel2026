@@ -13,6 +13,7 @@ import { NotifyService } from "../notifications/notify.service";
 import { FRANCHISE_CONFIG_KEY, readFranchiseConfig } from "./franchise-config";
 import type { createFranchiseSchema, franchiseStatusSchema, updateFranchiseConfigSchema, updateFranchiseSchema } from "./franchise.schemas";
 import { releaseApplicant } from "../applications/applicant-role";
+import { centralHubId } from "../money/accounts-config";
 
 const n = (v: Prisma.Decimal | number | null | undefined) => (v == null ? 0 : Number(v));
 
@@ -115,13 +116,28 @@ export class FranchiseAdminService {
 
       const seq = await nextCounter(tx, "franchise");
       const code = `FR-${1000 + seq}`;
-      const hubCode = input.hub.code ?? `FRH-${1000 + seq}`;
-      if (await tx.hub.findUnique({ where: { code: hubCode }, select: { id: true } })) throw conflict("HUB_CODE_TAKEN", `Hub code ${hubCode} is taken`);
-      const clash = await tx.hub.findFirst({ where: { name: { equals: input.hub.name.trim(), mode: "insensitive" } }, select: { code: true } });
-      if (clash) throw new AppError("HUB_NAME_TAKEN", `Hub ${clash.code} already has the name ${input.hub.name.trim()}`, HttpStatus.CONFLICT, { field: "hub.name" });
-      const hub = await tx.hub.create({
-        data: { code: hubCode, name: input.hub.name, district: input.hub.district, zone: input.hub.zone ?? null, address: input.hub.address, lat: input.hub.lat ?? null, lng: input.hub.lng ?? null, type: "FRANCHISE" },
-      });
+      let hub: { id: string; code: string };
+      if (input.hubId) {
+        // An existing hub tagged as a franchise hub: it works as one from now on (its riders are the franchise's riders).
+        const existing = await tx.hub.findUnique({ where: { id: input.hubId }, select: { id: true, code: true, name: true, type: true, active: true } });
+        if (!existing) throw notFound("Hub");
+        if (!existing.active) throw new AppError("HUB_INACTIVE", `${existing.name} isn't operating`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
+        if (existing.type === "FRANCHISE" || (await tx.franchise.findUnique({ where: { hubId: existing.id }, select: { id: true } })))
+          throw conflict("ALREADY_FRANCHISE_HUB", `${existing.name} is already a franchise hub`);
+        if ((await centralHubId(tx)) === existing.id) throw new AppError("CENTRAL_HUB", `${existing.name} is the central hub: it can't be a franchise`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
+        hub = await tx.hub.update({ where: { id: existing.id }, data: { type: "FRANCHISE" }, select: { id: true, code: true } });
+      } else {
+        const h = input.hub!;
+        const hubCode = h.code ?? `FRH-${1000 + seq}`;
+        if (await tx.hub.findUnique({ where: { code: hubCode }, select: { id: true } })) throw conflict("HUB_CODE_TAKEN", `Hub code ${hubCode} is taken`);
+        const clash = await tx.hub.findFirst({ where: { name: { equals: h.name.trim(), mode: "insensitive" } }, select: { code: true } });
+        if (clash) throw new AppError("HUB_NAME_TAKEN", `Hub ${clash.code} already has the name ${h.name.trim()}`, HttpStatus.CONFLICT, { field: "hub.name" });
+        hub = await tx.hub.create({
+          data: { code: hubCode, name: h.name, district: h.district, zone: h.zone ?? null, address: h.address, lat: h.lat ?? null, lng: h.lng ?? null, type: "FRANCHISE" },
+          select: { id: true, code: true },
+        });
+      }
+      const hubCode = hub.code;
       const franchise = await tx.franchise.create({
         data: {
           code,
@@ -139,7 +155,7 @@ export class FranchiseAdminService {
       await tx.userRole.create({ data: { userId: ownerId, role: "FRANCHISE", hubId: hub.id } });
       // The application page closes: the owner now opens the franchise panel.
       await releaseApplicant(tx, ownerId);
-      await this.audit.record(actor, { action: "franchise.create", entityType: "franchise", entityId: franchise.id, data: { code, hubId: hub.id, hubCode, ownerId, applicationId: input.applicationId ?? null, rates: input.rates } }, meta, tx);
+      await this.audit.record(actor, { action: "franchise.create", entityType: "franchise", entityId: franchise.id, data: { code, hubId: hub.id, hubCode, taggedExistingHub: !!input.hubId, ownerId, applicationId: input.applicationId ?? null, rates: input.rates } }, meta, tx);
       return { franchise, owner, invited };
     });
     // The account's sessions carry their roles: end them so the next sign-in opens the franchise panel.

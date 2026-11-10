@@ -31,15 +31,16 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   "Audit log": lazy(() => import("@/pages/AuditLog")),
   "Platform activity": lazy(() => import("@/pages/PlatformActivity")),
   "Admin users": lazy(() => import("@/pages/AdminUsers")),
-  "Parcel notifications": lazy(() => import("@/pages/NotificationMessages").then(m => ({ default: m.ParcelNotifications }))),
   "Platform settings": lazy(() => import("@/pages/NotificationMessages").then(m => ({ default: m.GlobalNotifications }))),
-  "Channels & limits": lazy(() => import("@/pages/ChannelsLimits")),
   "Recent messages": lazy(() => import("@/pages/RecentMessages")),
-  "Push notifications": lazy(() => import("@/pages/Integrations").then(m => ({ default: m.PushNotifications }))),
+  "Push messages": lazy(() => import("@/pages/Messaging").then(m => ({ default: m.PushMessagesPage }))),
+  "SMS messages": lazy(() => import("@/pages/Messaging").then(m => ({ default: m.SmsMessagesPage }))),
+  "Email messages": lazy(() => import("@/pages/Messaging").then(m => ({ default: m.EmailMessagesPage }))),
   "Integration settings": lazy(() => import("@/pages/Integrations")),
   "Website settings": lazy(() => import("@/pages/WebsiteSettings")),
   "Return reasons": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.ReturnReasons }))),
   "Receiver relations": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.ReceiverRelations }))),
+  "Fail delivery reasons": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.FailReasons }))),
   Products: lazy(() => import("@/pages/Products")),
   "Product categories": lazy(() => import("@/pages/Catalog").then(m => ({ default: m.ProductCategories }))),
   Priorities: lazy(() => import("@/pages/Catalog").then(m => ({ default: m.Priorities }))),
@@ -123,7 +124,11 @@ function Router() {
 function PageRoute() {
   const { page: slug } = useParams();
   const page = pageBySlug(slug);
-  if (!page) return <Navigate to="/overview" replace />;
+  if (!page) {
+    // A page that moved (e.g. Parcel notifications → Global notifications): its new address.
+    const moved = slug ? legacyPath(slug) : null;
+    return <Navigate to={moved ?? "/overview"} replace />;
+  }
   const Page = PAGES[page.id];
   const tab = new URLSearchParams(location.search).get("tab") || undefined;
   return Page ? <Page key={page.id} tab={tab} /> : <Classic id={page.id} />;

@@ -1,6 +1,6 @@
 /**
- * Parcel notifications and Global notifications (bridge-notifications.js, GET /notifications/events): the messages
- * (Parcel group, or every other group in tabs with counts), search and filters (channel, customised, switched off,
+ * Global notifications (bridge-notifications.js, GET /notifications/events): every message in tabs by group, Parcel
+ * first (the former Parcel notifications page), with counts, search and filters (channel, customised, switched off,
  * security), per event × channel on / off (PUT /notifications/templates/:event/:channel { enabled }), the text on
  * hover, and the template editor: variables, preview (POST /notifications/preview), save, reset to default.
  */
@@ -45,11 +45,10 @@ const when = (value?: string | null) => (value ? new Date(value).toLocaleString(
 const isCustomized = (e: EventView) => Object.values(e.channels).some(c => c?.customized);
 const isDisabled = (e: EventView) => Object.values(e.channels).some(c => c && !c.locked && !c.enabledByAdmin);
 
-export const ParcelNotifications = () => <Messages scope="parcel" />;
-export const GlobalNotifications = () => <Messages scope="others" />;
-export default ParcelNotifications;
+export const GlobalNotifications = () => <Messages />;
+export default GlobalNotifications;
 
-function Messages({ scope }: { scope: "parcel" | "others" }) {
+function Messages() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "notification-events"], queryFn: () => api<Catalog>("/notifications/events") });
   const [F, setF] = useState({ q: "", channel: "", state: "", group: "" });
@@ -61,26 +60,29 @@ function Messages({ scope }: { scope: "parcel" | "others" }) {
     if (editing) editor.current?.scrollIntoView({ block: "nearest" });
   }, [editing]);
 
-  const parcel = scope === "parcel";
   const c = q.data;
   const replaceEvent = (view: EventView) => qc.setQueryData<Catalog>(["admin", "notification-events"], old => (old ? { ...old, events: old.events.map(e => (e.event === view.event ? view : e)) } : old));
 
-  const heading = parcel ? (
-    <PageHeading eyebrow="Merchant management" title="Parcel notifications" subtitle="The SMS and emails about a parcel (booked, picked up, out for delivery, delivered, returned…) that merchants, senders and recipients get. Switch them on or off and edit their texts." />
-  ) : (
-    <PageHeading eyebrow="Platform control" title="Global notifications" subtitle="Messages about merchants, money, support, accounts, operations, riders and partners. Parcel messages are in Merchant management › Parcel notifications; SMS / email switches and limits in Settings." />
+  const heading = (
+    <PageHeading
+      eyebrow="Notification settings"
+      title="Global notifications"
+      subtitle="Every message the platform sends, by group: parcels (booked, picked up, out for delivery, delivered, returned…), merchants, money, support, accounts, operations, riders and partners. The SMS / email on / off switches and limits are in Integration settings."
+    />
   );
   if (!c) return <>{heading}{q.error ? <div className="callout bad">{describe(q.error)}</div> : <Loading rows={6} />}</>;
 
   const order = c.groups || [];
   const groups: { name: string; events: EventView[] }[] = [];
-  for (const e of c.events.filter(e => (parcel ? e.group === PARCEL_GROUP : e.group !== PARCEL_GROUP))) {
+  for (const e of c.events) {
     let g = groups.find(x => x.name === e.group);
     if (!g) groups.push((g = { name: e.group, events: [] }));
     g.events.push(e);
   }
-  groups.sort((a, b) => (order.indexOf(a.name) + 1 || 99) - (order.indexOf(b.name) + 1 || 99));
-  const tabbed = !parcel && groups.length > 1;
+  // Parcel first, then the catalog's order.
+  const rank = (name: string) => (name === PARCEL_GROUP ? -1 : order.indexOf(name) + 1 || 99);
+  groups.sort((a, b) => rank(a.name) - rank(b.name));
+  const tabbed = groups.length > 1;
   const group = tabbed && !groups.some(g => g.name === F.group) ? groups[0]?.name || "" : F.group;
   const shownGroups = tabbed ? groups.filter(g => g.name === group) : groups;
   const scoped = shownGroups.reduce((n, g) => n + g.events.length, 0);
@@ -94,8 +96,8 @@ function Messages({ scope }: { scope: "parcel" | "others" }) {
   const shown = shownGroups.reduce((n, g) => n + g.events.filter(e => match(e, g.name)).length, 0);
   const off = (["sms", "email"] as const).filter(ch => !c.channels[ch]).map(ch => CHANNEL_NAME[ch]);
   const note = off.length
-    ? `${off.join(" and ")} notifications are switched off in Settings: only security messages (codes, alerts) are sent.`
-    : `${parcel ? `The parcel messages (${scoped})` : `${group} messages (${scoped})`}. Switch them on or off per channel (SMS, email, push to the apps) and edit their texts. Push uses the in-app notification's text; codes are never pushed. Security messages (codes, alerts) are always sent.`;
+    ? `${off.join(" and ")} is switched off in Integration settings: no ${off.join(" or ")} is sent.`
+    : `${group} messages (${scoped}). Switch them on or off per channel (SMS, email, push to the apps) and edit their texts. Push uses the in-app notification's text; codes are never pushed. Security messages (codes, alerts) are always sent.`;
 
   async function toggle(e: EventView, channel: Channel, enabled: boolean) {
     setBusy(`${e.event}|${channel}`);

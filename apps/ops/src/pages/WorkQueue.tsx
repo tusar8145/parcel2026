@@ -4,12 +4,14 @@
  * right, exports them to Excel and has a scan box that does the step one parcel at a time. Counts follow live events.
  */
 import { Select } from "@panel/ui/Select";
+import { SearchSelect } from "@panel/ui/SearchSelect";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe, download } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
 import { localPhone, num, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
+import { useOpsMerchants } from "@/features/parcels/ParcelTable";
 import { Button, Empty, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Icon } from "@panel/ui/Icon";
 import { toastError } from "@panel/ui/toast";
@@ -54,19 +56,23 @@ interface Row {
   waitingSince?: string;
 }
 
-const kept = { hubId: "", open: null as string | null, sel: null as { task: string; group: string } | null, riderId: {} as Record<string, string>, receiveHubId: "" };
+const kept = { hubId: "", merchantType: "", merchantId: "", open: null as string | null, sel: null as { task: string; group: string } | null, riderId: {} as Record<string, string>, receiveHubId: "" };
 
 export default function WorkQueue() {
   const ops = useOps();
   const qc = useQueryClient();
   const actions = useParcelActions();
   const [hubId, setHubId] = useState(kept.hubId);
+  const [merchantType, setMerchantType] = useState(kept.merchantType);
+  const [merchantId, setMerchantId] = useState(kept.merchantId);
+  const merchants = useOpsMerchants(true);
+  const merchantOptions = (merchants.data ?? []).filter(m => !merchantType || m.type === merchantType).map(m => ({ value: m.id, label: m.name }));
   const [open, setOpen] = useState<string | null>(kept.open);
   const [sel, setSel] = useState(kept.sel);
   const [riderId, setRiderId] = useState<Record<string, string>>(kept.riderId);
   const [receiveHubId, setReceiveHubId] = useState(kept.receiveHubId);
   const [log, setLog] = useState<{ ok: boolean; message: string; at: Date }[]>([]);
-  useEffect(() => void Object.assign(kept, { hubId, open, sel, riderId, receiveHubId }), [hubId, open, sel, riderId, receiveHubId]);
+  useEffect(() => void Object.assign(kept, { hubId, merchantType, merchantId, open, sel, riderId, receiveHubId }), [hubId, merchantType, merchantId, open, sel, riderId, receiveHubId]);
   const box = useRef<ScanInputHandle>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const own = ops.myHubs?.length === 1 ? ops.myHubs[0] : null;
@@ -74,6 +80,8 @@ export default function WorkQueue() {
   const qs = (extra: Record<string, string | undefined> = {}) => {
     const p = new URLSearchParams();
     if (hubId) p.set("hubId", hubId);
+    if (merchantType) p.set("merchantType", merchantType);
+    if (merchantId && merchantType !== "CUSTOMER") p.set("merchantId", merchantId);
     // The top bar's period (parcels booked since); scanning a parcel ignores it.
     if (since) p.set("createdSince", since);
     for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
@@ -81,16 +89,16 @@ export default function WorkQueue() {
     return s ? `?${s}` : "";
   };
 
-  const overview = useQuery({ queryKey: ["work-queue", "overview", hubId, since], queryFn: () => api<Overview>(`/work-queue${qs()}`) });
+  const overview = useQuery({ queryKey: ["work-queue", "overview", hubId, merchantType, merchantId, since], queryFn: () => api<Overview>(`/work-queue${qs()}`) });
   const groupsOf = (key: string | null | undefined) => ({
-    queryKey: ["work-queue", "groups", key, hubId, since],
+    queryKey: ["work-queue", "groups", key, hubId, merchantType, merchantId, since],
     queryFn: () => api<Groups>(`/work-queue/${key}${qs()}`),
     enabled: !!key,
   });
   const openGroups = useQuery(groupsOf(open));
   const selGroups = useQuery(groupsOf(sel?.task));
   const list = useQuery({
-    queryKey: ["work-queue", "list", sel?.task, sel?.group, hubId, since],
+    queryKey: ["work-queue", "list", sel?.task, sel?.group, hubId, merchantType, merchantId, since],
     queryFn: () => api<{ items: Row[]; total: number }>(`/work-queue/${sel!.task}/parcels${qs({ group: sel!.group })}`),
     enabled: !!sel,
   });
@@ -147,7 +155,7 @@ export default function WorkQueue() {
         subtitle="Every parcel's next step, worked out by the system. Open a step, choose a group, then scan parcels to do it."
         actions={
           <>
-            <Select className="select" aria-label="Hub" value={hubId} onChange={e => setHubId(e.target.value)}>
+            <Select className="select" aria-label="Hub" value={hubId} onChange={e => setHubId(e.target.value)} style={{ width: 180 }}>
               {ops.myHubs ? hubs.length > 1 ? <option value="">All my hubs</option> : null : <option value="">Whole network</option>}
               {hubs.map(h => (
                 <option key={h.id} value={h.id}>
@@ -155,6 +163,22 @@ export default function WorkQueue() {
                 </option>
               ))}
             </Select>
+            <Select
+              className="select"
+              aria-label="Merchant type"
+              style={{ width: 190 }}
+              value={merchantType}
+              onChange={e => {
+                setMerchantType(e.target.value);
+                setMerchantId("");
+              }}
+            >
+              <option value="">All merchant types</option>
+              <option value="BANKING_FINANCIAL">Banking & Financial</option>
+              <option value="ECOMMERCE">E-commerce</option>
+              <option value="CUSTOMER">Customers (no merchant)</option>
+            </Select>
+            {merchantType !== "CUSTOMER" ? <SearchSelect label="Merchant" emptyLabel="All merchants" options={merchantOptions} value={merchantId} onChange={setMerchantId} width={200} /> : null}
             {missing ? (
               <button type="button" className="button danger" title={missing.hint} aria-current={sel?.task === missing.key} onClick={() => select(missing.key)}>
                 {missing.label} <span className="pill bad">{num(missing.count)}</span>

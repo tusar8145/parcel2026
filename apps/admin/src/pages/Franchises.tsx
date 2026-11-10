@@ -280,9 +280,14 @@ const readRates = (v: Record<string, string>): Rates => Object.fromEntries((["pi
 
 async function openCreate(application: Application | null, catalog: Catalog | undefined, reload: () => Promise<unknown>) {
   const d = application?.details || {};
+  // Any active Delivery Fast hub can be tagged as the franchise's hub (except the central hub, checked by the API).
+  const hubs = (await api<{ id: string; name: string; code: string; district: string; type?: string; active?: boolean }[]>("/hubs").catch(() => [])).filter(h => h.type !== "FRANCHISE" && h.active !== false);
+  const isNew = (v: Record<string, string>) => v.hubMode !== "existing";
   await openForm({
     title: application ? `Create franchise · ${application.number}` : "Add franchise",
-    description: application ? `${application.applicant?.name || "The applicant"}'s account becomes the franchise account; they sign in as before and land in the franchise panel.` : "Creates the franchise hub and its account. The account holder gets an SMS to sign in.",
+    description: application
+      ? `${application.applicant?.name || "The applicant"}'s account becomes the franchise account; they sign in as before and land in the franchise panel.`
+      : "Tag an existing hub as a franchise hub, or open a new one, with its account (an existing user keeps their sign-in; a new one gets an SMS to sign in).",
     submit: "Save",
     wide: true,
     fields: [
@@ -291,10 +296,31 @@ async function openCreate(application: Application | null, catalog: Catalog | un
       ...(application ? [] : [{ id: "phone", label: "Account mobile", type: "phone", required: true, placeholder: "01XXXXXXXXX" } as FormField]),
       { id: "email", label: "Email", type: "email", value: application?.applicant?.email || "" },
       { id: "hubHead", label: "The hub", type: "static", render: null },
-      { id: "hubName", label: "Hub name", required: true, maxLength: 120, value: d.location ? `${d.location} Franchise` : "" },
-      { id: "district", label: "District", type: "select", required: true, options: [{ value: "", label: "Choose" }, ...(catalog?.districts ?? []).map(x => ({ value: x, label: x }))] },
-      { id: "zone", label: "Area (thana)", type: "select", options: v => [{ value: "", label: "Choose" }, ...(catalog?.zonesByDistrict?.[v.district] ?? []).map(z => ({ value: z, label: z }))] },
-      { id: "address", label: "Address", required: true, maxLength: 300, full: true, value: d.location || "" },
+      {
+        id: "hubMode",
+        label: "Hub",
+        type: "select",
+        required: true,
+        value: "existing",
+        options: [
+          { value: "existing", label: "Tag an existing hub as franchise" },
+          { value: "new", label: "Open a new hub" },
+        ],
+      },
+      {
+        id: "hubId",
+        label: "Existing hub",
+        type: "select",
+        required: true,
+        full: true,
+        show: v => !isNew(v),
+        hint: "From now on it works as a franchise hub: its riders become the franchise's riders (only for this hub), and other hubs can't assign them.",
+        options: [{ value: "", label: "Choose the hub" }, ...hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code}) · ${h.district}` }))],
+      },
+      { id: "hubName", label: "Hub name", required: true, maxLength: 120, show: isNew, value: d.location ? `${d.location} Franchise` : "" },
+      { id: "district", label: "District", type: "select", required: true, show: isNew, options: [{ value: "", label: "Choose" }, ...(catalog?.districts ?? []).map(x => ({ value: x, label: x }))] },
+      { id: "zone", label: "Area (thana)", type: "select", show: isNew, options: v => [{ value: "", label: "Choose" }, ...(catalog?.zonesByDistrict?.[v.district] ?? []).map(z => ({ value: z, label: z }))] },
+      { id: "address", label: "Address", required: true, maxLength: 300, full: true, show: isNew, value: d.location || "" },
       ...rateFields(),
     ],
     onSubmit: async v => {
@@ -306,12 +332,12 @@ async function openCreate(application: Application | null, catalog: Catalog | un
           contactName: v.contactName.trim(),
           phone: v.phone || undefined,
           email: v.email?.trim() || undefined,
-          hub: { name: v.hubName.trim(), district: v.district, zone: v.zone || undefined, address: v.address.trim() },
+          ...(isNew(v) ? { hub: { name: v.hubName.trim(), district: v.district, zone: v.zone || undefined, address: v.address.trim() } } : { hubId: v.hubId }),
           rates: readRates(v),
         },
       });
       await reload();
-      return `${f.name} (${f.code}) created with hub ${f.hub.name}.`;
+      return isNew(v) ? `${f.name} (${f.code}) created with hub ${f.hub.name}.` : `${f.hub.name} is now the franchise hub of ${f.name} (${f.code}).`;
     },
   });
 }

@@ -53,11 +53,14 @@ export function opsHubScope(actor: Actor): string[] | null {
 
 /**
  * Franchise riders work only for their franchise hub: a franchise may pick only its own riders, and staff of other
- * hubs can't pick a franchise's riders (operations managers can: a franchise is a hub of the network).
+ * hubs can't pick a franchise's riders. With the parcel's hub (`atHubId`), nobody can give a franchise rider a parcel of
+ * another hub.
  */
-export async function assertRiderAssignable(db: Db, actor: Actor, riderId: string) {
+export async function assertRiderAssignable(db: Db, actor: Actor, riderId: string, atHubId?: string | null) {
   const rider = await db.rider.findUnique({ where: { id: riderId }, select: { hubId: true, hub: { select: { type: true, name: true } } } });
   if (!rider) return;
+  // A franchise's riders work only on its hub's parcels (whoever assigns: operations managers too).
+  if (rider.hub?.type === "FRANCHISE" && atHubId && atHubId !== rider.hubId) throw forbidden(`This rider works for ${rider.hub.name} (franchise) and can only take its parcels`);
   const scope = opsHubScope(actor);
   if (!scope) return;
   if (rider.hub?.type === "FRANCHISE" || (actor.kind === "user" && actor.roles.some(r => r.role === "FRANCHISE"))) {

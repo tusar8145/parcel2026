@@ -293,7 +293,10 @@ export class RiderTasksService {
       // Failed attempt (re-attempts beyond the package's free ones carry its re-attempt fee).
       await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "FAILED", reason: input.reason, nextAction: input.nextAction, note: input.note } });
       await this.workflow.chargeReattempt(tx, parcel, actor, meta);
-      if (input.nextAction === "RETRY") {
+      // Try again, or back to the sender: the parcel stays with the rider until the hub scans it in (receive from rider),
+      // where the hub follows the rider's choice or changes it.
+      if (input.nextAction === "RETRY" || input.nextAction === "RETURN") {
+        const back = input.nextAction === "RETURN";
         await this.workflow.transition(
           tx,
           parcel,
@@ -302,9 +305,9 @@ export class RiderTasksService {
             actorRole: "rider",
             data: { attemptCount: { increment: 1 } },
             title: "Delivery attempt failed",
-            description: `${input.reason}. We'll try to deliver again.`,
+            description: back ? `${input.reason}. The parcel goes back to the sender.` : `${input.reason}. We'll try to deliver again.`,
             internalNote: input.note,
-            metadata: { reason: input.reason },
+            metadata: { reason: input.reason, riderChose: input.nextAction },
           },
           actor,
           meta,

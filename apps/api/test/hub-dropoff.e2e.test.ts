@@ -281,7 +281,7 @@ describe("hub drop-off", () => {
     const locate = (s: Setup) => ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { district: "Chattogram", address: "Agrabad, Chattogram" } });
     const toCtg = { delivery: { category: "HOME", street: "Agrabad Road 1", zone: "Agrabad", district: "Chattogram" } };
     /** Route + 2 kg (2 started kg over 0.5) + Express ("Same day") + COD fee 15, from the default prices. */
-    const priced = (route: number) => route + 2 * P.extraKg + P.expressFee + 15;
+    const priced = (route: number) => route + 2 * P.extraKg + P.deliveryFees.EXPRESS + 15;
 
     it("prices a drop-off from the drop-off hub's district, pickups from the pickup address", async () => {
       const s = await setup();

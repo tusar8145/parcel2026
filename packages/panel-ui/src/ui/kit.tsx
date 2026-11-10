@@ -345,3 +345,15 @@ export function useStored<T extends string>(key: string, initial: T): [T, (v: T)
     },
   ];
 }
+
+/** An on / off switch (role="switch"): `checked` is on; the label sits next to it. */
+export function Switch({ checked, onChange, label, disabled, title }: { checked: boolean; onChange: (on: boolean) => void; label?: ReactNode; disabled?: boolean; title?: string }) {
+  return (
+    <label className="switch" title={title} data-disabled={disabled ? "" : undefined}>
+      <button type="button" role="switch" aria-checked={checked} disabled={disabled} className={checked ? "switch-track on" : "switch-track"} onClick={() => onChange(!checked)}>
+        <span className="switch-thumb" />
+      </button>
+      {label ? <span className="switch-label">{label}</span> : null}
+    </label>
+  );
+}

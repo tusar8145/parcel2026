@@ -5,9 +5,25 @@ import 'home.dart';
 import 'ops.dart';
 import 'parcels.dart';
 
-/// Why a delivery failed (the API's FAILURE_REASONS) and why a parcel goes back (RETURN_REASONS).
-const failureReasons = ['Recipient unavailable', 'Incorrect address', 'Recipient refused', 'Unable to contact recipient', 'Access / safety issue', 'Other'];
-const returnReasons = ['Recipient refused', 'Recipient unreachable', 'Incorrect address', 'Repeated failed attempts', 'Merchant requested', 'Damaged in transit', 'Other'];
+/// Why a delivery failed and why a parcel goes back: the super admin's lists (GET /delivery/fail-reasons,
+/// GET /returns/reasons, in their order); these until they load.
+var failureReasons = <String>['Recipient unavailable', 'Incorrect address', 'Recipient refused', 'Unable to contact recipient', 'Access / safety issue', 'Other'];
+var returnReasons = <String>['Recipient refused', 'Recipient unreachable', 'Wrong or incomplete address', 'Recipient asked to cancel', 'Damaged in transit', 'Merchant cancelled the order', 'Delivery attempts exhausted'];
+
+/// Loads both reason lists (quietly keeps the ones above when offline).
+Future<void> loadReasons() async {
+  try {
+    final f = (((await Api.get('/delivery/fail-reasons')) as Map)['reasons'] as List?)?.map((e) => '$e').toList();
+    if (f != null && f.isNotEmpty) failureReasons = f;
+  } catch (_) {}
+  try {
+    final r = (((await Api.get('/returns/reasons')) as Map)['reasons'] as List?)?.map((e) => '$e').toList();
+    if (r != null && r.isNotEmpty) returnReasons = r;
+  } catch (_) {}
+}
+
+/// Back from a rider after a failed delivery: follow the rider's choice, or the hub's.
+const backDecisions = {'RIDER': 'As the rider chose (deliver again / return)', 'REATTEMPT': 'Deliver again', 'RETURN': 'Return to the sender'};
 
 /// One answer of the hub desk ({ ok, outcome, message }): the scan result. A refusal by the API (403, 422…) too.
 Future<ScanFeedback> deskScan(String path, Map<String, dynamic> body) async {
@@ -55,6 +71,33 @@ class ScanPage extends StatelessWidget {
       title: 'Receive at ${Ops.hubName}',
       hint: 'Scan every parcel arriving: from pickup riders, drop-offs, transfers, parcels coming back.',
       action: (code, source) => deskScan('/ops/hub-receive', {'code': code, 'hubId': Ops.hubId, 'source': source}),
+    );
+  }
+
+  /// Receive at hub & assign rider in one scan: parcels not received yet (in transit, drop-offs, back from a rider)
+  /// are received first. Scanning a parcel for another rider moves it to that rider.
+  Future<void> _assign(BuildContext context) async {
+    if (!await _needHub(context) || !context.mounted) return;
+    final rider = await pickRider(context, title: 'Who takes them?');
+    if (rider == null || !context.mounted) return;
+    await _session(
+      context,
+      title: 'Receive & assign rider',
+      hint: 'Scan each parcel the rider takes. Not received yet? It is received here and given to the rider.',
+      action: (code, source) => deskScan('/ops/hub-assign', {'code': code, 'hubId': Ops.hubId, 'riderId': rider, 'source': source}),
+    );
+  }
+
+  /// A rider brings parcels back (failed deliveries, unfinished returns): no scan by the rider needed.
+  Future<void> _receiveBack(BuildContext context) async {
+    if (!await _needHub(context) || !context.mounted) return;
+    final decision = await pickFromList(context, title: 'Failed deliveries: what next?', items: backDecisions.keys.toList(), selected: 'RIDER', labelOf: (k) => backDecisions[k]!);
+    if (decision == null || !context.mounted) return;
+    await _session(
+      context,
+      title: 'Receive from rider',
+      hint: 'Scan each parcel the rider brings back: ${backDecisions[decision]!.toLowerCase()}.',
+      action: (code, source) => deskScan('/ops/hub-receive', {'code': code, 'hubId': Ops.hubId, 'decision': decision, 'source': source}),
     );
   }
 
@@ -119,6 +162,8 @@ class ScanPage extends StatelessWidget {
 
   Future<void> _returnAssign(BuildContext context) async {
     if (!await _needHub(context) || !context.mounted) return;
+    await loadReasons();
+    if (!context.mounted) return;
     final rider = await pickRider(context, title: 'Who takes the returns?');
     if (rider == null || !context.mounted) return;
     final reason = await pickFromList(context, title: 'Reason (for parcels without one)', items: returnReasons, selected: returnReasons.first);
@@ -181,6 +226,8 @@ class ScanPage extends StatelessWidget {
           child: Text('Choose the task, then scan the parcels one after another with the camera or a handheld scanner.', style: TextStyle(color: muted)),
         ),
         _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Every arrival: pickups, drop-offs, transfers, parcels coming back.', () => _receive(context)),
+        _Task(Icons.person_add_alt_1_outlined, good, 'Receive & assign rider', 'Choose the rider, then scan: received (if needed) and given to them.', () => _assign(context)),
+        _Task(Icons.keyboard_return, warn, 'Receive from rider', 'Failed deliveries and returns a rider brings back.', () => _receiveBack(context)),
         _Task(Icons.local_shipping_outlined, brand, 'Out for delivery', 'Choose the rider, then scan what they take.', () => _dispatch(context)),
         _Task(Icons.storefront_outlined, warn, 'Pickup entry', 'A pickup rider brings what they collected.', () => _pickupEntry(context)),
         _Task(Icons.swap_horiz, brand, 'Transfer out', 'Parcels leaving for another hub.', () => _transfer(context)),
@@ -409,6 +456,12 @@ class _ReasonSheet extends StatefulWidget {
 class _ReasonSheetState extends State<_ReasonSheet> {
   String? _reason;
   String _next = 'RETRY';
+
+  @override
+  void initState() {
+    super.initState();
+    loadReasons().then((_) => mounted ? setState(() {}) : null);
+  }
 
   @override
   Widget build(BuildContext context) {

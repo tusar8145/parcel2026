@@ -74,7 +74,7 @@ export interface TransitionInput {
   expectedVersion?: number;
   metadata?: Prisma.InputJsonValue;
   /** Extra lifecycle facts, e.g. { intakeChange: true } when operations switch a pickup to drop-off. */
-  context?: Pick<TransitionContext, "intakeChange">;
+  context?: Pick<TransitionContext, "intakeChange" | "direct">;
 }
 
 /** Side effects to run after the transaction commits. */

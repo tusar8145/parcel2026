@@ -2,10 +2,12 @@ import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
+import 'franchise.dart';
 import 'home.dart';
 
 /// Operations app: hub operators and operations managers - the day at a glance, the scan desk (camera
 /// or handheld scanner), assigning riders, the live map, riders' cash and cash to the central hub, problems.
+/// A franchise hub's account gets the franchise mode (franchise.dart): its own hub and riders only.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   configureOpsApp();
@@ -18,11 +20,11 @@ Future<void> main() async {
 void configureOpsApp() {
   AppConfig.role = 'Operations';
   AppConfig.appName = 'Operations';
-  AppConfig.version = '1.1.1';
-  // Courier Operations staff: operations managers and hub operators (and custom roles built on them).
-  AppConfig.allows = (user) => user['panel'] == '/courier-operation';
-  AppConfig.notAllowed = 'This app is for operations staff (operations managers and hub operators).';
-  AppConfig.home = () => OpsShell(key: opsShell);
+  AppConfig.version = '1.2.0';
+  // Courier Operations staff: operations managers and hub operators (and custom roles built on them), and franchise hubs.
+  AppConfig.allows = (user) => user['panel'] == '/courier-operation' || user['panel'] == '/franchise';
+  AppConfig.notAllowed = 'This app is for operations staff (operations managers, hub operators and franchise hubs).';
+  AppConfig.home = () => Session.user?['panel'] == '/franchise' ? FranchiseShell(key: franchiseShell) : OpsShell(key: opsShell);
   onSignedOut = openSignIn;
 }
 

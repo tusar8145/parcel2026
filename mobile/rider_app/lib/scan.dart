@@ -46,6 +46,14 @@ class ScanPage extends StatelessWidget {
                 onTap: () => _handover(context),
               ),
               _TaskCard(
+                icon: Icons.move_to_inbox_outlined,
+                color: good,
+                title: 'Receive from hub (optional)',
+                text: 'At the hub: scan the parcels given to you to check they are yours. The hub may already have assigned them by scanning.',
+                count: deliveries.where((p) => p['status'] == 'ASSIGNED').length,
+                onTap: () => _receive(context),
+              ),
+              _TaskCard(
                 icon: Icons.play_circle_outline,
                 color: brand,
                 title: 'Start deliveries',
@@ -148,6 +156,28 @@ class ScanPage extends StatelessWidget {
     );
   }
 
+  /// Optional check at the hub: each parcel the hub gave this rider (assigned by the hub's scan).
+  Future<void> _receive(BuildContext context) async {
+    await Tasks.load();
+    if (!context.mounted) return;
+    final status = ValueNotifier('');
+    await _session(
+      context,
+      title: 'Receive from hub',
+      hint: 'Scan each parcel the hub gives you.',
+      status: status,
+      onDone: (n) => status.value = '$n received',
+      action: (code, _) async {
+        var task = findTask('deliveries', code);
+        if (task == null) {
+          await Tasks.load();
+          task = findTask('deliveries', code);
+        }
+        return task == null ? ScanFeedback(false, '$code is not assigned to you. Ask the hub to scan it to your name.') : ScanFeedback(true, '${task['trackingId']} is yours: ${task['recipientName'] ?? task['recipient'] ?? ''}'.trim());
+      },
+    );
+  }
+
   Future<void> _start(BuildContext context) async {
     final status = ValueNotifier('');
     await _session(
@@ -181,7 +211,7 @@ class ScanPage extends StatelessWidget {
     final choice = await showModalBottomSheet<(String, String)>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => const _FailureChoice());
     if (choice == null || !context.mounted) return;
     final (reason, next) = choice;
-    final status = ValueNotifier('$reason · ${next == 'RETRY' ? 'try again later' : 'back to hub'}');
+    final status = ValueNotifier('$reason · ${next == 'RETRY' ? 'try again' : 'return to sender'}');
     await _session(
       context,
       title: 'Could not deliver',
@@ -286,6 +316,12 @@ class _FailureChoiceState extends State<_FailureChoice> {
   String _next = 'RETRY';
 
   @override
+  void initState() {
+    super.initState();
+    loadFailureReasons().then((_) => mounted ? setState(() {}) : null);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
@@ -304,8 +340,8 @@ class _FailureChoiceState extends State<_FailureChoice> {
             ),
             SegmentedButton<String>(
               segments: const [
-                ButtonSegment(value: 'RETRY', label: Text('Try again later')),
-                ButtonSegment(value: 'RETURN_TO_HUB', label: Text('Back to hub')),
+                ButtonSegment(value: 'RETRY', label: Text('Try again')),
+                ButtonSegment(value: 'RETURN', label: Text('Return to sender')),
               ],
               selected: {_next},
               onSelectionChanged: (s) => setState(() => _next = s.first),

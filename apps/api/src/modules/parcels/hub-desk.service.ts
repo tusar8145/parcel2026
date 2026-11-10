@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { cashFor, createPartialReturn, partialData, partialDeliveryFields } from "./partial-delivery";
 import { operationNow } from "../../common/operation-time";
 import { z } from "zod";
-import { FAILURE_REASONS, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
 import { AuditService } from "../../common/audit.service";
 import { PrismaService } from "../../common/prisma.service";
 import { StorageService } from "../../common/storage.service";
@@ -56,7 +56,7 @@ export const deskPickupSchema = z.object({ code: z.string().trim().min(3).max(64
 /** Hub desk → Failed delivery: the rider reports the attempt at the desk (reason and next step set once for a batch). */
 export const deskFailedSchema = z.object({
   code: z.string().trim().min(3).max(64),
-  reason: z.enum(FAILURE_REASONS, "Choose the reason"),
+  reason: z.string().trim().min(2, "Choose the reason").max(80),
   nextAction: z.enum(["RETRY", "RETURN_TO_HUB"], "Choose RETRY or RETURN_TO_HUB"),
   note: z.string().trim().max(500).optional(),
   ...deskHub,
@@ -76,7 +76,16 @@ export const deskReturnSchema = z.object({
 });
 
 /** Hub desk → Receive from rider: parcels coming back after a failed delivery or an unfinished return. */
-export const deskReceiveBackSchema = z.object({ code: z.string().trim().min(3).max(64), ...deskHub, source: scanSourceSchema });
+export const deskReceiveBackSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  ...deskHub,
+  /**
+   * After a failed delivery: RIDER = what the rider chose in the app (try again, or return to the sender), REATTEMPT =
+   * deliver again, RETURN = goes back to the sender (on the returns list). Default RIDER.
+   */
+  decision: z.enum(["RIDER", "REATTEMPT", "RETURN"]).default("RIDER"),
+  source: scanSourceSchema,
+});
 
 const DELIVERABLE: ParcelStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"];
 const AWAITING_PICKUP: ParcelStatus[] = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"];
@@ -363,6 +372,10 @@ export class HubDeskService {
         return { ok: false, outcome: "NOT_WITH_RIDER", message: `${parcel.trackingId} is ${parcelStatusLabel(parcel.status as ParcelStatus).toLowerCase()}; it isn't coming back from a rider.`, code: parcel.trackingId };
       const { hub, problem: hubProblem } = await this.hubFor(actor, input.hubId, [parcel.currentHubId, parcel.deliveryRider?.hubId]);
       if (!hub) return { ok: false, outcome: "HUB_REQUIRED", message: `${parcel.trackingId}: ${hubProblem}`, code: parcel.trackingId };
+      // The rider's last failed attempt: their choice (RETRY / RETURN) and reason; the hub may follow or change it.
+      const lastFailed = failed ? await this.prisma.deliveryAttempt.findFirst({ where: { parcelId: parcel.id, outcome: "FAILED" }, orderBy: { createdAt: "desc" }, select: { reason: true, nextAction: true } }) : null;
+      const decision = input.decision === "RIDER" ? (lastFailed?.nextAction === "RETURN" ? "RETURN" : "REATTEMPT") : input.decision;
+      const toReturn = failed && decision === "RETURN";
       const after = this.workflow.newAfterCommit();
       await this.prisma.$transaction(
         async tx => {
@@ -383,11 +396,17 @@ export class HubDeskService {
               : {
                   to: "AT_HUB",
                   actorRole: "ops",
-                  data: { currentHubId: hub.id, deliveryRiderId: null, deliveryOtpEncrypted: null },
+                  data: {
+                    currentHubId: hub.id,
+                    deliveryRiderId: null,
+                    deliveryOtpEncrypted: null,
+                    // Going back to the sender: on the hub's returns list (the return run as usual).
+                    ...(toReturn ? { returnRequestedAt: new Date(), returnReason: parcel.returnReason ?? lastFailed?.reason ?? "Delivery failed" } : {}),
+                  },
                   title: "Back at the hub",
-                  description: `The rider brought the parcel back to ${hub.name}.`,
+                  description: `The rider brought the parcel back to ${hub.name}.${failed ? (toReturn ? " It goes back to the sender." : " It will be delivered again.") : ""}`,
                   location: hub.name,
-                  metadata: { hubId: hub.id, deskEntry: true },
+                  metadata: { hubId: hub.id, deskEntry: true, ...(failed ? { decision, riderChose: lastFailed?.nextAction ?? null } : {}) },
                 },
             actor,
             meta,
@@ -398,7 +417,13 @@ export class HubDeskService {
         { timeout: 15_000 },
       );
       await this.workflow.flush(after);
-      return { ok: true, outcome: "RECEIVED", message: `${parcel.trackingId} received back at ${hub.name}${unreturned ? ` (return run ${run?.number} not completed)` : ""}.`, code: parcel.trackingId };
+      return {
+        ok: true,
+        outcome: "RECEIVED",
+        decision: failed ? decision : undefined,
+        message: `${parcel.trackingId} received back at ${hub.name}${unreturned ? ` (return run ${run?.number} not completed)` : failed ? (toReturn ? ": to return to the sender" : ": to deliver again") : ""}.`,
+        code: parcel.trackingId,
+      };
     } catch (error) {
       if (error instanceof AppError) return { ok: false, outcome: "REFUSED", message: `${parcel.trackingId}: ${error.message}`, code: parcel.trackingId };
       throw error;

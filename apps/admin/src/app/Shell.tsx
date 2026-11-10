@@ -98,7 +98,7 @@ function Sidebar() {
                 return (
                   <div key={sub} className="nav-sub">
                     <button type="button" className={`nav-item nav-sub-toggle${children.some(c => `/${c.slug}` === pathname) ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [sub]: !isOpen }))}>
-                      <Icon name={sub === "Location settings" ? "pin" : sub === "Notification settings" ? "bell" : "settings"} />
+                      <Icon name={sub === "Location settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Messaging" ? "message" : "settings"} />
                       <span>{sub}</span>
                       <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={14} />
                     </button>

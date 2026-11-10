@@ -194,6 +194,12 @@ export default function ServicePlans() {
 
 const heading = (actions: React.ReactNode) => <PageHeading eyebrow="Merchant management · Service packages" title="Service plans & pricing" subtitle="Choose who a plan is for, then manage its packages, merchants and prices." actions={actions} />;
 
+/** Price groups shown closed at first (opened when needed): the ones rarely changed per package. */
+const COLLAPSED: Record<string, string[]> = {
+  BANKING_FINANCIAL: ["Last mile (+ charge)", "First mile"],
+  ECOMMERCE: ["Last mile (+ charge)", "First mile", "Open box"],
+};
+
 function PackagesTable({ pkgs, onEdit, reload }: { pkgs: Package[]; onEdit: (p: Package) => void; reload: () => Promise<unknown> }) {
   const [busy, setBusy] = useState("");
   async function run(id: string, work: () => Promise<void>) {
@@ -676,7 +682,7 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
                     {g.label}
                     <small className="faint" style={{ fontWeight: 500 }}>{`${items.filter(s => draft.services.has(s.code) || s.core).length} of ${items.length} on`}</small>
                   </summary>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "4px 12px", padding: "2px 12px 12px" }}>
+                  <div style={{ display: "grid", gap: 6, padding: "2px 12px 12px" }}>
                     {items.map(s => (
                       <label key={s.code} className="check" title={s.hint || ""}>
                         <input
@@ -727,7 +733,7 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
               </div>
             </details>
             {[...new Set(fields.map(f => f.group))].map(group => (
-              <details key={group} open style={{ border: "1px solid var(--line)", borderRadius: 9 }}>
+              <details key={group} open={!(COLLAPSED[seg] ?? []).includes(group)} style={{ border: "1px solid var(--line)", borderRadius: 9 }}>
                 <summary style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{group}</summary>
                 <div className="form-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", padding: "2px 12px 12px" }}>
                   {fields

@@ -10,7 +10,20 @@ import 'phone.dart';
 import 'signature_pad.dart';
 
 /// Why a delivery failed (the API's FAILURE_REASONS).
-const failureReasons = ['Recipient unavailable', 'Incorrect address', 'Recipient refused', 'Unable to contact recipient', 'Access / safety issue', 'Other'];
+/// Why a delivery failed: the super admin's list (GET /delivery/fail-reasons, in their order), this one until it loads.
+var failureReasons = <String>['Recipient unavailable', 'Incorrect address', 'Recipient refused', 'Unable to contact recipient', 'Access / safety issue', 'Other'];
+
+/// Loads the fail delivery reasons (kept on the phone for offline use).
+Future<void> loadFailureReasons() async {
+  try {
+    final list = ((((await cachedGet('/delivery/fail-reasons')) as Map)['reasons'] as List?) ?? []).map((e) => '$e').where((e) => e.isNotEmpty).toList();
+    if (list.isNotEmpty) failureReasons = list;
+  } catch (_) {}
+}
+
+/// The rider's choice after a failed attempt: deliver again, or send it back to the sender. Either way the parcel
+/// stays with the rider until the hub scans it in (the hub may change the choice).
+String nextActionLabel(String next) => next == 'RETRY' ? 'try again' : 'return to sender';
 
 /// The parcel's status as the rider sees it, with what's saved in the outbox and not sent yet.
 String localStatus(Map<String, dynamic> p) {
@@ -606,6 +619,12 @@ class _FailedPageState extends State<FailedPage> {
 
   String get _id => '${widget.parcel['trackingId']}';
 
+  @override
+  void initState() {
+    super.initState();
+    loadFailureReasons().then((_) => mounted ? setState(() {}) : null);
+  }
+
   Future<void> _submit() async {
     if (_reason == null) return setState(() => _error = 'Choose why it could not be delivered.');
     if (_reason == 'Other' && _note.text.trim().isEmpty) return setState(() => _error = 'Write what happened.');
@@ -619,7 +638,7 @@ class _FailedPageState extends State<FailedPage> {
           id: Outbox.newId(),
           path: '/rider/parcels/${Uri.encodeComponent(_id)}/delivery',
           body: {'outcome': 'FAILED', 'reason': _reason, 'nextAction': _next, if (_note.text.trim().isNotEmpty) 'note': _note.text.trim()},
-          label: 'Not delivered: $_reason (${_next == 'RETRY' ? 'try again' : 'back to hub'})',
+          label: 'Not delivered: $_reason (${nextActionLabel(_next)})',
           trackingId: _id,
           kind: 'failed',
           createdAt: DateTime.now(),
@@ -657,14 +676,14 @@ class _FailedPageState extends State<FailedPage> {
             ),
           ),
           Panel(
-            title: 'What next?',
+            title: 'What next? (bring it to the hub; they scan it in)',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'RETRY', label: Text('Try again later'), icon: Icon(Icons.replay)),
-                    ButtonSegment(value: 'RETURN_TO_HUB', label: Text('Back to hub'), icon: Icon(Icons.warehouse_outlined)),
+                    ButtonSegment(value: 'RETRY', label: Text('Try again'), icon: Icon(Icons.replay)),
+                    ButtonSegment(value: 'RETURN', label: Text('Return to sender'), icon: Icon(Icons.assignment_return_outlined)),
                   ],
                   selected: {_next},
                   onSelectionChanged: (s) => setState(() => _next = s.first),

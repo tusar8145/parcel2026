@@ -603,7 +603,7 @@ export class ParcelsService {
 
   async assignPickup(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
-      const rider = await this.activeRider(tx, input.riderId, actor);
+      const rider = await this.activeRider(tx, input.riderId, actor, parcel.pickupHubId);
       await this.workflow.transition(
         tx,
         parcel,
@@ -647,7 +647,7 @@ export class ParcelsService {
   async assignDelivery(actor: Actor, trackingId: string, input: z.infer<typeof assignRiderSchema>, meta: RequestMeta, opts: { expectedVersion?: number } = {}) {
     return this.opsChange(actor, trackingId, meta, async (tx, parcel, after) => {
       await this.assertHubAccess(tx, actor, parcel);
-      const rider = await this.activeRider(tx, input.riderId, actor);
+      const rider = await this.activeRider(tx, input.riderId, actor, parcel.currentHubId);
       const hub = parcel.currentHubId ? await tx.hub.findUnique({ where: { id: parcel.currentHubId } }) : null;
       await this.workflow.transition(
         tx,
@@ -833,10 +833,10 @@ export class ParcelsService {
     return this.detail(actor, trackingId);
   }
 
-  private async activeRider(db: Db, riderId: string, actor: Actor) {
+  private async activeRider(db: Db, riderId: string, actor: Actor, atHubId?: string | null) {
     const rider = await db.rider.findUnique({ where: { id: riderId }, include: { user: { select: { name: true, status: true } } } });
     if (!rider || !rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", 422);
-    await assertRiderAssignable(db, actor, rider.id);
+    await assertRiderAssignable(db, actor, rider.id, atHubId);
     return { id: rider.id, label: `${rider.code} · ${rider.user.name}` };
   }
 }

@@ -58,7 +58,7 @@ interface ReportRider {
   vehicle: string;
   status: string;
   active: boolean;
-  hub: { id: string; name: string; code: string } | null;
+  hub: { id: string; name: string; code: string; type?: string } | null;
   openDeliveries: number;
   picked: number;
   counts: Record<string, number>;
@@ -189,6 +189,7 @@ function RiderList({ tabs }: { tabs: React.ReactNode }) {
                         <span className="sub">
                           {statusLabel(r)}
                           {r.hub ? ` · ${r.hub.name}` : ""}
+                          {r.hub?.type === "FRANCHISE" ? " · Franchise rider" : ""}
                         </span>
                       </td>
                       <td>{zoneOf(r)}</td>

@@ -11,7 +11,7 @@ export interface PageDef {
   icon: IconName;
   group: "governance" | "merchants" | "riders" | "monitoring" | "platform";
   /** A collapsible sub-menu inside Platform control. */
-  sub?: "Notification settings" | "Operational settings" | "Location settings";
+  sub?: "Notification settings" | "Messaging" | "Operational settings" | "Location settings";
   /** Other classic ?page= values that open this page. */
   legacy?: string[];
 }
@@ -28,14 +28,15 @@ export const PAGES: PageDef[] = [
   { id: "Platform activity", label: "Platform activity", slug: "platform-activity", icon: "chart", group: "monitoring" },
   { id: "Audit log", label: "Audit & security log", slug: "audit-log", icon: "lock", group: "monitoring", legacy: ["audit-and-security-log"] },
   { id: "Admin users", label: "Admin users & roles", slug: "admin-users", icon: "users", group: "platform", legacy: ["admin-users-and-roles"] },
-  { id: "Parcel notifications", label: "Parcel notifications", slug: "parcel-notifications", icon: "bell", group: "platform", sub: "Notification settings" },
-  { id: "Platform settings", label: "Global notifications", slug: "global-notifications", icon: "bell", group: "platform", sub: "Notification settings", legacy: ["platform-settings"] },
-  { id: "Channels & limits", label: "Channel & limits", slug: "channels-and-limits", icon: "settings", group: "platform", sub: "Notification settings", legacy: ["channel-and-limits"] },
-  { id: "Push notifications", label: "Push notifications", slug: "push-notifications", icon: "phone", group: "platform", sub: "Notification settings" },
+  { id: "Platform settings", label: "Global notifications", slug: "global-notifications", icon: "bell", group: "platform", sub: "Notification settings", legacy: ["platform-settings", "parcel-notifications"] },
   { id: "Recent messages", label: "Recent messages", slug: "recent-messages", icon: "message", group: "platform", sub: "Notification settings" },
+  { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "phone", group: "platform", sub: "Messaging", legacy: ["push-messages"] },
+  { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "message", group: "platform", sub: "Messaging" },
+  { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "message", group: "platform", sub: "Messaging" },
   { id: "Website settings", label: "Website & branding", slug: "website-settings", icon: "edit", group: "platform", legacy: ["website-and-branding"] },
   { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh", group: "platform", sub: "Operational settings" },
   { id: "Receiver relations", label: "Receiver relations", slug: "receiver-relations", icon: "users", group: "platform", sub: "Operational settings" },
+  { id: "Fail delivery reasons", label: "Fail delivery reasons", slug: "fail-delivery-reasons", icon: "alert", group: "platform", sub: "Operational settings" },
   { id: "Product categories", label: "Product categories", slug: "product-categories", icon: "grid", group: "platform", sub: "Operational settings" },
   { id: "Products", label: "Products", slug: "products", icon: "box", group: "platform", sub: "Operational settings" },
   { id: "Priorities", label: "Priorities", slug: "priorities", icon: "alert", group: "platform", sub: "Operational settings" },
@@ -45,7 +46,7 @@ export const PAGES: PageDef[] = [
   { id: "Scan usage", label: "Scan with phone usage", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
   { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Location settings" },
   { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Location settings" },
-  { id: "Integration settings", label: "Integration settings", slug: "integration-settings", icon: "settings", group: "platform" },
+  { id: "Integration settings", label: "Integration settings", slug: "integration-settings", icon: "settings", group: "platform", legacy: ["channels-and-limits", "channel-and-limits"] },
   { id: "System guide", label: "System guide", slug: "system-guide", icon: "help", group: "platform" },
 ];
 

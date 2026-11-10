@@ -428,8 +428,8 @@ describe("platform security (super admin)", () => {
       const quote = (body: object) => ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { pickupDistrict: "Dhaka North", deliveryDistrict: "Gazipur", deliveryZone: "Tongi", weightKg: 5, ...body } });
       // Dhaka → Gazipur is Dhaka ↔ Sub-urban; Banking has no weight charge.
       expect((await quote({})).body).toMatchObject({ tier: "DHAKA_SUBURBAN", totalCharge: 100, weightCharge: 0 });
-      // The old document type still selects the service.
-      expect((await quote({ documentType: "Corporate Urgent Document" })).body.selection).toMatchObject({ speed: "URGENT", weightKg: 0.5 });
+      // The old document types (B2B, Trade, Corporate Urgent) are removed (1.30.0): Regular, without weight.
+      expect((await quote({ documentType: "Corporate Urgent Document" })).body.selection).toMatchObject({ speed: "REGULAR", weightKg: 0.5 });
       // No COD for Banking & Financial.
       const cod = await quote({ codAmount: 500 });
       expect(cod.status).toBe(422);

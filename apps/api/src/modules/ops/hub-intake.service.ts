@@ -14,7 +14,7 @@ import { ScansService } from "../scans/scans.service";
 import { HubDeskService } from "../parcels/hub-desk.service";
 import { LinehaulService } from "../linehaul/linehaul.service";
 import { assertHubInScope, codeVariants } from "./ops-common";
-import type { hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
+import type { hubAssignSchema, hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
 
 /** What happened to one scan at the receive desk. */
 export type ReceiveOutcome = "RECEIVED" | "BAG_RECEIVED" | "ALREADY_RECEIVED" | "WRONG_HUB" | "NOT_FOUND" | "NOT_DROP_OFF" | "REFUSED" | "EXTRA" | "TRIP" | "NOT_IN_TRANSIT";
@@ -128,7 +128,7 @@ export class HubIntakeService {
     // receive-back rules (the rider released, the return run left). Still out for delivery: the failed attempt first.
     // A parcel with no rider (e.g. a re-attempt not given to anyone yet) is received the regular way below.
     if ((["RETRY_SCHEDULED", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) && parcel.deliveryRiderId) || (parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId)) {
-      const back = await this.desk.receiveBack(actor, { code: id, hubId: hub.id, source: input.source }, meta);
+      const back = await this.desk.receiveBack(actor, { code: id, hubId: hub.id, source: input.source, decision: input.decision ?? "RIDER" }, meta);
       void scan(back.ok, back.message);
       parcel = (await find()) ?? parcel;
       return result(back.ok && back.outcome === "RECEIVED" ? "RECEIVED" : back.ok ? "ALREADY_RECEIVED" : "REFUSED", back.message, parcel);
@@ -148,6 +148,51 @@ export class HubIntakeService {
     }
     parcel = (await find()) ?? parcel;
     return result("RECEIVED", awaitingDropOff ? `${id} received at ${hub.name} (drop-off).` : `${id} received at ${hub.name}.`, parcel);
+  }
+
+  /**
+   * Receive at hub & assign rider (one scan): the parcel is received here first when it isn't yet (in transit to this
+   * hub, a drop-off, back from a rider), then given to the rider for delivery. Already with another rider (not out
+   * yet): it moves to this rider. Never throws for a parcel-level problem.
+   */
+  async receiveAndAssign(actor: Actor, input: z.infer<typeof hubAssignSchema>, meta: RequestMeta) {
+    assertHubInScope(actor, input.hubId, "assign riders at this hub");
+    const rider = await this.prisma.rider.findUnique({ where: { id: input.riderId }, select: { id: true, code: true, user: { select: { name: true } } } });
+    if (!rider) throw notFound("Rider");
+    const riderName = `${rider.user.name} (${rider.code})`;
+    const variants = codeVariants(input.code);
+    const find = () => this.prisma.parcel.findFirst({ where: { trackingId: { in: variants } }, select: { trackingId: true, status: true, currentHubId: true, deliveryRiderId: true, deliveryRider: { select: { user: { select: { name: true } } } } } });
+    let parcel = await find();
+    if (!parcel) return { ok: false, outcome: "NOT_FOUND", message: `No parcel found for ${variants[0]}.`, code: variants[0] };
+    const id = parcel.trackingId;
+    if (parcel.status === "OUT_FOR_DELIVERY")
+      return { ok: false, outcome: "OUT_FOR_DELIVERY", message: `${id} is out for delivery with ${parcel.deliveryRider?.user.name ?? "a rider"}: record the attempt or receive it back first.`, code: id };
+    if (parcel.status === "ASSIGNED" && parcel.deliveryRiderId === rider.id && parcel.currentHubId === input.hubId)
+      return { ok: true, outcome: "ALREADY_ASSIGNED", message: `${id} is already with ${riderName}.`, code: id };
+    let received = false;
+    // Not at this hub yet (or with a rider): receive it first, as the receive scan would.
+    const atHub = (parcel.status === "AT_HUB" || (parcel.status === "RETRY_SCHEDULED" && !parcel.deliveryRiderId) || (parcel.status === "ASSIGNED" && !!parcel.deliveryRiderId)) && parcel.currentHubId === input.hubId;
+    if (!atHub) {
+      const r = await this.receive(actor, { code: id, hubId: input.hubId, source: input.source, note: undefined }, meta);
+      if (!r.ok) return { ok: false, outcome: r.outcome, message: r.message, code: id };
+      received = r.outcome === "RECEIVED";
+      parcel = (await find()) ?? parcel;
+    }
+    const before = parcel.deliveryRider?.user.name ?? null;
+    try {
+      await this.parcels.assignDelivery(actor, id, { riderId: rider.id, note: undefined }, meta);
+    } catch (error) {
+      const message = error instanceof AppError ? (error.getResponse() as { message: string }).message : `${id} couldn't be assigned.`;
+      return { ok: false, outcome: "REFUSED", message: `${id}${received ? " was received but" : ""}: ${message}`, code: id };
+    }
+    const moved = parcel.status === "ASSIGNED" && before && parcel.deliveryRiderId !== rider.id;
+    return {
+      ok: true,
+      outcome: moved ? "REASSIGNED" : "ASSIGNED",
+      received,
+      message: `${id}${received ? " received and" : ""} ${moved ? `moved from ${before} to` : "given to"} ${riderName}.`,
+      code: id,
+    };
   }
 
   // ───────────── booking batches ─────────────

@@ -146,7 +146,7 @@ describe("admin: platform settings, pricing and overview", () => {
       expect(config.ecommercePackaging).toEqual(["Box"]);
       // No product lists in the platform config: forms read the parcel products. Retired lists are never stored.
       expect(config.ecommerceProducts).toBeUndefined();
-      expect((await ctx.api("GET", "/catalog")).body.products).toContain("Fashion & Apparel");
+      expect((await ctx.api("GET", "/catalog")).body.products).toContain("Saree");
       expect((await ctx.api("GET", "/catalog")).body.products).not.toContain("Clothing");
       await ctx.api("PUT", "/settings/platform-config", {
         token,

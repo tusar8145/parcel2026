@@ -39,11 +39,15 @@ function denied(ctx: ActionContext, action: string) {
   return true;
 }
 
-/** Active riders, the operator's own hub first, online before offline, with their open tasks. */
-export function riderOptions(riders: Rider[], myHubIds: string[] | null): FieldOption[] {
+/**
+ * Active riders, the operator's own hub first, online before offline, with their open tasks. A franchise's riders work
+ * only on its hub's parcels: they are listed only for a parcel at that hub (`forHubId`).
+ */
+export function riderOptions(riders: Rider[], myHubIds: string[] | null, forHubId?: string | null): FieldOption[] {
   const mine = new Set((myHubIds || []).filter(Boolean));
   const rank = (r: Rider) => (mine.size && !mine.has(r.hub?.id ?? "") ? 2 : 0) + (r.status === "ONLINE" ? 0 : 1);
   return [...riders]
+    .filter(r => r.hub?.type !== "FRANCHISE" || (!!forHubId && r.hub.id === forHubId))
     .sort((a, b) => rank(a) - rank(b) || a.code.localeCompare(b.code))
     .map(r => {
       const state = r.status === "ONLINE" ? "" : ` (${r.status.toLowerCase().replace("_", " ")})`;
@@ -75,7 +79,7 @@ export async function assignRider(p: Parcel, ctx: ActionContext) {
     submit: "Assign rider",
     fields: [
       { id: "shipment", label: "Shipment", type: "static", value: `${p.trackingId} · ${p.delivery.label}` },
-      { id: "riderId", label: pickup ? "Pickup rider" : "Delivery rider", type: "select", required: !franchiseHubs.length, options: riders.length ? riderOptions(riders, ctx.myHubIds) : [], full: true, hint: riders.length ? undefined : "No active riders.", show: v => !v.franchiseHub },
+      { id: "riderId", label: pickup ? "Pickup rider" : "Delivery rider", type: "select", required: !franchiseHubs.length, options: riders.length ? riderOptions(riders, ctx.myHubIds, pickup ? null : p.currentHub?.id) : [], full: true, hint: riders.length ? undefined : "No active riders.", show: v => !v.franchiseHub },
       {
         id: "priority",
         label: "Dispatch priority",

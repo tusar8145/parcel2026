@@ -2,15 +2,17 @@
  * Integration settings (bridge-notifications.js gateways + bridge-push.js): the SMS (mram) and email (Mailjet)
  * gateways — status metrics, settings with write-only keys (PUT /notifications/gateways/:channel), health, and a test
  * message (POST /notifications/gateways/:channel/test) — and Firebase push.
- * Push notifications (Notification settings) is the sending page of the same module.
+ * Each has an on / off switch: off sends nothing on that channel (the messages aren't written either).
+ * The SMS limits and message settings sit under the gateways. Sending to people is in Messaging.
  */
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
-import { Button, Loading, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { Button, Loading, Metric, PageHeading, Panel, Pill, Switch } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
-import { FirebasePush, PushMessages } from "@/features/push";
+import { FirebasePush } from "@/features/push";
+import { SmsLimits } from "@/pages/ChannelsLimits";
 
 interface Gateway {
   channel: "SMS" | "EMAIL";
@@ -25,7 +27,8 @@ interface Gateway {
   warning?: string | null;
 }
 const when = (value?: string | null) => (value ? new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never");
-const STATUS = (g: Gateway): [string, "good" | "warn" | "bad" | undefined] => (g.mode === "live" ? ["Live", "good"] : g.configured && g.enabled ? ["Log only (development)", undefined] : g.configured ? ["Disabled", "warn"] : ["Not configured", "bad"]);
+const STATUS = (g: Gateway): [string, "good" | "warn" | "bad" | undefined] =>
+  g.mode === "live" ? ["Live", "good"] : g.configured && g.enabled ? ["On · log only (development)", undefined] : !g.enabled ? ["Off: nothing is sent", "warn"] : ["Not configured", "bad"];
 const urlProblem = (value: string) => {
   try {
     return /^https?:$/.test(new URL(value).protocol) ? "" : "Use an http(s) address";
@@ -39,7 +42,7 @@ export function Integrations() {
   const q = useQuery({ queryKey: ["admin", "gateways"], queryFn: () => api<Gateway[]>("/notifications/gateways") });
   return (
     <>
-      <PageHeading eyebrow="Platform control" title="Integration settings" subtitle="The SMS (mram), email (Mailjet) and Firebase push connections: status, keys and a test message." />
+      <PageHeading eyebrow="Platform control" title="Integration settings" subtitle="The SMS (mram), email (Mailjet) and Firebase push connections: on / off, status, keys, a test message and the SMS limits." />
       {q.error ? <div className="callout bad">{describe(q.error)}</div> : null}
       {!q.data ? (
         <Loading rows={6} />
@@ -57,27 +60,20 @@ export function Integrations() {
           </div>
         </>
       )}
+      <div style={{ marginBottom: 16 }}>
+        <SmsLimits />
+      </div>
       <FirebasePush />
     </>
   );
 }
 export default Integrations;
 
-export function PushNotifications() {
-  return (
-    <>
-      <PageHeading eyebrow="Notification settings" title="Push notifications" subtitle="Send messages to merchants and riders, and see what was sent." />
-      <PushMessages />
-    </>
-  );
-}
-
 function GatewayCard({ g, reload }: { g: Gateway; reload: () => void }) {
   const sms = g.channel === "SMS";
   const s = g.settings;
   const [label, tone] = STATUS(g);
   const [v, setV] = useState<Record<string, string>>({ senderId: s.senderId ?? "", baseUrl: s.baseUrl ?? "", fromEmail: s.fromEmail ?? "", fromName: s.fromName ?? "", apiKey: "", apiSecret: "" });
-  const [enabled, setEnabled] = useState(g.enabled);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [to, setTo] = useState("");
   const [result, setResult] = useState<React.ReactNode>(null);
@@ -95,13 +91,25 @@ function GatewayCard({ g, reload }: { g: Gateway; reload: () => void }) {
     setErrors(out);
     if (Object.values(out).some(Boolean)) return;
     const body = sms
-      ? { enabled, senderId: v.senderId.trim(), baseUrl: v.baseUrl.trim(), ...(v.apiKey.trim() ? { apiKey: v.apiKey.trim() } : {}) }
-      : { enabled, fromName: v.fromName.trim(), baseUrl: v.baseUrl.trim(), ...(v.fromEmail.trim() ? { fromEmail: v.fromEmail.trim() } : {}), ...(v.apiKey.trim() ? { apiKey: v.apiKey.trim() } : {}), ...(v.apiSecret.trim() ? { apiSecret: v.apiSecret.trim() } : {}) };
+      ? { senderId: v.senderId.trim(), baseUrl: v.baseUrl.trim(), ...(v.apiKey.trim() ? { apiKey: v.apiKey.trim() } : {}) }
+      : { fromName: v.fromName.trim(), baseUrl: v.baseUrl.trim(), ...(v.fromEmail.trim() ? { fromEmail: v.fromEmail.trim() } : {}), ...(v.apiKey.trim() ? { apiKey: v.apiKey.trim() } : {}), ...(v.apiSecret.trim() ? { apiSecret: v.apiSecret.trim() } : {}) };
     setBusy("save");
     try {
       await api(`/notifications/gateways/${sms ? "sms" : "email"}`, { method: "PUT", body });
       toast(`${sms ? "SMS" : "Email"} gateway saved.`, "good");
       setV(x => ({ ...x, apiKey: "", apiSecret: "" }));
+      reload();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function toggle(on: boolean) {
+    setBusy("toggle");
+    try {
+      await api(`/notifications/gateways/${sms ? "sms" : "email"}`, { method: "PUT", body: { enabled: on } });
+      toast(`${sms ? "SMS" : "Email"} ${on ? "on" : "off"}.`, on ? "good" : undefined);
       reload();
     } catch (err) {
       toastError(err);
@@ -148,7 +156,11 @@ function GatewayCard({ g, reload }: { g: Gateway; reload: () => void }) {
   );
   const key = (k: string, label: string, masked: string | null | undefined, placeholder: string) => field(k, label, { type: "password", autoComplete: "new-password", maxLength: 500, placeholder: masked ? `Saved (${masked}) · leave empty to keep` : placeholder });
   return (
-    <Panel title={sms ? "SMS gateway · mram" : "Email gateway · Mailjet"} subtitle={sms ? "Codes, delivery codes and parcel updates by SMS." : "Account, invoice and parcel emails."}>
+    <Panel
+      title={sms ? "SMS gateway · mram" : "Email gateway · Mailjet"}
+      subtitle={sms ? "Codes, delivery codes and parcel updates by SMS. Off: no SMS is sent." : "Account, invoice and parcel emails. Off: no email is sent."}
+      tools={<Switch checked={g.enabled} disabled={busy === "toggle"} label={g.enabled ? "On" : "Off"} onChange={on => void toggle(on)} />}
+    >
       <div className="panel-body" style={{ display: "grid", gap: 12 }}>
         <p className="faint" style={{ margin: 0 }}>
           <Pill tone={tone}>{label}</Pill> <Pill tone={g.configured ? "good" : "warn"}>{g.configured ? "Credentials saved" : "No credentials"}</Pill> · Last success: {when(g.lastSuccessAt)} · Last error: {when(g.lastErrorAt)}
@@ -160,9 +172,6 @@ function GatewayCard({ g, reload }: { g: Gateway; reload: () => void }) {
           </div>
         ) : null}
         <form style={{ display: "grid", gap: 10 }} onSubmit={e => void save(e)} noValidate>
-          <label className="check">
-            <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Send through {sms ? "mram" : "Mailjet"} in production
-          </label>
           {sms ? (
             <>
               {key("apiKey", "API key", s.apiKey, "mram API key")}

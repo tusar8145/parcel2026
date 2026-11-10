@@ -60,11 +60,17 @@ interface TemplateOverride {
   updatedAt: Date;
 }
 
+/**
+ * Messages whose people have no app (website customers / receivers and applicants, who only use the website): no push,
+ * only the in-app copy on the website.
+ */
+const NO_PUSH = new Set<string>(["parcel.ready_for_collection", "parcel.collection_reminder", "merchant.application_received", "merchant.rejected", "merchant.info_requested", "rider.application_status", "partner.application_status"]);
+
 export interface Snapshot {
   overrides: Map<string, TemplateOverride>;
   limits: Limits;
   brand: Brand;
-  /** Global channel switches from the super admin "Global notifications" page (platform-config.channels). */
+  /** The SMS / email gateways' on / off switches (Integration settings): off sends nothing on that channel, codes included. */
   channels: { sms: boolean; email: boolean };
   /** Push switches set by an admin (event → on/off); events not listed are on. */
   push: Map<string, { enabled: boolean; updatedAt: string | null }>;
@@ -133,22 +139,23 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
   private async loadSnapshot(): Promise<Snapshot> {
     const version = await this.redis.get(VERSION_KEY).catch(() => null);
     if (this.cache && this.cache.version === version && Date.now() - this.cache.at < MAX_AGE_MS) return this.cache.snapshot;
-    const [rows, setting, platform, pushSetting] = await Promise.all([
+    const [rows, setting, gateways, pushSetting] = await Promise.all([
       this.prisma.notificationTemplate.findMany(),
       this.prisma.setting.findUnique({ where: { key: SETTINGS_KEY } }),
-      this.prisma.setting.findUnique({ where: { key: PLATFORM_CONFIG_KEY } }),
+      this.prisma.notificationGateway.findMany({ select: { channel: true, enabled: true } }),
       this.prisma.setting.findUnique({ where: { key: PUSH_SETTINGS_KEY } }),
     ]);
     const pushEvents = isObject(pushSetting?.value) && isObject(pushSetting.value.events) ? pushSetting.value.events : {};
     const stored = isObject(setting?.value) ? setting.value : {};
     const limits = limitsSchema.safeParse(stored.limits);
     const brand = brandSchema.safeParse(stored.brand);
-    const channels = isObject(platform?.value) && isObject(platform.value.channels) ? platform.value.channels : {};
+    // A gateway switched off (a saved row with enabled = false) is off; one never set up only logs (development).
+    const gatewayOff = (channel: "SMS" | "EMAIL") => gateways.some(g => g.channel === channel && !g.enabled);
     const snapshot: Snapshot = {
       overrides: new Map(rows.map(r => [key(r.event, CHANNEL_OF[r.channel]), { enabled: r.enabled, subject: r.subject, body: r.body, html: r.html, updatedAt: r.updatedAt }])),
       limits: limits.success ? limits.data : DEFAULT_LIMITS,
       brand: brand.success ? brand.data : DEFAULT_BRAND,
-      channels: { sms: channels.sms !== false, email: channels.email !== false },
+      channels: { sms: !gatewayOff("SMS"), email: !gatewayOff("EMAIL") },
       push: new Map(
         Object.entries(pushEvents)
           .filter(([, v]) => isObject(v) && typeof v.enabled === "boolean")
@@ -177,7 +184,7 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
     const locked = !!def.mandatory;
     const enabledByAdmin = o?.enabled ?? !def.defaultOff?.includes(channel);
     return {
-      enabled: locked || (enabledByAdmin && snapshot.channels[channel]),
+      enabled: snapshot.channels[channel] && (locked || enabledByAdmin),
       locked,
       subject: channel === "email" ? (o?.subject ?? defaults.subject) : undefined,
       body: o?.body ?? defaults.body,
@@ -191,7 +198,7 @@ export class NotificationSettingsService implements OnApplicationBootstrap {
    * (in-app.ts) for a signed-in person do. Codes (sign-up, sign-in, delivery…) never have one.
    */
   pushOf(snapshot: Snapshot, event: string): PushSwitch | undefined {
-    if (!(IN_APP as Record<string, unknown>)[event] || !definitionOf(event)) return undefined;
+    if (!(IN_APP as Record<string, unknown>)[event] || !definitionOf(event) || NO_PUSH.has(event)) return undefined;
     const o = snapshot.push.get(event);
     const enabled = o?.enabled ?? true;
     return { enabled, locked: false, enabledByAdmin: enabled, updatedAt: o?.updatedAt ?? null };

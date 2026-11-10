@@ -22,12 +22,15 @@ import { normalizeScan, ScanInput, type ScanInputHandle, type ScanSource } from 
 import type { Handoff } from "@/features/parcels/useParcelActions";
 import { useLocation } from "react-router";
 
+/** Fallbacks while the super admin's lists load (GET /delivery/fail-reasons, GET /returns/reasons). */
 const REASONS = ["Recipient unavailable", "Incorrect address", "Recipient refused", "Unable to contact recipient", "Access / safety issue", "Other"];
 const RETURN_REASONS = ["Recipient refused", "Recipient unreachable", "Wrong or incomplete address", "Recipient asked to cancel", "Damaged in transit", "Merchant cancelled the order", "Delivery attempts exhausted"];
 
-type Part = "pickup" | "transfer" | "dispatch" | "delivered" | "failed" | "returnassign" | "returns";
+type Part = "pickup" | "assign" | "transfer" | "dispatch" | "delivered" | "failed" | "returnassign" | "returns";
 interface TabCfg {
   path: string;
+  /** Another endpoint than /hub-desk/<path>. */
+  endpoint?: string;
   title: string;
   subtitle: string;
   done: string[];
@@ -44,6 +47,18 @@ interface TabCfg {
   handover?: boolean;
 }
 const TABS: Record<Part, TabCfg> = {
+  assign: {
+    path: "assign",
+    endpoint: "/ops/hub-assign",
+    title: "Receive & assign rider",
+    subtitle: "Choose the rider, then scan the parcels they take. A parcel not received here yet (in transit to this hub, a drop-off, back from a rider) is received and given to the rider in one scan. Scanning it for another rider moves it to that rider.",
+    done: ["ASSIGNED", "REASSIGNED"],
+    counter: "assigned",
+    rider: true,
+    riderRequired: true,
+    hub: true,
+    hint: "The rider can go out at once (Out for delivery entry, or the rider scans Out for delivery in the app). The rider doesn't need to scan to receive them.",
+  },
   pickup: { path: "pickup", title: "Pickup entry", subtitle: "A pickup rider brings the parcels they collected: scan each one. It's picked up for that rider and received at this hub.", done: ["RECEIVED"], counter: "received", hub: true, hint: "Only parcels given to a pickup rider. Drop-offs are received on Receive entry." },
   transfer: {
     path: "transfer",
@@ -108,6 +123,7 @@ const TABS: Record<Part, TabCfg> = {
 const TAB_PART: Record<string, Part | "receive" | "collect"> = {
   "Receive entry": "receive",
   "Pickup entry": "pickup",
+  "Receive & assign rider": "assign",
   "Transfer out": "transfer",
   "Collect from hub": "collect",
   "Out for delivery entry": "dispatch",
@@ -185,6 +201,13 @@ function HubDeskTab({ part }: { part: Part }) {
   // Delivery entry: these go with the next scan only.
   const [proof, setProof] = useState({ receivedBy: "", note: "", photo: null as string | null, photoKb: 0, partial: false, cash: "", relation: "Self" });
   const relations = useQuery({ queryKey: ["receiver-relations"], queryFn: async () => (await api<{ relations: string[] }>("/delivery/receiver-relations")).relations, enabled: !!t.proof, staleTime: 10 * 60_000 });
+  const failReasons = useQuery({ queryKey: ["fail-reasons"], queryFn: async () => (await api<{ reasons: string[] }>("/delivery/fail-reasons")).reasons, enabled: !!t.failure, staleTime: 10 * 60_000 });
+  const returnReasons = useQuery({ queryKey: ["return-reasons"], queryFn: async () => (await api<{ reasons: string[] }>("/returns/reasons")).reasons, enabled: !!t.returnReason, staleTime: 10 * 60_000 });
+  useEffect(() => {
+    const list = failReasons.data;
+    if (list?.length && !list.includes(desk.reason)) set({ reason: list[0] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failReasons.data]);
   const hubId = own?.id || desk.hubId;
   const runs = useQuery({
     queryKey: ["hub-desk", "return-runs", hubId],
@@ -224,7 +247,7 @@ function HubDeskTab({ part }: { part: Part }) {
     desk.queue = desk.queue.then(async () => {
       let r: { ok: boolean; outcome?: string; message: string };
       try {
-        r = await api(`/hub-desk/${t.path}`, { method: "POST", body });
+        r = await api(t.endpoint ?? `/hub-desk/${t.path}`, { method: "POST", body });
       } catch (error) {
         r = { ok: false, message: describe(error) };
       }
@@ -303,7 +326,7 @@ function HubDeskTab({ part }: { part: Part }) {
               <label className="field">
                 <span>Reason</span>
                 <Select className="select" value={desk.reason} onChange={e => set({ reason: e.target.value })}>
-                  {REASONS.map(r => (
+                  {(failReasons.data ?? REASONS).map(r => (
                     <option key={r}>{r}</option>
                   ))}
                 </Select>
@@ -332,7 +355,7 @@ function HubDeskTab({ part }: { part: Part }) {
               <span>Return reason (if none yet)</span>
               <input className="input" maxLength={300} list="hdReasons" placeholder="e.g. Recipient refused" value={desk.returnReason} onChange={e => set({ returnReason: e.target.value })} />
               <datalist id="hdReasons">
-                {RETURN_REASONS.map(r => (
+                {(returnReasons.data ?? RETURN_REASONS).map(r => (
                   <option key={r} value={r} />
                 ))}
               </datalist>
@@ -512,7 +535,7 @@ interface ReceiveEntry {
   parcel?: { trackingId: string; merchant?: string; recipient?: string; destination?: string; inBatch?: boolean };
 }
 const DESK_HUB_KEY = "deliveryfast-receive-desk-hub";
-const receive = { hubId: "", batchId: "", log: [] as ReceiveEntry[], received: 0, queue: Promise.resolve() as Promise<unknown>, feedback: { tone: "", text: "Scan with a USB scanner (keyboard mode), use the camera, or type a tracking ID / CN and press Enter. The box stays ready for the next parcel." } };
+const receive = { hubId: "", batchId: "", decision: "RIDER", log: [] as ReceiveEntry[], received: 0, queue: Promise.resolve() as Promise<unknown>, feedback: { tone: "", text: "Scan with a USB scanner (keyboard mode), use the camera, or type a tracking ID / CN and press Enter. The box stays ready for the next parcel." } };
 
 function ReceiveDesk() {
   const ops = useOps();
@@ -577,7 +600,7 @@ function ReceiveDesk() {
     const batchId = receive.batchId || undefined;
     receive.queue = receive.queue.then(async () => {
       try {
-        const r = await api<{ ok: boolean; outcome: string; message: string; code: string; parcel?: ReceiveEntry["parcel"]; batch?: Batch }>("/ops/hub-receive", { method: "POST", body: { code, hubId: hub.id, source, batchId } });
+        const r = await api<{ ok: boolean; outcome: string; message: string; code: string; parcel?: ReceiveEntry["parcel"]; batch?: Batch }>("/ops/hub-receive", { method: "POST", body: { code, hubId: hub.id, source, batchId, decision: receive.decision } });
         Object.assign(entry, { outcome: r.outcome, message: r.message, parcel: r.parcel, code: r.parcel?.trackingId || r.code });
         if (r.outcome === "RECEIVED") receive.received++;
         if (r.batch && r.batch.id === receive.batchId) {
@@ -661,6 +684,14 @@ function ReceiveDesk() {
                   {`${b.number} · ${b.received}/${b.expected} received${b.fileName ? ` · ${b.fileName}` : ""}`}
                 </option>
               ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span>Back from a rider (failed delivery)</span>
+            <Select className="select" value={receive.decision} onChange={e => ((receive.decision = e.target.value), redraw())}>
+              <option value="RIDER">As the rider chose (deliver again / return)</option>
+              <option value="REATTEMPT">Deliver again</option>
+              <option value="RETURN">Return to the sender</option>
             </Select>
           </label>
           <ScanInput ref={box} id="rdCode" label="Tracking ID / CN" placeholder="Scan or type, then Enter" cameraTitle="Scan parcels into the hub" onScan={scan}>

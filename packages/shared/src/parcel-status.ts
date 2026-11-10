@@ -118,6 +118,8 @@ export interface TransitionContext {
   intakeChange?: boolean;
   /** DOORSTEP (default) or HUB_COLLECT: collected parcels wait "Ready for collection" and get no delivery rider. */
   lastMile?: string | null;
+  /** A franchise hub delivering itself (no rider): operations may mark it delivered, with proof (FranchisePanelService). */
+  direct?: boolean;
 }
 
 /** Statuses in which operations may switch a parcel between rider pickup and hub drop-off (before pickup). */
@@ -129,6 +131,7 @@ export const INTAKE_CHANGEABLE_STATUSES: readonly ParcelStatus[] = ["PENDING_CON
  */
 function rulesFor(from: ParcelStatus, actor: TransitionActor, context: TransitionContext): readonly ParcelStatus[] {
   const base = collectRules(from, actor, context.lastMile === "HUB_COLLECT", TRANSITIONS[from][actor]);
+  if (context.direct && actor === "ops" && (["AT_HUB", "ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"] as ParcelStatus[]).includes(from)) return [...base, "DELIVERED"];
   if (context.intakeChange && actor === "ops" && (from === "PICKUP_ASSIGNED" || from === "PICKUP_CONFIRMED")) return [...base, "PENDING_CONFIRMATION"];
   if (context.intake !== "DROP_OFF" || from !== "PENDING_CONFIRMATION" || actor !== "ops") return base;
   return ["AT_HUB", ...base.filter(s => s !== "PICKUP_ASSIGNED")];

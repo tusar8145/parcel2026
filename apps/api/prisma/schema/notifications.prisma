@@ -128,3 +128,23 @@ model PushBroadcast {
   @@index([createdAt])
   @@map("push_broadcasts")
 }
+
+/// Super admin › Messaging › SMS / Email messages: one message to a group or to chosen people, queued in the outbox.
+model MessageBroadcast {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  channel     OutboxChannel
+  /// EMAIL only
+  subject     String?
+  body        String
+  /// ALL, MERCHANTS, ECOMMERCE, BANKING, RIDERS, STAFF or USERS (the chosen userIds)
+  audience    String
+  userIds     String[]      @db.Uuid
+  /// People it went to (with a phone / email) and the messages queued in the outbox.
+  recipients  Int           @default(0)
+  queued      Int           @default(0)
+  createdById String        @db.Uuid
+  createdAt   DateTime      @default(now())
+
+  @@index([channel, createdAt])
+  @@map("message_broadcasts")
+}

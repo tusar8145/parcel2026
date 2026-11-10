@@ -212,8 +212,10 @@ export const deliveryOutcomeSchema = z.discriminatedUnion("outcome", [
   }),
   z.object({
     outcome: z.literal("FAILED"),
-    reason: z.enum(FAILURE_REASONS),
-    nextAction: z.enum(["RETRY", "RETURN_TO_HUB"]),
+    /** One of the super admin's Fail delivery reasons (GET /delivery/fail-reasons; the standard FAILURE_REASONS by default). */
+    reason: z.string().trim().min(2, "Choose the reason").max(80),
+    /** RETRY: deliver again; RETURN: send it back to the sender (the rider brings it to the hub either way, the hub scans it in); RETURN_TO_HUB: already back at the hub (older apps). */
+    nextAction: z.enum(["RETRY", "RETURN", "RETURN_TO_HUB"]),
     hubId: z.uuid().optional(),
     note: optionalText(500),
   }),

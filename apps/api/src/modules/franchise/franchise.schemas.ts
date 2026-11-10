@@ -18,7 +18,8 @@ export const commissionRatesSchema = z.object({
 
 // ───────────── super admin ─────────────
 
-export const createFranchiseSchema = z.object({
+export const createFranchiseSchema = z
+  .object({
   /** An approved franchise application: its applicant becomes the franchise account (signs in as before). */
   applicationId: z.uuid().optional(),
   name: text(120),
@@ -26,17 +27,23 @@ export const createFranchiseSchema = z.object({
   /** Without an application: the account's phone (an existing user keeps their sign-in). */
   phone: phoneSchema.optional(),
   email: emailSchema.optional(),
-  hub: z.object({
-    code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{3,20}$/, "Use 3–20 letters, digits or dashes").optional(),
-    name: text(120),
-    district: text(80),
-    zone: optionalText(80),
-    address: text(300),
-    lat: z.coerce.number().min(-90).max(90).optional(),
-    lng: z.coerce.number().min(-180).max(180).optional(),
-  }),
+  /** Tag an existing Delivery Fast hub as this franchise's hub (its riders become the franchise's riders)… */
+  hubId: z.uuid().optional(),
+  /** …or open a new hub. */
+  hub: z
+    .object({
+      code: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{3,20}$/, "Use 3–20 letters, digits or dashes").optional(),
+      name: text(120),
+      district: text(80),
+      zone: optionalText(80),
+      address: text(300),
+      lat: z.coerce.number().min(-90).max(90).optional(),
+      lng: z.coerce.number().min(-180).max(180).optional(),
+    })
+    .optional(),
   rates: commissionRatesSchema.default({ pickupPercent: 0, pickupMin: 0, deliveryPercent: 0, deliveryMin: 0, returnPercent: 0, returnMin: 0 }),
-});
+  })
+  .refine(v => !!v.hubId !== !!v.hub, { message: "Choose an existing hub or enter a new hub", path: ["hubId"] });
 
 export const updateFranchiseSchema = z
   .object({ name: text(120).optional(), contactName: text(120).optional(), contactEmail: emailSchema.nullable().optional(), rates: commissionRatesSchema.partial().optional() })
@@ -68,7 +75,12 @@ export const franchiseParcelsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
-export const franchiseReceiveSchema = z.object({ code: z.string().trim().min(3).max(64), source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL") });
+export const franchiseReceiveSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL"),
+  /** Back from a rider after a failed delivery: the rider's choice (RIDER), or REATTEMPT / RETURN. */
+  decision: z.enum(["RIDER", "REATTEMPT", "RETURN"]).optional(),
+});
 export const franchiseAssignSchema = z.object({ riderId: z.uuid(), task: z.enum(["PICKUP", "DELIVERY"]), note: optionalText(300) });
 export const franchiseSendSchema = z.object({ hubId: z.uuid(), note: optionalText(300) });
 export const franchiseReturnRunSchema = z.object({ trackingIds: z.array(z.string().trim().min(3).max(40)).min(1).max(200), riderId: z.uuid(), reason: optionalText(300) });
@@ -90,6 +102,31 @@ export const updateFranchiseRiderSchema = z
   .refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
 export const riderRatesSchema = z.object({ pickup: money, delivery: money, return: money });
 export const riderPaymentSchema = z.object({ method: z.enum(["CASH", "BKASH", "NAGAD", "ROCKET", "BANK_TRANSFER"]).default("CASH"), reference: optionalText(120), note: optionalText(300) });
+
+const proofImage = z
+  .string()
+  .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, "Must be a PNG, JPEG or WebP image")
+  .max(3_000_000, "Image is too large (max ~2 MB)");
+
+/** The franchise hands the parcel over itself (no rider, e.g. at the counter or its own staff): proof required. */
+export const franchiseDirectDeliverySchema = z.object({
+  receivedBy: text(120),
+  receiverRelation: optionalText(60),
+  /** Cash taken from the recipient; must equal the parcel's COD amount. It is the franchise's cash to deposit. */
+  codCollected: money.default(0),
+  proof: z.object({ method: z.enum(["PHOTO", "SIGNATURE"]), image: proofImage }, "Take a photo or a signature as the delivery proof"),
+  note: optionalText(500),
+});
+
+/** The franchise records a failed delivery itself (no rider): deliver again later, or send it back to the sender. */
+export const franchiseDirectFailSchema = z.object({
+  reason: z.string().trim().min(2, "Choose the reason").max(80),
+  decision: z.enum(["REATTEMPT", "RETURN"]).default("REATTEMPT"),
+  note: optionalText(500),
+});
+
+/** Receive & assign rider in one scan, at the franchise hub (its own riders). */
+export const franchiseAssignScanSchema = z.object({ code: z.string().trim().min(3).max(64), riderId: z.uuid(), source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL") });
 
 export const franchiseHandoverSchema = z.object({ riderId: z.uuid(), collectionIds: z.array(z.uuid()).min(1).max(500), amountReceived: money });
 export const franchiseRemittanceSchema = z.object({ hubId: z.uuid(), note: optionalText(300) });

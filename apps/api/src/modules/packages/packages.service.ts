@@ -388,7 +388,8 @@ export class PackagesService implements OnModuleInit {
       dropHub,
       collectHub,
       origin,
-      serviceLevel: type?.slaLevel ?? "REGULAR",
+      // The old "Same day" service level (no `speed`): priced as Express, but timed as same day as before.
+      serviceLevel: !input.speed && /^same[\s_-]*day$/i.test(String(input.serviceLevel ?? "").trim()) ? "SAME_DAY" : (type?.slaLevel ?? "REGULAR"),
       deliveryTypeName: type?.name ?? selection.speed,
       returnPercent: pkg.prices.returnPercent,
     };

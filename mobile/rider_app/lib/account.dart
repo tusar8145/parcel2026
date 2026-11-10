@@ -74,7 +74,8 @@ class AccountPage extends StatelessWidget {
               Panel(
                 child: Column(
                   children: [
-                    KeyValue('Hub', '${hub?['name'] ?? '—'}'),
+                    KeyValue('Hub', '${hub?['name'] ?? '—'}${hub?['type'] == 'FRANCHISE' ? ' (franchise)' : ''}'),
+                    if (hub?['type'] == 'FRANCHISE') KeyValue('Works for', 'Franchise rider of ${hub?['name']}: its parcels only; cash goes to ${hub?['name']}'),
                     KeyValue('Zone', '${r['zone'] ?? '—'}'),
                     KeyValue('Status', humanize('${r['status'] ?? ''}')),
                     ValueListenableBuilder<String>(valueListenable: Tracker.status, builder: (_, s, _) => KeyValue('Location', s)),

@@ -181,7 +181,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       subject: "Parcel {{trackingId}} is out for delivery",
       text: "Hi {{name}},\n\nParcel {{trackingId}} is out for delivery today.\n\nTrack it: {{trackingUrl}}",
     },
-    defaultOff: ["sms"],
+    defaultOff: ["sms", "email"],
   },
   "parcel.delivery_code": {
     label: "Delivery code",
@@ -264,7 +264,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       subject: "How did we do with {{trackingId}}?",
       text: "Hi {{name}},\n\nHow was your delivery of {{trackingId}}? It takes a minute: {{link}}",
     },
-    defaultOff: ["sms"],
+    defaultOff: ["sms", "email"],
   },
   "guest.booking_verification": {
     label: "Guest booking verification",
@@ -641,6 +641,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       subject: "Parcel {{trackingId}} is ready for collection at {{hub}}",
       text: "Hi {{name}},\n\nParcel {{trackingId}} is waiting for you at {{hub}} ({{hubAddress}}).\n\nShow this collection code at the counter: {{code}}{{#codAmount}}\nAmount to pay: Tk {{codAmount}}{{/codAmount}}\n\nPlease collect it by {{until}}; after that it goes back to the sender.\n\nTrack it: {{trackingUrl}}",
     },
+    defaultOff: ["email"],
   },
   "parcel.collection_reminder": {
     label: "Collection reminder",
@@ -653,6 +654,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
       subject: "Reminder: collect parcel {{trackingId}} by {{until}}",
       text: "Hi {{name}},\n\nParcel {{trackingId}} is still waiting for you at {{hub}} ({{hubAddress}}). Show the collection code {{code}} at the counter.\n\nPlease collect it by {{until}}; after that it goes back to the sender.\n\nTrack it: {{trackingUrl}}",
     },
+    defaultOff: ["email"],
   },
 };
 

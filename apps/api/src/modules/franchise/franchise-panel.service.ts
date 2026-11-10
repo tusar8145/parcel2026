@@ -21,7 +21,15 @@ import { LedgerService, credit, debit } from "../finance/ledger.service";
 import { readFinanceConfig, vatSplit } from "../finance/finance-config";
 import { readFranchiseConfig } from "./franchise-config";
 import { franchiseInclude, franchiseView } from "./franchise-admin.service";
+import { ParcelWorkflowService } from "../parcels/parcel-workflow.service";
+import { StorageService } from "../../common/storage.service";
+import { hubCashPlacement } from "../money/cash-placement";
+import { operationNow } from "../../common/operation-time";
+import { recordFranchiseCommission } from "./franchise-commission";
 import type {
+  franchiseAssignScanSchema,
+  franchiseDirectDeliverySchema,
+  franchiseDirectFailSchema,
   franchiseAssignSchema,
   franchiseCompleteReturnSchema,
   franchiseParcelsQuerySchema,
@@ -114,6 +122,8 @@ export class FranchisePanelService {
     private readonly packages: PackagesService,
     private readonly notify: NotifyService,
     private readonly ledger: LedgerService,
+    private readonly workflow: ParcelWorkflowService,
+    private readonly storage: StorageService,
   ) {}
 
   /** The signed-in franchise (active only). */
@@ -200,7 +210,107 @@ export class FranchisePanelService {
   /** Hub desk scan: transfers, drop-offs and walk-ins arriving at the franchise hub. */
   async receive(actor: Actor, input: z.infer<typeof franchiseReceiveSchema>, meta: RequestMeta) {
     const f = await this.context(actor);
-    return this.intake.receive(actor, { code: input.code, hubId: f.hubId, source: input.source, note: undefined }, meta);
+    return this.intake.receive(actor, { code: input.code, hubId: f.hubId, source: input.source, note: undefined, decision: input.decision }, meta);
+  }
+
+  /** Receive & assign rider in one scan (the parcel is received at the franchise hub first when it isn't yet). */
+  async assignScan(actor: Actor, input: z.infer<typeof franchiseAssignScanSchema>, meta: RequestMeta) {
+    const f = await this.context(actor);
+    const rider = await this.prisma.rider.findUnique({ where: { id: input.riderId }, select: { hubId: true } });
+    if (!rider || rider.hubId !== f.hubId) throw notFound("Rider");
+    return this.intake.receiveAndAssign(actor, { code: input.code, hubId: f.hubId, riderId: input.riderId, source: input.source }, meta);
+  }
+
+  /** A parcel the franchise can hand over itself: at its hub (or with one of its riders, not delivered yet). */
+  private async directParcel(actor: Actor, f: { hubId: string }, trackingId: string, db: Db) {
+    const parcel = await this.parcels.loadForUpdate(actor, trackingId, db);
+    const ownRider = parcel.deliveryRiderId ? (await db.rider.findUnique({ where: { id: parcel.deliveryRiderId }, select: { hubId: true } }))?.hubId === f.hubId : false;
+    if (parcel.currentHubId !== f.hubId && !ownRider) throw forbidden(`${parcel.trackingId} isn't at your hub`);
+    if (!["AT_HUB", "ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"].includes(parcel.status))
+      throw new AppError("NOT_DELIVERABLE", `${parcel.trackingId} is ${parcelStatusLabel(parcel.status).toLowerCase()}; it can't be delivered from here`, HttpStatus.CONFLICT);
+    if (parcel.lastMile === "HUB_COLLECT") throw new AppError("COLLECT_FROM_HUB", `${parcel.trackingId} is collected at a hub: hand it over on Collect from hub`, HttpStatus.CONFLICT);
+    return parcel;
+  }
+
+  /**
+   * Delivered by the franchise itself (no rider needed): photo or signature proof, COD into the franchise's cash (to
+   * deposit at a company hub as usual), the delivery commission as for its riders' deliveries.
+   */
+  async deliverDirect(actor: UserActor, trackingId: string, input: z.infer<typeof franchiseDirectDeliverySchema>, meta: RequestMeta) {
+    const f = await this.context(actor);
+    const after = this.workflow.newAfterCommit();
+    await this.prisma.$transaction(
+      async tx => {
+        const parcel = await this.directParcel(actor, f, trackingId, tx);
+        const cod = n(parcel.codAmount);
+        if (cod > 0 && round2(input.codCollected) !== cod) throw new AppError("COD_MISMATCH", `Collect exactly ৳${cod.toLocaleString("en-BD")} before handing it over`, HttpStatus.UNPROCESSABLE_ENTITY, { expected: cod });
+        const file = await this.storage.saveDataUrl(input.proof.image, `${parcel.trackingId}-${input.proof.method.toLowerCase()}`, actor.userId, tx);
+        const now = operationNow();
+        const hub = await tx.hub.findUniqueOrThrow({ where: { id: f.hubId }, select: { id: true, name: true } });
+        await this.workflow.transition(
+          tx,
+          parcel,
+          {
+            to: "DELIVERED",
+            actorRole: "ops",
+            context: { direct: true },
+            data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self" },
+            description: `Delivered to ${input.receivedBy}${input.receiverRelation && input.receiverRelation !== "Self" ? ` (${input.receiverRelation})` : ""} by ${hub.name}.`,
+            location: hub.name,
+            internalNote: input.note,
+            metadata: { franchiseDirect: true, hubId: hub.id },
+          },
+          actor,
+          meta,
+          after,
+        );
+        await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: input.proof.method, receivedBy: input.receivedBy, fileId: file.id, note: input.note, capturedAt: now } });
+        // The franchise's cash (riderId null, at its hub): shown in its cash to deposit.
+        if (cod > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId: null, hubId: f.hubId, collectedById: actor.userId, amount: cod, collectedAt: now, ...(await hubCashPlacement(tx, f.hubId, now)) } });
+        await recordFranchiseCommission(tx, this.ledger, { franchise: f, parcelId: parcel.id, type: "DELIVERY", at: now });
+        await this.audit.record(actor, { action: "franchise.direct_delivery", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, receivedBy: input.receivedBy, codCollected: cod, method: input.proof.method } }, meta, tx);
+      },
+      { timeout: 15_000 },
+    );
+    await this.workflow.flush(after);
+    return this.parcel(actor, trackingId);
+  }
+
+  /** A failed delivery recorded by the franchise itself: back at its hub, to deliver again or for the sender (returns list). */
+  async failDirect(actor: UserActor, trackingId: string, input: z.infer<typeof franchiseDirectFailSchema>, meta: RequestMeta) {
+    const f = await this.context(actor);
+    const after = this.workflow.newAfterCommit();
+    await this.prisma.$transaction(
+      async tx => {
+        const parcel = await this.directParcel(actor, f, trackingId, tx);
+        const hub = await tx.hub.findUniqueOrThrow({ where: { id: f.hubId }, select: { id: true, name: true } });
+        const back = input.decision === "RETURN";
+        const data = {
+          attemptCount: { increment: 1 },
+          currentHubId: hub.id,
+          deliveryRiderId: null,
+          deliveryOtpEncrypted: null,
+          ...(back ? { returnRequestedAt: new Date(), returnReason: parcel.returnReason ?? input.reason } : {}),
+        };
+        const description = `${input.reason}. ${back ? "The parcel goes back to the sender." : `It stays at ${hub.name} to be delivered again.`}`;
+        if (parcel.status === "AT_HUB") {
+          await tx.parcel.update({ where: { id: parcel.id }, data: { ...data, version: { increment: 1 } } });
+          await tx.trackingEvent.create({ data: { parcelId: parcel.id, status: "AT_HUB", title: "Delivery attempt failed", description, location: hub.name, actorUserId: actor.userId, actorLabel: hub.name, metadata: { franchiseDirect: true, reason: input.reason, decision: input.decision } } });
+        } else
+          await this.workflow.transition(
+            tx,
+            parcel,
+            { to: "AT_HUB", actorRole: "ops", data, title: "Delivery attempt failed", description, location: hub.name, internalNote: input.note, metadata: { franchiseDirect: true, reason: input.reason, decision: input.decision } },
+            actor,
+            meta,
+            after,
+          );
+        await this.audit.record(actor, { action: "franchise.direct_failed", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, reason: input.reason, decision: input.decision } }, meta, tx);
+      },
+      { timeout: 15_000 },
+    );
+    await this.workflow.flush(after);
+    return this.parcel(actor, trackingId);
   }
 
   /** A pickup (assigned to the hub) or a delivery (at the hub) to one of the franchise's riders. */
@@ -441,7 +551,7 @@ export async function cashPosition(db: Db, franchiseId: string, hubId: string, r
   const pending = await db.franchiseRemittance.findMany({ where: { franchiseId, status: { in: ["PENDING", "RECEIVED"] } }, select: { collectionIds: true } });
   const deposited = pending.flatMap(r => r.collectionIds);
   const [cod, counter, withRiders, requests, unsettled] = await Promise.all([
-    db.codCollection.findMany({ where: { state: "AT_HUB", handover: { hubId }, id: { notIn: deposited } }, select: { id: true, amount: true } }),
+    db.codCollection.findMany({ where: { state: "AT_HUB", OR: [{ handover: { hubId } }, { riderId: null, hubId }], id: { notIn: deposited } }, select: { id: true, amount: true } }),
     db.franchiseCounterCharge.aggregate({ where: { franchiseId, remittanceId: null }, _sum: { amount: true }, _count: { _all: true } }),
     db.codCollection.aggregate({ where: { riderId: { in: riderIds }, state: "WITH_RIDER" }, _sum: { amount: true } }),
     db.cashSlip.count({ where: { riderId: { in: riderIds }, status: "OPEN" } }),

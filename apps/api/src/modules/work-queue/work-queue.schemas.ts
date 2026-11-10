@@ -6,6 +6,9 @@ export const queueQuerySchema = z.object({
   hubId: z.uuid().optional(),
   /** Only parcels booked on or after this time (the Operations console's "Last 30 days…"); none = every parcel. */
   createdSince: z.coerce.date().optional(),
+  /** Only one merchant type (CUSTOMER: website / walk-in senders, no merchant) and / or one merchant. */
+  merchantType: z.enum(["ECOMMERCE", "BANKING_FINANCIAL", "CUSTOMER"]).optional(),
+  merchantId: z.uuid().optional(),
 });
 
 export const queueListQuerySchema = queueQuerySchema.extend({

@@ -1,80 +1,17 @@
 /**
- * Channel & limits (bridge-notifications.js settingsTab): the platform-wide SMS / email switches (platform settings
- * `channels`, as the classic page saved them) and the SMS / OTP limits and message settings
- * (GET / PUT /notifications/settings).
+ * The SMS / OTP limits and message settings (GET / PUT /notifications/settings), shown in Integration settings under
+ * the SMS gateway. (The platform-wide SMS / email switches are the gateways' on / off switches now.)
  */
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
-import { Button, Loading, PageHeading, Panel } from "@panel/ui/kit";
+import { Button, Loading, Panel } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
-import { savePlatformConfig, usePlatformConfig } from "@/lib/admin";
 
 interface Settings {
   limits: { sms: { minIntervalSeconds: number; perRecipientPerHour: number; perRecipientPerDay: number; globalPerMinute: number }; otp: { cooldownSeconds: number; perPhonePerHour: number; perIpPerHour: number } };
   brand: { appName: string; support: string };
   defaults: { limits: Settings["limits"] };
-}
-
-export default function ChannelsLimits() {
-  return (
-    <>
-      <PageHeading eyebrow="Notification settings" title="Channel & limits" subtitle="Which channels send, the limits and quiet hours." />
-      <div className="grid-2" style={{ alignItems: "start" }}>
-        <Channels />
-        <Limits />
-      </div>
-    </>
-  );
-}
-
-function Channels() {
-  const config = usePlatformConfig();
-  const saved = (config.data?.channels ?? {}) as { sms?: boolean; email?: boolean };
-  const [sms, setSms] = useState(true);
-  const [email, setEmail] = useState(true);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!config.data) return;
-    setSms(saved.sms ?? true);
-    setEmail(saved.email ?? true);
-  }, [config.data]); // eslint-disable-line react-hooks/exhaustive-deps
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await savePlatformConfig(c => ({ ...c, channels: { publicTracking: true, ...((c.channels as object) ?? {}), sms, email } }));
-      toast(`Notification channels saved: SMS ${sms ? "on" : "off"}, email ${email ? "on" : "off"}.`, "good");
-    } catch (err) {
-      toast(`Settings were not saved: ${describe(err)}`, "bad");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Panel title="Notification channels" subtitle="SMS and email can be switched off for the whole platform (security messages are always sent); public tracking is always available.">
-      {config.isLoading ? (
-        <Loading rows={3} />
-      ) : (
-        <form className="panel-body" style={{ display: "grid", gap: 10 }} onSubmit={e => void save(e)}>
-          <label className="check">
-            <input type="checkbox" checked={sms} onChange={e => setSms(e.target.checked)} /> SMS notifications enabled
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={email} onChange={e => setEmail(e.target.checked)} /> Email notifications enabled
-          </label>
-          <label className="check">
-            <input type="checkbox" checked disabled /> Website tracking for everyone · always on
-          </label>
-          <div>
-            <Button type="submit" variant="primary" disabled={busy}>
-              Save channels
-            </Button>
-          </div>
-        </form>
-      )}
-    </Panel>
-  );
 }
 
 const FIELDS: [string, string, (s: Settings["limits"]) => number, number, number, (d: Settings["limits"]) => string][] = [
@@ -87,7 +24,8 @@ const FIELDS: [string, string, (s: Settings["limits"]) => number, number, number
   ["ntOtpIp", "Codes per IP address per hour", l => l.otp.perIpPerHour, 1, 1000, d => `Default ${d.otp.perIpPerHour}.`],
 ];
 
-function Limits() {
+/** SMS / OTP limits and message settings (Integration settings, under the gateways). */
+export function SmsLimits() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "notification-settings"], queryFn: () => api<Settings>("/notifications/settings") });
   const [v, setV] = useState<Record<string, string>>({});

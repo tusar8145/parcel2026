@@ -11,7 +11,10 @@ import { FranchisePanelService } from "./franchise-panel.service";
 import { FranchiseMoneyService } from "./franchise-money.service";
 import {
   createFranchiseSchema,
+  franchiseAssignScanSchema,
   franchiseAssignSchema,
+  franchiseDirectDeliverySchema,
+  franchiseDirectFailSchema,
   franchiseCompleteReturnSchema,
   franchiseHandoverSchema,
   franchiseParcelsQuerySchema,
@@ -106,6 +109,30 @@ export class FranchisePanelController {
   @ApiZodBody(franchiseWalkInSchema)
   walkIn(@CurrentActor() actor: Actor, @ZBody(franchiseWalkInSchema) body: z.infer<typeof franchiseWalkInSchema>, @ReqMeta() meta: RequestMeta) {
     return this.panel.walkIn(actor, body, meta);
+  }
+
+  /** Receive & assign rider in one scan. */
+  @Post("assign-scan")
+  @HttpCode(200)
+  @ApiZodBody(franchiseAssignScanSchema)
+  assignScan(@CurrentActor() actor: Actor, @ZBody(franchiseAssignScanSchema) body: z.infer<typeof franchiseAssignScanSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.panel.assignScan(actor, body, meta);
+  }
+
+  /** Delivered by the franchise itself (photo / signature proof; COD into its cash). */
+  @Post("parcels/:trackingId/deliver")
+  @HttpCode(200)
+  @ApiZodBody(franchiseDirectDeliverySchema)
+  deliverDirect(@CurrentUser() actor: UserActor, @Param("trackingId") trackingId: string, @ZBody(franchiseDirectDeliverySchema) body: z.infer<typeof franchiseDirectDeliverySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.panel.deliverDirect(actor, trackingId, body, meta);
+  }
+
+  /** A failed delivery recorded by the franchise itself (deliver again, or back to the sender). */
+  @Post("parcels/:trackingId/fail")
+  @HttpCode(200)
+  @ApiZodBody(franchiseDirectFailSchema)
+  failDirect(@CurrentUser() actor: UserActor, @Param("trackingId") trackingId: string, @ZBody(franchiseDirectFailSchema) body: z.infer<typeof franchiseDirectFailSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.panel.failDirect(actor, trackingId, body, meta);
   }
 
   @Get("return-runs")

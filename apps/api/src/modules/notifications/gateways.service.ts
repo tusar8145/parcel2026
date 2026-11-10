@@ -7,6 +7,7 @@ import { decrypt, encrypt } from "../../common/crypto";
 import type { Actor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import { isProduction } from "../../config/env";
+import { NotificationSettingsService } from "./notification-settings.service";
 import type { NotificationGateway, OutboxChannel, Prisma } from "../../generated/prisma/client";
 import {
   GatewayError,
@@ -67,6 +68,7 @@ export class GatewaysService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly settings: NotificationSettingsService,
   ) {}
 
   private async row(channel: OutboxChannel, fresh = false) {
@@ -224,6 +226,8 @@ export class GatewaysService {
       await this.audit.record(actor, { action: "notification_gateway.update", entityType: "notification_gateway", entityId: channel, data: { changed, enabled: data.enabled } }, meta, tx);
     });
     this.cache.delete(channel);
+    // The switch decides whether the channel's messages are written at all.
+    await this.settings.invalidate();
     return (await this.status()).find(s => s.channel === channel)!;
   }
 

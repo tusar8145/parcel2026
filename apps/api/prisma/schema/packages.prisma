@@ -97,6 +97,8 @@ model ParcelProduct {
   categoryId         String?  @db.Uuid
   category           ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   sortOrder          Int      @default(0)
+  /// Created by the AI import (Operational settings › AI import): the merchant's name for a product not in the list.
+  aiCreated          Boolean  @default(false)
   /// DEPRECATED (2026-10-17, replaced by `sendMessages`): no longer read or written. Kept only because
   /// the schema lock refuses data-dropping migrations; drop it with a reviewed migration.
   mutedNotifications String[] @default([])
@@ -120,6 +122,8 @@ model ProductCategory {
   notifySms   Boolean         @default(true)
   notifyEmail Boolean         @default(true)
   notifyPush  Boolean         @default(true)
+  /// Created by the AI import (its channels set from the super admin's channel prompt).
+  aiCreated   Boolean         @default(false)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   products    ParcelProduct[]

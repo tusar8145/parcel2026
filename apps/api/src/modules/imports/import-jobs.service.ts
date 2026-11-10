@@ -28,6 +28,7 @@ import { PackagesService } from "../packages/packages.service";
 import { deliveryTypesFor, displayPriceLines, findDeliveryType, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
+import { ImportAiService } from "./import-ai.service";
 import type { analyzeOptionsSchema, importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
 import { checkMapping, columnLetter, detectLayout, isExtraRow, layoutSignature, type DetectLists, type MappedKey, type SheetLayout } from "./column-detect";
 import { readXlsx, type SheetData } from "./xlsx/xlsx-reader";
@@ -96,6 +97,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
     private readonly notify: NotifyService,
     private readonly outbox: OutboxService,
     private readonly packages: PackagesService,
+    private readonly ai: ImportAiService,
   ) {}
 
   /** Courier Operations' bell (property injection keeps the constructor stable). */
@@ -204,6 +206,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
     await this.checkSubject(scope, kind, { merchantRequired: false });
     const settings = await this.config.settings();
     const ctx = await this.engine.context({ kind, settings, merchantId: scope.merchantId });
+    // AI import on: the product alone decides the category (no Category column).
+    if (await this.ai.active()) ctx.columns = ctx.columns.filter(c => c.key !== "category");
     const limits = this.limitsFor(settings, scope.forOps);
     return { buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb }), fileName: TEMPLATE_FILE[kind] };
   }
@@ -507,8 +511,12 @@ export class ImportJobsService implements OnApplicationBootstrap {
     if (services.priority && !ctx.priorities.some(p => p.id === services.priority)) throw new AppError("UNKNOWN_PRIORITY", "Choose a priority from the list", 422);
     // District / zone / area picked from each row's address where the file left them out (or misspelt them).
     const columns = new Set(ctx.columns.map(c => c.key));
-    const rows = parsed.rows.map(r => ({ ...r, cells: fillPlaces(r.cells, ctx.catalog, columns) }));
-    const results = await this.engine.validate(ctx, rows);
+    let rows = parsed.rows.map(r => ({ ...r, cells: fillPlaces(r.cells, ctx.catalog, columns) }));
+    // AI import (when on): product names and addresses the lists don't match; new products, categories and zones are created.
+    const ai = await this.ai.enrich(ctx, rows, actor, meta, scope.merchantId ?? null);
+    rows = ai.rows;
+    const checkCtx = ai.created ? await this.engine.context({ kind: options.kind, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services }) : ctx;
+    const results = await this.engine.validate(checkCtx, rows);
     const parsedMs = Date.now() - started;
 
     const counts = { VALID: 0, INCOMPLETE: 0, ERROR: 0 };
@@ -539,6 +547,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
               forOps: scope.forOps,
               ignoredColumns: parsed.ignoredColumns,
               services,
+              ...(ai.note ? { aiNote: ai.note } : {}),
               // Any merchant's file: how it was matched (the next file with these headers is matched the same way) and the lines skipped.
               ...(parsed.skippedRows ? { layout: parsed.layout, skippedRows: parsed.skippedRows.slice(0, 200), skippedCount: parsed.skippedRows.length } : {}),
             } as unknown as Prisma.InputJsonObject,
@@ -576,6 +585,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       },
       { timeout: 60_000 },
     );
+    await this.ai.setImportNumber(ai.usageId, job.number);
     this.logger.log(`Validated ${job.number}: ${results.length} rows in ${parsedMs} ms (${counts.VALID} valid, ${counts.INCOMPLETE} incomplete, ${counts.ERROR} errors)`);
     return { ...(await this.view(job)), rows: await this.rowsPage(job, { filter: "all", page: 1, pageSize: 50 }), timings: { validateMs: parsedMs } };
   }

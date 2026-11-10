@@ -177,7 +177,10 @@ export default function Products() {
                 <tbody>
                   {rows.map(p => (
                     <tr key={p.id}>
-                      <td className="strong">{p.name}</td>
+                      <td className="strong">
+                        {p.name}
+                        {(p as { aiCreated?: boolean }).aiCreated ? <> <Pill>AI created</Pill></> : null}
+                      </td>
                       <td>{p.categoryName ?? <span className="faint">No category</span>}</td>
                       <td>{typeLabel(p.type)}</td>
                       <td>

@@ -138,7 +138,10 @@ export function ProductCategories() {
               <tbody>
                 {rows.map(c => (
                   <tr key={c.id}>
-                    <td className="strong">{c.name}</td>
+                    <td className="strong">
+                      {c.name}
+                      {(c as { aiCreated?: boolean }).aiCreated ? <> <Pill>AI created</Pill></> : null}
+                    </td>
                     <td>
                       <div className="row" style={{ gap: 4 }}>
                         {onOff(c.notifySms, "SMS")}

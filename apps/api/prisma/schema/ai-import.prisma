@@ -1,0 +1,49 @@
+// AI import (Operational settings › AI import): Claude matches an Excel file's product names and addresses that
+// the system's lists don't, creating products, categories and zones when they are new. Settings in Setting
+// "import-ai" (on / off, monthly limit in USD, the channel prompt).
+
+/// One AI call set for an import file: what it matched / created, its tokens and estimated cost.
+model AiImportUsage {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  /// The import's number (IMP-…), set once the import is saved.
+  importNumber      String?
+  merchantId        String?  @db.Uuid
+  userId            String?  @db.Uuid
+  /// Product names and addresses sent to the AI.
+  products          Int      @default(0)
+  places            Int      @default(0)
+  productsMatched   Int      @default(0)
+  productsCreated   Int      @default(0)
+  categoriesCreated Int      @default(0)
+  placesMatched     Int      @default(0)
+  zonesCreated      Int      @default(0)
+  calls             Int      @default(0)
+  model             String
+  inputTokens       Int      @default(0)
+  cacheReadTokens   Int      @default(0)
+  cacheWriteTokens  Int      @default(0)
+  outputTokens      Int      @default(0)
+  costUsd           Decimal  @default(0) @db.Decimal(12, 6)
+  ms                Int      @default(0)
+  error             String?
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("ai_import_usage")
+}
+
+/// What the AI decided for a name once (a merchant's product name, a misspelt zone): used again without the AI.
+model AiImportAlias {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  /// PRODUCT (scope: the list, ECOMMERCE / BANKING_FINANCIAL) or ZONE (scope: the district).
+  kind      String
+  scope     String
+  /// The name as written, normalised (lower case, single spaces).
+  text      String
+  /// PRODUCT: the product's name; ZONE: the zone's name.
+  target    String
+  createdAt DateTime @default(now())
+
+  @@unique([kind, scope, text])
+  @@map("ai_import_aliases")
+}

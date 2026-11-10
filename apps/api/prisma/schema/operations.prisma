@@ -19,6 +19,8 @@ model DeliveryZone {
   lat       Float?
   lng       Float?
   active    Boolean        @default(true)
+  /// Created by the AI import from an address whose thana wasn't in the list (served by the nearest zone's hub).
+  aiCreated Boolean        @default(false)
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   hub       Hub?           @relation(fields: [hubId], references: [id])

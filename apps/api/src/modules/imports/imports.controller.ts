@@ -13,6 +13,7 @@ import { COLUMNS, IMPORT_KINDS, KIND_LABEL } from "./columns";
 import { ImportConfigService, importConfigSchema, LIMIT_CEILINGS, type ImportSettings } from "./import-config.service";
 import { ImportEngineService } from "./import-engine.service";
 import { ImportJobsService } from "./import-jobs.service";
+import { ImportAiService, aiUsageQuerySchema, updateAiImportSettingsSchema } from "./import-ai.service";
 import {
   analyzeOptionsSchema,
   editRowSchema,
@@ -41,7 +42,30 @@ export class ImportsController {
     private readonly jobs: ImportJobsService,
     private readonly config: ImportConfigService,
     private readonly engine: ImportEngineService,
+    private readonly ai: ImportAiService,
   ) {}
+
+  /** Super admin › Operational settings › AI import: on / off, monthly USD limit, the channel prompt, this month's spend. */
+  @RequirePermissions("config:manage")
+  @Get("ai")
+  aiOverview() {
+    return this.ai.overview();
+  }
+
+  @RequirePermissions("config:manage")
+  @Put("ai")
+  @ApiZodBody(updateAiImportSettingsSchema)
+  aiSave(@CurrentActor() actor: Actor, @ZBody(updateAiImportSettingsSchema) body: z.infer<typeof updateAiImportSettingsSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.ai.saveSettings(actor, body, meta);
+  }
+
+  /** The AI import log of a month (Dhaka time): each file's matches, creations, tokens and estimated cost. */
+  @RequirePermissions("config:manage")
+  @Get("ai/usage")
+  @ApiZodQuery(aiUsageQuerySchema)
+  aiUsage(@ZQuery(aiUsageQuerySchema) query: z.infer<typeof aiUsageQuerySchema>) {
+    return this.ai.usage(query);
+  }
 
   /** Columns of the three templates (ecommerce, document = Banking & Financial, customer) with the required flags and defaults in force, the default destination and the limits. */
   @AllowApiKey()

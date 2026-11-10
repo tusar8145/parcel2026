@@ -7,6 +7,13 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.32.0 — 2026-11-11
+- Operational settings › AI import (new): Excel imports (merchant panel and Operations console) send the product names and addresses the lists don't match to AI (Claude Haiku). A name that is the same as a listed product (spelling, size, colour variants) gets that product; a new one becomes a new product in the right category, or a new category when none fits. An address in a thana that isn't listed becomes a new zone of its district, served at once by the nearest zone's hub. Everything it creates is tagged "AI created" (Products, Product categories).
+- The super admin writes the channel rule for new categories (which get SMS, email, push); the AI sets each new category's switches from it.
+- Each decision is remembered, so the same product name or misspelt zone never goes to the AI again; one file's names go together in a few parallel calls (about 3 seconds).
+- On / off switch, a monthly limit in USD (the AI stops at the limit until the next month; imports never stop) and the log: each file's names sent, matched, created, tokens and estimated cost, by month.
+- While AI import is on, the Excel template has no Category column (the product decides it); a file's own Category column is still used.
+
 ## 1.31.0 — 2026-11-11
 - Super admin › Messaging (new menu): Push messages, SMS messages and Email messages. Send to every merchant and rider, all merchants, Banking & Financial or E-commerce merchants, riders, staff, website customers or chosen people; the page shows how many people it goes to (and, for SMS, how many SMS that is) and asks before sending. Each page keeps its history with sent / failed / waiting counts.
 - Integration settings: SMS (mram), Email (Mailjet) and Firebase push each have an On / Off switch in their header. Off means nothing is sent on that channel, codes included. The "Send through … in production" and "Send push notifications" boxes are gone.

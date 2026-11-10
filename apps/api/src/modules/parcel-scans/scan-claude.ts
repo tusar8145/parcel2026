@@ -44,6 +44,9 @@ Rules:
 - District and thana / upazila: choose the exact names from the list below that the address belongs to (an area or road name points to its thana). Leave them null if the address doesn't say.
 - Keep Bangla names and addresses in Bangla as written.`;
 
+/** Models with the server-side fallback ("default" form). */
+const FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"]);
+
 /** The districts and their thanas / upazilas, as the catalog spells them (cached with the system prompt). */
 const placeList = (p: Places) => `Districts and their thanas / upazilas:\n${p.districts.map(d => `${d}: ${(p.zonesByDistrict[d] ?? []).join(", ")}`).join("\n")}`;
 
@@ -71,12 +74,13 @@ export class ScanClaudeService {
       required: keys,
       additionalProperties: false,
     };
+    const model = env().SCAN_CLAUDE_MODEL;
     try {
       const response = await this.client.beta.messages.create({
-        model: env().SCAN_CLAUDE_MODEL,
+        model,
         max_tokens: 16000,
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        // A declined photo is re-read by another model, on the models that offer it (not Haiku).
+        ...(FALLBACK_MODELS.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
         output_config: { effort: env().SCAN_CLAUDE_EFFORT, format: { type: "json_schema", schema } },
         system: [{ type: "text", text: `${SYSTEM}\n\n${placeList(input.places)}`, cache_control: { type: "ephemeral" } }],
         messages: [

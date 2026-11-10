@@ -33,8 +33,8 @@ const envSchema = z
     /** Who reads "Scan with phone" photos: "local" (OCR + rules, and the local AI when SCAN_AI_URL is set) or "claude" (Claude reads the whole photo; needs ANTHROPIC_API_KEY; falls back to local when a call fails). */
     SCAN_READER: z.enum(["local", "claude"]).default("local"),
     ANTHROPIC_API_KEY: z.string().optional(),
-    SCAN_CLAUDE_MODEL: z.string().min(1).default("claude-opus-5-5"),
-    SCAN_CLAUDE_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+    SCAN_CLAUDE_MODEL: z.string().min(1).default("claude-haiku-5-5"),
+    SCAN_CLAUDE_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("medium"),
     /** Photos read at the same time (each worker process). The local OCR is CPU-bound: keep it low there; Claude reads many at once. */
     SCAN_CONCURRENCY: z.coerce.number().int().min(1).max(20).optional(),
     /** Push notifications without the super admin setting (development): the Firebase service account JSON file. */

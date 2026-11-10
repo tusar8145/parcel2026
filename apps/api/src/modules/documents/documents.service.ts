@@ -359,7 +359,8 @@ export class DocumentsService {
         line,
         rider: rider ? `${rider.code} · ${rider.user.name}` : null,
         deliveredAt: p.deliveredAt,
-        hubReceivedAt: firstAtHub.get(p.id) ?? null,
+        // Not at a hub yet: the time the parcel was created.
+        hubReceivedAt: firstAtHub.get(p.id) ?? p.createdAt,
         packaging: p.packaging,
         contents: p.contents,
         declaredValue: p.declaredValue == null ? null : num(p.declaredValue),

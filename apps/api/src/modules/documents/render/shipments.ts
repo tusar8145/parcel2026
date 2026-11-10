@@ -11,7 +11,8 @@ export interface ShipmentDoc extends LabelData {
   rider: string | null;
   deliveredAt: Date | null;
   /** "Received at hub": when the parcel first reached a hub (its first AT_HUB scan). */
-  hubReceivedAt: Date | null;
+  /** First arrival at a hub; the creation time while the parcel has not reached one. */
+  hubReceivedAt: Date;
   packaging: string | null;
   contents: string | null;
   declaredValue: number | null;
@@ -44,8 +45,8 @@ function fillIn(pdf: PdfWriter, label: string, x: number, y: number, w: number, 
  *   Identification: ..........................
  * Returns the height used.
  */
-function receivedBy(pdf: PdfWriter, x: number, y: number, w: number, size: number, opts: { signature?: boolean } = {}) {
-  const row = size * 2.3;
+function receivedBy(pdf: PdfWriter, x: number, y: number, w: number, size: number, opts: { signature?: boolean; row?: number } = {}) {
+  const row = opts.row ?? size * 2.3;
   let cy = y;
   fillIn(pdf, "Received by (Name):", x, cy, w, size);
   cy += row;
@@ -131,7 +132,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   y += 8;
 
   // Shipment details
-  const hubReceived = s.hubReceivedAt ? fmtDateTime(s.hubReceivedAt) : "—";
+  const hubReceived = fmtDateTime(s.hubReceivedAt);
   y = keyValues(
     pdf,
     isDoc(s)
@@ -229,8 +230,8 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   pdf.text(brand.appName, ix + (dense ? 16 : 21), cy, { size: dense ? 8 : 10, bold: true, width: iw * 0.5, maxLines: 1 });
   pdf.text(KIND[s.line].toUpperCase(), ix + iw * 0.45, cy + 1, { size: dense ? 5.5 : 6.5, bold: true, width: iw * 0.55, align: "right", maxLines: 2 });
   cy += dense ? 16 : 22;
-  pdf.barcode(s.trackingId, ix, cy, iw, dense ? 24 : 34);
-  cy += dense ? 25 : 36;
+  pdf.barcode(s.trackingId, ix, cy, iw, dense ? 20 : 34);
+  cy += dense ? 21 : 36;
   pdf.text(s.trackingId, ix, cy, { size: dense ? 8.5 : 10.5, bold: true, width: iw, align: "center" });
   cy += dense ? 12 : 15;
   const fs = dense ? 6.8 : 8;
@@ -243,7 +244,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   cy += Math.max(a, b);
   cy += pdf.text(addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending", ix + half + 6, cy, { size: fs - 0.5, width: half, maxLines: dense ? 2 : 3, color: COLOR.muted });
   cy += 4;
-  const hubReceived = s.hubReceivedAt ? fmtDate(s.hubReceivedAt) : "—";
+  const hubReceived = fmtDate(s.hubReceivedAt);
   const grid: [string, string][] = [
     ["Service", s.service],
     ...((isDoc(s)
@@ -266,17 +267,19 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
     pdf.text(v, gx, gy + 6.5, { size: dense ? 7 : 8, bold: true, width: cw - 3, maxLines: 1 });
   });
   cy += Math.ceil(grid.length / cols) * (dense ? 17 : 21);
-  if (s.incomplete && cy + 12 < y + h) {
+  if (s.incomplete && !dense && cy + 12 < y + h) {
     pdf.box(ix, cy, iw, 11, { fill: COLOR.danger, radius: 2 });
     pdf.text("DETAILS PENDING", ix, cy + 1.5, { size: 6.5, bold: true, color: "#fff", width: iw, align: "center" });
     cy += 14;
   }
   // "Received by" lines, filled in by hand at the door, just above the footer.
+  // Always printed: on 8 per page it moves up under the details when they run long.
   const rsize = dense ? 6 : 7;
-  const rh = rsize * 2.3 * 3;
-  const rTop = dense ? y + h - pad - 12 - rh : y + h - pad - 58 - rh;
-  const roomForReceiver = cy + 2 <= rTop;
-  if (roomForReceiver) receivedBy(pdf, ix, rTop, iw, rsize);
+  const rrow = dense ? 12 : rsize * 2.3;
+  const rh = rrow * 3;
+  const rTop = dense ? Math.max(cy + 2, y + h - pad - 10 - rh) : y + h - pad - 58 - rh;
+  const roomForReceiver = dense || cy + 2 <= rTop;
+  if (roomForReceiver) receivedBy(pdf, ix, rTop, iw, rsize, { row: rrow });
   if (!dense) {
     // Price lines while there is room above the QR code.
     const room = roomForReceiver ? rTop - 4 : y + h - pad - 58;
@@ -293,7 +296,8 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
       pdf.text(`Booked ${fmtDate(s.bookedAt)}${s.orderRef ? ` · ref ${s.orderRef}` : ""}`, ix, y + h - pad - 10, { size: 6.3, color: COLOR.muted, width: iw - qr - 6, maxLines: 1 });
     }
   } else {
-    pdf.text(`${s.payment} · booked ${fmtDate(s.bookedAt)}`, ix, y + h - pad - 8, { size: 5.8, color: COLOR.muted, width: iw, maxLines: 1 });
+    const foot = `${s.incomplete ? "DETAILS PENDING · " : ""}${s.payment} · booked ${fmtDate(s.bookedAt)}`;
+    if (rTop + rh + 7 <= y + h - pad) pdf.text(foot, ix, y + h - pad - 7, { size: 5.8, bold: s.incomplete, color: s.incomplete ? COLOR.danger : COLOR.muted, width: iw, maxLines: 1 });
   }
 }
 
@@ -328,7 +332,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
           ["Product", [s.product, s.productType].filter(Boolean).join(" · ")],
           ["Weight", `${s.weightKg} kg`],
         ]) as [string, string][]),
-    ["At hub", s.hubReceivedAt ? fmtDateTime(s.hubReceivedAt) : "—"],
+    ["At hub", fmtDateTime(s.hubReceivedAt)],
     ...(s.orderRef ? ([[isDoc(s) ? "Reference" : "Order ref", s.orderRef]] as [string, string][]) : []),
   ];
   for (const [k, v] of rows) {

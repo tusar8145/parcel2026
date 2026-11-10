@@ -29,7 +29,7 @@ const HINTS: Record<ColumnKey, string> = {
   declared_value: "the value of the goods in taka, digits only, when written separately from the COD",
   weight_kg: "the parcel weight in kg (500 gm = 0.5)",
   service_level: `the delivery service if written: one of ${Object.values(SPEED_LABEL).join(", ")}`,
-  open_box: "Yes when the label allows opening / checking before paying, else null",
+  open_box: "Yes when the label allows opening / checking before paying, else empty",
   order_ref: "the order / invoice / reference number",
   instructions: "a delivery note or instruction for the rider",
 };
@@ -37,11 +37,11 @@ const HINTS: Record<ColumnKey, string> = {
 const SYSTEM = `You read photos of Bangladeshi parcel labels, delivery slips, invoices and order sheets (English and/or Bangla, printed or handwritten; the photo may be rotated, tilted, shadowed, cropped or show a table) and return the delivery order's fields.
 
 Rules:
-- Read only what is in the photo; never invent or guess. Use null for a field that is not there or not readable.
+- Read only what is in the photo; never invent or guess. Use an empty string "" for a field that is not there or not readable.
 - The recipient receives the parcel; the sender (shop / merchant / person) sends it. Never mix them up.
 - Phone numbers: Bangladeshi mobiles, 11 digits starting with 01, with +88 / 88 dropped. Bangla digits become 0-9.
 - Amounts: digits only (no commas, ৳, Tk or BDT). ৳ is the taka sign, not a digit (it is often printed like a 5 or 8 before the number).
-- District and thana / upazila: choose the exact names from the list below that the address belongs to (an area or road name points to its thana). Leave them null if the address doesn't say.
+- District and thana / upazila: choose the exact names from the list below that the address belongs to (an area or road name points to its thana). Leave them "" if the address doesn't say.
 - Keep Bangla names and addresses in Bangla as written.`;
 
 /** Models with the server-side fallback ("default" form). */
@@ -70,11 +70,13 @@ export class ScanClaudeService {
     const keys = COLUMNS[input.kind].map(c => c.key);
     const schema = {
       type: "object",
-      properties: Object.fromEntries(keys.map(k => [k, { type: ["string", "null"], description: HINTS[k] }])),
+      // Plain strings ("" = not on the photo): the API allows at most 16 nullable (union) fields; a customer parcel has 20.
+      properties: Object.fromEntries(keys.map(k => [k, { type: "string", description: HINTS[k] }])),
       required: keys,
       additionalProperties: false,
     };
     const model = env().SCAN_CLAUDE_MODEL;
+    const started = Date.now();
     try {
       const response = await this.client.beta.messages.create({
         model,
@@ -93,13 +95,19 @@ export class ScanClaudeService {
           },
         ],
       });
+      // Tokens and time of each read (the cost: Console › Usage).
+      const u = response.usage;
+      this.logger.log(
+        { model: response.model, ms: Date.now() - started, input: u.input_tokens, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens },
+        "Claude read a parcel photo",
+      );
       if (response.stop_reason === "refusal") throw new Error(`refused (${response.stop_details?.category ?? "no category"})`);
       if (response.stop_reason === "max_tokens") throw new Error("the answer was cut off");
       const text = response.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
       return fromClaude(JSON.parse(text) as Values, input.kind, input.places);
     } catch (err) {
       const reason = err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err);
-      this.logger.warn({ err: reason }, "Claude could not read a parcel photo; the local reader is used");
+      this.logger.warn({ reason }, "Claude could not read a parcel photo; the local reader is used");
       return null;
     }
   }

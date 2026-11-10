@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.28.0 — 2026-11-10
+- Scan with phone: take a photo and it is sent at once, with no crop / turn step and no waiting; several photos upload together, and the next one can be taken straight away. The computer reads several photos at the same time and the Operations console fills each row as it is read.
+- Scan with phone can be read by Claude (server setting SCAN_READER=claude with an Anthropic API key): Claude reads every field of the label from the photo (recipient, phone, address, district and thana, product, COD, weight, service, order ID, note; sender and pickup for customer parcels), each checked for its form and matched to the place list. Without it (or if a call fails) the current reader is used.
+
 ## 1.27.0 — 2026-11-10
 - Excel import (merchant panel and Operations console): choose a Service and, for E-commerce and customer parcels, a Product type (Regular, Document, Books) in the import window. The choice replaces the file's values on every row and the price follows; "From the file" keeps each row's own. The preview and Import history show the choice.
 - Excel import, "Messages to send": Select all and Unselect all buttons.

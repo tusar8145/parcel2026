@@ -21,6 +21,10 @@ export async function prepare(image: Buffer, { angle = 0, size = 2000 }: { angle
     .toBuffer();
 }
 
+/** The photo for Claude: upright, at most 1600 px on its long side (more detail adds cost, not accuracy), JPEG. */
+export const forClaude = async (image: Buffer) =>
+  sharp(await upright(image), { failOn: "none" }).resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+
 /** The photo for a vision model: turned the way it reads (`angle`), at most 1280 px, JPEG. */
 export async function forModel(image: Buffer, angle = 0) {
   const turned = angle ? await sharp(image, { failOn: "none" }).rotate(angle, { background: "#ffffff" }).toBuffer() : image;

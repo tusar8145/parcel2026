@@ -19,7 +19,8 @@ import { PricingService } from "../pricing/pricing.service";
 import type { ScanCells } from "./scan-parser";
 import { readFields, ScanReaderService } from "./scan-reader";
 import { mergeAi, mergeVision, ScanAiService } from "./scan-ai";
-import { forModel, upright } from "./scan-image";
+import { forClaude, forModel, upright } from "./scan-image";
+import { ScanClaudeService } from "./scan-claude";
 import type { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
 
 const QUEUE = "parcel-scans";
@@ -57,6 +58,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
     private readonly imports: ImportJobsService,
     private readonly reader: ScanReaderService,
     private readonly ai: ScanAiService,
+    private readonly claude: ScanClaudeService,
   ) {}
 
   onApplicationBootstrap() {
@@ -74,8 +76,10 @@ export class ParcelScansService implements OnApplicationBootstrap {
 
   private async startWorkers() {
     await this.queueReady();
-    await this.queues.boss.work<{ id: string }>(QUEUE, { batchSize: 1, pollingIntervalSeconds: 1 }, async jobs => {
-      for (const job of jobs) await this.read(job.data.id);
+    // Several photos are read at the same time (Claude: 6 by default; the local OCR is CPU-bound: 2).
+    const parallel = env().SCAN_CONCURRENCY ?? (this.claude.enabled() ? 6 : 2);
+    await this.queues.boss.work<{ id: string }>(QUEUE, { batchSize: parallel, pollingIntervalSeconds: 1 }, async jobs => {
+      await Promise.all(jobs.map(job => this.read(job.data.id)));
     });
     // Every night: photos of rows never booked, after UNUSED_DAYS.
     await this.queues.schedule("parcel-scans-cleanup", "40 3 * * *", () => this.cleanup().then(() => undefined));
@@ -333,18 +337,12 @@ export class ParcelScansService implements OnApplicationBootstrap {
       const photo = await this.storage.read(scan.file.storageKey);
       const kind = kindKeyOf(scan.session.kind);
       const catalog = await this.pricing.catalog();
-      // OCR + rules (a word-by-word second reading fills fields the first one missed).
-      const read = await readFields(this.reader, photo, kind, catalog);
-      text = read.text;
-      cells = read.cells;
-      // The OCR read it well: sure of itself and the phone found (a confident read of the title alone isn't).
-      const ocrGood = read.confidence >= 75 && !!cells.recipient_phone;
-      // The local AI (when configured): a vision model reads the photo itself (turned the way the OCR read
-      // it best), a text model the OCR text; either way only checked values are kept.
-      const image = (await this.ai.seesImages()) ? await forModel(await upright(photo), read.angle) : undefined;
-      const ai = await this.ai.extract({ text, kind, image, ocrGood });
-      if (ai) cells = ai.vision ? mergeVision(cells, ai.values, kind, catalog, ocrGood) : mergeAi(cells, ai.values, text, kind, catalog);
-      if (!Object.keys(cells).length && !ocrGood) status = "FAILED";
+      // SCAN_READER=claude: Claude reads the whole photo; the local reader only when that call fails.
+      const byClaude = this.claude.enabled() ? await this.claude.extract({ image: await forClaude(photo), kind, places: catalog }) : null;
+      if (byClaude) {
+        cells = byClaude;
+        if (!Object.keys(cells).length) status = "FAILED";
+      } else ({ text, cells, status } = await this.readLocal(photo, kind, catalog));
     } catch (err) {
       this.logger.warn({ err, scan: scanId }, "A parcel photo could not be read");
       status = "FAILED";
@@ -353,6 +351,23 @@ export class ParcelScansService implements OnApplicationBootstrap {
     if (!fresh) return;
     await this.prisma.parcelScan.update({ where: { id: scanId }, data: { status, text: text.slice(0, 4000) || null, cells: { ...cells, ...(fresh.cells as ScanCells) } } });
     this.realtime.publish({ type: EVENT, id: scan.session.id, userIds: [scan.session.createdById] });
+  }
+
+  /** The local reader: OCR + rules, and the local AI (SCAN_AI_URL) when configured. */
+  private async readLocal(photo: Buffer, kind: ImportKindKey, catalog: Awaited<ReturnType<PricingService["catalog"]>>) {
+    // OCR + rules (a word-by-word second reading fills fields the first one missed).
+    const read = await readFields(this.reader, photo, kind, catalog);
+    const text = read.text;
+    let cells = read.cells;
+    // The OCR read it well: sure of itself and the phone found (a confident read of the title alone isn't).
+    const ocrGood = read.confidence >= 75 && !!cells.recipient_phone;
+    // The local AI (when configured): a vision model reads the photo itself (turned the way the OCR read
+    // it best), a text model the OCR text; either way only checked values are kept.
+    const image = (await this.ai.seesImages()) ? await forModel(await upright(photo), read.angle) : undefined;
+    const ai = await this.ai.extract({ text, kind, image, ocrGood });
+    if (ai) cells = ai.vision ? mergeVision(cells, ai.values, kind, catalog, ocrGood) : mergeAi(cells, ai.values, text, kind, catalog);
+    const status: "READ" | "FAILED" = !Object.keys(cells).length && !ocrGood ? "FAILED" : "READ";
+    return { text, cells, status };
   }
 
   /** Nightly: rows never booked are deleted after UNUSED_DAYS with their photos; empty old sessions go too. */

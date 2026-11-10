@@ -22,6 +22,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
     "@delivery-fast/shared": "*",
     "@fastify/cookie": "^11.1.3",
     "@fastify/cors": "^11.3.1",

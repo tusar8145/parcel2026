@@ -5,12 +5,13 @@ import { ParcelScansController } from "./parcel-scans.controller";
 import { ParcelScansService } from "./parcel-scans.service";
 import { ScanReaderService } from "./scan-reader";
 import { ScanAiService } from "./scan-ai";
+import { ScanClaudeService } from "./scan-claude";
 import { MessageReaderController, MessageReaderService } from "./message-reader";
 
 @Module({
   imports: [ImportsModule, PricingModule],
   controllers: [ParcelScansController, MessageReaderController],
-  providers: [ParcelScansService, ScanReaderService, ScanAiService, MessageReaderService],
+  providers: [ParcelScansService, ScanReaderService, ScanAiService, ScanClaudeService, MessageReaderService],
   exports: [ParcelScansService],
 })
 export class ParcelScansModule {}

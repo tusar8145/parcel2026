@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import PhotoEditor, { EDITOR_CSS } from "./PhotoEditor";
 
 /**
  * The phone side of "Scan with phone" (Courier Operations › New orders): take or choose photos of
- * parcel labels; each one opens in the editor (crop to the label, turn it upright: PhotoEditor), is
- * compressed there (JPEG, at most 1600 px) and sent on Submit through the one-time link
- * (POST /parcel-scans/public/:token/photos). The modal on the computer lists them as they are
- * read. The link stops working when the modal is closed.
+ * parcel labels. Each photo is sent at once, no editing or waiting: turned upright, compressed on the
+ * phone (JPEG, at most 1600 px) and uploaded in the background (a few at a time) through the one-time
+ * link (POST /parcel-scans/public/:token/photos), so the next photo can be taken straight away. The
+ * computer reads them (several at the same time) and the modal lists them as they are read. The link
+ * stops working when the modal is closed.
  */
 
 interface Session {
@@ -24,14 +24,38 @@ interface Upload {
   state: "sending" | "sent" | "failed";
   number?: number;
   error?: string;
-  /** The cropped, compressed photo. */
-  photo: Blob;
+  /** The photo as taken; compressed just before it is sent. */
+  file: File;
+  /** The compressed photo (kept for a retry). */
+  photo?: Blob;
 }
 
 const API = "/api/v1/parcel-scans/public";
 const MAX_SIDE = 1600;
-const QUALITY = 0.72;
+const QUALITY = 0.85;
 const POLL_MS = 4000;
+/** Photos uploading at the same time. */
+const PARALLEL = 3;
+
+/** The photo upright (EXIF), at most MAX_SIDE px, as JPEG. */
+async function compress(file: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => null);
+  const source: CanvasImageSource & { width: number; height: number } =
+    bitmap ??
+    (await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("This photo can't be opened. Take it again."));
+      img.src = URL.createObjectURL(file);
+    }));
+  const scale = Math.min(1, MAX_SIDE / Math.max(source.width, source.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(source.width * scale);
+  canvas.height = Math.round(source.height * scale);
+  canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
+  bitmap?.close();
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error("The photo couldn't be prepared"))), "image/jpeg", QUALITY));
+}
 
 const describe = async (res: Response) => {
   try {
@@ -48,9 +72,9 @@ export default function ScanPhone({ token }: { token: string }) {
   const [expired, setExpired] = useState(false);
   const [problem, setProblem] = useState("");
   const [uploads, setUploads] = useState<Upload[]>([]);
-  /** Photos taken or chosen, waiting for the editor (the first one is open). */
-  const [pending, setPending] = useState<{ file: File; index: number; total: number }[]>([]);
-  const queue = useRef<Promise<void>>(Promise.resolve());
+  /** Uploads waiting for a free slot, and how many are running. */
+  const waiting = useRef<Upload[]>([]);
+  const running = useRef(0);
   const seq = useRef(0);
   const camera = useRef<HTMLInputElement>(null);
   const gallery = useRef<HTMLInputElement>(null);
@@ -75,62 +99,65 @@ export default function ScanPhone({ token }: { token: string }) {
 
   const patch = (key: number, change: Partial<Upload>) => setUploads(list => list.map(u => (u.key === key ? { ...u, ...change } : u)));
 
-  const send = useCallback(
-    (item: Upload) => {
-      queue.current = queue.current.then(async () => {
-        try {
-          patch(item.key, { state: "sending", error: undefined });
-          const form = new FormData();
-          form.append("photo", item.photo, `parcel-${item.key}.jpg`);
-          const res = await fetch(`${API}/${encodeURIComponent(token)}/photos`, { method: "POST", body: form });
-          if (res.status === 410) {
-            setExpired(true);
-            return patch(item.key, { state: "failed", error: "The link has expired" });
-          }
-          if (!res.ok) return patch(item.key, { state: "failed", error: await describe(res) });
-          const body = (await res.json()) as { number: number };
-          patch(item.key, { state: "sent", number: body.number });
-          void refresh();
-        } catch (error) {
-          patch(item.key, { state: "failed", error: error instanceof Error ? error.message : "Not sent" });
+  /** One upload: compress (first time), then POST. */
+  const upload = useCallback(
+    async (item: Upload) => {
+      try {
+        patch(item.key, { state: "sending", error: undefined });
+        const photo = item.photo ?? (await compress(item.file));
+        item.photo = photo;
+        const form = new FormData();
+        form.append("photo", photo, `parcel-${item.key}.jpg`);
+        const res = await fetch(`${API}/${encodeURIComponent(token)}/photos`, { method: "POST", body: form });
+        if (res.status === 410) {
+          setExpired(true);
+          return patch(item.key, { state: "failed", error: "The link has expired" });
         }
-      });
+        if (!res.ok) return patch(item.key, { state: "failed", error: await describe(res) });
+        const body = (await res.json()) as { number: number };
+        patch(item.key, { state: "sent", number: body.number });
+        void refresh();
+      } catch (error) {
+        patch(item.key, { state: "failed", error: error instanceof Error ? error.message : "Not sent" });
+      }
     },
     [token, refresh],
   );
 
-  /** Taken or chosen: each photo opens in the editor, one after another. */
+  /** Queued: up to PARALLEL uploads run at once; the rest wait their turn. */
+  const send = useCallback(
+    (item: Upload) => {
+      waiting.current.push(item);
+      const next = () => {
+        while (running.current < PARALLEL && waiting.current.length) {
+          const job = waiting.current.shift()!;
+          running.current++;
+          void upload(job).finally(() => {
+            running.current--;
+            next();
+          });
+        }
+      };
+      next();
+    },
+    [upload],
+  );
+
+  /** Taken or chosen: every photo is sent straight away (newest on top). */
   const choose = (files: FileList | null) => {
     const picked = [...(files ?? [])].filter(f => f.type.startsWith("image/") || !f.type);
-    if (!picked.length) return;
-    setPending(list => [...list, ...picked.map((file, i) => ({ file, index: i + 1, total: picked.length }))]);
+    for (const file of picked) {
+      const item: Upload = { key: ++seq.current, preview: URL.createObjectURL(file), state: "sending", file };
+      setUploads(list => [item, ...list]);
+      send(item);
+    }
   };
-  /** The editor's Submit: the cropped photo is sent; the next one opens. */
-  const submitted = (photo: Blob) => {
-    const item: Upload = { key: ++seq.current, preview: URL.createObjectURL(photo), state: "sending", photo };
-    setUploads(list => [item, ...list]);
-    setPending(list => list.slice(1));
-    send(item);
-  };
-  const editing = pending[0];
 
   const statusOf = (number?: number) => (number ? session?.scans.find(s => s.number === number)?.status : undefined);
 
   return (
     <main className="scan">
-      <style>{CSS + EDITOR_CSS}</style>
-      {editing && !expired ? (
-        <PhotoEditor
-          key={`${editing.file.name}-${editing.file.lastModified}-${editing.index}-${seq.current}`}
-          file={editing.file}
-          index={editing.index}
-          total={editing.total}
-          maxSide={MAX_SIDE}
-          quality={QUALITY}
-          onSubmit={submitted}
-          onSkip={() => setPending(list => list.slice(1))}
-        />
-      ) : null}
+      <style>{CSS}</style>
       <header>
         <strong>Delivery Fast</strong>
         <span>Scan parcels</span>
@@ -147,7 +174,7 @@ export default function ScanPhone({ token }: { token: string }) {
             <p className="meta">
               {session ? `${session.kindLabel}${session.merchantName ? ` · ${session.merchantName}` : ""} · ${session.photos} sent` : "Connecting…"}
             </p>
-            <p className="hint">Hold the label flat, fill the frame with it and use good light. Each photo becomes one order on the computer.</p>
+            <p className="hint">Hold the label flat, fill the frame with it and use good light. Each photo is sent at once and becomes one order on the computer: take the next one straight away.</p>
             <div className="actions">
               <button type="button" className="primary" onClick={() => camera.current?.click()} disabled={!session}>
                 {"📷 Take photo"}

@@ -11,7 +11,6 @@ import {
   packagePricesSchema,
   packageProblems,
   PARCEL_NOTIFICATIONS,
-  parseSpeedOption,
   priceParcel,
   PRICE_FIELDS,
   PRODUCT_TYPE_LABEL,
@@ -19,17 +18,13 @@ import {
   productListOf,
   rateCardConfigSchema,
   resolveSelection,
-  routeProblems,
   routeTier,
   ROUTE_TIER_LABEL,
-  SEED_PRODUCTS,
+  SEED_CATALOG,
   SEGMENT_LABEL,
   SERVICE_GROUP_LABEL,
   SERVICE_GROUPS,
   SERVICES,
-  SPEED_LABEL,
-  SPEED_SERVICE_LEVEL,
-  speedFromDocumentType,
   type BookingSelection,
   type FirstMile,
   type LastMile,
@@ -52,6 +47,7 @@ import { PricingService, type PricingOrigin } from "../pricing/pricing.service";
 import { resolveZone } from "../network/zone-resolver";
 import { zoneForArea } from "../parcels/places";
 import { assignedPackage, defaultPackage, invalidatePackageCache, cached, remember, segmentOfMerchant, versionInForce, type PackageView } from "./package-resolver";
+import { CatalogService, channelsOf, listOf } from "./catalog.service";
 import { assignPackageSchema, createPackageSchema, packageSettingsSchema, packageVersionSchema, type AssignPackageInput, type CreatePackageInput, type PackageSettings, type PackageVersionInput } from "./packages.schemas";
 
 export const SETTINGS_KEY = "service-packages-settings";
@@ -85,9 +81,24 @@ export interface QuoteRequest {
   dropHubId?: string | null;
   collectHubId?: string | null;
   notifications?: readonly string[] | null;
-  /** Old fields: serviceLevel (SAME_DAY → Express), documentType ("B2B Document" → B2B). */
+  /** Old field: serviceLevel (REGULAR / SAME_DAY / EXPRESS), a delivery type when `speed` isn't given. */
   serviceLevel?: string | null;
   documentType?: string | null;
+}
+
+/** A product as bookings use it: its pricing type and its category (the category's message channels). */
+export interface BookingProduct {
+  id: string;
+  name: string;
+  type: string;
+  categoryId?: string | null;
+  category?: { id: string; name: string; notifySms: boolean; notifyEmail: boolean; notifyPush: boolean } | null;
+}
+
+/** The category and priority stored on a booking (resolved by the caller: import modal, form, row or product). */
+export interface BookingTags {
+  category?: { id: string; name: string; notifySms: boolean; notifyEmail: boolean; notifyPush: boolean } | null;
+  priority?: { id: string; name: string } | null;
 }
 
 export interface HubRef {
@@ -112,6 +123,8 @@ export interface PackageQuote extends PriceBreakdown {
   /** Hub drop-offs: the hub's location (SLA and older snapshot readers). */
   origin: PricingOrigin | null;
   serviceLevel: "REGULAR" | "SAME_DAY" | "EXPRESS";
+  /** The delivery type's name at booking. */
+  deliveryTypeName: string;
   returnPercent: number;
 }
 
@@ -129,7 +142,18 @@ export class PackagesService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
     private readonly pricing: PricingService,
+    private readonly catalog: CatalogService,
   ) {}
+
+  /** The delivery types (CatalogService, cached). */
+  deliveryTypes() {
+    return this.catalog.deliveryTypes();
+  }
+
+  /** A stored delivery type code's name (a removed type: its code). */
+  deliveryTypeName(code: string | null | undefined) {
+    return this.catalog.deliveryTypeName(code);
+  }
 
   // ───────────── resolution ─────────────
 
@@ -205,7 +229,7 @@ export class PackagesService implements OnModuleInit {
           done.reassigned = merchants.length;
         }
         // Products: retire the old ones (delete if unused, else deactivate), seed the owner's lists.
-        const seeded = new Set(Object.entries(SEED_PRODUCTS).flatMap(([segment, types]) => Object.values(types).flat().map(name => `${segment}|${name.toLowerCase()}`)));
+        const seeded = new Set(Object.entries(SEED_CATALOG).flatMap(([segment, categories]) => categories.flatMap(c => c.products.map(([name]) => `${segment}|${name.toLowerCase()}`))));
         for (const p of await tx.parcelProduct.findMany({ include: { _count: { select: { parcels: true } } } })) {
           if (seeded.has(`${p.segment}|${p.name.toLowerCase()}`)) continue;
           if (p._count.parcels) await tx.parcelProduct.update({ where: { id: p.id }, data: { active: false } });
@@ -224,21 +248,9 @@ export class PackagesService implements OnModuleInit {
     invalidatePackageCache();
   }
 
-  /** The owner's product lists (spec v2): created or re-activated with their type; idempotent. Returns how many were created. */
-  async seedProducts(db: Db) {
-    let created = 0;
-    for (const [segment, types] of Object.entries(SEED_PRODUCTS) as [Segment, Record<ProductType, readonly string[]>][])
-      for (const type of PRODUCT_TYPES)
-        for (const name of types[type]) {
-          const existing = await db.parcelProduct.findFirst({ where: { segment, name: { equals: name, mode: "insensitive" } } });
-          if (existing) {
-            if (existing.type !== type || !existing.active) await db.parcelProduct.update({ where: { id: existing.id }, data: { type, active: true } });
-          } else {
-            await db.parcelProduct.create({ data: { segment, name, type } });
-            created++;
-          }
-        }
-    return created;
+  /** The owner's catalog (categories and their products): created where missing; idempotent. Returns how many products were created. */
+  seedProducts(db: Db) {
+    return this.catalog.seedCatalog(db);
   }
 
   private async freeName(db: Db, segment: Segment, wanted: string, exceptId?: string) {
@@ -253,7 +265,11 @@ export class PackagesService implements OnModuleInit {
   /** Active products of a category's list (Customer and E-commerce share one list). */
   async products(segment: PackageSegment, db: Db = this.prisma, includeInactive = false) {
     await this.ensureMigrated();
-    return db.parcelProduct.findMany({ where: { segment: productListOf(segment), ...(includeInactive ? {} : { active: true }) }, orderBy: [{ type: "asc" }, { name: "asc" }] });
+    return db.parcelProduct.findMany({
+      where: { segment: productListOf(segment), ...(includeInactive ? {} : { active: true }) },
+      include: { category: { select: { id: true, name: true, sortOrder: true, active: true, notifySms: true, notifyEmail: true, notifyPush: true } } },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
+    });
   }
 
   /**
@@ -264,9 +280,9 @@ export class PackagesService implements OnModuleInit {
     segment: PackageSegment,
     raw: string | null | undefined,
     db: Db = this.prisma,
-    list?: { id: string; name: string; type: string; sendMessages: boolean }[],
+    list?: BookingProduct[],
     fallback?: string | null,
-  ): Promise<{ id: string; name: string; type: string; sendMessages: boolean } | null> {
+  ): Promise<BookingProduct | null> {
     const products = list ?? (await this.products(segment, db));
     const wanted = (raw ?? fallback)?.trim().toLowerCase();
     if (!wanted) return null;
@@ -302,14 +318,15 @@ export class PackagesService implements OnModuleInit {
     return hub;
   }
 
-  /** The service of a request: `speed`, else the old document type / service level. */
-  speedOf(segment: PackageSegment, input: Pick<QuoteRequest, "speed" | "serviceLevel" | "documentType">): SpeedOption | undefined {
+  /**
+   * The delivery type of a request: `speed`, else the old `serviceLevel` field (API integrations), whose SAME_DAY and
+   * EXPRESS kept meaning Express (its price stays the same for them); the new Same Day Delivery is chosen with `speed`.
+   */
+  speedOf(_segment: PackageSegment, input: Pick<QuoteRequest, "speed" | "serviceLevel" | "documentType">): string | undefined {
     if (input.speed) return input.speed;
-    const fromDoc = isBanking(segment) ? speedFromDocumentType(input.documentType) : undefined;
-    if (fromDoc) return fromDoc;
-    // Old `serviceLevel` field (API integrations): SAME_DAY still means Express.
-    const level = input.serviceLevel ? (/^same[\s_-]*day$/i.test(String(input.serviceLevel).trim()) ? "EXPRESS" : parseSpeedOption(input.serviceLevel)) : undefined;
-    return level && level !== "REGULAR" ? level : undefined;
+    const level = String(input.serviceLevel ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+    if (!level || level === "regular") return undefined;
+    return level === "same day" || level === "express" ? "EXPRESS" : input.serviceLevel!;
   }
 
   /** A pickup "zone" that is really an area (merchant profiles keep an area): the catalog zone it belongs to. */
@@ -322,12 +339,13 @@ export class PackagesService implements OnModuleInit {
   /**
    * The server wrapper of the pricing engine: the package in force, the booking defaults and
    * enforcement, the districts (drop hub / collection hub when chosen) and the route tier, then
-   * `priceParcel`. Throws 422 for anything the package doesn't include (SERVICE_NOT_IN_PACKAGE) and for
-   * Express outside the same district (Customer / E-commerce).
+   * `priceParcel`. Throws 422 for anything the package doesn't include (SERVICE_NOT_IN_PACKAGE) and for a
+   * delivery type that isn't an active one of the category. Any delivery type on any route.
    */
   async quote(who: PackageSubject, input: QuoteRequest, db: Db = this.prisma, opts: { pkg?: PackageView; hubs?: Map<string, HubRef | null> } = {}): Promise<PackageQuote> {
     const pkg = opts.pkg ?? (await this.effective(who, db));
     const segment = pkg.segment;
+    const types = await this.catalog.deliveryTypes();
     const { selection, problems } = resolveSelection(segment, pkg.services, {
       firstMile: input.firstMile ?? (input.dropHubId ? "HUB_DROP" : undefined),
       lastMile: input.lastMile ?? (input.collectHubId ? "HUB_COLLECT" : undefined),
@@ -337,8 +355,9 @@ export class PackagesService implements OnModuleInit {
       codAmount: input.codAmount,
       weightKg: input.weightKg,
       notifications: input.notifications,
-    });
+    }, types);
     if (problems.length) throw this.selectionError(problems);
+    const type = types.find(t => t.code === selection.speed);
 
     let dropHub: HubRef | null = null;
     let origin: PricingOrigin | null = null;
@@ -356,9 +375,7 @@ export class PackagesService implements OnModuleInit {
     const pickupDistrict = dropHub?.district ?? input.pickup.district;
     const deliveryDistrict = collectHub?.district ?? input.delivery.district;
     const tier = routeTier(pickupDistrict, deliveryDistrict);
-    const routeIssues = routeProblems(segment, tier, selection.speed);
-    if (routeIssues.length) throw this.selectionError(routeIssues);
-    const breakdown = priceParcel(pkg.prices, { segment, services: pkg.services, tier, selection });
+    const breakdown = priceParcel(pkg.prices, { segment, services: pkg.services, tier, selection, deliveryTypeName: type?.name });
     return {
       ...breakdown,
       package: { id: pkg.packageId, name: pkg.name, versionId: pkg.versionId, version: pkg.version, isDefault: pkg.isDefault },
@@ -371,7 +388,8 @@ export class PackagesService implements OnModuleInit {
       dropHub,
       collectHub,
       origin,
-      serviceLevel: SPEED_SERVICE_LEVEL[selection.speed],
+      serviceLevel: type?.slaLevel ?? "REGULAR",
+      deliveryTypeName: type?.name ?? selection.speed,
       returnPercent: pkg.prices.returnPercent,
     };
   }
@@ -403,8 +421,12 @@ export class PackagesService implements OnModuleInit {
     }) as Prisma.InputJsonObject;
   }
 
-  /** Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). */
-  parcelFields(q: PackageQuote, product: { id: string | null; name: string; sendMessages: boolean } | null) {
+  /**
+   * Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). The category
+   * (given, else the product's) sets the message channels; the priority is a tag.
+   */
+  parcelFields(q: PackageQuote, product: { id: string | null; name: string; category?: BookingTags["category"] } | null, tags: BookingTags = {}) {
+    const category = tags.category ?? product?.category ?? null;
     return {
       baseCharge: q.columns.baseCharge,
       weightCharge: q.columns.weightCharge,
@@ -416,14 +438,20 @@ export class PackagesService implements OnModuleInit {
       firstMile: q.selection.firstMile,
       lastMile: q.selection.lastMile,
       speedOption: q.selection.speed,
+      deliveryTypeName: q.deliveryTypeName,
       openBox: q.selection.openBox,
-      onDemand: q.selection.firstMile === "ON_DEMAND_PICKUP" || q.selection.speed === "ON_DEMAND",
+      onDemand: q.selection.firstMile === "ON_DEMAND_PICKUP",
       productId: product?.id ?? null,
       productName: product?.name ?? null,
       productType: q.selection.productType,
+      categoryId: category?.id ?? null,
+      categoryName: category?.name ?? null,
+      priorityId: tags.priority?.id ?? null,
+      priorityName: tags.priority?.name ?? null,
       services: q.services,
-      // The booking's ticked messages (default: every message in the package); none when the product sends no messages.
-      notifications: product && !product.sendMessages ? [] : q.selection.notifications,
+      // The booking's ticked messages (default: every message in the package); the category's channels decide where they go.
+      notifications: q.selection.notifications,
+      notifyChannels: channelsOf(category),
       collectHubId: q.collectHub?.id ?? null,
       serviceLevel: q.serviceLevel,
     };
@@ -439,11 +467,14 @@ export class PackagesService implements OnModuleInit {
 
   async bookingView(who: PackageSubject, db: Db = this.prisma) {
     const pkg = await this.effective(who, db);
-    const [products, hubs] = await Promise.all([
+    const [products, hubs, types, categories, priorities] = await Promise.all([
       this.products(pkg.segment, db),
       db.hub.findMany({ where: { active: true }, select: { id: true, code: true, name: true, address: true, district: true, type: true }, orderBy: { name: "asc" } }),
+      this.catalog.deliveryTypes(),
+      db.productCategory.findMany({ where: { segment: listOf(pkg.segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+      db.parcelPriority.findMany({ where: { segment: listOf(pkg.segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     ]);
-    const options = packageOptions(pkg.segment, pkg.services);
+    const options = packageOptions(pkg.segment, pkg.services, types);
     const has = new Set(pkg.services);
     return {
       segment: pkg.segment,
@@ -451,9 +482,12 @@ export class PackagesService implements OnModuleInit {
       package: { id: pkg.packageId, name: pkg.name, version: pkg.version, versionId: pkg.versionId, isDefault: pkg.isDefault, effectiveFrom: pkg.effectiveFrom },
       services: pkg.services,
       options,
-      labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, speed: SPEED_LABEL, tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
+      labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, speed: Object.fromEntries(types.map(t => [t.code, t.name])), tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
       notifications: PARCEL_NOTIFICATIONS.filter(n => options.notifications.includes(n.code)).map(n => ({ code: n.code, label: n.label, audience: n.audience, title: `${n.label} (${n.audience})` })),
-      products: products.map(p => ({ id: p.id, name: p.name, type: p.type, sendMessages: p.sendMessages })),
+      products: products.map(p => ({ id: p.id, name: p.name, type: p.type, categoryId: p.categoryId, categoryName: p.category?.name ?? null })),
+      /** Categories (their channels decide where messages go) and priorities (tags; `isDefault` preselected). */
+      categories: categories.map(c => ({ id: c.id, name: c.name, channels: channelsOf(c) })),
+      priorities: priorities.map(p => ({ id: p.id, name: p.name, isDefault: p.isDefault })),
       prices: pkg.prices,
       dropHubs: options.firstMiles.includes("HUB_DROP") ? hubs : [],
       collectHubs: options.lastMiles.includes("HUB_COLLECT") ? hubs : [],
@@ -521,7 +555,7 @@ export class PackagesService implements OnModuleInit {
       core: CORE_SERVICES,
       priceFields: PRICE_FIELDS,
       defaults: packagePricesSchema.parse({}),
-      labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, speed: SPEED_LABEL, tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
+      labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
       productTypes: PRODUCT_TYPES.map(t => ({ code: t, label: PRODUCT_TYPE_LABEL[t] })),
       notifications: PARCEL_NOTIFICATIONS,
     };
@@ -855,7 +889,7 @@ export function legacyCardOf(prices: PackagePrices): RateCardConfig {
     extraWeight: prices.extraKg,
     codFeePercent: prices.codPercent,
     codFeeMin: prices.codMin,
-    serviceFees: { REGULAR: prices.regularFee, SAME_DAY: prices.expressFee, EXPRESS: prices.expressFee },
+    serviceFees: { REGULAR: prices.deliveryFees.REGULAR ?? 0, SAME_DAY: prices.deliveryFees.SAME_DAY ?? prices.deliveryFees.EXPRESS ?? 0, EXPRESS: prices.deliveryFees.EXPRESS ?? 0 },
     returnPercent: prices.returnPercent,
     documentTypeRates: {},
   });

@@ -7,6 +7,15 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.30.0 — 2026-11-11
+- Product categories (Super admin › Operational settings › Product categories): products are listed under categories, one list for Banking & Financial and one for Customer & E-commerce. A new catalog replaces the old product list: Banking & Financial 7 categories, 42 products (cards & PIN, cheque books, financial instruments, statements, account & loan documents, corporate & trade documents, banking devices); Customer & E-commerce 9 categories, 85 products for Bangladesh online shops.
+- Each category's SMS, email and push switches decide where its parcels' messages go: a channel that is off sends nothing for those parcels, whatever the booking ticked. (The product's own "Send SMS & email" switch and Service plans › Messages are gone.)
+- Priorities (Operational settings › Priorities): a tag on each parcel, no charge. Banking & Financial: General (default), Security; Customer & E-commerce: Online Product (default), Fragile. Chosen in New order, the merchant booking form, the Excel template's Priority column and the import window; All parcels and the other lists filter by priority.
+- Delivery types (Operational settings › Delivery types): Regular, Express, 4 Hour Delivery and Same Day Delivery for every category; the super admin adds, renames, orders, deactivates or deletes them and chooses which categories get each. Each type's + charge is set per package in Service plans & pricing (Express keeps its ৳40). Any delivery type on any route (Express is no longer limited to the same district).
+- The Banking & Financial services On-demand, B2B Document, Trade Service Document and Corporate Urgent Document are removed.
+- Excel import: the template has Category and Priority columns and "Service" is now "Delivery type"; the import window can set the delivery type, category and priority for every row. Scan with phone (Claude) reads them from the label too.
+- Products: Add / Edit picks the category; the list shows and filters by it; Export Excel has a Category column.
+
 ## 1.29.1 — 2026-11-10
 - Banking & Financial comes first in the category dropdowns, and is chosen when they open: New order "Booking for", Excel import "Category", Scan with phone, Invite a merchant and Rider earning plans. The parcel type filter and the Print menu list it first too (the filter still starts at "All parcel types").
 

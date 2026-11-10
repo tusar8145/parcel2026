@@ -22,7 +22,8 @@ export interface NotifyInput {
    * Parcel messages: `Parcel.notifications`, the messages stored at booking (the ticked ones from the
    * package; empty when the product sends no messages). Parcels booked before packages (no version) aren't gated.
    */
-  parcel?: { packageVersionId: string | null; notifications: readonly string[] } | null;
+  /** The parcel's stored messages and the channels its category allows (sms, email, push). */
+  parcel?: { packageVersionId: string | null; notifications: readonly string[]; notifyChannels?: readonly string[] | null } | null;
   /** Package-level messages (support, guest verification): the services of the recipient's package. */
   pkg?: { services: readonly string[] } | null;
 }
@@ -63,6 +64,9 @@ export class NotifyService {
     const service = NOTIFICATION_SERVICE_OF_EVENT[input.event];
     if (service && input.parcel?.packageVersionId && !input.parcel.notifications.includes(service)) return [];
     if (service && input.pkg && !input.pkg.services.includes(service)) return [];
+    // The parcel's category (Operational settings › Product categories): a channel it turned off sends nothing,
+    // whatever the booking ticked. Push covers the in-app copy and its push to the apps.
+    const allowed = service && input.parcel?.notifyChannels ? new Set(input.parcel.notifyChannels) : null;
     // In-app copy (the bell, and its push to the apps) for a known recipient: docs "In-app notifications" (in-app.ts
     // has the rule). Sent to a phone only: the active account with that number gets it too, except merchant users for
     // parcel events (their team gets the final outcomes from ParcelWorkflowService, toMerchant).
@@ -71,9 +75,9 @@ export class NotifyService {
       const byPhone = await db.user.findFirst({ where: { phone: input.to.phone, status: "ACTIVE" }, select: { id: true, roles: { select: { role: true } } } });
       if (byPhone && !(def.group === "Parcel" && byPhone.roles.some(r => r.role === "MERCHANT_OWNER" || r.role === "MERCHANT_STAFF"))) inAppUser = byPhone.id;
     }
-    if (inAppUser) await this.inbox.copyOf(db, input.event, inAppUser, input.vars ?? {});
+    if (inAppUser && (!allowed || allowed.has("push"))) await this.inbox.copyOf(db, input.event, inAppUser, input.vars ?? {});
     const snapshot = await this.settings.snapshot();
-    const wanted = channelsOf(def).filter(c => (!input.channels || input.channels.includes(c)) && this.settings.resolve(snapshot, input.event, c)?.enabled);
+    const wanted = channelsOf(def).filter(c => (!input.channels || input.channels.includes(c)) && (!allowed || allowed.has(c)) && this.settings.resolve(snapshot, input.event, c)?.enabled);
     if (!wanted.length) return [];
 
     // Recipient: explicit contact details win; a known user fills the gaps and brings preferences.

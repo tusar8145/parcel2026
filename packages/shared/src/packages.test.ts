@@ -6,17 +6,17 @@ import {
   packageOptions,
   packagePricesSchema,
   packageProblems,
+  findDeliveryType,
   parseLastMile,
-  parseSpeedOption,
   priceParcel,
   proofMethodsFor,
   reattemptFeeFor,
   resolveSelection,
-  routeProblems,
   routeTier,
-  SEED_PRODUCTS,
+  SEED_CATALOG,
   segmentOfMerchantType,
   type BookingSelection,
+  type DeliveryTypeDef,
   type PackagePrices,
 } from "./packages";
 import { allowedNextStatuses, canTransition } from "./parcel-status";
@@ -33,6 +33,15 @@ const sel = (s: Partial<BookingSelection> = {}): BookingSelection => ({
   notifications: [],
   ...s,
 });
+const ALL_SEGMENTS = ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"] as const;
+/** The seeded delivery types (the database's in the app). */
+const DT: DeliveryTypeDef[] = [
+  { code: "REGULAR", name: "Regular", segments: ALL_SEGMENTS, slaLevel: "REGULAR" },
+  { code: "EXPRESS", name: "Express", segments: ALL_SEGMENTS, slaLevel: "EXPRESS" },
+  { code: "FOUR_HOUR", name: "4 Hour Delivery", segments: ALL_SEGMENTS, slaLevel: "EXPRESS" },
+  { code: "SAME_DAY", name: "Same Day Delivery", segments: ALL_SEGMENTS, slaLevel: "SAME_DAY" },
+  { code: "NIGHT", name: "Night Delivery", segments: ["BANKING_FINANCIAL"], slaLevel: "REGULAR", active: false },
+];
 const ECOM = defaultServicesFor("ECOMMERCE");
 const BANK = defaultServicesFor("BANKING_FINANCIAL");
 const amount = (r: ReturnType<typeof priceParcel>, code: string) => r.lines.find(l => l.code === code)?.amount;
@@ -77,8 +86,8 @@ describe("pricing engine (Customer & E-commerce)", () => {
     expect(amount(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ weightKg: 2.6 }) }), "weight")).toBe(45);
   });
   it("service, last mile (may be negative), first mile, open box, in order", () => {
-    const p = prices({ sameDistrict: 70, expressFee: 40, hubPickupFee: -10, hubDropDiscount: 5, openBoxFee: 12, homeDeliveryFee: 3 });
-    const r = priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "EXPRESS", lastMile: "HUB_COLLECT", firstMile: "HUB_DROP", openBox: true }) });
+    const p = prices({ sameDistrict: 70, deliveryFees: { EXPRESS: 40 }, hubPickupFee: -10, hubDropDiscount: 5, openBoxFee: 12, homeDeliveryFee: 3 });
+    const r = priceParcel(p, { ...base, tier: "SAME_DISTRICT", deliveryTypeName: "Express", selection: sel({ speed: "EXPRESS", lastMile: "HUB_COLLECT", firstMile: "HUB_DROP", openBox: true }) });
     expect(r.lines.map(l => [l.code, l.amount])).toEqual([
       ["route", 70],
       ["speed", 40],
@@ -87,6 +96,7 @@ describe("pricing engine (Customer & E-commerce)", () => {
       ["open_box", 12],
     ]);
     expect(r.totalCharge).toBe(107);
+    expect(r.lines.find(l => l.code === "speed")!.label).toBe("Express");
     expect(amount(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel() }), "last_mile")).toBe(3);
     expect(priceParcel(prices({ onDemandPickupFee: 25 }), { ...base, tier: "SAME_DISTRICT", selection: sel({ firstMile: "ON_DEMAND_PICKUP" }) }).totalCharge).toBe(95);
   });
@@ -103,72 +113,81 @@ describe("pricing engine (Customer & E-commerce)", () => {
     expect(c.baseCharge + c.weightCharge + c.serviceCharge + c.codFee - c.discount).toBe(r.totalCharge);
   });
   it("rounds every line to whole taka", () => {
-    const r = priceParcel(prices({ sameDistrict: 64.4, regularFee: 0.5 }), { ...base, tier: "SAME_DISTRICT", selection: sel() });
+    const r = priceParcel(prices({ sameDistrict: 64.4, deliveryFees: { REGULAR: 0.5 } }), { ...base, tier: "SAME_DISTRICT", selection: sel() });
     expect(r.lines.map(l => l.amount)).toEqual([64, 1]);
   });
 });
 
 describe("pricing engine (Banking & Financial)", () => {
   const base = { segment: "BANKING_FINANCIAL" as const, services: BANK };
-  const p = prices({ sameDistrict: 60, regularFee: 5, expressFee: 50, onDemandFee: 80, b2bRate: 10, tradeRate: 20, urgentRate: 70, typeDocument: 99, extraKg: 99 });
+  const p = prices({ sameDistrict: 60, deliveryFees: { REGULAR: 5, EXPRESS: 50, FOUR_HOUR: 120, SAME_DAY: 80 }, typeDocument: 99, extraKg: 99 });
   it("no weight, no product-type, no COD", () => {
     const r = priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ weightKg: 9, productType: "DOCUMENT", codAmount: 1000 }) });
     expect(r.lines.map(l => l.code)).toEqual(["route", "speed"]);
     expect(r.totalCharge).toBe(65);
   });
-  it("B2B / Trade add to Regular; Corporate Urgent without a speed fee; On-demand", () => {
-    expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "B2B" }) }).totalCharge).toBe(75);
-    expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "TRADE" }) }).totalCharge).toBe(85);
-    const urgent = priceParcel(p, { ...base, tier: "DIFFERENT_DISTRICT", selection: sel({ speed: "URGENT" }) });
-    expect(urgent.lines.map(l => l.code)).toEqual(["route", "handling"]);
-    expect(urgent.totalCharge).toBe(130 + 70);
-    expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "ON_DEMAND" }) }).totalCharge).toBe(140);
+  it("each delivery type adds its own + charge; a type without one adds 0", () => {
+    expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "FOUR_HOUR" }) }).totalCharge).toBe(180);
+    expect(priceParcel(p, { ...base, tier: "DIFFERENT_DISTRICT", selection: sel({ speed: "SAME_DAY" }) }).totalCharge).toBe(130 + 80);
+    expect(priceParcel(p, { ...base, tier: "SAME_DISTRICT", selection: sel({ speed: "NIGHT" }) }).totalCharge).toBe(60);
   });
 });
 
 describe("selection rules", () => {
   it("defaults and SERVICE_NOT_IN_PACKAGE", () => {
-    const r = resolveSelection("ECOMMERCE", ECOM, {});
+    const r = resolveSelection("ECOMMERCE", ECOM, {}, DT);
     expect(r.problems).toEqual([]);
     expect(r.selection).toMatchObject({ firstMile: "RIDER_PICKUP", lastMile: "DOORSTEP", speed: "REGULAR", productType: "REGULAR" });
     expect(r.selection.notifications).not.toContain("notify.guest_verification");
     const noRider = ECOM.filter(s => s !== "first.rider_pickup" && s !== "last.doorstep");
-    expect(resolveSelection("ECOMMERCE", noRider, {}).selection).toMatchObject({ firstMile: "HUB_DROP", lastMile: "HUB_COLLECT" });
-    const bare = ECOM.filter(s => !["speed.express", "payment.cod", "option.open_box", "notify.delivered"].includes(s));
-    expect(resolveSelection("ECOMMERCE", bare, { speed: "EXPRESS", codAmount: 10, openBox: true, notifications: ["notify.delivered"] }).problems.map(p => p.message)).toEqual([
-      "SERVICE_NOT_IN_PACKAGE: Express",
+    expect(resolveSelection("ECOMMERCE", noRider, {}, DT).selection).toMatchObject({ firstMile: "HUB_DROP", lastMile: "HUB_COLLECT" });
+    const bare = ECOM.filter(s => !["payment.cod", "option.open_box", "notify.delivered"].includes(s));
+    expect(resolveSelection("ECOMMERCE", bare, { speed: "EXPRESS", codAmount: 10, openBox: true, notifications: ["notify.delivered"] }, DT).problems.map(p => p.message)).toEqual([
       "SERVICE_NOT_IN_PACKAGE: Cash on delivery (COD)",
       "SERVICE_NOT_IN_PACKAGE: Open box / Check before pay",
       "SERVICE_NOT_IN_PACKAGE: Delivered (sender)",
     ]);
   });
-  it("Banking: no COD, banking services only; Customer/E-com: no banking services", () => {
-    expect(resolveSelection("BANKING_FINANCIAL", BANK, { codAmount: 100 }).problems[0].field).toBe("codAmount");
-    expect(resolveSelection("ECOMMERCE", ECOM, { speed: "B2B" }).problems[0].code).toBe("INVALID");
-    expect(packageOptions("BANKING_FINANCIAL", BANK)).toMatchObject({ speeds: ["REGULAR", "EXPRESS", "ON_DEMAND", "B2B", "TRADE", "URGENT"], cod: false, weight: false, openBox: false });
-    expect(packageOptions("CUSTOMER", defaultServicesFor("CUSTOMER"))).toMatchObject({ speeds: ["REGULAR", "EXPRESS"], cod: true, openBox: false });
-  });
-  it("Express only inside the same district (Customer / E-com)", () => {
-    expect(routeProblems("ECOMMERCE", "SAME_DISTRICT", "EXPRESS")).toEqual([]);
-    expect(routeProblems("CUSTOMER", "DHAKA_SUBURBAN", "EXPRESS")[0].code).toBe("EXPRESS_SAME_DISTRICT_ONLY");
-    expect(routeProblems("BANKING_FINANCIAL", "DIFFERENT_DISTRICT", "EXPRESS")).toEqual([]);
+  it("Banking: no COD; delivery types: active ones of the category, by code or name, on any route", () => {
+    expect(resolveSelection("BANKING_FINANCIAL", BANK, { codAmount: 100 }, DT).problems[0].field).toBe("codAmount");
+    expect(resolveSelection("ECOMMERCE", ECOM, { speed: "4 hour" }, DT).selection.speed).toBe("FOUR_HOUR");
+    expect(resolveSelection("CUSTOMER", defaultServicesFor("CUSTOMER"), { speed: "Same day delivery" }, DT)).toMatchObject({ problems: [], selection: { speed: "SAME_DAY" } });
+    // Unknown, inactive, or not for the category.
+    expect(resolveSelection("ECOMMERCE", ECOM, { speed: "B2B" }, DT).problems[0]).toMatchObject({ field: "speed", code: "INVALID" });
+    expect(resolveSelection("BANKING_FINANCIAL", BANK, { speed: "NIGHT" }, DT).problems[0].code).toBe("INVALID");
+    expect(packageOptions("BANKING_FINANCIAL", BANK, DT)).toMatchObject({ speeds: ["REGULAR", "EXPRESS", "FOUR_HOUR", "SAME_DAY"], cod: false, weight: false, openBox: false });
+    expect(packageOptions("CUSTOMER", defaultServicesFor("CUSTOMER"), DT)).toMatchObject({
+      cod: true,
+      openBox: false,
+      deliveryTypes: [
+        { code: "REGULAR", name: "Regular" },
+        { code: "EXPRESS", name: "Express" },
+        { code: "FOUR_HOUR", name: "4 Hour Delivery" },
+        { code: "SAME_DAY", name: "Same Day Delivery" },
+      ],
+    });
   });
   it("package problems, proofs, parsing", () => {
     expect(packageProblems("CUSTOMER", [...defaultServicesFor("CUSTOMER"), "integration.api"])[0]).toMatch(/API integration isn't offered/);
     expect(packageProblems("ECOMMERCE", ["last.doorstep"])).toEqual(["Choose at least one first-mile option", "Choose at least one delivery proof method"]);
     expect(proofMethodsFor(ECOM, ["notify.delivery_code"])).toEqual(["OTP", "SIGNATURE", "PHOTO"]);
     expect(proofMethodsFor(ECOM, [])).toEqual(["SIGNATURE", "PHOTO"]);
-    // "Same day" isn't a service option any more (Express is the same-day service).
-    expect(parseSpeedOption("Same day")).toBeUndefined();
-    expect(parseSpeedOption("Express")).toBe("EXPRESS");
-    expect(parseSpeedOption("corporate urgent document")).toBe("URGENT");
+    expect(findDeliveryType("Same day", DT)?.code).toBe("SAME_DAY");
+    expect(findDeliveryType("EXPRESS", DT)?.code).toBe("EXPRESS");
+    expect(findDeliveryType("four_hour", DT)?.code).toBe("FOUR_HOUR");
+    expect(findDeliveryType("corporate urgent document", DT)).toBeUndefined();
     expect(parseLastMile("Hub Pickup")).toBe("HUB_COLLECT");
     expect(segmentOfMerchantType("ECOMMERCE")).toBe("ECOMMERCE");
     expect(segmentOfMerchantType("BANKING_FINANCIAL")).toBe("BANKING_FINANCIAL");
   });
-  it("seeded product lists", () => {
-    expect(SEED_PRODUCTS.ECOMMERCE.REGULAR).toHaveLength(19);
-    expect(SEED_PRODUCTS.BANKING_FINANCIAL.BOOKS).toEqual(["Cheque Books", "Passbooks"]);
+  it("seeded catalog: few categories, no duplicate product, at most 100 e-commerce products", () => {
+    for (const list of [SEED_CATALOG.ECOMMERCE, SEED_CATALOG.BANKING_FINANCIAL]) {
+      const names = list.flatMap(c => c.products.map(([n]) => n.toLowerCase()));
+      expect(new Set(names).size).toBe(names.length);
+      expect(list.length).toBeLessThanOrEqual(10);
+    }
+    expect(SEED_CATALOG.ECOMMERCE.flatMap(c => c.products).length).toBeLessThanOrEqual(100);
+    expect(SEED_CATALOG.BANKING_FINANCIAL.find(c => c.name === "Cheque Book & Passbook")!.products.map(([n]) => n)).toContain("Cheque Book");
   });
   it("re-attempt fees after the free ones", () => {
     expect([1, 2, 3].map(n => reattemptFeeFor(prices({ freeReattempts: 2, reattemptFee: 25 }), n))).toEqual([0, 0, 25]);

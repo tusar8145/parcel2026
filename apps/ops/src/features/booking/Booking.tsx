@@ -28,7 +28,6 @@ export type BookingLine = "ecommerce" | "banking" | "walkin";
 const LINE_LABEL: Record<BookingLine, string> = { banking: "Banking & Financial merchant", ecommerce: "E-commerce merchant", walkin: "Walk-in sender (customer parcel)" };
 const LINE_TITLE: Record<BookingLine, string> = { ecommerce: "Create e-commerce order", banking: "Create Banking & Financial order", walkin: "Create walk-in order" };
 const AUTO_COLLECT = "The hub serving the delivery zone (choose the zone)";
-const TYPE_ORDER: Record<string, number> = { REGULAR: 0, DOCUMENT: 1, BOOKS: 2 };
 const taka = (n: unknown) => `৳${Number(n || 0).toLocaleString("en-BD")}`;
 
 interface Merchant {
@@ -50,7 +49,10 @@ interface Merchant {
 interface PackageView {
   options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
-  products?: { id: string; name: string; type: string; sendMessages?: boolean }[];
+  products?: { id: string; name: string; type: string; categoryId?: string | null; categoryName?: string | null }[];
+  /** Categories (their channels decide where messages go) and priorities (tags; one is the default). */
+  categories?: { id: string; name: string; channels: string[] }[];
+  priorities?: { id: string; name: string; isDefault: boolean }[];
   notifications?: { code: string; title: string }[];
   dropHubs?: { id: string; name: string; type?: string }[];
 }
@@ -97,7 +99,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   const [delivery, setDelivery] = useState<Place>(emptyPlace);
   const [parcel, setParcel] = useState({ product: "", weight: "0.5", contents: "", ref: "", cn: "" });
   const [pkg, setPkg] = useState<{ key: string; view: PackageView | null; error?: string } | null>(null);
-  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", cod: false, codAmount: "", openBox: false, off: new Set<string>() });
+  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", cod: false, codAmount: "", openBox: false, off: new Set<string>(), category: "", priority: "" });
   const [quote, setQuote] = useState<{ q?: Quote; text?: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState(false);
@@ -135,11 +137,13 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
           firstMile: view.options.defaultFirstMile || view.options.firstMiles[0] || "",
           dropHubId: hubs.length === 1 ? hubs[0].id : "",
           lastMile: view.options.defaultLastMile || view.options.lastMiles[0] || "",
-          speed: "REGULAR",
+          speed: view.options.speeds[0] || "REGULAR",
           cod: false,
           codAmount: "",
           openBox: false,
           off: new Set(),
+          category: "",
+          priority: (view.priorities ?? []).find(p => p.isDefault)?.id ?? "",
         });
         setParcel(p => ({ ...p, product: "" }));
       },
@@ -151,7 +155,9 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   const view = pkg?.view ?? null;
   const dropHubsOf = (v: PackageView) => (ops.myHubs ?? ops.hubs.filter(h => h.active !== false)).map(h => ({ id: h.id, name: h.name, type: h.type })) || v.dropHubs || [];
   const product = view?.products?.find(p => p.name === parcel.product) ?? null;
-  const silent = !!product && product.sendMessages === false;
+  // The category: chosen, else the product's. One without SMS and email sends no messages to tick.
+  const category = view?.categories?.find(c => c.id === (svc.category || product?.categoryId)) ?? null;
+  const silent = !!category && !category.channels.includes("sms") && !category.channels.includes("email");
 
   /** The service as sent (order-services.js read): the select's value, else the package's only / default way. */
   const service = useMemo(() => {
@@ -166,13 +172,15 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
       firstMile,
       ...(firstMile === "HUB_DROP" && svc.dropHubId ? { dropHubId: svc.dropHubId } : {}),
       lastMile,
-      speed: (o.speeds.length > 1 ? svc.speed : "") || "REGULAR",
+      speed: (o.speeds.length > 1 ? svc.speed : "") || o.speeds[0] || "REGULAR",
+      ...(svc.category ? { category: svc.category } : {}),
+      ...(svc.priority ? { priority: svc.priority } : {}),
       ...(parcel.product ? { product: parcel.product } : {}),
       openBox: o.openBox ? svc.openBox : false,
       cod: codOn,
       codAmount: codOn ? Number(svc.codAmount) || 0 : 0,
       ...(all.length && ticked.length !== all.length && !silent ? { notifications: ticked } : {}),
-    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; product?: string; openBox: boolean; cod: boolean; codAmount: number; notifications?: string[] };
+    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; category?: string; priority?: string; product?: string; openBox: boolean; cod: boolean; codAmount: number; notifications?: string[] };
   }, [view, svc, parcel.product, silent]);
   const drop = service?.firstMile === "HUB_DROP";
   const hubCollect = service?.lastMile === "HUB_COLLECT";
@@ -343,7 +351,8 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
     </div>
   );
   const o = view?.options;
-  const sortedProducts = [...(view?.products ?? [])].sort((a, b) => (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9) || a.name.localeCompare(b.name));
+  // Products in the catalog's order (by category), narrowed to the chosen category.
+  const sortedProducts = (view?.products ?? []).filter(p => !svc.category || p.categoryId === svc.category);
   const dropHubs = view ? dropHubsOf(view) : [];
   const notes = view?.notifications ?? [];
   const onCount = notes.filter(n => !svc.off.has(n.code)).length;
@@ -465,7 +474,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
               {o!.speeds.length > 1
                 ? field(
                     "speed",
-                    "Service",
+                    "Delivery type",
                     <Select id="bk_speed" className="select" value={svc.speed} onChange={e => setSvc(s => ({ ...s, speed: e.target.value }))}>
                       {o!.speeds.map(s => (
                         <option key={s} value={s}>
@@ -567,6 +576,31 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
           />
 
           {section("Parcel")}
+          {view?.categories?.length
+            ? field(
+                "category",
+                "Category",
+                <Select
+                  id="bk_category"
+                  className="select"
+                  value={svc.category}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setSvc(s => ({ ...s, category: next }));
+                    // A product of another category no longer fits.
+                    if (next && product && product.categoryId !== next) setParcel(p => ({ ...p, product: "" }));
+                  }}
+                  disabled={!view}
+                >
+                  <option value="">{product?.categoryName ? `From the product (${product.categoryName})` : "From the product"}</option>
+                  {view.categories.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>,
+              )
+            : null}
           {field(
             "product",
             "Product (optional)",
@@ -575,10 +609,24 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
               {sortedProducts.map(p => (
                 <option key={p.id} value={p.name}>
                   {p.name} · {view?.labels.productType?.[p.type] || p.type}
+                  {svc.category || !p.categoryName ? "" : ` · ${p.categoryName}`}
                 </option>
               ))}
             </Select>,
           )}
+          {view?.priorities?.length
+            ? field(
+                "priority",
+                "Priority",
+                <Select id="bk_priority" className="select" value={svc.priority} onChange={e => setSvc(s => ({ ...s, priority: e.target.value }))} disabled={!view}>
+                  {view.priorities.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>,
+              )
+            : null}
           {banking ? null : field("weight", "Weight (kg)", input("weight", parcel.weight, v => setParcel(p => ({ ...p, weight: v })), { type: "number", min: 0.01, max: 50, step: 0.1, inputMode: "decimal" }), { req: true })}
           {field(
             "contents",

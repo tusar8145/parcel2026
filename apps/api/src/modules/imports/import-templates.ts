@@ -10,9 +10,11 @@ const LIST_TITLES: Record<ListKey, string> = {
   zones: "Zones",
   areas: "Areas",
   products: "Products",
-  speeds: "Service",
+  speeds: "Delivery type",
   weights: "Weights (kg)",
   yesNo: "Yes / No",
+  categories: "Categories",
+  priorities: "Priorities",
 };
 /** Dependent lists: a zone list per district (ZN_<n>), an area list per zone (AR_<n>). */
 const DEPENDENT: Partial<Record<ListKey, { prefix: string; parents: ListKey }>> = { zones: { prefix: "ZN_", parents: "districts" }, areas: { prefix: "AR_", parents: "zones" } };
@@ -81,7 +83,9 @@ function allowedText(col: ColumnDef, ctx: EngineContext) {
     const values = ctx.lists[col.list];
     if (col.parent && col.list === "zones") return "A zone of the chosen district (the dropdown follows the district)";
     if (col.list === "products") return values.length ? `One of ${values.length} active ${KIND_LABEL[ctx.kind]} products (dropdown, with the product type)` : "No active products: leave empty";
-    if (col.list === "speeds") return `${values.join(", ")} (the services in ${packageOwner(ctx)})`;
+    if (col.list === "speeds") return `${values.join(", ")} (the delivery types; their + charge is in ${packageOwner(ctx)})`;
+    if (col.list === "categories") return `${values.join(", ")} (empty: the product's category)`;
+    if (col.list === "priorities") return `${values.join(", ")} (empty: ${ctx.priorities.find(p => p.isDefault)?.name ?? values[0] ?? "the default"})`;
     return values.length <= 12 ? values.join(", ") : `One of ${values.length} options (dropdown)`;
   }
   if (col.number) return `Number from ${col.number.min} to ${col.number.max.toLocaleString("en-US")}`;
@@ -177,13 +181,12 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
   const fixed = ctx.settings.defaultDestination.mode === "FIXED" ? ctx.settings.defaultDestination : null;
   const destination = fixed ? `${fixed.zone}, ${fixed.district}` : customer ? "the sender's own district (its pickup zone)" : "the merchant's own district (its pickup zone)";
   const recipient = cols.find(c => c.key === "recipient_phone")?.header.toLowerCase() ?? "recipient phone";
-  const hasExpress = ctx.lists.speeds.includes("Express");
   const sample = examples(ctx);
   const who = customer
     ? `Customer parcels booked by operations (walk-in or website customers): no merchant. Fill in the sender and pickup columns on every row. Prices and services: ${packageOwner(ctx)}.`
     : ctx.fileMerchant
-      ? `For ${ctx.fileMerchant.name} (${ctx.fileMerchant.code}): the Service list and the prices follow ${packageOwner(ctx)}.`
-      : `No merchant chosen: the Service list shows ${packageOwner(ctx)} (the ${KIND_LABEL[ctx.kind]} default). Choose the merchant before downloading to get its own services.`;
+      ? `For ${ctx.fileMerchant.name} (${ctx.fileMerchant.code}): the prices follow ${packageOwner(ctx)}.`
+      : `No merchant chosen: the prices follow ${packageOwner(ctx)} (the ${KIND_LABEL[ctx.kind]} default). Choose the merchant before downloading to get its own prices.`;
   const intro: string[] = [
     `How to use: one parcel per row on the "${DATA_SHEET[ctx.kind]}" sheet, starting on row 2. Don't rename or reorder the header row.`,
     `Write the FULL address in the address column: house, road, area, thana and district (e.g. Flat 4B, House 22, Road 7, Banani, Dhaka). The district, zone and area are found from it${customer ? " (the sender's too, from the pickup address)" : ""}; after "Check file" you see them in the preview and can correct any of them there.`,
@@ -193,9 +196,10 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     ...(settings.recipient_phone?.required ? [`The ${recipient} is required: a row without it (or with an invalid number) is not created.`] : []),
     `Rows missing the recipient name${settings.recipient_phone?.required ? "" : `, the ${recipient}`} or the delivery address (or whose address names no known area) are created as "Needs info": priced as a delivery to ${destination}${banking ? "" : " with the weight and service defaults below"}, and held before delivery until you complete them.`,
     banking
-      ? "Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus the service. Banking & Financial parcels have no weight, no cash on delivery and no product-type charge."
-      : `Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus weight above 0.5 kg, the product type, the service${cols.some(c => c.key === "cod_amount") ? " and the COD fee" : ""}.${hasExpress ? " Express is same-day delivery, only inside the same district." : ""}`,
-    "First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen for the whole file, not in this sheet.",
+      ? "Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus the delivery type. Banking & Financial parcels have no weight, no cash on delivery and no product-type charge."
+      : `Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus weight above 0.5 kg, the product type, the delivery type${cols.some(c => c.key === "cod_amount") ? " and the COD fee" : ""}.`,
+    "First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen for the whole file, not in this sheet. The upload screen can also set the delivery type, category and priority for every row.",
+    "Messages follow the category: a category with SMS, email or push turned off sends nothing on that channel for its parcels.",
     `Limits: at most ${opts.maxRows.toLocaleString("en-US")} rows and ${opts.maxFileMb} MB per file. Upload the .xlsx (or a CSV with the same headers).`,
     "Each row is booked once: rows already booked (same reference, or the same details without one) are not booked again.",
   ];

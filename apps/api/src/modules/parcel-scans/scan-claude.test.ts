@@ -23,9 +23,12 @@ describe("Claude's reading of a label is checked for form", () => {
         open_box: "yes",
         order_ref: "ORD-1001",
         instructions: "Call before delivery",
+        category: "fashion & clothing",
+        priority: "Fragile",
       },
       "ecommerce",
       catalog,
+      { speeds: ["Regular", "Express", "4 Hour Delivery", "Same Day Delivery"], categories: ["Fashion & Clothing", "Electronics & Gadgets"], priorities: ["Online Product", "Fragile"] },
     );
     expect(cells).toMatchObject({
       recipient_name: "Tanvir Hasan",
@@ -40,6 +43,8 @@ describe("Claude's reading of a label is checked for form", () => {
       open_box: "Yes",
       order_ref: "ORD-1001",
       instructions: "Call before delivery",
+      category: "Fashion & Clothing",
+      priority: "Fragile",
     });
   });
 

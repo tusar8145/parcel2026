@@ -31,8 +31,9 @@ import { claimCn, linkCn } from "../cn-stock/cn-consume";
 import { slaDueDates } from "../sla/sla-policy";
 import { missingFieldsOf } from "./incomplete";
 import { assertActivePlaces } from "../geography/geo-catalog";
-import { PackagesService, type PackageQuote } from "../packages/packages.service";
-import { SPEED_LABEL, type ProductType } from "@delivery-fast/shared";
+import { PackagesService, type BookingTags, type PackageQuote } from "../packages/packages.service";
+import { CatalogService } from "../packages/catalog.service";
+import type { ProductType } from "@delivery-fast/shared";
 
 /** The recipient and the merchant stop seeing the rider's position when the last fix is older than this. */
 export const LIVE_LOCATION_STALE_MINUTES = 15;
@@ -71,7 +72,9 @@ export interface BookingOptions {
   quote?: PackageQuote;
   /** The product, when already resolved (null = none). */
   /** id null: a product name that isn't listed (E-commerce imports), priced as Regular. */
-  product?: { id: string | null; name: string; type: string; sendMessages: boolean } | null;
+  product?: { id: string | null; name: string; type: string; category?: BookingTags["category"] } | null;
+  /** The category and priority, when already resolved (imports). */
+  tags?: BookingTags;
 }
 
 /** A booking whose delivery details may be missing (imports book incomplete orders; see parcels/incomplete.ts). */
@@ -104,6 +107,8 @@ export class ParcelsService {
   /** Service packages: defaults, enforcement and prices (global module). */
   @Inject(PackagesService) private readonly packages!: PackagesService;
   @Inject(InboxService) private readonly inbox!: InboxService;
+  /** Product categories, priorities and delivery types (global packages module). */
+  @Inject(CatalogService) private readonly catalog!: CatalogService;
   @Inject(WebsiteService) private readonly website!: WebsiteService;
 
   /** Parcels this actor may see. */
@@ -126,6 +131,16 @@ export class ParcelsService {
   }
 
   // ───────────── booking ─────────────
+
+  /** The category (named, else the product's: parcelFields) and priority (named, else the default) of a booking. */
+  private async bookingTags(segment: Segment, input: Pick<BookingInput, "category" | "priority">, db: Db): Promise<BookingTags> {
+    const category = input.category ? await this.catalog.findCategory(segment, input.category, db) : null;
+    if (input.category && !category) throw new AppError("UNKNOWN_CATEGORY", `"${input.category}" is not one of the categories`, 422, [{ path: "category", code: "UNKNOWN_CATEGORY", message: "Choose a category from the list" }]);
+    const { priority, named, options } = await this.catalog.priorityFor(segment, input.priority, db);
+    if (named && !priority)
+      throw new AppError("UNKNOWN_PRIORITY", `"${input.priority}" is not a priority (${options.map(p => p.name).join(", ")})`, 422, [{ path: "priority", code: "UNKNOWN_PRIORITY", message: "Choose a priority from the list" }]);
+    return { ...(category ? { category } : {}), priority: priority ? { id: priority.id, name: priority.name } : null };
+  }
 
   async create(actor: Actor, input: CreateParcelInput, meta: RequestMeta, opts: BookingOptions = {}) {
     // Website "Send a parcel" off: customers can't book; merchants and operations aren't affected.
@@ -203,9 +218,9 @@ export class ParcelsService {
           tx,
           { pkg },
         ));
-      const fields = this.packages.parcelFields(quote, product);
+      const tags = opts.tags ?? (await this.bookingTags(quote.segment, input, tx));
+      const fields = this.packages.parcelFields(quote, product, tags);
       if (!dropOff && quote.dropHub) dropOff = { hub: { id: quote.dropHub.id, name: quote.dropHub.name, address: quote.dropHub.address } };
-      const handling = ["B2B", "TRADE", "URGENT"].includes(quote.selection.speed) ? SPEED_LABEL[quote.selection.speed] : undefined;
       // A pre-printed CN label (CN stock) becomes the tracking ID; otherwise a new one is issued.
       const cn = input.cn ? await claimCn(tx, input.cn, { merchantId: ctx.merchantId, channel: ctx.channel }) : null;
       const trackingId = cn?.cn ?? (await nextTrackingId(tx, parcelPrefix(quote.segment)));
@@ -242,7 +257,7 @@ export class ParcelsService {
           weightKg: quote.selection.weightKg,
           packaging: input.packaging,
           contents: input.contents ?? product?.name,
-          documentType: input.type === "DOCUMENT" || quote.segment === "BANKING_FINANCIAL" ? (handling ?? input.documentType ?? null) : null,
+          documentType: input.type === "DOCUMENT" || quote.segment === "BANKING_FINANCIAL" ? (input.documentType ?? null) : null,
           declaredValue: input.declaredValue,
           instructions: input.instructions,
           receiverRelation: input.receiverRelation,
@@ -289,7 +304,7 @@ export class ParcelsService {
         ...(await this.notifications.notify(tx, {
           event: dropOff ? "parcel.drop_off_booked" : "parcel.booked",
           to: { phone: input.sender.phone, userId: ctx.customerId, name: input.sender.name },
-          parcel: { packageVersionId: fields.packageVersionId, notifications: fields.notifications },
+          parcel: { packageVersionId: fields.packageVersionId, notifications: fields.notifications, notifyChannels: fields.notifyChannels },
           vars: {
             trackingId,
             charge: quote.totalCharge,
@@ -424,6 +439,8 @@ export class ParcelsService {
         ...failureWhere(query),
         ...merchantFiltersWhere(query),
         dateRangeWhere(query),
+        query.priority ? { priorityName: { equals: query.priority, mode: "insensitive" } } : {},
+        query.category ? { categoryName: { equals: query.category, mode: "insensitive" } } : {},
         {
           status: query.status?.length ? { in: query.status } : undefined,
           channel: query.channel,

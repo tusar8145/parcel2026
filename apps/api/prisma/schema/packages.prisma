@@ -93,6 +93,10 @@ model ParcelProduct {
   /// "Send SMS & email for this product": false = no parcel messages at all for its parcels (booked
   /// with an empty `Parcel.notifications`). Which messages go is chosen per parcel at booking.
   sendMessages       Boolean  @default(true)
+  /// The category it is listed under (its messages: the category's channels).
+  categoryId         String?  @db.Uuid
+  category           ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sortOrder          Int      @default(0)
   /// DEPRECATED (2026-10-17, replaced by `sendMessages`): no longer read or written. Kept only because
   /// the schema lock refuses data-dropping migrations; drop it with a reviewed migration.
   mutedNotifications String[] @default([])
@@ -102,4 +106,59 @@ model ParcelProduct {
 
   @@unique([segment, name])
   @@map("parcel_products")
+}
+
+/// A product category (super admin › Operational settings › Product categories). Customer & E-commerce share the
+/// ECOMMERCE list; Banking & Financial has its own. Its channels decide which messages its parcels may get: a channel
+/// that is off sends nothing, whatever the booking ticked.
+model ProductCategory {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  segment     Segment
+  name        String
+  sortOrder   Int             @default(0)
+  active      Boolean         @default(true)
+  notifySms   Boolean         @default(true)
+  notifyEmail Boolean         @default(true)
+  notifyPush  Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  products    ParcelProduct[]
+  parcels     Parcel[]
+
+  @@unique([segment, name])
+  @@map("product_categories")
+}
+
+/// A parcel priority: a tag (no charge) chosen at booking and import, filtered in the parcel lists. One list per
+/// category (ECOMMERCE for Customer & E-commerce, BANKING_FINANCIAL); `isDefault` is preselected.
+model ParcelPriority {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  segment   Segment
+  name      String
+  isDefault Boolean  @default(false)
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  parcels   Parcel[]
+
+  @@unique([segment, name])
+  @@map("parcel_priorities")
+}
+
+/// A delivery type (Regular, Express, 4 Hour, Same Day…: super admin › Operational settings › Delivery types). Its
+/// + charge is set per package version (prices.deliveryFees[code]). `segments` lists the categories it is offered to;
+/// `slaLevel` picks the SLA policies that time it. `code` is stored on parcels (speedOption) and never changes.
+model DeliveryType {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  code      String       @unique
+  name      String
+  segments  Segment[]
+  slaLevel  ServiceLevel @default(REGULAR)
+  sortOrder Int          @default(0)
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("delivery_types")
 }

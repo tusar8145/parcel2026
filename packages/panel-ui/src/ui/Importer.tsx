@@ -31,7 +31,6 @@ const KIND_LABEL: Record<string, string> = { customer: "Customer parcel", ecomme
 const MERCHANT_TYPE: Record<string, string> = { ecommerce: "ECOMMERCE", document: "BANKING_FINANCIAL" };
 const FIRST_MILE: Record<string, [string, string]> = { RIDER_PICKUP: ["PICKUP", "Rider pickup"], HUB_DROP: ["DROP_OFF", "Drop at hub"], ON_DEMAND_PICKUP: ["ON_DEMAND_PICKUP", "On-demand pickup"] };
 const LAST_MILE: Record<string, string> = { DOORSTEP: "Home delivery", HUB_COLLECT: "Hub Pickup" };
-const SPEED: Record<string, string> = { REGULAR: "Regular", EXPRESS: "Express", ON_DEMAND: "On-demand", B2B: "B2B Document", TRADE: "Trade Service Document", URGENT: "Corporate Urgent Document" };
 const PRODUCT_TYPE: [string, string][] = [
   ["REGULAR", "Regular"],
   ["DOCUMENT", "Document"],
@@ -119,7 +118,7 @@ interface Job {
   counts: { rows: number; valid: number; incomplete: number; errors: number; toApply: number; warnings: number; alreadyDone: number; ignored: number };
   result: { created: number; createdIncomplete: number; notCreated: number; applied: number; alreadyDone: number; notApplied: number };
   progress: { processed: number; total: number; percent: number };
-  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: unknown[]; speedLabel?: string | null; productTypeLabel?: string | null };
+  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: unknown[]; speedLabel?: string | null; productTypeLabel?: string | null; categoryLabel?: string | null; priorityLabel?: string | null };
   intake?: string;
   dropOffHub?: { name: string } | null;
   batch?: { number: string } | null;
@@ -177,9 +176,12 @@ interface Layout {
   columns: { index: number; letter: string; header?: string; samples: string[]; key: string | null; by?: string | null }[];
 }
 interface Pkg {
-  options: { firstMiles: string[]; lastMiles: string[]; speeds?: string[]; defaultFirstMile?: string; defaultLastMile?: string; [k: string]: unknown };
+  options: { firstMiles: string[]; lastMiles: string[]; speeds?: string[]; deliveryTypes?: { code: string; name: string }[]; defaultFirstMile?: string; defaultLastMile?: string; [k: string]: unknown };
   notifications: { code: string; title: string }[];
   dropHubs?: { id: string; name: string }[];
+  /** The list's categories and priorities (the modal may set them for every row). */
+  categories?: { id: string; name: string }[];
+  priorities?: { id: string; name: string; isDefault: boolean }[];
 }
 interface KindDef {
   kind: string;
@@ -236,6 +238,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   // The modal's Service and product type for every row ("" = each row's own, from the file).
   const [speed, setSpeed] = useState("");
   const [productType, setProductType] = useState("");
+  // The modal's category (none = each row's own / its product's) and priority (the default preselected).
+  const [category, setCategory] = useState("");
+  const [priority, setPriority] = useState("");
   const unticked = useRef<Set<string>>(new Set());
   // Operations: choosing the merchant preselects its hub as the drop-off hub (when this person can use that hub).
   useEffect(() => {
@@ -267,6 +272,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const kindDef = kinds.find(k => k.kind === bulkKind);
   const pageOf = (k: string) => kinds.find(x => x.kind === k)?.page || (k === "all" ? "All parcels" : k);
   const bulkTitle = `Bulk update ${pageOf(bulkKind)} by Excel`;
+  /** A delivery type code's name (from the package's options). */
+  const typeName = (code: string) => pkg?.options.deliveryTypes?.find(t => t.code === code)?.name ?? code;
   const noun = cfg.noun || (cfg.kind === "document" ? "consignments" : cfg.kind === "customer" ? "parcels" : "orders");
   const nounFor = (n: number) => (n === 1 ? noun.replace(/s$/, "") : noun);
   const count = (n: number) => `${num(n)} ${nounFor(n)}`;
@@ -299,6 +306,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     setFirstMile(f => (o.firstMiles.includes(f) ? f : o.defaultFirstMile || "RIDER_PICKUP"));
     setLastMile(l => (o.lastMiles.includes(l) ? l : o.defaultLastMile || "DOORSTEP"));
     setSpeed(v => (v && (o.speeds ?? []).includes(v) ? v : ""));
+    setCategory(v => (v && (p.categories ?? []).some(c => c.id === v) ? v : ""));
+    setPriority(v => (v && (p.priorities ?? []).some(x => x.id === v) ? v : ((p.priorities ?? []).find(x => x.isDefault)?.id ?? "")));
     setNotifications(new Set(p.notifications.map(n => n.code).filter(c => !unticked.current.has(c))));
   }
 
@@ -425,6 +434,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       if (pkg && lastMile) form.append("lastMile", lastMile);
       if (speed) form.append("speed", speed);
       if (productType && cfg.kind !== "document") form.append("productType", productType);
+      if (category) form.append("category", category);
+      if (priority) form.append("priority", priority);
       if (pkg?.notifications?.length && notifications.size !== pkg.notifications.length) form.append("notifications", notifications.size ? [...notifications].join(",") : "none");
       if (mapsColumns && l) form.append("mapping", JSON.stringify({ headerRow: l.headerRow, columns: l.columns.map(c => c.key || null) }));
     }
@@ -835,12 +846,38 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           ) : null}
           {pkg && (pkg.options.speeds?.length ?? 0) > 0 ? (
             <label className="field">
-              <span>Service</span>
+              <span>Delivery type</span>
               <Select className="select" value={speed} onChange={e => setSpeed(e.target.value)}>
                 <option value="">From the file</option>
                 {pkg.options.speeds!.map(v => (
                   <option key={v} value={v}>
-                    {SPEED[v] || v}
+                    {typeName(v)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
+          {pkg?.categories?.length ? (
+            <label className="field">
+              <span>Category</span>
+              <Select className="select" value={category} onChange={e => setCategory(e.target.value)}>
+                <option value="">From the file / product</option>
+                {pkg.categories.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
+          {pkg?.priorities?.length ? (
+            <label className="field">
+              <span>Priority</span>
+              <Select className="select" value={priority} onChange={e => setPriority(e.target.value)}>
+                <option value="">From the file</option>
+                {pkg.priorities.map(x => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
                   </option>
                 ))}
               </Select>
@@ -861,11 +898,19 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           ) : null}
         </div>
         {choose ? <p className="muted" style={{ margin: 0 }}>Choose the merchant: the template's services, the choices above and the checks follow its package.</p> : null}
-        {speed || productType ? (
-          <p className="muted" style={{ margin: 0 }}>
-            {[speed ? `Service ${SPEED[speed] || speed}` : "", productType && cfg.kind !== "document" ? `product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]}` : ""].filter(Boolean).join(" and ")} replace{speed && productType && cfg.kind !== "document" ? "" : "s"} the file's values on every row (and the price follows).
-          </p>
-        ) : null}
+        {(() => {
+          const chosen = [
+            speed ? `delivery type ${typeName(speed)}` : "",
+            productType && cfg.kind !== "document" ? `product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]}` : "",
+            category ? `category ${pkg?.categories?.find(c => c.id === category)?.name}` : "",
+            priority ? `priority ${pkg?.priorities?.find(x => x.id === priority)?.name}` : "",
+          ].filter(Boolean);
+          return chosen.length ? (
+            <p className="muted" style={{ margin: 0 }}>
+              {`${chosen.join(", ").replace(/^./, c => c.toUpperCase())} ${chosen.length > 1 ? "replace" : "replaces"} the file's values on every row (the price follows the delivery and product type).`}
+            </p>
+          ) : null;
+        })()}
         {pkg && lastMile === "HUB_COLLECT" ? <p className="muted" style={{ margin: 0 }}>Hub Pickup: each order waits at the hub serving its recipient's zone; the recipient gets an SMS with the hub address and a collection code.</p> : null}
         {pkg?.notifications?.length ? (
           <fieldset style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", margin: 0 }}>
@@ -1126,8 +1171,10 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         const where = [
           job.intake === "DROP_OFF" ? ` · drop-off at ${job.dropOffHub?.name || "hub"}` : s.firstMileLabel ? ` · ${s.firstMileLabel.toLowerCase()}` : cfg.forOps ? " · rider pickup" : "",
           s.lastMileLabel ? ` · ${s.lastMileLabel.toLowerCase()}` : "",
-          s.speedLabel ? ` · service ${s.speedLabel} (every row)` : "",
+          s.speedLabel ? ` · delivery type ${s.speedLabel} (every row)` : "",
           s.productTypeLabel ? ` · product type ${s.productTypeLabel} (every row)` : "",
+          s.categoryLabel ? ` · category ${s.categoryLabel} (every row)` : "",
+          s.priorityLabel ? ` · priority ${s.priorityLabel}` : "",
           s.notifications ? ` · ${s.notifications.length} message${s.notifications.length === 1 ? "" : "s"}` : "",
         ].join("");
         subtitle = `${job.number}${where} · nothing is created until you confirm.`;

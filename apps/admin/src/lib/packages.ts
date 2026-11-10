@@ -49,7 +49,42 @@ export interface Product {
   type: string;
   active: boolean;
   parcels: number;
-  sendMessages: boolean;
+  categoryId: string | null;
+  categoryName: string | null;
+}
+/** A product category (its channels decide where its parcels' messages go). */
+export interface Category {
+  id: string;
+  segment: "ECOMMERCE" | "BANKING_FINANCIAL";
+  name: string;
+  sortOrder: number;
+  active: boolean;
+  notifySms: boolean;
+  notifyEmail: boolean;
+  notifyPush: boolean;
+  products: number;
+  parcels: number;
+}
+/** A priority tag (no charge). */
+export interface Priority {
+  id: string;
+  segment: "ECOMMERCE" | "BANKING_FINANCIAL";
+  name: string;
+  isDefault: boolean;
+  sortOrder: number;
+  active: boolean;
+  parcels: number;
+}
+/** A delivery type (its + charge is set per package version). */
+export interface DeliveryType {
+  id: string;
+  code: string;
+  name: string;
+  segments: Segment[];
+  slaLevel: "REGULAR" | "SAME_DAY" | "EXPRESS";
+  sortOrder: number;
+  active: boolean;
+  parcels: number;
 }
 
 export const useServiceCatalog = () => useQuery({ queryKey: ["admin", "service-catalog"], queryFn: () => api<ServiceCatalog>("/service-catalog"), staleTime: 10 * 60_000 });
@@ -62,6 +97,9 @@ export const useAssignments = () =>
       return { ECOMMERCE, BANKING_FINANCIAL } as Record<string, Assignment[]>;
     },
   });
+export const useCategories = () => useQuery({ queryKey: ["admin", "product-categories"], queryFn: () => api<Category[]>("/product-categories?includeInactive=true") });
+export const usePriorities = () => useQuery({ queryKey: ["admin", "parcel-priorities"], queryFn: () => api<Priority[]>("/parcel-priorities?includeInactive=true") });
+export const useDeliveryTypes = () => useQuery({ queryKey: ["admin", "delivery-types"], queryFn: () => api<DeliveryType[]>("/delivery-types?includeInactive=true") });
 export const useProducts = () => useQuery({ queryKey: ["admin", "parcel-products"], queryFn: () => api<Product[]>("/parcel-products?includeInactive=true") });
 export const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 export const money = (n: unknown) => `৳${Number(n ?? 0).toLocaleString("en-BD")}`;

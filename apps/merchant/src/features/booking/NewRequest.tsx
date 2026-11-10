@@ -3,7 +3,7 @@
  * merchant-features.js pickup window), POST /parcels with an Idempotency-Key (a retry of the same form can't book twice):
  *   Paste a message   POST /parse-message fills the EMPTY fields (name, phone, address, reference)
  *   Service           the package's choices (GET /packages/me): first mile + drop-off hub, last mile (Hub Pickup names
- *                     its hub from the price), Service, open box, messages checklist; pickup time (GET /pickup-slots)
+ *                     its hub from the price), Delivery type, open box, messages checklist; pickup time (GET /pickup-slots)
  *   Recipient, address (district / zone / area picked from the full address, GET /catalog/place), address category
  *   Request           product, declared value, internal reference, item description, pre-printed CN
  *   Price             POST /merchants/me/quote with the same choices, so it matches the booked charge
@@ -22,13 +22,15 @@ import { useMerchant, type Merchant } from "@/lib/merchant";
 import { refreshMerchant } from "@/features/parcels/actions";
 
 const AUTO_COLLECT = "The hub serving the delivery zone (choose the zone)";
-const TYPE_ORDER: Record<string, number> = { REGULAR: 0, DOCUMENT: 1, BOOKS: 2 };
 const taka = (n: unknown) => `৳${Number(n || 0).toLocaleString("en-BD")}`;
 
 interface PackageView {
   options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
-  products?: { id: string; name: string; type: string; sendMessages?: boolean }[];
+  products?: { id: string; name: string; type: string; categoryId?: string | null; categoryName?: string | null }[];
+  /** Categories (their channels decide where messages go) and priorities (tags; one is the default). */
+  categories?: { id: string; name: string; channels: string[] }[];
+  priorities?: { id: string; name: string; isDefault: boolean }[];
   notifications?: { code: string; title: string }[];
   dropHubs?: { id: string; name: string; type?: string }[];
 }
@@ -67,7 +69,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   const [pkgError, setPkgError] = useState("");
   const [slots, setSlots] = useState<Slots["days"]>([]);
   const doc = m.doc;
-  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", openBox: false, cod: true, codAmount: "", off: new Set<string>() });
+  const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", openBox: false, cod: true, codAmount: "", off: new Set<string>(), category: "", priority: "" });
   const [recipient, setRecipient] = useState({ name: "", phone: "" });
   const [place, setPlace] = useState({ street: "", district: "", zone: "", area: "", category: doc ? "Office" : "Home" });
   const [req, setReq] = useState({ product: "", value: "", ref: "", contents: "", cn: "", window: "", weight: "0.5" });
@@ -85,7 +87,14 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       v => {
         setView(v);
         const hubs = v.dropHubs ?? [];
-        setSvc(s => ({ ...s, firstMile: v.options.defaultFirstMile || v.options.firstMiles[0] || "", dropHubId: hubs.length === 1 ? hubs[0].id : "", lastMile: v.options.defaultLastMile || v.options.lastMiles[0] || "" }));
+        setSvc(s => ({
+          ...s,
+          firstMile: v.options.defaultFirstMile || v.options.firstMiles[0] || "",
+          dropHubId: hubs.length === 1 ? hubs[0].id : "",
+          lastMile: v.options.defaultLastMile || v.options.lastMiles[0] || "",
+          speed: v.options.speeds[0] || "REGULAR",
+          priority: (v.priorities ?? []).find(p => p.isDefault)?.id ?? "",
+        }));
       },
       e => setPkgError(describe(e)),
     );
@@ -101,7 +110,9 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   }, []);
 
   const product = view?.products?.find(p => p.name === req.product) ?? null;
-  const silent = !!product && product.sendMessages === false;
+  // The category: chosen, else the product's. One without SMS and email sends no messages to tick.
+  const category = view?.categories?.find(c => c.id === (svc.category || product?.categoryId)) ?? null;
+  const silent = !!category && !category.channels.includes("sms") && !category.channels.includes("email");
   /** The service as sent (order-services.js read). */
   const service = useMemo(() => {
     if (!view) return null;
@@ -114,13 +125,15 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       firstMile,
       ...(firstMile === "HUB_DROP" && svc.dropHubId ? { dropHubId: svc.dropHubId } : {}),
       lastMile,
-      speed: (o.speeds.length > 1 ? svc.speed : "") || "REGULAR",
+      speed: (o.speeds.length > 1 ? svc.speed : "") || o.speeds[0] || "REGULAR",
       ...(req.product ? { product: req.product } : {}),
+      ...(svc.category ? { category: svc.category } : {}),
+      ...(svc.priority ? { priority: svc.priority } : {}),
       openBox: o.openBox ? svc.openBox : false,
       // Cash on delivery (E-commerce): only when the package offers it and it is ticked.
       codOn: !doc && o.cod ? svc.cod : false,
       ...(all.length && ticked.length !== all.length && !silent ? { notifications: ticked } : {}),
-    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; product?: string; openBox: boolean; codOn: boolean; notifications?: string[] };
+    } as { firstMile: string; dropHubId?: string; lastMile: string; speed: string; product?: string; category?: string; priority?: string; openBox: boolean; codOn: boolean; notifications?: string[] };
   }, [view, svc, req.product, silent]);
   const drop = service?.firstMile === "HUB_DROP";
   const hubCollect = service?.lastMile === "HUB_COLLECT";
@@ -260,7 +273,8 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   );
   const o = view?.options;
   const L = view?.labels;
-  const products = [...(view?.products ?? [])].sort((a, b) => (TYPE_ORDER[a.type] ?? 9) - (TYPE_ORDER[b.type] ?? 9) || a.name.localeCompare(b.name));
+  // Products in the catalog's order (by category), narrowed to the chosen category.
+  const products = (view?.products ?? []).filter(p => !svc.category || p.categoryId === svc.category);
   const zones = catalog?.zonesByDistrict?.[place.district] ?? [];
   const areas = catalog?.areasByZone?.[place.zone] ?? [];
   const notes = view?.notifications ?? [];
@@ -342,7 +356,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
             {o.speeds.length > 1
               ? field(
                   "speed",
-                  "Service",
+                  "Delivery type",
                   <Select id="nr_speed" className="select" searchable={false} value={svc.speed} onChange={e => setSvc(s => ({ ...s, speed: e.target.value }))}>
                     {o.speeds.map(s => (
                       <option key={s} value={s}>
@@ -495,6 +509,30 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                 { full: true },
               )
             : null}
+          {view?.categories?.length
+            ? field(
+                "category",
+                "Category",
+                <Select
+                  id="nr_category"
+                  className="select"
+                  searchable={false}
+                  value={svc.category}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setSvc(s => ({ ...s, category: next }));
+                    if (next && product && product.categoryId !== next) setReq(r => ({ ...r, product: "" }));
+                  }}
+                >
+                  <option value="">{product?.categoryName ? `From the product (${product.categoryName})` : "From the product"}</option>
+                  {view.categories.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>,
+              )
+            : null}
           {products.length
             ? field(
                 "product",
@@ -505,8 +543,21 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                   value={req.product}
                   onChange={v => setReq(r => ({ ...r, product: v }))}
                   emptyLabel="No product (Regular)"
-                  options={products.map(p => ({ value: p.name, label: `${p.name} · ${L?.productType?.[p.type] || p.type}` }))}
+                  options={products.map(p => ({ value: p.name, label: `${p.name} · ${L?.productType?.[p.type] || p.type}${svc.category || !p.categoryName ? "" : ` · ${p.categoryName}`}` }))}
                 />,
+              )
+            : null}
+          {view?.priorities?.length
+            ? field(
+                "priority",
+                "Priority",
+                <Select id="nr_priority" className="select" searchable={false} value={svc.priority} onChange={e => setSvc(s => ({ ...s, priority: e.target.value }))}>
+                  {view.priorities.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>,
               )
             : null}
           {doc

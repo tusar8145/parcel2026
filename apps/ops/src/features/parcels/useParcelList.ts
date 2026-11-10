@@ -19,6 +19,8 @@ export interface ListFilters {
   to?: string;
   dateField?: "pickup" | "status";
   line?: string;
+  /** The priority tag's name (General, Security, Online Product…). */
+  priority?: string;
   merchantId?: string;
   hubId?: string;
   failedBefore?: string;
@@ -74,6 +76,7 @@ export function useParcelList(cfg: ListConfig) {
     const f = filters;
     const searching = !!f.q && f.q.trim().length >= 2;
     if (searching) params.set("q", f.q!.trim());
+    if (f.priority) params.set("priority", f.priority);
     if (f.status === "Needs info") params.set("incomplete", "true");
     else if (f.status) params.set("status", f.status);
     if (f.from) params.set("from", new Date(`${f.from}T00:00:00`).toISOString());

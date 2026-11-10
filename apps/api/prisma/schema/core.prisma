@@ -605,8 +605,9 @@ model Parcel {
   firstMile               String?
   /// DOORSTEP | HUB_COLLECT
   lastMile                String?
-  /// Speed + handling: REGULAR | EXPRESS | ON_DEMAND | SECURITY | PERISHABLE | B2B | TRADE | URGENT
+  /// The delivery type's code (DeliveryType.code: REGULAR, EXPRESS, FOUR_HOUR, SAME_DAY…), and its name at booking.
   speedOption             String?
+  deliveryTypeName        String?
   openBox                 Boolean   @default(false)
   /// On-demand pickup or delivery: top dispatch priority.
   onDemand                Boolean   @default(false)
@@ -614,6 +615,14 @@ model Parcel {
   productName             String?
   /// REGULAR | DOCUMENT | BOOKS: the product's type at booking (no product = REGULAR).
   productType             String?
+  /// The product category (its product's, or the one chosen), and its name at booking.
+  categoryId              String?   @db.Uuid
+  categoryName            String?
+  /// The priority (tag: General, Security, Online product…), and its name at booking.
+  priorityId              String?   @db.Uuid
+  priorityName            String?
+  /// Channels the parcel's messages may use: the category's (sms, email, push) at booking.
+  notifyChannels          String[]  @default(["sms", "email", "push"])
   /// The package's services at booking.
   services                String[]  @default([])
   /// Parcel notifications that may be sent: the booking's ticked messages (default every message in the
@@ -653,6 +662,8 @@ model Parcel {
   bookingBatch         BookingBatch?           @relation(fields: [bookingBatchId], references: [id], onDelete: SetNull)
   packageVersion       ServicePackageVersion?  @relation(fields: [packageVersionId], references: [id])
   product              ParcelProduct?          @relation(fields: [productId], references: [id])
+  category             ProductCategory?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  priority             ParcelPriority?         @relation(fields: [priorityId], references: [id], onDelete: SetNull)
   collectHub           Hub?                    @relation("ParcelCollectHub", fields: [collectHubId], references: [id])
   /// The hub a pickup was assigned to (e.g. a franchise hub, which then assigns one of its riders).
   pickupHubId          String?                 @db.Uuid
@@ -685,6 +696,8 @@ model Parcel {
   @@index([collectHubId, status])
   @@index([packageVersionId])
   @@index([productId])
+  @@index([categoryId])
+  @@index([priorityId])
   /// Period figures on the dashboards (Dhaka day ranges): bookings, pickups, deliveries.
   @@index([createdAt])
   @@index([deliveredAt])

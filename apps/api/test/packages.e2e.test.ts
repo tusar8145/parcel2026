@@ -1,4 +1,4 @@
-import { DEFAULT_PACKAGE_PRICES as P, SEED_PRODUCTS } from "@delivery-fast/shared";
+import { DEFAULT_PACKAGE_PRICES as P, SEED_CATALOG } from "@delivery-fast/shared";
 import { CollectionsService } from "../src/modules/parcels/collections.service";
 import { decrypt } from "../src/common/crypto";
 import { hub, parcelBody, resetDatabase, riderUser, startApp, userWithRoles, type TestContext } from "./helpers";
@@ -57,17 +57,17 @@ describe("service packages", () => {
         ["CUSTOMER", "Customer default"],
         ["ECOMMERCE", "E-commerce default"],
       ]);
-      expect(list[0].current.prices).toMatchObject({ sameDistrict: 70, dhakaSuburban: 100, differentDistrict: 130, extraKg: 15, expressFee: 40, codPercent: 1, codMin: 10, returnPercent: 50, freeReattempts: 2 });
+      expect(list[0].current.prices).toMatchObject({ sameDistrict: 70, dhakaSuburban: 100, differentDistrict: 130, extraKg: 15, deliveryFees: { REGULAR: 0, EXPRESS: 40 }, codPercent: 1, codMin: 10, returnPercent: 50, freeReattempts: 2 });
       expect(await ctx.prisma.rateCard.count({ where: { active: true } })).toBe(0);
       expect(await ctx.prisma.rateCard.count()).toBe(1); // kept, only deactivated
       expect(await ctx.prisma.servicePlan.count({ where: { active: true } })).toBe(0);
       expect(await ctx.prisma.parcelProduct.count({ where: { name: "Old unused product" } })).toBe(0);
       const ecom = (await ctx.api("GET", "/parcel-products?segment=ECOMMERCE")).body as { name: string; type: string }[];
-      expect(ecom).toHaveLength(SEED_PRODUCTS.ECOMMERCE.REGULAR.length + SEED_PRODUCTS.ECOMMERCE.DOCUMENT.length + SEED_PRODUCTS.ECOMMERCE.BOOKS.length);
-      expect(ecom.find(p => p.name === "Academic Materials")?.type).toBe("BOOKS");
+      expect(ecom).toHaveLength(SEED_CATALOG.ECOMMERCE.flatMap(c => c.products).length);
+      expect(ecom.find(p => p.name === "Academic & Exam Books")?.type).toBe("BOOKS");
       // Customers use the e-commerce list; Banking has its own.
       expect((await ctx.api("GET", "/parcel-products?segment=CUSTOMER")).body).toHaveLength(ecom.length);
-      expect(((await ctx.api("GET", "/parcel-products?segment=BANKING_FINANCIAL")).body as { name: string }[]).map(p => p.name)).toContain("Cheque Books");
+      expect(((await ctx.api("GET", "/parcel-products?segment=BANKING_FINANCIAL")).body as { name: string }[]).map(p => p.name)).toContain("Cheque Book");
       expect(await ctx.prisma.auditLog.count({ where: { action: "packages.migrate_v2" } })).toBe(1);
     });
 
@@ -100,7 +100,7 @@ describe("service packages", () => {
   });
 
   describe("route tiers and the price engine", () => {
-    it("prices by district route tiers, product type, weight and service; Express only inside the same district", async () => {
+    it("prices by district route tiers, product type, weight and delivery type; any delivery type on any route", async () => {
       const { token } = await admin();
       const { m, owner } = await merchant();
       const pkg = await createPackage(token, "ECOMMERCE", "Typed", await allServices("ECOMMERCE"), { typeBooks: 8, typeDocument: 5 });
@@ -108,11 +108,13 @@ describe("service packages", () => {
       const q = (body: object) => ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { pickupDistrict: "Dhaka North", weightKg: 0.5, ...body } });
       expect((await q({ deliveryDistrict: "Gazipur" })).body).toMatchObject({ tier: "DHAKA_SUBURBAN", totalCharge: P.dhakaSuburban });
       expect((await q({ pickupDistrict: "Gazipur", deliveryDistrict: "Narayanganj" })).body).toMatchObject({ tier: "DIFFERENT_DISTRICT", totalCharge: P.differentDistrict });
-      expect((await q({ deliveryDistrict: "Dhaka South", product: "Academic Materials", weightKg: 1.6 })).body).toMatchObject({ tier: "SAME_DISTRICT", totalCharge: P.sameDistrict + 8 + 2 * P.extraKg });
-      expect((await q({ deliveryDistrict: "Dhaka South", speed: "EXPRESS", codAmount: 3000 })).body.totalCharge).toBe(P.sameDistrict + P.expressFee + 30);
+      expect((await q({ deliveryDistrict: "Dhaka South", product: "Academic & Exam Books", weightKg: 1.6 })).body).toMatchObject({ tier: "SAME_DISTRICT", totalCharge: P.sameDistrict + 8 + 2 * P.extraKg });
+      expect((await q({ deliveryDistrict: "Dhaka South", speed: "EXPRESS", codAmount: 3000 })).body.totalCharge).toBe(P.sameDistrict + P.deliveryFees.EXPRESS + 30);
+      // Express (any delivery type) on any route.
       const express = await q({ deliveryDistrict: "Gazipur", speed: "EXPRESS" });
-      expect(express.status).toBe(422);
-      expect(express.body.error.code).toBe("EXPRESS_SAME_DISTRICT_ONLY");
+      expect(express.status, JSON.stringify(express.body)).toBe(200);
+      expect(express.body.totalCharge).toBe(P.dhakaSuburban + P.deliveryFees.EXPRESS);
+      expect((await q({ deliveryDistrict: "Gazipur", speed: "4 Hour Delivery" })).body.totalCharge).toBe(P.dhakaSuburban);
       expect((await q({ deliveryDistrict: "Dhaka South", product: "Spaceship" })).body.error.code).toBe("UNKNOWN_PRODUCT");
     });
 
@@ -127,44 +129,45 @@ describe("service packages", () => {
       const delivery = { category: "HOME", street: "Road 7 Flat 3B", zone: "Dhanmondi", district: "Dhaka Central" };
 
       // Operations New shipment: the live quote sends the product (a Document-type product costs more), then the booking.
-      const quoted = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, merchantId: m.id, weightKg: 7.5, product: "Papers" } });
+      const quoted = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, merchantId: m.id, weightKg: 7.5, product: "Papers & Documents" } });
       expect(quoted.status, JSON.stringify(quoted.body)).toBe(200);
       const regular = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, merchantId: m.id, weightKg: 7.5 } });
       expect(quoted.body.totalCharge).toBe(regular.body.totalCharge + 35);
-      const booked = await ctx.api("POST", "/ops/parcels", { token: ops.token, body: { merchantId: m.id, intake: "PICKUP", recipient, delivery, type: "ECOMMERCE", weightKg: 7.5, codAmount: 0, product: "Papers" } });
+      const booked = await ctx.api("POST", "/ops/parcels", { token: ops.token, body: { merchantId: m.id, intake: "PICKUP", recipient, delivery, type: "ECOMMERCE", weightKg: 7.5, codAmount: 0, product: "Papers & Documents" } });
       expect(booked.status, JSON.stringify(booked.body)).toBe(201);
-      expect(booked.body).toMatchObject({ product: "Papers", weightKg: 7.5, charges: { total: quoted.body.totalCharge } });
+      expect(booked.body).toMatchObject({ product: "Papers & Documents", weightKg: 7.5, charges: { total: quoted.body.totalCharge } });
 
       // The merchant order form: COD amount apart from the product value, the product in the quote.
-      const formQuote = await ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { ...places, weightKg: 1, codAmount: 900, product: "Papers" } });
+      const formQuote = await ctx.api("POST", "/merchants/me/quote", { token: owner.token, body: { ...places, weightKg: 1, codAmount: 900, product: "Papers & Documents" } });
       expect(formQuote.status, JSON.stringify(formQuote.body)).toBe(200);
-      const formBooked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ serviceLevel: undefined, packaging: undefined, weightKg: 1, codAmount: 900, declaredValue: 2000, product: "Papers" }) });
+      const formBooked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ serviceLevel: undefined, packaging: undefined, weightKg: 1, codAmount: 900, declaredValue: 2000, product: "Papers & Documents" }) });
       expect(formBooked.status, JSON.stringify(formBooked.body)).toBe(201);
       expect(formBooked.body).toMatchObject({ codAmount: 900, declaredValue: 2000, charges: { total: formQuote.body.totalCharge } });
 
       // A walk-in sender (no merchant): the Customer default package, quoted by staff without a merchant.
-      const walkQuote = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, weightKg: 12, product: "Papers" } });
+      const walkQuote = await ctx.api("POST", "/packages/quote", { token: ops.token, body: { ...places, weightKg: 12, product: "Papers & Documents" } });
       expect(walkQuote.body.package.name).toBe("Customer default");
       const walkIn = await ctx.api("POST", "/ops/parcels", {
         token: ops.token,
-        body: { sender: { name: "Walk-in Sender", phone: "1711000001" }, pickup: { category: "HOME", street: "House 5 Road 2", zone: "Gulshan", district: "Dhaka North" }, intake: "PICKUP", recipient, delivery, type: "PARCEL", weightKg: 12, codAmount: 0, product: "Papers" },
+        body: { sender: { name: "Walk-in Sender", phone: "1711000001" }, pickup: { category: "HOME", street: "House 5 Road 2", zone: "Gulshan", district: "Dhaka North" }, intake: "PICKUP", recipient, delivery, type: "PARCEL", weightKg: 12, codAmount: 0, product: "Papers & Documents" },
       });
       expect(walkIn.status, JSON.stringify(walkIn.body)).toBe(201);
       expect(walkIn.body).toMatchObject({ merchant: null, channel: "OPERATIONS", weightKg: 12, charges: { total: walkQuote.body.totalCharge } });
 
       // The website booking form lists the products with their type.
       const site = (await ctx.api("GET", "/catalog")).body as { customerPackage: { products: { name: string; type: string }[] } };
-      expect(site.customerPackage.products.find(p => p.name === "Papers")?.type).toBe("DOCUMENT");
+      expect(site.customerPackage.products.find(p => p.name === "Papers & Documents")?.type).toBe("DOCUMENT");
     });
 
     it("refuses services the package doesn't include, on every surface (form/API, import)", async () => {
       const { token } = await admin();
       const { m, owner } = await merchant();
-      const pkg = await createPackage(token, "ECOMMERCE", "No extras", await allServices("ECOMMERCE", ["speed.express", "payment.cod", "first.hub_drop"]));
+      const pkg = await createPackage(token, "ECOMMERCE", "No extras", await allServices("ECOMMERCE", ["payment.cod", "first.hub_drop"]));
       await assign(token, m.id, pkg.id);
-      const api = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ serviceLevel: undefined, speed: "EXPRESS", codAmount: 0 }) });
+      // An old service (or any name that isn't an active delivery type of the category) is refused.
+      const api = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ serviceLevel: undefined, speed: "B2B Document", codAmount: 0 }) });
       expect(api.status).toBe(422);
-      expect(api.body.error).toMatchObject({ code: "SERVICE_NOT_IN_PACKAGE", message: "SERVICE_NOT_IN_PACKAGE: Express" });
+      expect(api.body.error).toMatchObject({ code: "INVALID" });
       const codRes = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 500 }) });
       expect(codRes.body.error?.message, JSON.stringify(codRes.body)).toBe("SERVICE_NOT_IN_PACKAGE: Cash on delivery (COD)");
       // The import modal's first mile is checked before the file is read.
@@ -172,7 +175,7 @@ describe("service packages", () => {
       expect(imported.body.error.code).toBe("SERVICE_NOT_IN_PACKAGE");
       // The package view hides what isn't included.
       const view = (await ctx.api("GET", "/packages/me", { token: owner.token })).body;
-      expect(view.options).toMatchObject({ speeds: ["REGULAR"], cod: false, firstMiles: ["RIDER_PICKUP", "ON_DEMAND_PICKUP"] });
+      expect(view.options).toMatchObject({ speeds: ["REGULAR", "EXPRESS", "FOUR_HOUR", "SAME_DAY"], cod: false, firstMiles: ["RIDER_PICKUP", "ON_DEMAND_PICKUP"] });
       // Banking & Financial: never COD, no weight.
       const bank = await merchant("BANKING_FINANCIAL");
       expect((await ctx.api("POST", "/merchants/me/quote", { token: bank.owner.token, body: { pickupDistrict: "Dhaka North", deliveryDistrict: "Dhaka South", codAmount: 100 } })).status).toBe(422);
@@ -189,11 +192,13 @@ describe("service packages", () => {
       const { readZip } = await import("../src/modules/imports/xlsx/zip");
       const sheet = readZip(tpl.rawPayload, { maxBytes: 50_000_000 }).get("xl/worksheets/sheet1.xml")!.toString();
       expect(sheet).toContain("<t>Open box</t>");
-      expect(sheet).toContain("<t>Service</t>");
+      expect(sheet).toContain("<t>Delivery type</t>");
+      expect(sheet).toContain("<t>Category</t>");
+      expect(sheet).toContain("<t>Priority</t>");
       expect(sheet).not.toContain("<t>COD amount (৳)</t>");
       expect(sheet).not.toContain("<t>Cash on delivery</t>");
-      // A product whose messages are off: its row is booked with none, whatever the modal ticks.
-      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Academic Materials" } }, data: { sendMessages: false } });
+      // A category with SMS, email and push off: its rows are booked with no channel, whatever the modal ticks.
+      await ctx.prisma.productCategory.updateMany({ where: { segment: "ECOMMERCE", name: "Food & Grocery" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
       const res = await ctx.api("POST", "/imports/validate", {
         token: owner.token,
         body: {
@@ -203,7 +208,7 @@ describe("service packages", () => {
           rows: [
             { order_ref: "PK-1", phone: "01812000000", "Customer name": "A", address: "Road 1", district: "Dhaka South", zone: "Motijheel", "Open box": "Yes", Product: "Books" },
             { order_ref: "PK-2", phone: "01812000001", "Customer name": "B", address: "Road 2", district: "Chattogram", zone: "Agrabad", Service: "Express" },
-            { order_ref: "PK-3", phone: "01812000002", "Customer name": "C", address: "Road 3", district: "Dhaka South", zone: "Motijheel", Product: "Academic Materials" },
+            { order_ref: "PK-3", phone: "01812000002", "Customer name": "C", address: "Road 3", district: "Dhaka South", zone: "Motijheel", Product: "Honey" },
           ],
         },
       });
@@ -211,50 +216,49 @@ describe("service packages", () => {
       const rows = (await ctx.api("GET", `/imports/${res.body.id}/rows`, { token: owner.token })).body.items;
       expect(rows[0]).toMatchObject({ status: "VALID", charge: P.sameDistrict + 12 });
       expect(rows[0].lines.map((l: { code: string }) => l.code)).toEqual(["route", "open_box"]);
-      // Express to another district isn't possible: the row is an error and isn't created.
-      expect(rows[1].status).toBe("ERROR");
-      expect(rows[1].errors[0]).toMatchObject({ column: "service_level" });
+      // Express to another district is fine (any delivery type on any route).
+      expect(rows[1]).toMatchObject({ status: "VALID", charge: P.differentDistrict + P.deliveryFees.EXPRESS });
       expect(rows[0]).toMatchObject({ messagesOff: false, messagesNote: null });
-      expect(rows[2]).toMatchObject({ status: "VALID", messagesOff: true, messagesNote: "This product doesn't send messages" });
-      expect(res.body.totals).toEqual({ rows: 2, charge: P.sameDistrict + 12 + rows[2].charge });
+      expect(rows[2]).toMatchObject({ status: "VALID", messagesOff: true, messagesNote: "This category doesn't send SMS or email" });
+      expect(res.body.totals).toEqual({ rows: 3, charge: P.sameDistrict + 12 + rows[1].charge + rows[2].charge });
       expect(res.body.services).toMatchObject({ lastMile: "DOORSTEP", notifications: ["notify.delivered"] });
       await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-1" } });
       expect(parcel).toMatchObject({ openBox: true, productName: "Books", productType: "BOOKS", notifications: ["notify.delivered"] });
-      expect(await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-3" } })).toMatchObject({ productName: "Academic Materials", notifications: [] });
+      expect(await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-3" } })).toMatchObject({ productName: "Honey", categoryName: "Food & Grocery", notifyChannels: [] });
     });
   });
 
   describe("notifications, proof, gating", () => {
-    it("products have one Send SMS & email switch (default on); editing other fields keeps it", async () => {
+    it("products belong to a category of their list; editing other fields keeps it", async () => {
       const { token } = await admin();
       await ctx.api("GET", "/packages", { token }); // set-up
-      const created = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Quiet goods", type: "REGULAR", sendMessages: false } });
+      const categories = (await ctx.api("GET", "/product-categories?segment=ECOMMERCE")).body as { id: string; name: string }[];
+      const fashion = categories.find(c => c.name === "Fashion & Clothing")!;
+      const bankCategory = ((await ctx.api("GET", "/product-categories?segment=BANKING_FINANCIAL")).body as { id: string }[])[0];
+      expect((await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "No category" } })).status).toBe(422);
+      expect((await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Wrong list", categoryId: bankCategory.id } })).body.error.code).toBe("UNKNOWN_CATEGORY");
+      const created = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Quiet goods", type: "REGULAR", categoryId: fashion.id } });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
-      expect(created.body).toMatchObject({ name: "Quiet goods", sendMessages: false });
-      const plain = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Loud goods" } });
-      expect(plain.body).toMatchObject({ sendMessages: true, type: "REGULAR" });
-      // A PATCH of another field doesn't reset the switch (or the type) to its default.
+      expect(created.body).toMatchObject({ name: "Quiet goods", categoryId: fashion.id });
+      // A PATCH of another field doesn't reset the category (or the type).
       await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { type: "BOOKS" } });
-      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ sendMessages: false, type: "BOOKS" });
-      const on = await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { sendMessages: true } });
-      expect(on.body).toMatchObject({ sendMessages: true, type: "BOOKS" });
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ categoryId: fashion.id, type: "BOOKS" });
       await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { active: false } });
-      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ sendMessages: true, type: "BOOKS", active: false });
-      // The old per-message field is no longer part of the API (ignored).
-      const old = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Old style", mutedNotifications: ["notify.booked"] } });
-      expect(old.body).toMatchObject({ sendMessages: true, mutedNotifications: [] });
-      expect(await ctx.prisma.auditLog.count({ where: { action: "parcel_product.update", entityId: created.body.id } })).toBe(3);
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ categoryId: fashion.id, type: "BOOKS", active: false });
+      const listed = (await ctx.api("GET", "/parcel-products?segment=ECOMMERCE&includeInactive=true", { token })).body as { name: string; categoryName: string }[];
+      expect(listed.find(p => p.name === "Quiet goods")?.categoryName).toBe("Fashion & Clothing");
+      expect(await ctx.prisma.auditLog.count({ where: { action: "parcel_product.update", entityId: created.body.id } })).toBe(2);
     });
 
-    it("stores the parcel's messages at booking (default all, unticked left out, none for a silent product) and only sends those", async () => {
+    it("stores the parcel's messages at booking (default all, unticked left out; a category's channels off send nothing) and only sends those", async () => {
       const { owner } = await merchant();
       const view = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { notifications: { code: string }[]; products: { name: string; sendMessages: boolean }[] };
       const all = view.notifications.map(n => n.code);
       expect(all).toEqual(expect.arrayContaining(["notify.booked", "notify.cancelled", "notify.delivery_code", "notify.collection"]));
-      await ctx.prisma.parcelProduct.update({ where: { segment_name: { segment: "ECOMMERCE", name: "Books" } }, data: { sendMessages: false } });
-      const products = (await ctx.api("GET", "/packages/me", { token: owner.token })).body.products as { name: string; sendMessages: boolean }[];
-      expect(products.find(p => p.name === "Books")?.sendMessages).toBe(false);
+      await ctx.prisma.productCategory.updateMany({ where: { segment: "ECOMMERCE", name: "Books, Stationery & Documents" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
+      const me = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { categories: { name: string; channels: string[] }[] };
+      expect(me.categories.find(c => c.name === "Books, Stationery & Documents")?.channels).toEqual([]);
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
       const sent = (template: string, trackingId: string) => ctx.prisma.outboxMessage.count({ where: { template, body: { contains: trackingId } } });
 
@@ -272,10 +276,10 @@ describe("service packages", () => {
       expect(await sent("parcel.booked", unticked.body.trackingId)).toBe(0);
       expect(unticked.body.proofMethods).toContain("OTP"); // the delivery code is still sent
 
-      // A product with messages off: an empty list whatever was ticked; nothing sent; no OTP proof.
+      // A product of a category with every channel off: no channel, whatever was ticked; nothing sent; no OTP proof.
       const silent = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ product: "Books", notifications: all }) });
       expect(silent.status, JSON.stringify(silent.body)).toBe(201);
-      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: silent.body.trackingId } })).notifications).toEqual([]);
+      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: silent.body.trackingId } })).toMatchObject({ categoryName: "Books, Stationery & Documents", notifyChannels: [] });
       expect(await sent("parcel.booked", silent.body.trackingId)).toBe(0);
       expect(silent.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
 

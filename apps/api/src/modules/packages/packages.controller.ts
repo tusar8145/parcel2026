@@ -12,6 +12,7 @@ import { RequireApiKeyScope } from "../merchants/api-key-scopes";
 import { changeResponse, PackagesService, quoteResponse } from "./packages.service";
 import { HubGroupsService } from "./hub-groups.service";
 import { ParcelProductsService } from "./parcel-products.service";
+import { CatalogService } from "./catalog.service";
 import {
   assignmentsQuerySchema,
   assignPackageSchema,
@@ -28,7 +29,13 @@ import {
   simulateSchema,
   updateHubGroupSchema,
   updateProductSchema,
-  productMessagesSchema,
+  catalogListQuerySchema,
+  categorySchema,
+  updateCategorySchema,
+  prioritySchema,
+  updatePrioritySchema,
+  deliveryTypeSchema,
+  updateDeliveryTypeSchema,
   exportProductsQuerySchema,
 } from "./packages.schemas";
 
@@ -60,6 +67,7 @@ export class PackagesController {
     private readonly packages: PackagesService,
     private readonly hubGroups: HubGroupsService,
     private readonly products: ParcelProductsService,
+    private readonly catalogs: CatalogService,
   ) {}
 
   /** The fixed service catalog, price fields and labels (package editor, forms). */
@@ -300,14 +308,6 @@ export class PackagesController {
     return this.products.create(actor, body, meta);
   }
 
-  /** Messages for many products at once: the chosen products on, every other product of the segment off. */
-  @RequirePermissions("config:manage")
-  @Put("parcel-products/messages")
-  @ApiZodBody(productMessagesSchema)
-  setProductMessages(@CurrentActor() actor: Actor, @ZBody(productMessagesSchema) body: z.infer<typeof productMessagesSchema>, @ReqMeta() meta: RequestMeta) {
-    return this.products.setMessages(actor, body, meta);
-  }
-
   @RequirePermissions("config:manage")
   @Patch("parcel-products/:id")
   @ApiZodBody(updateProductSchema)
@@ -320,5 +320,92 @@ export class PackagesController {
   removeProduct(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
     return this.products.remove(actor, id, meta);
   }
-}
+  // ── catalog: categories, priorities, delivery types (super admin › Operational settings) ──
 
+  /** Product categories (any signed-in user reads the active ones; the super admin the inactive too). */
+  @Public()
+  @Get("product-categories")
+  @ApiZodQuery(catalogListQuerySchema)
+  listCategories(@ZQuery(catalogListQuerySchema) query: z.infer<typeof catalogListQuerySchema>, @OptionalActor() actor?: Actor) {
+    if (query.includeInactive && !actor?.permissions.has("config:manage")) throw forbidden();
+    return this.catalogs.listCategories(query);
+  }
+
+  @RequirePermissions("config:manage")
+  @Post("product-categories")
+  @ApiZodBody(categorySchema)
+  createCategory(@CurrentActor() actor: Actor, @ZBody(categorySchema) body: z.infer<typeof categorySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.createCategory(actor, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Patch("product-categories/:id")
+  @ApiZodBody(updateCategorySchema)
+  updateCategory(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(updateCategorySchema) body: z.infer<typeof updateCategorySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.updateCategory(actor, id, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Delete("product-categories/:id")
+  removeCategory(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.removeCategory(actor, id, meta);
+  }
+
+  /** Priorities (tags) of a list. */
+  @Public()
+  @Get("parcel-priorities")
+  @ApiZodQuery(catalogListQuerySchema)
+  listPriorities(@ZQuery(catalogListQuerySchema) query: z.infer<typeof catalogListQuerySchema>, @OptionalActor() actor?: Actor) {
+    if (query.includeInactive && !actor?.permissions.has("config:manage")) throw forbidden();
+    return this.catalogs.listPriorities(query);
+  }
+
+  @RequirePermissions("config:manage")
+  @Post("parcel-priorities")
+  @ApiZodBody(prioritySchema)
+  createPriority(@CurrentActor() actor: Actor, @ZBody(prioritySchema) body: z.infer<typeof prioritySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.createPriority(actor, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Patch("parcel-priorities/:id")
+  @ApiZodBody(updatePrioritySchema)
+  updatePriority(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(updatePrioritySchema) body: z.infer<typeof updatePrioritySchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.updatePriority(actor, id, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Delete("parcel-priorities/:id")
+  removePriority(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.removePriority(actor, id, meta);
+  }
+
+  /** Delivery types (Regular, Express, 4 Hour, Same Day…); their + charge is set per package. */
+  @Public()
+  @Get("delivery-types")
+  @ApiZodQuery(catalogListQuerySchema)
+  listDeliveryTypes(@ZQuery(catalogListQuerySchema) query: z.infer<typeof catalogListQuerySchema>, @OptionalActor() actor?: Actor) {
+    if (query.includeInactive && !actor?.permissions.has("config:manage")) throw forbidden();
+    return this.catalogs.listDeliveryTypes(query);
+  }
+
+  @RequirePermissions("config:manage")
+  @Post("delivery-types")
+  @ApiZodBody(deliveryTypeSchema)
+  createDeliveryType(@CurrentActor() actor: Actor, @ZBody(deliveryTypeSchema) body: z.infer<typeof deliveryTypeSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.createDeliveryType(actor, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Patch("delivery-types/:id")
+  @ApiZodBody(updateDeliveryTypeSchema)
+  updateDeliveryType(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(updateDeliveryTypeSchema) body: z.infer<typeof updateDeliveryTypeSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.updateDeliveryType(actor, id, body, meta);
+  }
+
+  @RequirePermissions("config:manage")
+  @Delete("delivery-types/:id")
+  removeDeliveryType(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ReqMeta() meta: RequestMeta) {
+    return this.catalogs.removeDeliveryType(actor, id, meta);
+  }
+}

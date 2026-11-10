@@ -4,13 +4,14 @@ import { PackagesController } from "./packages.controller";
 import { PackagesService } from "./packages.service";
 import { HubGroupsService } from "./hub-groups.service";
 import { ParcelProductsService } from "./parcel-products.service";
+import { CatalogService } from "./catalog.service";
 
 /** Service packages, hub groups and products. Global: booking, imports, notifications and guards read packages. */
 @Global()
 @Module({
   imports: [PricingModule],
   controllers: [PackagesController],
-  providers: [PackagesService, HubGroupsService, ParcelProductsService],
-  exports: [PackagesService, HubGroupsService, ParcelProductsService],
+  providers: [PackagesService, HubGroupsService, ParcelProductsService, CatalogService],
+  exports: [PackagesService, HubGroupsService, ParcelProductsService, CatalogService],
 })
 export class PackagesModule {}

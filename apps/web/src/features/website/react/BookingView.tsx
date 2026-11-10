@@ -114,7 +114,7 @@ export default function BookingView() {
   const cat = catalog();
   // The website customer package (service packages): its services, first / last mile choices and messages.
   const pkg = cat.customerPackage;
-  // The package's services only (no "Same day": Express is the same-day service).
+  // The delivery types offered to customers (Operational settings › Delivery types).
   const services: [string, string][] = pkg ? pkg.options.speeds.map(s => [s, pkg.labels.speed[s] ?? s]) : [["REGULAR", "Regular"]];
   const [unticked, setUnticked] = useState<string[]>([]);
   const [step, setStep] = useState(0);
@@ -249,7 +249,7 @@ export default function BookingView() {
         .catch(err => {
           if (!live) return;
           setQuote(null);
-          // A choice the package refuses (e.g. Express outside the same district) shows under the service.
+          // A choice the package refuses shows under the delivery type.
           if ((err as { status?: number }).status === 422) form.setServerErrors({ requestServiceLevel: describe(err) });
         });
     }, 250);

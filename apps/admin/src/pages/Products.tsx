@@ -1,8 +1,8 @@
 /**
  * Products (Operational settings, bridge-packages.js renderProducts): the products offered in bookings, one list per
  * merchant type (Customer & E-commerce · Banking & Financial). Search, status filter, sort by name, Export Excel
- * (GET /parcel-products/export), add / edit (name and type), activate / deactivate, delete one without parcels.
- * Which products send messages is set in Service plans › Messages.
+ * (GET /parcel-products/export), add / edit (name, category and type), activate / deactivate, delete one without parcels.
+ * Messages follow the product's category (Operational settings › Product categories).
  */
 import { useState } from "react";
 import { useSearchParams } from "react-router";
@@ -13,18 +13,22 @@ import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Pager, usePaged } from "@panel/ui/Pager";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { useProducts, useServiceCatalog, type Product } from "@/lib/packages";
+import { useCategories, useProducts, useServiceCatalog, type Product } from "@/lib/packages";
 
+// Banking & Financial first (most of the work).
 const LISTS: ["ECOMMERCE" | "BANKING_FINANCIAL", string, string][] = [
-  ["ECOMMERCE", "Customer & E-commerce", "e-commerce"],
   ["BANKING_FINANCIAL", "Banking & Financial", "banking"],
+  ["ECOMMERCE", "Customer & E-commerce", "e-commerce"],
 ];
 
 export default function Products() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const list = params.get("tab") === "banking" ? "BANKING_FINANCIAL" : "ECOMMERCE";
+  const list = params.get("tab") === "e-commerce" ? "ECOMMERCE" : "BANKING_FINANCIAL";
   const products = useProducts();
+  const categories = useCategories();
+  const [category, setCategory] = useState("");
+  const listCategories = (categories.data ?? []).filter(c => c.segment === list);
   const catalog = useServiceCatalog();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -34,7 +38,7 @@ export default function Products() {
   const all = (products.data ?? []).filter(p => p.segment === list);
   if (sort) all.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }) * (sort === "asc" ? 1 : -1));
   const query = q.trim().toLowerCase();
-  const shown = all.filter(p => (!query || p.name.toLowerCase().includes(query)) && (!status || p.active === (status === "active")));
+  const shown = all.filter(p => (!query || p.name.toLowerCase().includes(query)) && (!status || p.active === (status === "active")) && (!category || p.categoryId === category));
   const { rows, pager } = usePaged(shown, 25);
   const typeLabel = (code: string) => catalog.data?.productTypes.find(t => t.code === code)?.label || code;
   const listLabel = LISTS.find(l => l[0] === list)![1];
@@ -45,13 +49,23 @@ export default function Products() {
       title: product ? `Edit ${product.name}` : "Add product",
       submit: product ? "Save" : "Add product",
       fields: [
-        { id: "name", label: "Product name", required: true, maxLength: 120, value: product?.name ?? "", placeholder: list === "BANKING_FINANCIAL" ? "e.g. Credit Cards" : "e.g. Fashion & Apparel", full: true },
+        { id: "name", label: "Product name", required: true, maxLength: 120, value: product?.name ?? "", placeholder: list === "BANKING_FINANCIAL" ? "e.g. Credit Card" : "e.g. Saree", full: true },
+        {
+          id: "categoryId",
+          label: "Category",
+          type: "select",
+          required: true,
+          value: product?.categoryId ?? (category || listCategories.find(c => c.active)?.id || ""),
+          options: listCategories.filter(c => c.active || c.id === product?.categoryId).map(c => ({ value: c.id, label: c.name })),
+          hint: "Its parcels' messages follow the category's SMS / email / push switches.",
+          full: true,
+        },
         { id: "type", label: "Type", type: "select", required: true, value: product?.type ?? types[0]?.code ?? "", options: types.map(t => ({ value: t.code, label: t.label })), hint: "The type prices the parcel.", full: true },
       ],
       onSubmit: async v => {
         const name = v.name.trim();
-        if (product) await api(`/parcel-products/${product.id}`, { method: "PATCH", body: { name, type: v.type } });
-        else await api("/parcel-products", { method: "POST", body: { segment: list, name, type: v.type } });
+        if (product) await api(`/parcel-products/${product.id}`, { method: "PATCH", body: { name, type: v.type, categoryId: v.categoryId } });
+        else await api("/parcel-products", { method: "POST", body: { segment: list, name, type: v.type, categoryId: v.categoryId } });
         await reload();
         return product ? `${name} saved.` : `${name} added.`;
       },
@@ -86,7 +100,7 @@ export default function Products() {
 
   return (
     <>
-      <PageHeading eyebrow="Operational settings" title="Products" subtitle="The products offered in bookings, by merchant type. A product's type (Regular, Document, Books) prices the parcel." />
+      <PageHeading eyebrow="Operational settings" title="Products" subtitle="The products offered in bookings, under their categories, by merchant type. A product's type (Regular, Document, Books) prices the parcel." />
       <div className="seg-tabs" role="tablist" style={{ marginBottom: 12 }}>
         {LISTS.map(([code, label, slug]) => (
           <button
@@ -99,15 +113,24 @@ export default function Products() {
               setParams({ tab: slug }, { replace: true });
               setQ("");
               setStatus("");
+              setCategory("");
             }}
           >
             {label}
           </button>
         ))}
       </div>
-      <Panel title={`${listLabel} products`} subtitle="Optional in bookings. A product with parcels can be deactivated; one without can be deleted. Messages are switched on in Service plans.">
+      <Panel title={`${listLabel} products`} subtitle="Optional in bookings. A product with parcels can be deactivated; one without can be deleted. Messages follow the category.">
         <div className="row" style={{ gap: 8, flexWrap: "wrap", padding: "12px 16px" }}>
           <input className="input sm" type="search" placeholder="Search products" aria-label="Search products" value={q} onChange={e => setQ(e.target.value)} style={{ width: 240 }} />
+          <Select className="select sm" aria-label="Filter by category" value={category} onChange={e => setCategory(e.target.value)}>
+            <option value="">All categories</option>
+            {listCategories.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
           <Select className="select sm" aria-label="Filter by status" value={status} onChange={e => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             <option value="active">Active</option>
@@ -144,6 +167,7 @@ export default function Products() {
                         PRODUCT <span aria-hidden="true">{sort === "asc" ? "▲" : sort === "desc" ? "▼" : "↕"}</span>
                       </button>
                     </th>
+                    <th>Category</th>
                     <th>Type</th>
                     <th>Status</th>
                     <th className="num">Parcels</th>
@@ -154,6 +178,7 @@ export default function Products() {
                   {rows.map(p => (
                     <tr key={p.id}>
                       <td className="strong">{p.name}</td>
+                      <td>{p.categoryName ?? <span className="faint">No category</span>}</td>
                       <td>{typeLabel(p.type)}</td>
                       <td>
                         <Pill tone={p.active ? "good" : "warn"}>{p.active ? "Active" : "Inactive"}</Pill>
@@ -185,7 +210,7 @@ export default function Products() {
                   ))}
                   {!rows.length ? (
                     <tr>
-                      <td colSpan={5} className="faint" style={{ textAlign: "center" }}>
+                      <td colSpan={6} className="faint" style={{ textAlign: "center" }}>
                         No products match.
                       </td>
                     </tr>

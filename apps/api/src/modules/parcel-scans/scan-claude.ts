@@ -1,6 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
 import Anthropic from "@anthropic-ai/sdk";
-import { SPEED_LABEL } from "@delivery-fast/shared";
 import { env } from "../../config/env";
 import type { Catalog } from "../pricing/pricing.service";
 import { COLUMNS, type ColumnKey, type ImportKindKey } from "../imports/columns";
@@ -10,8 +9,15 @@ import { phonesIn, type ScanCells } from "./scan-parser";
 type Places = Pick<Catalog, "districts" | "zonesByDistrict" | "areasByZone">;
 type Values = Partial<Record<ColumnKey, string | null>>;
 
+/** The option lists Claude chooses from (delivery types, categories, priorities: the database's). */
+export interface ScanLists {
+  speeds: readonly string[];
+  categories: readonly string[];
+  priorities: readonly string[];
+}
+
 /** What each import column means on a label (the model reads every column of the kind's template). */
-const HINTS: Record<ColumnKey, string> = {
+const HINTS: Record<Exclude<ColumnKey, "service_level" | "category" | "priority">, string> = {
   sender_name: "the sender (From / Sender / Shipper / Seller / প্রেরক): a person or shop name",
   sender_phone: "the sender's Bangladeshi mobile, 11 digits starting 01",
   pickup_address: "the sender's / pickup address as written",
@@ -28,7 +34,6 @@ const HINTS: Record<ColumnKey, string> = {
   cod_amount: "cash to collect from the recipient in taka, digits only: the COD / total / collect amount, not one item's price or the delivery charge; 0 when it says paid / prepaid",
   declared_value: "the value of the goods in taka, digits only, when written separately from the COD",
   weight_kg: "the parcel weight in kg (500 gm = 0.5)",
-  service_level: `the delivery service if written: one of ${Object.values(SPEED_LABEL).join(", ")}`,
   open_box: "Yes when the label allows opening / checking before paying, else empty",
   order_ref: "the order / invoice / reference number",
   instructions: "a delivery note or instruction for the rider",
@@ -65,14 +70,14 @@ export class ScanClaudeService {
   }
 
   /** The fields (null when the call failed), with the call's tokens, time and estimated cost for the usage log. */
-  async extract(input: { image: Buffer; kind: ImportKindKey; places: Places }): Promise<ClaudeRead | null> {
+  async extract(input: { image: Buffer; kind: ImportKindKey; places: Places; lists: ScanLists }): Promise<ClaudeRead | null> {
     if (!this.enabled()) return null;
     this.client ??= new Anthropic({ apiKey: env().ANTHROPIC_API_KEY, timeout: 120_000, maxRetries: 2 });
     const keys = COLUMNS[input.kind].map(c => c.key);
     const schema = {
       type: "object",
       // Plain strings ("" = not on the photo): the API allows at most 16 nullable (union) fields; a customer parcel has 20.
-      properties: Object.fromEntries(keys.map(k => [k, { type: "string", description: HINTS[k] }])),
+      properties: Object.fromEntries(keys.map(k => [k, { type: "string", description: hintOf(k, input.lists) }])),
       required: keys,
       additionalProperties: false,
     };
@@ -104,7 +109,7 @@ export class ScanClaudeService {
       if (response.stop_reason === "refusal") throw new Error(`refused (${response.stop_details?.category ?? "no category"})`);
       if (response.stop_reason === "max_tokens") throw new Error("the answer was cut off");
       const text = response.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
-      read.cells = fromClaude(JSON.parse(text) as Values, input.kind, input.places);
+      read.cells = fromClaude(JSON.parse(text) as Values, input.kind, input.places, input.lists);
     } catch (err) {
       read.error = (err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err)).trim().slice(0, 300);
       this.logger.warn({ reason: read.error }, "Claude could not read a parcel photo; the local reader is used");
@@ -143,7 +148,15 @@ export function costUsd(model: string, t: ClaudeRead["tokens"]): number {
 }
 
 /** Claude's values kept only when they have the right form; places matched to the catalog. */
-export function fromClaude(values: Values, kind: ImportKindKey, places: Places): ScanCells {
+/** A column's hint; the list columns name their options. */
+function hintOf(key: ColumnKey, lists: ScanLists) {
+  if (key === "service_level") return `the delivery type if written (exactly one of: ${lists.speeds.join(", ")}), else empty`;
+  if (key === "category") return `the product category that fits the item (exactly one of: ${lists.categories.join(", ")}), else empty`;
+  if (key === "priority") return `a priority / handling tag if written (exactly one of: ${lists.priorities.join(", ")}), else empty`;
+  return HINTS[key];
+}
+
+export function fromClaude(values: Values, kind: ImportKindKey, places: Places, lists: ScanLists = { speeds: [], categories: [], priorities: [] }): ScanCells {
   const str = (k: ColumnKey) => {
     const v = values[k];
     return typeof v === "string" ? v.trim() : "";
@@ -169,8 +182,14 @@ export function fromClaude(values: Values, kind: ImportKindKey, places: Places):
   }
   const kg = Number(str("weight_kg").replace(/[^\d.]/g, ""));
   if (kg > 0 && kg <= 50) out.weight_kg = String(kg);
-  const service = Object.values(SPEED_LABEL).find(s => s.toLowerCase() === str("service_level").toLowerCase());
+  // List columns: kept only when they are one of the options (any case).
+  const pick = (options: readonly string[], v: string) => options.find(o => o.toLowerCase() === v.toLowerCase());
+  const service = pick(lists.speeds, str("service_level"));
   if (service) out.service_level = service;
+  const category = pick(lists.categories, str("category"));
+  if (category) out.category = category;
+  const priority = pick(lists.priorities, str("priority"));
+  if (priority) out.priority = priority;
   if (/^(?:yes|y|true)$/i.test(str("open_box"))) out.open_box = "Yes";
   // Places: the model's names (and the address) matched to the catalog.
   const delivery = placeIn([str("area"), str("zone"), str("district"), out.address ?? ""].filter(Boolean).join(", "), places);

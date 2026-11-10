@@ -20,7 +20,10 @@ import type { ScanCells } from "./scan-parser";
 import { readFields, ScanReaderService } from "./scan-reader";
 import { mergeAi, mergeVision, ScanAiService } from "./scan-ai";
 import { forClaude, forModel, upright } from "./scan-image";
-import { ScanClaudeService, type ClaudeRead } from "./scan-claude";
+import { ScanClaudeService, type ClaudeRead, type ScanLists } from "./scan-claude";
+import { CatalogService, listOf } from "../packages/catalog.service";
+import { deliveryTypesFor } from "@delivery-fast/shared";
+import { segmentOf } from "../imports/columns";
 import type { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
 
 const QUEUE = "parcel-scans";
@@ -59,7 +62,19 @@ export class ParcelScansService implements OnApplicationBootstrap {
     private readonly reader: ScanReaderService,
     private readonly ai: ScanAiService,
     private readonly claude: ScanClaudeService,
+    private readonly catalogs: CatalogService,
   ) {}
+
+  /** The kind's delivery types, categories and priorities (Claude chooses from them). */
+  private async lists(kind: ImportKindKey): Promise<ScanLists> {
+    const segment = segmentOf(kind);
+    const [types, categories, priorities] = await Promise.all([
+      this.catalogs.deliveryTypes(),
+      this.prisma.productCategory.findMany({ where: { segment: listOf(segment), active: true }, orderBy: { sortOrder: "asc" }, select: { name: true } }),
+      this.prisma.parcelPriority.findMany({ where: { segment: listOf(segment), active: true }, orderBy: { sortOrder: "asc" }, select: { name: true } }),
+    ]);
+    return { speeds: deliveryTypesFor(segment, types).map(t => t.name), categories: categories.map(c => c.name), priorities: priorities.map(p => p.name) };
+  }
 
   onApplicationBootstrap() {
     if (!runsJobs()) return;
@@ -350,7 +365,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
       const kind = kindKeyOf(scan.session.kind);
       const catalog = await this.pricing.catalog();
       // SCAN_READER=claude: Claude reads the whole photo; the local reader only when that call fails.
-      byClaude = this.claude.enabled() ? await this.claude.extract({ image: await forClaude(photo), kind, places: catalog }) : null;
+      byClaude = this.claude.enabled() ? await this.claude.extract({ image: await forClaude(photo), kind, places: catalog, lists: await this.lists(kind) }) : null;
       if (byClaude?.cells) {
         cells = byClaude.cells;
         if (!Object.keys(cells).length) status = "FAILED";

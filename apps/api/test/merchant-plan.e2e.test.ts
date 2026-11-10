@@ -42,7 +42,8 @@ describe("merchant plan page", () => {
     expect(item(d, "first.rider_pickup")).toMatchObject({ included: true });
     expect(item(d, "first.on_demand_pickup")).toMatchObject({ included: false });
     expect(item(d, "tracking.live_location")).toMatchObject({ included: false });
-    expect(item(d, "speed.express")).toMatchObject({ included: true, price: "+৳40 per parcel" });
+    expect(item(d, "delivery.EXPRESS")).toMatchObject({ included: true, price: "+৳40 per parcel" });
+    expect(item(d, "delivery.SAME_DAY")).toMatchObject({ included: true });
     expect(item(d, "payment.cod")).toMatchObject({ included: true, price: "1% of the cash collected (minimum ৳10)" });
     expect(item(d, "tracking.website")).toMatchObject({ included: true, always: true });
     // Banking-only services aren't listed for an e-commerce merchant.
@@ -106,7 +107,8 @@ describe("merchant plan page", () => {
     expect((await ctx.api("GET", `/merchants/me/plan?merchantId=${m.id}`, { token: bank.owner.token })).status).toBe(403);
     const b = (await ctx.api("GET", "/merchants/me/plan", { token: bank.owner.token })).body;
     expect(b.segment).toBe("BANKING_FINANCIAL");
-    expect(item(b, "handling.b2b")).toBeDefined();
+    expect(item(b, "delivery.FOUR_HOUR")).toBeDefined();
+    expect(item(b, "handling.b2b")).toBeUndefined();
     expect(item(b, "payment.cod")).toBeUndefined();
     expect(b.messages.account.some((a: { event: string }) => a.event === "finance.settlement_paid")).toBe(false);
     expect(b.calculator.weight).toBe(false);

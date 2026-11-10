@@ -21,8 +21,12 @@ export const importOptionsSchema = z.object({
   firstMile: firstMileSchema.optional(),
   dropHubId: z.uuid().optional(),
   lastMile: lastMileSchema.optional(),
-  /** The import modal's Service for every row: overwrites the file's Service column. Empty = each row's own. */
+  /** The import modal's delivery type (code or name) for every row: overwrites the file's Delivery type column. Empty = each row's own. */
   speed: speedOptionSchema.optional(),
+  /** The import modal's category (id) for every row: overwrites the file's Category column. Empty = each row's own (or its product's). */
+  category: z.uuid("Choose a category from the list").optional(),
+  /** The import modal's priority (id) for every row: overwrites the file's Priority column. Empty = each row's own (or the default). */
+  priority: z.uuid("Choose a priority from the list").optional(),
   /** E-commerce / customer: the product type (Regular, Document, Books) every row is priced as, instead of its product's. */
   productType: z.enum(PRODUCT_TYPES, "Choose Regular, Document or Books").optional(),
   /** Parcel notifications to send for these orders (codes; a JSON array or comma-separated; "none" for no messages). Default: every one in the package. */

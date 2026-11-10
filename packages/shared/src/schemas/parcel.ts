@@ -119,6 +119,9 @@ export const listParcelsQuerySchema = z.object({
   dropOffHubId: z.uuid().optional(),
   /** Parcels booked in one spreadsheet import (GET /ops/booking-batches). */
   batchId: z.uuid().optional(),
+  /** The priority tag (its name: General, Security, Online Product…) and the product category (its name). */
+  priority: optionalText(80),
+  category: optionalText(80),
   /** true: only incomplete orders ("Needs info", imports booked with delivery details missing). */
   incomplete: z
     .enum(["true", "false"])

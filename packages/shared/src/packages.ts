@@ -28,53 +28,40 @@ export const PRODUCT_TYPE_LABEL: Record<ProductType, string> = { REGULAR: "Regul
 /** Product lists: Customer + E-commerce share the ECOMMERCE list; Banking & Financial has its own. */
 export const productListOf = (segment: PackageSegment): "ECOMMERCE" | "BANKING_FINANCIAL" => (isBanking(segment) ? "BANKING_FINANCIAL" : "ECOMMERCE");
 
-/** The seeded products (owner's lists, spec v2). */
-export const SEED_PRODUCTS: Record<"ECOMMERCE" | "BANKING_FINANCIAL", Record<ProductType, readonly string[]>> = {
-  ECOMMERCE: {
-    REGULAR: [
-      "Fashion & Apparel",
-      "Electronics & Gadgets",
-      "Beauty & Personal Care",
-      "Food & Grocery",
-      "Home & Living",
-      "Health & Wellness",
-      "Shoes & Accessories",
-      "Baby & Kids",
-      "Sports & Fitness",
-      "Jewelry",
-      "Automotive",
-      "Toys & Games",
-      "Pet Supplies",
-      "Furniture",
-      "Appliances",
-      "Gifts & Crafts",
-      "Office Supplies",
-      "Musical Instruments",
-      "Industrial & Business Supplies",
-    ],
-    DOCUMENT: ["Papers", "Invoices", "Contracts", "Certificates", "Warranty Documents"],
-    BOOKS: ["Books", "Notebooks", "Magazines", "Academic Materials"],
-  },
-  BANKING_FINANCIAL: {
-    REGULAR: ["Credit Cards", "Debit Cards", "ATM Cards", "PIN Mailers", "Account Opening Kits", "Banking Welcome Kits", "Security Tokens", "POS Terminals", "Payment Devices"],
-    DOCUMENT: [
-      "Bank Statements",
-      "Bank Documents",
-      "Loan Documents",
-      "Insurance Documents",
-      "Investment Certificates",
-      "Fixed Deposit Certificates",
-      "Pay Orders",
-      "Demand Drafts",
-      "Bank Certificates",
-      "Corporate Banking Documents",
-      "Trade Finance Documents",
-      "KYC Documents",
-      "Financial Agreements",
-      "Confidential Documents",
-    ],
-    BOOKS: ["Cheque Books", "Passbooks"],
-  },
+/** A seeded product category: its message channels and its products (name, pricing type). */
+export interface SeedCategory {
+  name: string;
+  sms: boolean;
+  email: boolean;
+  push: boolean;
+  products: readonly (readonly [string, ProductType])[];
+}
+/**
+ * The seeded catalog (owner's lists, 2026-11-11): Customer & E-commerce share the ECOMMERCE list; Banking & Financial
+ * has its own. Categories carry the message channels; the migration 20261111090000_catalog_priority_delivery_types
+ * seeds the same lists.
+ */
+export const SEED_CATALOG: Record<"ECOMMERCE" | "BANKING_FINANCIAL", readonly SeedCategory[]> = {
+  BANKING_FINANCIAL: [
+    { name: "Cards & PIN", sms: true, email: true, push: true, products: [["Debit Card", "REGULAR"], ["Credit Card", "REGULAR"], ["Prepaid Card", "REGULAR"], ["ATM Card", "REGULAR"], ["PIN Mailer", "DOCUMENT"]] },
+    { name: "Cheque Book & Passbook", sms: true, email: true, push: true, products: [["Cheque Book", "BOOKS"], ["Passbook", "BOOKS"], ["Deposit Slip Book", "BOOKS"]] },
+    { name: "Financial Instruments", sms: true, email: true, push: true, products: [["Pay Order", "DOCUMENT"], ["Demand Draft", "DOCUMENT"], ["Fixed Deposit Receipt (FDR)", "DOCUMENT"], ["DPS Certificate", "DOCUMENT"], ["Savings Certificate (Sanchayapatra)", "DOCUMENT"], ["Bond / Investment Certificate", "DOCUMENT"], ["Bank Guarantee", "DOCUMENT"]] },
+    { name: "Statements & Certificates", sms: false, email: true, push: false, products: [["Bank Statement", "DOCUMENT"], ["Credit Card Statement", "DOCUMENT"], ["Solvency Certificate", "DOCUMENT"], ["Balance Confirmation Certificate", "DOCUMENT"], ["Tax / TDS Certificate", "DOCUMENT"], ["Interest Certificate", "DOCUMENT"]] },
+    { name: "Account & Loan Documents", sms: false, email: false, push: false, products: [["Account Opening Kit", "REGULAR"], ["Welcome Kit", "REGULAR"], ["KYC Documents", "DOCUMENT"], ["Loan Documents", "DOCUMENT"], ["Loan Sanction Letter", "DOCUMENT"], ["Mortgage / Property Documents", "DOCUMENT"], ["Financial Agreement", "DOCUMENT"], ["Insurance Policy Documents", "DOCUMENT"], ["Insurance Claim Documents", "DOCUMENT"], ["Legal Notice / Demand Letter", "DOCUMENT"], ["Confidential Documents", "DOCUMENT"]] },
+    { name: "Corporate & Trade Documents", sms: false, email: true, push: false, products: [["Corporate Banking Documents", "DOCUMENT"], ["LC Documents", "DOCUMENT"], ["Trade Finance Documents", "DOCUMENT"], ["Export / Import Documents", "DOCUMENT"], ["Payroll Documents", "DOCUMENT"], ["Tender Documents", "DOCUMENT"]] },
+    { name: "Banking Devices", sms: true, email: true, push: true, products: [["POS Terminal", "REGULAR"], ["Security Token", "REGULAR"], ["Card Reader", "REGULAR"], ["QR Merchant Kit", "REGULAR"]] },
+  ],
+  ECOMMERCE: [
+    { name: "Fashion & Clothing", sms: true, email: true, push: true, products: [["Saree", "REGULAR"], ["Three-Piece / Salwar Kameez", "REGULAR"], ["Kurti & Tops", "REGULAR"], ["Panjabi", "REGULAR"], ["Shirt", "REGULAR"], ["T-Shirt & Polo", "REGULAR"], ["Pants & Jeans", "REGULAR"], ["Hijab & Borka", "REGULAR"], ["Kids Clothing", "REGULAR"], ["Lungi & Gamcha", "REGULAR"], ["Winter Wear", "REGULAR"], ["Innerwear & Nightwear", "REGULAR"]] },
+    { name: "Shoes, Bags & Accessories", sms: true, email: true, push: true, products: [["Men's Shoes", "REGULAR"], ["Women's Shoes", "REGULAR"], ["Sandals & Slippers", "REGULAR"], ["Handbag & Purse", "REGULAR"], ["Backpack", "REGULAR"], ["Wallet", "REGULAR"], ["Watch", "REGULAR"], ["Sunglasses", "REGULAR"], ["Belt", "REGULAR"], ["Jewelry & Ornaments", "REGULAR"]] },
+    { name: "Beauty & Personal Care", sms: true, email: true, push: true, products: [["Skin Care", "REGULAR"], ["Makeup", "REGULAR"], ["Hair Care", "REGULAR"], ["Perfume & Attar", "REGULAR"], ["Men's Grooming", "REGULAR"], ["Personal Care Appliances", "REGULAR"]] },
+    { name: "Electronics & Gadgets", sms: true, email: true, push: true, products: [["Mobile Phone", "REGULAR"], ["Mobile Accessories", "REGULAR"], ["Earbuds & Headphones", "REGULAR"], ["Smart Watch", "REGULAR"], ["Power Bank", "REGULAR"], ["Bluetooth Speaker", "REGULAR"], ["Computer Accessories", "REGULAR"], ["Laptop & Tablet", "REGULAR"], ["Camera & Accessories", "REGULAR"], ["Gaming Accessories", "REGULAR"], ["Networking Device", "REGULAR"]] },
+    { name: "Home, Kitchen & Appliances", sms: true, email: true, push: true, products: [["Kitchenware", "REGULAR"], ["Dinner Set & Crockery", "REGULAR"], ["Small Kitchen Appliances", "REGULAR"], ["Home Appliances", "REGULAR"], ["Home Decor", "REGULAR"], ["Bedding & Curtains", "REGULAR"], ["Lighting", "REGULAR"], ["Cleaning Supplies", "REGULAR"], ["Furniture", "REGULAR"], ["Tools & Hardware", "REGULAR"]] },
+    { name: "Food & Grocery", sms: true, email: true, push: true, products: [["Grocery", "REGULAR"], ["Rice, Dal & Spices", "REGULAR"], ["Oil & Ghee", "REGULAR"], ["Honey", "REGULAR"], ["Dates & Dry Fruits", "REGULAR"], ["Tea & Coffee", "REGULAR"], ["Snacks & Sweets", "REGULAR"], ["Organic Food", "REGULAR"], ["Seasonal Fruits", "REGULAR"], ["Fish & Meat (Frozen)", "REGULAR"], ["Homemade Food", "REGULAR"]] },
+    { name: "Health, Baby & Kids", sms: true, email: true, push: true, products: [["Medicine & Health Care", "REGULAR"], ["Medical Devices", "REGULAR"], ["Baby Care", "REGULAR"], ["Diaper & Baby Food", "REGULAR"], ["Toys & Games", "REGULAR"], ["School Supplies", "REGULAR"]] },
+    { name: "Books, Stationery & Documents", sms: true, email: true, push: true, products: [["Books", "BOOKS"], ["Islamic Books", "BOOKS"], ["Academic & Exam Books", "BOOKS"], ["Magazines", "BOOKS"], ["Notebooks & Stationery", "BOOKS"], ["Office Supplies", "REGULAR"], ["Papers & Documents", "DOCUMENT"], ["Invoices", "DOCUMENT"], ["Contracts & Agreements", "DOCUMENT"], ["Certificates", "DOCUMENT"], ["Warranty Documents", "DOCUMENT"]] },
+    { name: "Lifestyle & Others", sms: true, email: true, push: true, products: [["Gifts & Crafts", "REGULAR"], ["Sports & Fitness", "REGULAR"], ["Automotive & Bike Accessories", "REGULAR"], ["Pet Supplies", "REGULAR"], ["Musical Instruments", "REGULAR"], ["Plants & Gardening", "REGULAR"], ["Agro Products", "REGULAR"], ["Industrial & Business Supplies", "REGULAR"]] },
+  ],
 };
 
 // ───────────── routes (district only, never zone) ─────────────
@@ -105,12 +92,11 @@ export function routeTier(pickupDistrict: string | null | undefined, deliveryDis
 
 // ───────────── the service catalog ─────────────
 
-export const SERVICE_GROUPS = ["firstMile", "lastMile", "service", "payment", "options", "parcelNotifications", "supportNotifications", "proof", "tracking", "integrations"] as const;
+export const SERVICE_GROUPS = ["firstMile", "lastMile", "payment", "options", "parcelNotifications", "supportNotifications", "proof", "tracking", "integrations"] as const;
 export type ServiceGroup = (typeof SERVICE_GROUPS)[number];
 export const SERVICE_GROUP_LABEL: Record<ServiceGroup, string> = {
   firstMile: "First mile",
   lastMile: "Last mile",
-  service: "Service",
   payment: "Cash on delivery",
   options: "Open box",
   parcelNotifications: "Parcel notifications (SMS & email)",
@@ -138,7 +124,6 @@ export interface ServiceDef {
 const ALL: readonly PackageSegment[] = PACKAGE_SEGMENTS;
 const PARCELS: readonly PackageSegment[] = ["CUSTOMER", "ECOMMERCE"];
 const MERCHANTS: readonly PackageSegment[] = ["ECOMMERCE", "BANKING_FINANCIAL"];
-const BANKING: readonly PackageSegment[] = ["BANKING_FINANCIAL"];
 
 /** Parcel notifications: each event once, with its audience. Guest booking verification is for website customers only. */
 export const PARCEL_NOTIFICATIONS = [
@@ -185,12 +170,6 @@ export const SERVICES: readonly ServiceDef[] = [
   { code: "first.on_demand_pickup", label: "On-demand pickup", group: "firstMile", segments: ALL, kind: "booking", hint: "Top dispatch priority; no automatic instant dispatch yet." },
   { code: "last.doorstep", label: "Home delivery", group: "lastMile", segments: ALL, kind: "booking" },
   { code: "last.hub_collect", label: "Hub Pickup", group: "lastMile", segments: ALL, kind: "booking", hint: "The recipient collects it at the hub serving their zone." },
-  { code: "speed.regular", label: "Regular", group: "service", segments: ALL, kind: "booking", core: true },
-  { code: "speed.express", label: "Express", group: "service", segments: ALL, kind: "booking", hint: "Customer & E-commerce: same day, inside the same district only." },
-  { code: "speed.on_demand", label: "On-demand", group: "service", segments: BANKING, kind: "booking", hint: "Top dispatch priority." },
-  { code: "handling.b2b", label: "B2B Document", group: "service", segments: BANKING, kind: "booking" },
-  { code: "handling.trade", label: "Trade Service Document", group: "service", segments: BANKING, kind: "booking" },
-  { code: "handling.urgent", label: "Corporate Urgent Document", group: "service", segments: BANKING, kind: "booking", hint: "Its fee includes the urgency: no speed fee." },
   { code: "payment.cod", label: "Cash on delivery (COD)", group: "payment", segments: PARCELS, kind: "booking" },
   { code: "option.open_box", label: "Open box / Check before pay", group: "options", segments: ["ECOMMERCE"], kind: "booking" },
   ...PARCEL_NOTIFICATIONS.map(
@@ -233,41 +212,55 @@ export const FIRST_MILES = ["RIDER_PICKUP", "HUB_DROP", "ON_DEMAND_PICKUP"] as c
 export type FirstMile = (typeof FIRST_MILES)[number];
 export const LAST_MILES = ["DOORSTEP", "HUB_COLLECT"] as const;
 export type LastMile = (typeof LAST_MILES)[number];
-/** The service (one choice). Customer & E-commerce: Regular, Express. Banking & Financial: all six. */
-export const SPEED_OPTIONS = ["REGULAR", "EXPRESS", "ON_DEMAND", "B2B", "TRADE", "URGENT"] as const;
-export type SpeedOption = (typeof SPEED_OPTIONS)[number];
+/**
+ * Delivery types (Regular, Express, 4 Hour, Same Day…) are kept in the database (super admin › Delivery types): a
+ * parcel stores the type's code (`speedOption`). Their + charge is per package version (prices.deliveryFees[code]).
+ */
+export type SpeedOption = string;
+export interface DeliveryTypeDef {
+  code: string;
+  name: string;
+  /** The categories it is offered to. */
+  segments: readonly PackageSegment[];
+  /** The SLA policies that time it. */
+  slaLevel: "REGULAR" | "SAME_DAY" | "EXPRESS";
+  active?: boolean;
+}
+/** The delivery type of a booking that doesn't choose one. */
+export const DEFAULT_DELIVERY_TYPE = "REGULAR";
+/** The seeded delivery types (a fresh database gets them; the migration seeds existing ones). */
+export const SEED_DELIVERY_TYPES: readonly DeliveryTypeDef[] = [
+  { code: "REGULAR", name: "Regular", segments: ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"], slaLevel: "REGULAR" },
+  { code: "EXPRESS", name: "Express", segments: ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"], slaLevel: "EXPRESS" },
+  { code: "FOUR_HOUR", name: "4 Hour Delivery", segments: ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"], slaLevel: "EXPRESS" },
+  { code: "SAME_DAY", name: "Same Day Delivery", segments: ["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"], slaLevel: "SAME_DAY" },
+];
+/** The seeded priorities per list (the first is the default). */
+export const SEED_PRIORITIES: Record<"ECOMMERCE" | "BANKING_FINANCIAL", readonly string[]> = { BANKING_FINANCIAL: ["General", "Security"], ECOMMERCE: ["Online Product", "Fragile"] };
+/** A type's code from its name ("4 Hour Delivery" → "FOUR_HOUR_DELIVERY"; digits are spelled for the first word). */
+export const deliveryTypeCode = (name: string) =>
+  name
+    .trim()
+    .toUpperCase()
+    .replace(/^4\b/, "FOUR")
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+/** The active delivery types of a category, in their order. */
+export const deliveryTypesFor = (segment: PackageSegment, types: readonly DeliveryTypeDef[]) => types.filter(t => t.active !== false && t.segments.includes(segment));
+const normType = (raw: string) => raw.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+/** The delivery type named in a cell or a request: its code or its name ("Same day", "SAME_DAY", "4 hour"). */
+export function findDeliveryType(raw: string | null | undefined, types: readonly DeliveryTypeDef[]): DeliveryTypeDef | undefined {
+  const v = normType(raw ?? "");
+  if (!v) return undefined;
+  const bare = (t: string) => normType(t).replace(/ delivery$/, "");
+  return types.find(t => normType(t.code) === v || normType(t.name) === v || bare(t.name) === v.replace(/ delivery$/, "") || bare(t.code) === v.replace(/ delivery$/, ""));
+}
 
 export const FIRST_MILE_SERVICE: Record<FirstMile, string> = { RIDER_PICKUP: "first.rider_pickup", HUB_DROP: "first.hub_drop", ON_DEMAND_PICKUP: "first.on_demand_pickup" };
 export const LAST_MILE_SERVICE: Record<LastMile, string> = { DOORSTEP: "last.doorstep", HUB_COLLECT: "last.hub_collect" };
-export const SPEED_SERVICE: Record<SpeedOption, string> = { REGULAR: "speed.regular", EXPRESS: "speed.express", ON_DEMAND: "speed.on_demand", B2B: "handling.b2b", TRADE: "handling.trade", URGENT: "handling.urgent" };
 export const FIRST_MILE_LABEL: Record<FirstMile, string> = { RIDER_PICKUP: "Rider pickup", HUB_DROP: "Drop at hub", ON_DEMAND_PICKUP: "On-demand pickup" };
 export const LAST_MILE_LABEL: Record<LastMile, string> = { DOORSTEP: "Home delivery", HUB_COLLECT: "Hub Pickup" };
-export const SPEED_LABEL: Record<SpeedOption, string> = {
-  REGULAR: "Regular",
-  EXPRESS: "Express",
-  ON_DEMAND: "On-demand",
-  B2B: "B2B Document",
-  TRADE: "Trade Service Document",
-  URGENT: "Corporate Urgent Document",
-};
-/** The Parcel.serviceLevel (SLA policy) each option books: Express is same day; On-demand has its own target (the SAME_DAY level too); Corporate Urgent → EXPRESS. */
-export const SPEED_SERVICE_LEVEL: Record<SpeedOption, "REGULAR" | "SAME_DAY" | "EXPRESS"> = { REGULAR: "REGULAR", EXPRESS: "SAME_DAY", ON_DEMAND: "SAME_DAY", B2B: "REGULAR", TRADE: "REGULAR", URGENT: "EXPRESS" };
-
-const norm = (raw: string) => raw.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-/** Accepts "Express", "EXPRESS", "On demand", "B2B Document", "Corporate urgent"… */
-export function parseSpeedOption(raw: string | null | undefined): SpeedOption | undefined {
-  const v = norm(raw ?? "");
-  if (!v) return undefined;
-  for (const o of SPEED_OPTIONS) if (v === norm(o) || v === norm(SPEED_LABEL[o]) || v === norm(SPEED_LABEL[o]).replace(/ document$/, "")) return o;
-  if (v === "regular delivery") return "REGULAR";
-  // "Same day" is not a service option (Express is the same-day service): only the old `serviceLevel`
-  // field still maps SAME_DAY → Express (PackagesService.speedOf).
-  if (v === "express delivery") return "EXPRESS";
-  if (v === "on demand delivery") return "ON_DEMAND";
-  if (v === "trade" || v === "trade service") return "TRADE";
-  if (v === "urgent" || v === "corporate urgent") return "URGENT";
-  return undefined;
-}
 export function parseFirstMile(raw: string | null | undefined): FirstMile | undefined {
   const v = (raw ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
   if ((FIRST_MILES as readonly string[]).includes(v)) return v as FirstMile;
@@ -301,12 +294,8 @@ export const packagePricesSchema = z.object({
   typeDocument: money.default(0),
   typeBooks: money.default(0),
   extraKg: money.default(15),
-  regularFee: money.default(0),
-  expressFee: money.default(40),
-  onDemandFee: money.default(0),
-  b2bRate: money.default(0),
-  tradeRate: money.default(0),
-  urgentRate: money.default(0),
+  /** Delivery type + charge by code (REGULAR, EXPRESS, FOUR_HOUR, SAME_DAY…); a type without one adds ৳0. */
+  deliveryFees: z.record(z.string().regex(/^[A-Z0-9_]{1,40}$/), money).default({ REGULAR: 0, EXPRESS: 40 }),
   homeDeliveryFee: signedMoney.default(0),
   hubPickupFee: signedMoney.default(0),
   hubDropDiscount: money.default(0),
@@ -323,7 +312,7 @@ export const DEFAULT_PACKAGE_PRICES: PackagePrices = packagePricesSchema.parse({
 
 export type PriceUnit = "৳" | "%" | "count";
 /** Price fields per category, in the editor's groups and order. `sign` marks subtracted / added adjustments. */
-export const PRICE_FIELDS: readonly { key: keyof PackagePrices; group: string; label: string; unit: PriceUnit; segments: readonly PackageSegment[]; sign?: "-" | "+"; signed?: boolean }[] = [
+export const PRICE_FIELDS: readonly { key: Exclude<keyof PackagePrices, "deliveryFees">; group: string; label: string; unit: PriceUnit; segments: readonly PackageSegment[]; sign?: "-" | "+"; signed?: boolean }[] = [
   { key: "dhakaSuburban", group: "Route", label: "Dhaka ↔ Sub-urban", unit: "৳", segments: ALL },
   { key: "sameDistrict", group: "Route", label: "Inside same district", unit: "৳", segments: ALL },
   { key: "differentDistrict", group: "Route", label: "Different district", unit: "৳", segments: ALL },
@@ -331,12 +320,6 @@ export const PRICE_FIELDS: readonly { key: keyof PackagePrices; group: string; l
   { key: "typeDocument", group: "What are you sending (+ charge)", label: "Document", unit: "৳", segments: PARCELS },
   { key: "typeBooks", group: "What are you sending (+ charge)", label: "Books", unit: "৳", segments: PARCELS },
   { key: "extraKg", group: "Weight (0.5 kg included in the route price)", label: "Each additional started kg", unit: "৳", segments: PARCELS },
-  { key: "regularFee", group: "Service (+ charge)", label: "Regular", unit: "৳", segments: ALL },
-  { key: "expressFee", group: "Service (+ charge)", label: "Express", unit: "৳", segments: ALL },
-  { key: "onDemandFee", group: "Service (+ charge)", label: "On-demand", unit: "৳", segments: BANKING },
-  { key: "b2bRate", group: "Service (+ charge)", label: "B2B Document", unit: "৳", segments: BANKING },
-  { key: "tradeRate", group: "Service (+ charge)", label: "Trade Service Document", unit: "৳", segments: BANKING },
-  { key: "urgentRate", group: "Service (+ charge)", label: "Corporate Urgent Document", unit: "৳", segments: BANKING },
   { key: "homeDeliveryFee", group: "Last mile (+ charge)", label: "Home delivery", unit: "৳", segments: ALL, signed: true },
   { key: "hubPickupFee", group: "Last mile (+ charge)", label: "Hub Pickup (may be negative)", unit: "৳", segments: ALL, signed: true },
   { key: "hubDropDiscount", group: "First mile", label: "Drop at hub", unit: "৳", segments: ALL, sign: "-" },
@@ -405,7 +388,7 @@ export interface SelectionInput {
 export interface SelectionProblem {
   /** The input field (firstMile, lastMile, speed, openBox, codAmount, notifications). */
   field: string;
-  code: "SERVICE_NOT_IN_PACKAGE" | "EXPRESS_SAME_DISTRICT_ONLY" | "INVALID";
+  code: "SERVICE_NOT_IN_PACKAGE" | "INVALID";
   message: string;
 }
 
@@ -426,12 +409,15 @@ export const bookableNotifications = (services: readonly string[]) => {
 };
 
 /** Choices offered for a package (forms, import modal, template columns and dropdowns). */
-export function packageOptions(segment: PackageSegment, services: readonly string[]) {
+export function packageOptions(segment: PackageSegment, services: readonly string[], deliveryTypes: readonly DeliveryTypeDef[]) {
   const has = new Set(services);
+  const types = deliveryTypesFor(segment, deliveryTypes);
   return {
     firstMiles: FIRST_MILES.filter(f => has.has(FIRST_MILE_SERVICE[f])),
     lastMiles: LAST_MILES.filter(l => has.has(LAST_MILE_SERVICE[l])),
-    speeds: SPEED_OPTIONS.filter(o => has.has(SPEED_SERVICE[o]) && SERVICE_BY_CODE.get(SPEED_SERVICE[o])!.segments.includes(segment)),
+    /** Delivery type codes, in order (the first is the default). */
+    speeds: types.map(t => t.code),
+    deliveryTypes: types.map(t => ({ code: t.code, name: t.name })),
     cod: !isBanking(segment) && has.has("payment.cod"),
     openBox: segment === "ECOMMERCE" && has.has("option.open_box"),
     weight: !isBanking(segment),
@@ -443,10 +429,10 @@ export function packageOptions(segment: PackageSegment, services: readonly strin
 
 /**
  * Applies the package defaults to a booking and checks it against the package. Sending a service
- * the package doesn't include is an error (SERVICE_NOT_IN_PACKAGE: <service>). The Express route
- * rule needs the route: see `routeProblems`.
+ * the package doesn't include is an error (SERVICE_NOT_IN_PACKAGE: <service>); a delivery type must be an active one
+ * of the category (no route rule: any type on any route).
  */
-export function resolveSelection(segment: PackageSegment, services: readonly string[], input: SelectionInput): { selection: BookingSelection; problems: SelectionProblem[] } {
+export function resolveSelection(segment: PackageSegment, services: readonly string[], input: SelectionInput, deliveryTypes: readonly DeliveryTypeDef[]): { selection: BookingSelection; problems: SelectionProblem[] } {
   const has = new Set(services);
   const problems: SelectionProblem[] = [];
   const notIn = (field: string, code: string) => problems.push({ field, code: "SERVICE_NOT_IN_PACKAGE", message: `SERVICE_NOT_IN_PACKAGE: ${serviceLabel(code)}` });
@@ -454,10 +440,11 @@ export function resolveSelection(segment: PackageSegment, services: readonly str
   if (!has.has(FIRST_MILE_SERVICE[firstMile])) notIn("firstMile", FIRST_MILE_SERVICE[firstMile]);
   const lastMile = input.lastMile ?? defaultLastMile(has) ?? "DOORSTEP";
   if (!has.has(LAST_MILE_SERVICE[lastMile])) notIn("lastMile", LAST_MILE_SERVICE[lastMile]);
-  const speed = input.speed ?? "REGULAR";
-  const speedService = SPEED_SERVICE[speed];
-  if (!SERVICE_BY_CODE.get(speedService)!.segments.includes(segment)) problems.push({ field: "speed", code: "INVALID", message: `${SPEED_LABEL[speed]} isn't a ${SEGMENT_LABEL[segment]} service` });
-  else if (!has.has(speedService)) notIn("speed", speedService);
+  const offered = deliveryTypesFor(segment, deliveryTypes);
+  const wanted = input.speed ? findDeliveryType(input.speed, deliveryTypes) : undefined;
+  const speed = wanted?.code ?? input.speed ?? offered.find(t => t.code === DEFAULT_DELIVERY_TYPE)?.code ?? offered[0]?.code ?? DEFAULT_DELIVERY_TYPE;
+  if (input.speed && !offered.some(t => t.code === speed))
+    problems.push({ field: "speed", code: "INVALID", message: `${wanted?.name ?? input.speed} isn't a ${SEGMENT_LABEL[segment]} delivery type (choose ${offered.map(t => t.name).join(", ") || "none offered"})` });
   const codAmount = Math.max(0, input.codAmount ?? 0);
   if (codAmount > 0) {
     if (isBanking(segment)) problems.push({ field: "codAmount", code: "INVALID", message: "Banking & Financial parcels can't be cash on delivery" });
@@ -477,13 +464,6 @@ export function resolveSelection(segment: PackageSegment, services: readonly str
   }
   const weightKg = isBanking(segment) ? 0.5 : (input.weightKg ?? INCLUDED_WEIGHT_KG);
   return { selection: { firstMile, lastMile, speed, productType: input.productType ?? "REGULAR", openBox, codAmount, weightKg, notifications }, problems };
-}
-
-/** Customer & E-commerce Express means same day: only inside the same district. */
-export function routeProblems(segment: PackageSegment, tier: RouteTier, speed: SpeedOption): SelectionProblem[] {
-  if (speed === "EXPRESS" && !isBanking(segment) && tier !== "SAME_DISTRICT")
-    return [{ field: "speed", code: "EXPRESS_SAME_DISTRICT_ONLY", message: "Express (same day) is only available inside the same district" }];
-  return [];
 }
 
 /** Proof methods the rider may use for a parcel: the package's, without OTP when the delivery code isn't sent. */
@@ -510,6 +490,8 @@ export interface PriceInput {
   services: readonly string[];
   tier: RouteTier;
   selection: Pick<BookingSelection, "firstMile" | "lastMile" | "speed" | "productType" | "openBox" | "codAmount" | "weightKg">;
+  /** The delivery type's name for its price line (default: its code). */
+  deliveryTypeName?: string;
 }
 
 export interface PriceBreakdown {
@@ -525,8 +507,10 @@ export interface PriceBreakdown {
 }
 
 const whole = (n: number) => Math.round(n + 1e-9);
-const PRODUCT_FEE: Record<ProductType, keyof PackagePrices> = { REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" };
-const ROUTE_FEE: Record<RouteTier, keyof PackagePrices> = { DHAKA_SUBURBAN: "dhakaSuburban", SAME_DISTRICT: "sameDistrict", DIFFERENT_DISTRICT: "differentDistrict" };
+/** The flat ৳ / % / count price fields (not the delivery type fees). */
+type NumericPrice = Exclude<keyof PackagePrices, "deliveryFees">;
+const PRODUCT_FEE: Record<ProductType, NumericPrice> = { REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" };
+const ROUTE_FEE: Record<RouteTier, NumericPrice> = { DHAKA_SUBURBAN: "dhakaSuburban", SAME_DISTRICT: "sameDistrict", DIFFERENT_DISTRICT: "differentDistrict" };
 
 /**
  * The one price formula (website, merchant forms, imports, API, operations, bulk updates, intake
@@ -550,13 +534,8 @@ export function priceParcel(prices: PackagePrices, input: PriceInput): PriceBrea
     const extraKg = Math.max(0, Math.ceil(s.weightKg - INCLUDED_WEIGHT_KG - 1e-9));
     add("weight", `Weight (${extraKg} kg over ${INCLUDED_WEIGHT_KG} kg)`, whole(extraKg * prices.extraKg));
   }
-  // Service: B2B / Trade add their fee on top of Regular; Corporate Urgent's fee includes the urgency.
-  if (s.speed === "EXPRESS") add("speed", SPEED_LABEL.EXPRESS, whole(prices.expressFee));
-  else if (s.speed === "ON_DEMAND") add("speed", SPEED_LABEL.ON_DEMAND, whole(prices.onDemandFee));
-  else if (s.speed !== "URGENT") add("speed", SPEED_LABEL.REGULAR, whole(prices.regularFee));
-  if (s.speed === "B2B") add("handling", SPEED_LABEL.B2B, whole(prices.b2bRate));
-  else if (s.speed === "TRADE") add("handling", SPEED_LABEL.TRADE, whole(prices.tradeRate));
-  else if (s.speed === "URGENT") add("handling", SPEED_LABEL.URGENT, whole(prices.urgentRate));
+  // Delivery type: its + charge from the package (a type without one adds ৳0).
+  add("speed", input.deliveryTypeName ?? s.speed, whole(prices.deliveryFees?.[s.speed] ?? 0));
   add("last_mile", LAST_MILE_LABEL[s.lastMile], whole(s.lastMile === "HUB_COLLECT" ? prices.hubPickupFee : prices.homeDeliveryFee));
   if (s.firstMile === "HUB_DROP") add("first_mile", FIRST_MILE_LABEL.HUB_DROP, -whole(prices.hubDropDiscount));
   else if (s.firstMile === "ON_DEMAND_PICKUP") add("first_mile", FIRST_MILE_LABEL.ON_DEMAND_PICKUP, whole(prices.onDemandPickupFee));
@@ -602,7 +581,8 @@ export function reattemptFeeFor(prices: Pick<PackagePrices, "freeReattempts" | "
 
 export const firstMileSchema = z.preprocess(v => (typeof v === "string" ? (parseFirstMile(v) ?? v) : v), z.enum(FIRST_MILES, "Choose RIDER_PICKUP, HUB_DROP or ON_DEMAND_PICKUP"));
 export const lastMileSchema = z.preprocess(v => (typeof v === "string" ? (parseLastMile(v) ?? v) : v), z.enum(LAST_MILES, "Choose DOORSTEP (home delivery) or HUB_COLLECT (Hub Pickup)"));
-export const speedOptionSchema = z.preprocess(v => (typeof v === "string" ? (parseSpeedOption(v) ?? v.trim()) : v), z.enum(SPEED_OPTIONS, `Choose one of ${SPEED_OPTIONS.join(", ")}`));
+/** A delivery type: its code or name (checked against the database's types where it is used). */
+export const speedOptionSchema = z.string().trim().min(1, "Choose the delivery type").max(60);
 export const notificationCodesSchema = z.array(z.string().trim().min(1).max(60)).max(40);
 
 /** Optional service fields of a booking / quote (POST /parcels, quotes). */
@@ -615,7 +595,7 @@ export const serviceSelectionSchema = z.object({
   lastMile: lastMileSchema.optional(),
   /** HUB_COLLECT: the collection hub; default the hub serving the recipient's zone. */
   collectHubId: z.uuid().optional(),
-  /** The service (one choice). Default Regular. Customer & E-commerce Express: same district only. */
+  /** The delivery type (code or name: Regular, Express, 4 Hour Delivery, Same Day Delivery…). Default Regular. */
   speed: speedOptionSchema.optional(),
   /** E-commerce: open box / check before pay. */
   openBox: z.boolean().optional(),
@@ -623,14 +603,9 @@ export const serviceSelectionSchema = z.object({
   product: z.string().trim().min(1).max(120).optional(),
   /** Parcel notifications to send (codes from the package); default every one in the package. */
   notifications: notificationCodesSchema.optional(),
+  /** The product category (name or id); default the product's. Its channels decide where messages go. */
+  category: z.string().trim().min(1).max(80).optional(),
+  /** The priority tag (name or id: General, Security, Online Product…); default the list's default. */
+  priority: z.string().trim().min(1).max(80).optional(),
 });
 export type ServiceSelectionInput = z.infer<typeof serviceSelectionSchema>;
-
-/** "B2B Document" (old document type) → the service option. */
-export function speedFromDocumentType(documentType: string | null | undefined): SpeedOption | undefined {
-  const v = (documentType ?? "").trim().toLowerCase();
-  if (v === "b2b document") return "B2B";
-  if (v === "trade service document") return "TRADE";
-  if (v === "corporate urgent document") return "URGENT";
-  return undefined;
-}

@@ -7,17 +7,14 @@ import {
   isMaskedBdMobile,
   normalizeBdPhone,
   normalizeMaskedBdPhone,
+  deliveryTypesFor,
+  findDeliveryType,
   packageOptions,
-  parseSpeedOption,
   PRODUCT_TYPE_LABEL,
   PRODUCT_TYPES,
   productListOf,
-  SEED_PRODUCTS,
   SEGMENT_LABEL,
-  SERVICE_BY_CODE,
-  SPEED_LABEL,
-  SPEED_SERVICE,
-  SPEED_SERVICE_LEVEL,
+  type DeliveryTypeDef,
   type FirstMile,
   type LastMile,
   type PriceLine,
@@ -31,7 +28,8 @@ import { PricingService, type Catalog } from "../pricing/pricing.service";
 import type { BookingInput } from "../parcels/parcels.service";
 import type { MissingField } from "../parcels/incomplete";
 import { resolvePlace } from "../parcels/places";
-import { PackagesService, type HubRef, type PackageQuote, type PackageSubject } from "../packages/packages.service";
+import { PackagesService, type BookingProduct, type BookingTags, type HubRef, type PackageQuote, type PackageSubject } from "../packages/packages.service";
+import { CatalogService, listOf } from "../packages/catalog.service";
 import type { PackageView } from "../packages/package-resolver";
 import { columnsFor, KIND_LABEL, segmentOf, type ColumnDef, type ColumnKey, type ImportKindKey, type ListKey, type PackageColumnOptions } from "./columns";
 import type { ImportSettings } from "./import-config.service";
@@ -67,8 +65,12 @@ export interface ImportServiceOptions {
   dropHubId?: string | null;
   /** Parcel notifications to send; omitted = every one in the package. */
   notifications?: string[] | null;
-  /** The modal's Service for every row (overwrites the file's Service column). */
+  /** The modal's delivery type for every row (overwrites the file's Delivery type column). */
   speed?: SpeedOption | null;
+  /** The modal's category (id) for every row (overwrites the file's Category column). */
+  category?: string | null;
+  /** The modal's priority (id) for every row (overwrites the file's Priority column). */
+  priority?: string | null;
   /** E-commerce / customer: the product type every row is priced as (overwrites its product's type). */
   productType?: ProductType | null;
 }
@@ -92,7 +94,9 @@ export interface RowResult {
   destination?: { district: string; zone: string };
   /** Priced and checked against the package. */
   quote?: PackageQuote;
-  product?: { id: string | null; name: string; type: string; sendMessages: boolean } | null;
+  product?: (Pick<BookingProduct, "name" | "type" | "category"> & { id: string | null }) | null;
+  /** The row's category (named or the modal's) and priority (named, the modal's or the default). */
+  tags?: BookingTags;
   /** E-commerce, Banking & Financial: a product name that isn't one of the listed products (booked as written, priced as Regular). */
   freeProduct?: string;
 }
@@ -108,8 +112,13 @@ export interface EngineContext {
   services: ImportServiceOptions;
   /** The package the file books with: the merchant's, else the category's default (customer parcels: the Customer default). */
   pkg: PackageView;
-  /** The category's active products, in list order (type, then the seeded order, then name). */
-  products: ParcelProduct[];
+  /** The category's active products, in list order (category, then the product's order, then name). */
+  products: Awaited<ReturnType<PackagesService["products"]>>;
+  /** Delivery types (all; the package's category's active ones are offered). */
+  deliveryTypes: DeliveryTypeDef[];
+  /** The list's active categories and priorities. */
+  categories: { id: string; name: string; notifySms: boolean; notifyEmail: boolean; notifyPush: boolean }[];
+  priorities: { id: string; name: string; isDefault: boolean }[];
   /** Per-file caches: hubs by place. */
   memo: { hubs: Map<string, HubRef | null> };
 }
@@ -137,18 +146,10 @@ export const productLabel = (p: Pick<ParcelProduct, "name" | "type">) => `${p.na
 /** "Fashion & Apparel (Regular)" → "fashion & apparel" (cells may hold the label or the name). */
 export const productNameOfCell = (cell: string) => lower(cell).replace(/\s*\((regular|document|books)\)$/, "");
 
-/** Products in list order: Regular, Document, Books; inside a type the seeded order, then new ones by name. */
-export function sortProducts<T extends Pick<ParcelProduct, "name" | "type" | "segment">>(products: T[]): T[] {
-  const typeRank = (t: string) => {
-    const i = (PRODUCT_TYPES as readonly string[]).indexOf(t);
-    return i < 0 ? PRODUCT_TYPES.length : i;
-  };
-  const seedRank = (p: T) => {
-    const list = SEED_PRODUCTS[p.segment === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"][p.type as ProductType] ?? [];
-    const i = list.indexOf(p.name);
-    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
-  };
-  return [...products].sort((a, b) => typeRank(a.type) - typeRank(b.type) || seedRank(a) - seedRank(b) || a.name.localeCompare(b.name));
+/** Products in list order: by category, then the product's own order, then name (no category last). */
+export function sortProducts<T extends Pick<ParcelProduct, "name" | "type" | "segment"> & { sortOrder?: number; category?: { sortOrder?: number } | null }>(products: T[]): T[] {
+  const cat = (p: T) => p.category?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+  return [...products].sort((a, b) => cat(a) - cat(b) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
 }
 
 /** "1,5 kg" → 1.5; "৳ 2,450" → 2450; null when not a number. */
@@ -162,7 +163,7 @@ export function parseNumber(raw: string): number | null {
 
 /** Which optional columns a package's template has (COD amount, Open box). */
 export function packageColumnOptions(pkg: PackageView): PackageColumnOptions {
-  const o = packageOptions(pkg.segment, pkg.services);
+  const o = packageOptions(pkg.segment, pkg.services, []);
   return { cod: o.cod, openBox: o.openBox };
 }
 
@@ -182,6 +183,7 @@ export class ImportEngineService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly packages: PackagesService,
+    private readonly catalogs: CatalogService,
   ) {}
 
   /** Live option lists (geography, the package, the category's products) for a file. */
@@ -209,14 +211,21 @@ export class ImportEngineService {
       : null;
     const pkg = await this.packages.effective(fileMerchant ? { merchantId: fileMerchant.id } : { segment }, db);
     const sorted = sortProducts(products);
+    const [deliveryTypes, categories, priorities] = await Promise.all([
+      this.catalogs.deliveryTypes(),
+      db.productCategory.findMany({ where: { segment: listOf(segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+      db.parcelPriority.findMany({ where: { segment: listOf(segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+    ]);
     const lists: Record<ListKey, string[]> = {
       districts: catalog.districts,
       zones,
       areas: unique(zones.flatMap(z => catalog.areasByZone[z] ?? [])),
       // The category's active products with their type (Customer and E-commerce share one list).
       products: sorted.map(productLabel),
-      // Only the services the package offers.
-      speeds: packageOptions(pkg.segment, pkg.services).speeds.map(s => SPEED_LABEL[s]),
+      // The category's active delivery types.
+      speeds: deliveryTypesFor(pkg.segment, deliveryTypes).map(t => t.name),
+      categories: categories.map(c => c.name),
+      priorities: priorities.map(p => p.name),
       weights: [...new Set(catalog.weightsKg)].sort((a, b) => a - b).map(String),
       yesNo: ["Yes", "No"],
     };
@@ -231,6 +240,9 @@ export class ImportEngineService {
       services,
       pkg,
       products: sorted,
+      deliveryTypes,
+      categories,
+      priorities,
       memo: { hubs: new Map() },
     };
   }
@@ -277,7 +289,7 @@ export class ImportEngineService {
       if (r.status === "ERROR" || !r.booking) continue;
       const b = r.booking;
       try {
-        const product = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR", sendMessages: true } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
+        const product = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR", category: null } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
         const quote = await this.packages.quote(
           subject,
           {
@@ -303,7 +315,6 @@ export class ImportEngineService {
         r.charge = quote.totalCharge;
         r.lines = quote.lines;
         b.serviceLevel = quote.serviceLevel;
-        if (ctx.kind === "document" && ["B2B", "TRADE", "URGENT"].includes(quote.selection.speed)) b.documentType = SPEED_LABEL[quote.selection.speed];
       } catch (error) {
         if (!(error instanceof AppError)) throw error;
         const details = Array.isArray(error.details) ? (error.details as { path?: string; message: string }[]) : [];
@@ -356,8 +367,10 @@ export class ImportEngineService {
     const settings = ctx.settings.templates[ctx.kind];
     const customer = ctx.kind === "customer";
     const banking = isBanking(ctx.pkg.segment);
-    // The modal's Service, when chosen, overwrites the file's column (the preview shows it).
-    if (ctx.services.speed) cells.service_level = SPEED_LABEL[ctx.services.speed];
+    // The modal's delivery type, category and priority, when chosen, overwrite the file's columns (the preview shows them).
+    if (ctx.services.speed) cells.service_level = ctx.deliveryTypes.find(t => t.code === ctx.services.speed)?.name ?? ctx.services.speed;
+    if (ctx.services.category) cells.category = ctx.categories.find(c => c.id === ctx.services.category)?.name ?? cells.category;
+    if (ctx.services.priority) cells.priority = ctx.priorities.find(p => p.id === ctx.services.priority)?.name ?? cells.priority;
     const raw = (key: ColumnKey) => (cells[key] ?? "").trim();
     // Required columns (super admin), then defaults for empty cells.
     for (const col of ctx.columns) if (settings[col.key]?.required && !raw(col.key)) err(col.key, "required");
@@ -430,20 +443,26 @@ export class ImportEngineService {
     if (!place.ok) err(place.column, place.message);
     const area = text("area", 120);
 
-    // Service (one dropdown, only the package's options). Empty = Regular.
-    let speed: SpeedOption = "REGULAR";
+    // Delivery type (one dropdown: the category's active types, by name or code). Empty = Regular.
+    const offered = deliveryTypesFor(ctx.pkg.segment, ctx.deliveryTypes);
+    let speed: SpeedOption = offered.find(t => t.code === "REGULAR")?.code ?? offered[0]?.code ?? "REGULAR";
     const serviceText = value("service_level");
     if (serviceText) {
-      const options = ctx.lists.speeds.join(", ");
-      const parsed = parseSpeedOption(serviceText);
-      if (/^same[\s_-]*day$/i.test(serviceText.trim()))
-        err(
-          "service_level",
-          `"Same day" is not a service option: choose one from the list (${options})${!banking && ctx.lists.speeds.includes(SPEED_LABEL.EXPRESS) ? "; Express is the same-day service, inside the same district" : ""}`,
-        );
-      else if (parsed && ctx.lists.speeds.includes(SPEED_LABEL[parsed])) speed = parsed;
-      else if (parsed && SERVICE_BY_CODE.get(SPEED_SERVICE[parsed])!.segments.includes(ctx.pkg.segment)) err("service_level", `${SPEED_LABEL[parsed]} is not in ${packageOwner(ctx)} (choose ${options})`);
-      else err("service_level", `"${serviceText}" is not an option (${options})`);
+      const hit = findDeliveryType(serviceText, offered);
+      if (hit) speed = hit.code;
+      else err("service_level", `"${serviceText}" is not a delivery type (${offered.map(t => t.name).join(", ")})`);
+    }
+    // Category (optional; empty = the product's) and priority (optional; empty = the default).
+    let rowCategory: EngineContext["categories"][number] | null = null;
+    if (value("category")) {
+      rowCategory = ctx.categories.find(c => lower(c.name) === lower(value("category"))) ?? null;
+      if (!rowCategory) err("category", `"${value("category")}" is not a category (${ctx.lists.categories.join(", ")})`);
+    }
+    let rowPriority = ctx.priorities.find(p => p.isDefault) ?? ctx.priorities[0] ?? null;
+    if (value("priority")) {
+      const hit = ctx.priorities.find(p => lower(p.name) === lower(value("priority")));
+      if (hit) rowPriority = hit;
+      else err("priority", `"${value("priority")}" is not a priority (${ctx.lists.priorities.join(", ")})`);
     }
     // Weight: Customer & E-commerce only (Banking & Financial has no weight).
     const weightKg = banking ? undefined : number("weight_kg", 0.01, 50, " kg");
@@ -486,8 +505,8 @@ export class ImportEngineService {
 
     const type = ctx.kind === "document" ? "DOCUMENT" : customer ? "PARCEL" : "ECOMMERCE";
     const category: "HOME" | "OFFICE" = ctx.kind === "document" ? "OFFICE" : "HOME";
-    const serviceLevel = SPEED_SERVICE_LEVEL[speed];
-    const documentType = ctx.kind === "document" && ["B2B", "TRADE", "URGENT"].includes(speed) ? SPEED_LABEL[speed] : undefined;
+    const serviceLevel = ctx.deliveryTypes.find(t => t.code === speed)?.slaLevel ?? "REGULAR";
+    const documentType = undefined;
     const booking: BookingInput = {
       sender,
       pickup: { category: customer ? "HOME" : "OFFICE", street: pickup.street, area: pickup.area, zone: pickup.zone, district: pickup.district },
@@ -525,11 +544,12 @@ export class ImportEngineService {
     };
     result.booking = booking;
     result.freeProduct = freeProduct;
+    result.tags = { ...(rowCategory ? { category: rowCategory } : {}), priority: rowPriority ? { id: rowPriority.id, name: rowPriority.name } : null };
     result.destination = destination;
     result.status = result.missing.length ? "INCOMPLETE" : "VALID";
     // The content hash keeps the fields of the older templates in place (re-uploads of older files stay
     // idempotent; removed columns are null); new choices are added only when set.
-    const extras = [speed !== "REGULAR" && speed !== "EXPRESS" && speed !== "ON_DEMAND" ? speed : null, openBox || null].filter(Boolean);
+    const extras = [speed !== "REGULAR" && speed !== "EXPRESS" ? speed : null, openBox || null].filter(Boolean);
     const senderExtras = customer ? [[sender.name, sender.phone, pickup.street, pickup.district, pickup.zone, pickup.area ?? null]] : [];
     result.dedupeKey =
       ref ??

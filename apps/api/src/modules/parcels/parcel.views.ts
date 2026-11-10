@@ -4,7 +4,6 @@ import {
   LAST_MILE_LABEL,
   PARCEL_NOTIFICATIONS,
   proofMethodsFor,
-  SPEED_LABEL,
   SERVICE_LEVEL_LABEL,
   TRACKING_STAGES,
   isCustomerCancellable,
@@ -75,7 +74,9 @@ export function serviceView(p: ParcelWithRelations) {
     lastMile: p.lastMile,
     lastMileLabel: p.lastMile ? (LAST_MILE_LABEL as Record<string, string>)[p.lastMile] ?? p.lastMile : null,
     speed: p.speedOption,
-    speedLabel: p.speedOption ? (SPEED_LABEL as Record<string, string>)[p.speedOption] ?? p.speedOption : null,
+    speedLabel: p.deliveryTypeName ?? p.speedOption ?? null,
+    category: p.categoryName,
+    priority: p.priorityName,
     openBox: p.openBox,
     onDemand: p.onDemand,
     product: p.productName,
@@ -89,8 +90,11 @@ export function serviceView(p: ParcelWithRelations) {
 }
 
 /** Methods the delivery rider may use (all three for parcels booked before packages). */
-export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications">) =>
-  p.packageVersionId ? proofMethodsFor(p.services, p.notifications) : (["OTP", "SIGNATURE", "PHOTO"] as const).slice();
+/** OTP needs the delivery code SMS: ticked at booking and the category's SMS on. */
+export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null }) =>
+  p.packageVersionId
+    ? proofMethodsFor(p.services, p.notifyChannels && !p.notifyChannels.includes("sms") ? p.notifications.filter(n => n !== "notify.delivery_code") : p.notifications)
+    : (["OTP", "SIGNATURE", "PHOTO"] as const).slice();
 
 /** Collect from hub: the collection hub, when it became ready and the last day to collect. */
 const collectView = (p: ParcelWithRelations) =>

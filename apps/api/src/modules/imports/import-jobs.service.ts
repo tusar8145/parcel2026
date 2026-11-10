@@ -25,7 +25,7 @@ import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, me
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
 import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
-import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection, SPEED_LABEL } from "@delivery-fast/shared";
+import { deliveryTypesFor, displayPriceLines, findDeliveryType, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
 import type { analyzeOptionsSchema, importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
@@ -475,6 +475,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       notifications: options.notifications,
       speed: options.speed,
       productType: options.kind === "document" ? undefined : options.productType,
+      category: options.category,
+      priority: options.priority,
     };
     // First / last mile, drop hub and messages: only what the file's package offers.
     await this.checkServices(scope.merchantId, options.kind, services);
@@ -495,8 +497,14 @@ export class ImportJobsService implements OnApplicationBootstrap {
     });
     if (!parsed.rows.length) throw new AppError("EMPTY_FILE", "The file has no orders below the header row.", 422);
     const ctx = await this.engine.context({ kind: options.kind, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
-    if (services.speed && !ctx.lists.speeds.includes(SPEED_LABEL[services.speed]))
-      throw new AppError("SERVICE_NOT_IN_PACKAGE", `${SPEED_LABEL[services.speed]} is not in this package (choose ${ctx.lists.speeds.join(", ")})`, 422);
+    // The modal's delivery type, category and priority: of this list (the delivery type by code or name; stored as its code).
+    if (services.speed) {
+      const type = findDeliveryType(services.speed, deliveryTypesFor(ctx.pkg.segment, ctx.deliveryTypes));
+      if (!type) throw new AppError("UNKNOWN_DELIVERY_TYPE", `"${services.speed}" is not a delivery type here (choose ${ctx.lists.speeds.join(", ")})`, 422);
+      services.speed = ctx.services.speed = type.code;
+    }
+    if (services.category && !ctx.categories.some(c => c.id === services.category)) throw new AppError("UNKNOWN_CATEGORY", "Choose a category from the list", 422);
+    if (services.priority && !ctx.priorities.some(p => p.id === services.priority)) throw new AppError("UNKNOWN_PRIORITY", "Choose a priority from the list", 422);
     // District / zone / area picked from each row's address where the file left them out (or misspelt them).
     const columns = new Set(ctx.columns.map(c => c.key));
     const rows = parsed.rows.map(r => ({ ...r, cells: fillPlaces(r.cells, ctx.catalog, columns) }));
@@ -575,7 +583,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
   /** The modal's choices against the file's package (the merchant's, or the Customer default): SERVICE_NOT_IN_PACKAGE before anything is parsed. */
   private async checkServices(merchantId: string | null, kind: ImportKindKey, services: ImportServiceOptions) {
     const pkg = await this.packages.effective(merchantId ? { merchantId } : { segment: segmentOf(kind) });
-    const { problems } = resolveSelection(pkg.segment, pkg.services, { firstMile: services.firstMile, lastMile: services.lastMile, notifications: services.notifications });
+    const { problems } = resolveSelection(pkg.segment, pkg.services, { firstMile: services.firstMile, lastMile: services.lastMile, notifications: services.notifications }, []);
     if (problems.length) throw this.packages.selectionError(problems);
   }
 
@@ -650,7 +658,11 @@ export class ImportJobsService implements OnApplicationBootstrap {
         notifications: services.notifications ?? null,
         notificationLabels: services.notifications ? PARCEL_NOTIFICATIONS.filter(n => services.notifications!.includes(n.code)).map(n => `${n.label} (${n.audience})`) : null,
         speed: services.speed ?? null,
-        speedLabel: services.speed ? SPEED_LABEL[services.speed] : null,
+        speedLabel: services.speed ? await this.packages.deliveryTypeName(services.speed) : null,
+        category: services.category ?? null,
+        categoryLabel: services.category ? ((await this.prisma.productCategory.findUnique({ where: { id: services.category }, select: { name: true } }))?.name ?? null) : null,
+        priority: services.priority ?? null,
+        priorityLabel: services.priority ? ((await this.prisma.parcelPriority.findUnique({ where: { id: services.priority }, select: { name: true } }))?.name ?? null) : null,
         productType: services.productType ?? null,
         productTypeLabel: services.productType ? PRODUCT_TYPE_LABEL[services.productType] : null,
       },
@@ -685,15 +697,19 @@ export class ImportJobsService implements OnApplicationBootstrap {
   /** Rows as the preview shows them (errors with their column header, price lines, messages switch, places picked from the address). */
   private async rowItems(job: ImportJob, rows: ImportRow[]) {
     const headerOf = this.headerOf(job);
-    // Products whose "Send SMS & email" switch is off: those rows are booked with no messages (the commit re-reads them).
-    const silent = await this.prisma.parcelProduct.findMany({
-      where: { segment: productSegmentOf(kindKeyOf(job.kind)), sendMessages: false },
-      select: { id: true, name: true },
-    });
-    const silentNames = new Set(silent.flatMap(p => [p.id, p.name.toLowerCase()]));
+    // Categories with SMS and email off: their rows (the row's category, else its product's) are booked with no
+    // SMS or email, whatever the modal ticks.
+    const segment = productSegmentOf(kindKeyOf(job.kind));
+    const categories = await this.prisma.productCategory.findMany({ where: { segment }, select: { id: true, name: true, notifySms: true, notifyEmail: true } });
+    const products = await this.prisma.parcelProduct.findMany({ where: { segment }, select: { name: true, categoryId: true } });
+    const silentCategory = new Set(categories.filter(c => !c.notifySms && !c.notifyEmail).flatMap(c => [c.id, c.name.toLowerCase()]));
+    const categoryOfProduct = new Map(products.map(p => [p.name.toLowerCase(), p.categoryId ?? ""]));
     const messagesOff = (cells: unknown) => {
-      const product = productNameOfCell(String((cells as Record<string, unknown> | null)?.product_type ?? ""));
-      return !!product && silentNames.has(product);
+      const c = (cells ?? {}) as Record<string, unknown>;
+      const named = String(c.category ?? "").trim().toLowerCase();
+      if (named) return silentCategory.has(named);
+      const product = productNameOfCell(String(c.product_type ?? ""));
+      return !!product && silentCategory.has(categoryOfProduct.get(product) ?? "");
     };
     return rows.map(r => {
       const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
@@ -709,9 +725,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
         charge: r.charge == null ? null : Number(r.charge),
         lines: r.priceLines ? displayPriceLines(r.priceLines as { code: string; label: string; amount: number }[], segmentOf(kindKeyOf(job.kind))) : null,
         trackingId: r.trackingId,
-        /** The row's product has "Send SMS & email" off: no parcel messages for it, whatever the modal ticks. */
+        /** The row's category (or its product's) sends no SMS or email, whatever the modal ticks. */
         messagesOff: messagesOff(r.cells),
-        messagesNote: messagesOff(r.cells) ? "This product doesn't send messages" : null,
+        messagesNote: messagesOff(r.cells) ? "This category doesn't send SMS or email" : null,
       };
     });
   }
@@ -1062,6 +1078,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
               // Checked against the package and priced by the engine just now.
               quote: result.quote,
               product: result.product ?? null,
+              tags: result.tags,
             });
             await tx.importRow.update({
               where: { id: row.id },

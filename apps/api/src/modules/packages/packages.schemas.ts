@@ -85,8 +85,8 @@ export const productSchema = z.object({
   name: z.string().trim().min(1, "Enter the product name").max(120, "Use at most 120 characters"),
   /** One of the three fixed product types; it prices the parcel. */
   type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").default("REGULAR"),
-  /** "Send SMS & email for this product": false = its parcels get no parcel messages at all. */
-  sendMessages: z.boolean().default(true),
+  /** The category it is listed under (its messages follow the category's channels). */
+  categoryId: z.uuid("Choose the category"),
 });
 /** Operational settings › Products › Export: a list, with the page's search and status. */
 export const exportProductsQuerySchema = z.object({
@@ -97,17 +97,11 @@ export const exportProductsQuerySchema = z.object({
   sort: z.enum(["asc", "desc"]).optional(),
 });
 
-/** Super admin › Service plans › Products: the segment's products with messages on; every other one is off. */
-export const productMessagesSchema = z.object({
-  segment: z.enum(["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"]),
-  productIds: z.array(z.uuid()).max(5000),
-});
-
 // Explicit (not `.partial()`): zod applies defaults inside optional fields, which would reset type / sendMessages on every edit.
 export const updateProductSchema = z.object({
   name: productSchema.shape.name.optional(),
   type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").optional(),
-  sendMessages: z.boolean().optional(),
+  categoryId: z.uuid("Choose the category").optional(),
   active: z.boolean().optional(),
 });
 export const listProductsQuerySchema = z.object({
@@ -116,4 +110,70 @@ export const listProductsQuerySchema = z.object({
     .enum(["true", "false"])
     .transform(v => v === "true")
     .optional(),
+});
+
+// ── catalog: product categories, priorities, delivery types (super admin › Operational settings) ──
+const listSegment = z.enum(["ECOMMERCE", "BANKING_FINANCIAL"], "Choose ECOMMERCE (Customer & E-commerce) or BANKING_FINANCIAL");
+const catalogName = z.string().trim().min(1, "Enter the name").max(80, "Use at most 80 characters");
+const includeInactive = z
+  .enum(["true", "false"])
+  .transform(v => v === "true")
+  .optional();
+export const catalogListQuerySchema = z.object({ segment: z.enum(["ECOMMERCE", "BANKING_FINANCIAL", "CUSTOMER"]).optional(), includeInactive });
+
+export const categorySchema = z.object({
+  segment: listSegment,
+  name: catalogName,
+  /** Message channels its parcels may use (off = nothing on that channel, whatever the booking ticked). */
+  notifySms: z.boolean().default(true),
+  notifyEmail: z.boolean().default(true),
+  notifyPush: z.boolean().default(true),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+});
+export const updateCategorySchema = z.object({
+  name: catalogName.optional(),
+  notifySms: z.boolean().optional(),
+  notifyEmail: z.boolean().optional(),
+  notifyPush: z.boolean().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+});
+
+export const prioritySchema = z.object({
+  segment: listSegment,
+  name: catalogName,
+  /** Preselected at booking and import (one per list). */
+  isDefault: z.boolean().default(false),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+});
+export const updatePrioritySchema = z.object({
+  name: catalogName.optional(),
+  isDefault: z.boolean().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+});
+
+const segments = z.array(z.enum(["CUSTOMER", "ECOMMERCE", "BANKING_FINANCIAL"])).min(1, "Offer it to at least one category").max(3);
+const slaLevel = z.enum(["REGULAR", "SAME_DAY", "EXPRESS"], "Choose REGULAR, SAME_DAY or EXPRESS");
+export const deliveryTypeSchema = z.object({
+  name: catalogName,
+  /** Stored on parcels; default from the name ("4 Hour Delivery" → FOUR_HOUR_DELIVERY). Can't change later. */
+  code: z
+    .string()
+    .trim()
+    .regex(/^[A-Z][A-Z0-9_]{1,39}$/, "Use capital letters, digits and _ (e.g. NIGHT_DELIVERY)")
+    .optional(),
+  segments,
+  slaLevel: slaLevel.default("REGULAR"),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+});
+export const updateDeliveryTypeSchema = z.object({
+  name: catalogName.optional(),
+  segments: segments.optional(),
+  slaLevel: slaLevel.optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
 });

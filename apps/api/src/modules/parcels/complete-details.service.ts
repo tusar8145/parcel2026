@@ -6,7 +6,6 @@ import {
   SERVICE_LEVELS,
   TERMINAL_STATUSES,
   phoneSchema,
-  parseSpeedOption,
   quoteParcel,
   speedOptionSchema,
   type SpeedOption,
@@ -132,7 +131,7 @@ export class CompleteDetailsService {
     };
     const packaged = await this.packages.reprice(
       { ...parcel, deliveryArea: next.deliveryArea ?? parcel.deliveryArea },
-      { delivery: { district: dest.district, zone: dest.zone, area: next.deliveryArea }, weightKg: next.weightKg, ...(speed ? { speed } : next.serviceLevel !== parcel.serviceLevel ? { speed: parseSpeedOption(next.serviceLevel) ?? (next.serviceLevel === "SAME_DAY" ? "EXPRESS" : "REGULAR") } : {}) },
+      { delivery: { district: dest.district, zone: dest.zone, area: next.deliveryArea }, weightKg: next.weightKg, ...(speed ? { speed } : next.serviceLevel !== parcel.serviceLevel ? { speed: next.serviceLevel } : {}) },
       db,
     );
     const frozen = rateCardConfigSchema.safeParse(snap.config);

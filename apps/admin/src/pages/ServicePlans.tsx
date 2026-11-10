@@ -7,12 +7,12 @@
  *                    approves; the API answers PENDING).
  *   Merchants        assign a package from a date (PUT /merchants/:id/package); search. ?merchant=<code> opens a row.
  *   Price simulator  what a booking costs on the default package (POST /packages/simulate)
- *   Messages         which products send SMS & email (PUT /parcel-products/messages)
+ *   (Messages follow the product category: Operational settings › Product categories.)
  *   Hub Pickup       the hold period and the reminder (GET / PUT /packages/settings)
  * The segment (?tab=customer|e-commerce|banking) and the section (?section=) stay in the address.
  */
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
@@ -21,18 +21,21 @@ import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog } from "@/lib/admin";
-import { fmtDate, money, PENDING, SEGMENTS, segLabel, useAssignments, usePackages, useProducts, useServiceCatalog, type Package, type Product, type Segment, type ServiceCatalog } from "@/lib/packages";
+import { fmtDate, money, PENDING, SEGMENTS, segLabel, useAssignments, useDeliveryTypes, usePackages, useProducts, useServiceCatalog, type Package, type Product, type Segment, type ServiceCatalog } from "@/lib/packages";
 
 const TAB_OF: Record<string, Segment> = { customer: "CUSTOMER", "e-commerce": "ECOMMERCE", ecommerce: "ECOMMERCE", banking: "BANKING_FINANCIAL", document: "BANKING_FINANCIAL" };
 const SLUG_OF: Record<Segment, string> = { CUSTOMER: "customer", ECOMMERCE: "e-commerce", BANKING_FINANCIAL: "banking" };
 const outcome = (result: { status?: string } | null | undefined, applied: string) => toast(result?.status === "PENDING" ? PENDING : applied, "good");
 const localInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
+/** Package prices as edited: flat fields, and `deliveryFees` (delivery type code → + charge). */
+type Prices = Record<string, number | Record<string, number>> & { deliveryFees?: Record<string, number> };
 interface Draft {
   name: string;
   description: string;
   services: Set<string>;
-  prices: Record<string, number>;
+  /** Flat price fields, and `deliveryFees` (delivery type code → + charge). */
+  prices: Prices;
   effectiveFrom: string;
   note: string;
   makeDefault: boolean;
@@ -112,7 +115,6 @@ export default function ServicePlans() {
     ["packages", "Packages", pkgs.filter(p => p.status === "ACTIVE").length],
     ...(seg !== "CUSTOMER" ? [["merchants", "Merchants", rows.length] as [string, string, number]] : []),
     ["simulator", "Price simulator", null],
-    ["messages", "Messages", prods.filter(p => p.sendMessages).length],
     ["hub-pickup", "Hub Pickup", null],
   ];
   const current = sections.some(([k]) => k === section) ? section : "packages";
@@ -150,7 +152,7 @@ export default function ServicePlans() {
         {tile("Default package", def?.name || "None yet", def?.current ? `Version ${def.current.version}` : "Applies when no package is assigned")}
         {tile("Active packages", pkgs.filter(p => p.status === "ACTIVE").length.toLocaleString("en-US"))}
         {seg === "CUSTOMER" ? tile("Applies to", "Website & walk-in", "Customers and walk-in senders") : tile("On their own package", custom.toLocaleString("en-US"), `of ${rows.length.toLocaleString("en-US")} merchants`)}
-        {tile("Products with messages", prods.filter(p => p.sendMessages).length.toLocaleString("en-US"), `of ${prods.length.toLocaleString("en-US")} products`)}
+        {tile("Products", prods.filter(p => p.active).length.toLocaleString("en-US"), "Messages follow their category")}
       </section>
       <div role="tablist" aria-label="Service plan sections" style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--line)", marginBottom: 14, overflowX: "auto" }}>
         {sections.map(([key, label, count]) => (
@@ -175,10 +177,6 @@ export default function ServicePlans() {
             <Simulator seg={seg} catalog={c} products={products.data ?? []} services={new Set(def?.current?.services ?? [])} packageId={def?.id} />
           </Panel>
         </div>
-      ) : current === "messages" ? (
-        <Panel title="Products with messages" subtitle={`Choose the products that send SMS & email. The others send none. New bookings follow this.${seg === "CUSTOMER" ? " Customer and E-commerce share one product list." : ""}`}>
-          <Messages segment={seg === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"} products={products.data ?? []} />
-        </Panel>
       ) : current === "hub-pickup" ? (
         <div style={{ maxWidth: 720 }}>
           <Panel title="Hub Pickup" subtitle="How long a parcel waits at the collection hub, and when the reminder SMS goes out. This applies to every plan.">
@@ -194,7 +192,7 @@ export default function ServicePlans() {
   );
 }
 
-const heading = (actions: React.ReactNode) => <PageHeading eyebrow="Merchant management · Service packages" title="Service plans & pricing" subtitle="Choose who a plan is for, then manage its packages, merchants and messages." actions={actions} />;
+const heading = (actions: React.ReactNode) => <PageHeading eyebrow="Merchant management · Service packages" title="Service plans & pricing" subtitle="Choose who a plan is for, then manage its packages, merchants and prices." actions={actions} />;
 
 function PackagesTable({ pkgs, onEdit, reload }: { pkgs: Package[]; onEdit: (p: Package) => void; reload: () => Promise<unknown> }) {
   const [busy, setBusy] = useState("");
@@ -407,10 +405,9 @@ interface SimResult {
   totalCharge: number;
   tierLabel: string;
 }
-const SPEED_SERVICE: Record<string, string> = { REGULAR: "speed.regular", EXPRESS: "speed.express", ON_DEMAND: "speed.on_demand", B2B: "handling.b2b", TRADE: "handling.trade", URGENT: "handling.urgent" };
 let lastSim: SimState = { pickupDistrict: "", pickupZone: "", deliveryDistrict: "", deliveryZone: "", weightKg: "1", codAmount: "0", speed: "REGULAR", firstMile: "", lastMile: "", openBox: false, product: "" };
 
-function Simulator({ seg, catalog, products, services, packageId, draft }: { seg: Segment; catalog: ServiceCatalog; products: Product[]; services: Set<string>; packageId?: string; draft?: { services: Set<string>; prices: Record<string, number> } }) {
+function Simulator({ seg, catalog, products, services, packageId, draft }: { seg: Segment; catalog: ServiceCatalog; products: Product[]; services: Set<string>; packageId?: string; draft?: { services: Set<string>; prices: Prices } }) {
   const geo = useCatalog();
   const [sim, setSimState] = useState<SimState>(lastSim);
   const setSim = (patch: Partial<SimState>) => setSimState(s => (lastSim = { ...s, ...patch }));
@@ -418,7 +415,8 @@ function Simulator({ seg, catalog, products, services, packageId, draft }: { seg
   const [busy, setBusy] = useState(false);
   const districts = geo.data?.districts ?? [];
   const zones = (d: string) => geo.data?.zonesByDistrict?.[d] ?? [];
-  const speeds = Object.entries(catalog.labels.speed).filter(([code]) => catalog.services.some(s => s.segments.includes(seg) && s.code === SPEED_SERVICE[code]));
+  const types = useDeliveryTypes();
+  const speeds = (types.data ?? []).filter(t => t.active && t.segments.includes(seg)).map(t => [t.code, t.name] as [string, string]);
   async function run(e: FormEvent) {
     e.preventDefault();
     if (!sim.pickupDistrict || !sim.deliveryDistrict) return toast("Choose the districts the parcel goes from and to.", "bad");
@@ -466,7 +464,7 @@ function Simulator({ seg, catalog, products, services, packageId, draft }: { seg
         {sel("From zone (optional)", sim.pickupZone, v => setSim({ pickupZone: v }), zones(sim.pickupDistrict).map(z => [z, z]), "Any zone")}
         {sel("To district", sim.deliveryDistrict, v => setSim({ deliveryDistrict: v, deliveryZone: "" }), districts.map(d => [d, d]), "Choose")}
         {sel("To zone (Hub Pickup finds its hub)", sim.deliveryZone, v => setSim({ deliveryZone: v }), zones(sim.deliveryDistrict).map(z => [z, z]), "Any zone")}
-        {sel("Service", sim.speed, v => setSim({ speed: v }), speeds)}
+        {sel("Delivery type", sim.speed, v => setSim({ speed: v }), speeds)}
         {seg === "BANKING_FINANCIAL" ? null : (
           <>
             <label className="field">
@@ -538,93 +536,6 @@ function Simulator({ seg, catalog, products, services, packageId, draft }: { seg
   );
 }
 
-function Messages({ segment, products }: { segment: "ECOMMERCE" | "BANKING_FINANCIAL"; products: Product[] }) {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const rows = useMemo(() => products.filter(p => p.segment === segment), [products, segment]);
-  const [pick, setPick] = useState<Set<string>>(() => new Set(rows.filter(p => p.sendMessages).map(p => p.id)));
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => setPick(new Set(rows.filter(p => p.sendMessages).map(p => p.id))), [rows]);
-  if (!rows.length)
-    return (
-      <p className="panel-body faint">
-        No products yet.{" "}
-        <Button size="sm" onClick={() => navigate(`/products?tab=${segment === "BANKING_FINANCIAL" ? "banking" : "e-commerce"}`)}>
-          Add products
-        </Button>
-      </p>
-    );
-  const changed = rows.some(p => p.sendMessages !== pick.has(p.id));
-  const chosen = rows.filter(p => pick.has(p.id));
-  const query = q.toLowerCase();
-  const visible = rows.filter(p => !query || p.name.toLowerCase().includes(query));
-  async function save() {
-    setBusy(true);
-    try {
-      await api("/parcel-products/messages", { method: "PUT", body: { segment, productIds: [...pick] } });
-      toast(`Messages are on for ${pick.size.toLocaleString("en-US")} product${pick.size === 1 ? "" : "s"}.`, "good");
-      await qc.invalidateQueries({ queryKey: ["admin", "parcel-products"] });
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="panel-body" style={{ display: "grid", gap: 8 }}>
-      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <Button aria-expanded={open} onClick={() => setOpen(!open)}>
-          {`${chosen.length.toLocaleString("en-US")} of ${rows.length.toLocaleString("en-US")} selected ${open ? "▲" : "▼"}`}
-        </Button>
-        <Button variant="primary" disabled={!changed || busy} onClick={() => void save()}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
-        {changed ? <span className="faint">Not saved yet</span> : null}
-      </div>
-      {chosen.length ? (
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          {chosen.slice(0, 8).map(p => (
-            <Pill key={p.id}>{p.name}</Pill>
-          ))}
-          {chosen.length > 8 ? <span className="faint">and {(chosen.length - 8).toLocaleString("en-US")} more</span> : null}
-        </div>
-      ) : null}
-      {open ? (
-        <div style={{ display: "grid", gap: 8 }}>
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input className="input sm" type="search" placeholder="Search products" aria-label="Search products" value={q} onChange={e => setQ(e.target.value)} />
-            <Button size="sm" onClick={() => setPick(new Set([...pick, ...visible.map(p => p.id)]))}>
-              Select all
-            </Button>
-            <Button size="sm" onClick={() => setPick(new Set([...pick].filter(id => !visible.some(p => p.id === id))))}>
-              Clear
-            </Button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "2px 12px", maxHeight: 280, overflow: "auto", padding: 4 }}>
-            {visible.map(p => (
-              <label key={p.id} className="check" style={{ padding: "4px 2px" }}>
-                <input
-                  type="checkbox"
-                  checked={pick.has(p.id)}
-                  onChange={e => {
-                    const next = new Set(pick);
-                    if (e.target.checked) next.add(p.id);
-                    else next.delete(p.id);
-                    setPick(next);
-                  }}
-                />{" "}
-                {p.name}
-              </label>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function HubPickup() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "package-settings"], queryFn: () => api<{ collectHoldDays: number; collectReminderHours: number }>("/packages/settings") });
@@ -672,6 +583,9 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
   const isNew = !pkg;
   const services = catalog.services.filter(s => s.segments.includes(seg));
   const fields = catalog.priceFields.filter(f => f.segments.includes(seg));
+  const deliveryTypes = useDeliveryTypes();
+  const offered = (deliveryTypes.data ?? []).filter(t => t.active && t.segments.includes(seg));
+  const fees = draft.prices.deliveryFees ?? {};
   const unitOf = (u?: string) => (u === "৳" || u === "%" || u === "kg" ? u : "");
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
   async function save(e: FormEvent) {
@@ -792,6 +706,26 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
             Prices depend on the districts only. Every line rounded to whole taka. “−” adjustments are subtracted; the delivery charge never goes below ৳0.
           </p>
           <div style={{ display: "grid", gap: 9 }}>
+            <details open style={{ border: "1px solid var(--line)", borderRadius: 9 }}>
+              <summary style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Delivery type (+ charge)</summary>
+              <div className="form-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", padding: "2px 12px 12px" }}>
+                {offered.map(t => (
+                  <label key={t.code} className="field">
+                    <span>{`+ ${t.name} (৳)`}</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      required
+                      value={String(fees[t.code] ?? 0)}
+                      onChange={e => set({ prices: { ...draft.prices, deliveryFees: { ...fees, [t.code]: e.target.value === "" ? 0 : Number(e.target.value) } } })}
+                    />
+                  </label>
+                ))}
+                {deliveryTypes.isLoading ? <p className="faint">Loading the delivery types…</p> : !offered.length ? <p className="faint">No delivery type is offered to this category: add one in Operational settings › Delivery types.</p> : null}
+              </div>
+            </details>
             {[...new Set(fields.map(f => f.group))].map(group => (
               <details key={group} open style={{ border: "1px solid var(--line)", borderRadius: 9 }}>
                 <summary style={{ padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{group}</summary>

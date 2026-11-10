@@ -23,7 +23,7 @@ export const segmentOf = (kind: ImportKindKey): PackageSegment => (kind === "doc
 export const merchantTypeOf = (kind: ImportKindKey): "ECOMMERCE" | "BANKING_FINANCIAL" | null => (kind === "document" ? "BANKING_FINANCIAL" : kind === "ecommerce" ? "ECOMMERCE" : null);
 
 /** Option lists, filled from live data (geography, the category's products, the package). */
-export type ListKey = "districts" | "zones" | "areas" | "products" | "speeds" | "weights" | "yesNo";
+export type ListKey = "districts" | "zones" | "areas" | "products" | "speeds" | "weights" | "yesNo" | "categories" | "priorities";
 
 export type ColumnKey =
   | "sender_name"
@@ -39,6 +39,8 @@ export type ColumnKey =
   | "zone"
   | "area"
   | "product_type"
+  | "category"
+  | "priority"
   | "cod_amount"
   | "declared_value"
   | "weight_kg"
@@ -301,8 +303,8 @@ const weight = c({
 const service = (description: string) =>
   c({
     key: "service_level",
-    header: "Service",
-    aliases: ["service_level", "delivery_service", "service", "service_type", "delivery_speed", "speed", "document_type"],
+    header: "Delivery type",
+    aliases: ["delivery_type", "service_level", "delivery_service", "service", "service_type", "delivery_speed", "speed", "document_type"],
     description,
     example: "Regular",
     required: false,
@@ -338,7 +340,29 @@ const orderRef = (header: string, example: string) =>
   });
 const instructions = c({ key: "instructions", header: "Delivery instructions", aliases: ["instructions", "note", "notes", "remarks", "comment"], description: "Anything the rider should know.", example: "Call before delivery", required: false, maxLength: 500, width: 28 });
 
-const parcelService = "The service from the package (one choice). Empty = Regular. Express is same-day delivery, only inside the same district.";
+const parcelService = "The delivery type (one choice: Regular, Express, 4 Hour Delivery, Same Day Delivery…). Empty = Regular.";
+const category = c({
+  key: "category",
+  header: "Category",
+  aliases: ["category", "product_category", "item_category", "parcel_category"],
+  description: "The product category (its messages follow the category's SMS / email / push settings). Empty = the product's category.",
+  example: "",
+  required: false,
+  list: "categories",
+  strictList: true,
+  width: 28,
+});
+const priority = c({
+  key: "priority",
+  header: "Priority",
+  aliases: ["priority", "parcel_priority", "handling", "tag"],
+  description: "The priority (a tag, no charge). Empty = the default priority.",
+  example: "",
+  required: false,
+  list: "priorities",
+  strictList: true,
+  width: 18,
+});
 
 export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
   ecommerce: [
@@ -348,11 +372,13 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
     district("District"),
     zone("Zone"),
     area("Area"),
+    category,
     product("E-commerce", true),
     codAmount,
     declaredValue,
     weight,
     service(parcelService),
+    priority,
     openBox,
     orderRef("Order ID", "ORDER-1001"),
     instructions,
@@ -364,8 +390,10 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
     district("District"),
     zone("Zone"),
     area("Area"),
+    category,
     product("Banking & Financial", true),
-    service("The service from the package (one choice). Empty = Regular."),
+    service(parcelService),
+    priority,
     orderRef("Reference no.", "LOAN-2026-00481"),
     instructions,
   ],
@@ -382,11 +410,13 @@ export const COLUMNS: Record<ImportKindKey, ColumnDef[]> = {
     district("Delivery district"),
     zone("Delivery zone"),
     area("Delivery area"),
+    category,
     product("Customer"),
     codAmount,
     declaredValue,
     weight,
     service(parcelService),
+    priority,
     openBox,
     orderRef("Reference no.", "WALKIN-1001"),
     instructions,

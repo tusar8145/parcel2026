@@ -6,13 +6,14 @@ import {
   PRODUCT_TYPE_LABEL,
   ROUTE_TIER_LABEL,
   SERVICES,
-  SPEED_LABEL,
   SUPPORT_NOTIFICATIONS,
+  deliveryTypesFor,
   isBanking,
   packageOptions,
   priceParcel,
   servicesFor,
   type BookingSelection,
+  type DeliveryTypeDef,
   type PackagePrices,
   type PackageSegment,
   type RouteTier,
@@ -58,18 +59,6 @@ function serviceDetail(code: string, segment: PackageSegment, p: PackagePrices):
       return { detail: "Delivered to your customer's address.", price: fee(p.homeDeliveryFee) };
     case "last.hub_collect":
       return { detail: "Your customer collects the parcel at the hub serving their area, with a collection code.", price: fee(p.hubPickupFee) };
-    case "speed.regular":
-      return { detail: "Standard delivery time.", price: fee(p.regularFee) };
-    case "speed.express":
-      return banking ? { detail: "Faster than Regular.", price: fee(p.expressFee) } : { detail: "Same-day delivery, inside the same district only.", price: fee(p.expressFee) };
-    case "speed.on_demand":
-      return { detail: "Highest dispatch priority.", price: fee(p.onDemandFee) };
-    case "handling.b2b":
-      return { detail: "Business-to-business documents, handled as documents.", price: fee(p.b2bRate) };
-    case "handling.trade":
-      return { detail: "Trade service documents (LCs, bills and similar).", price: fee(p.tradeRate) };
-    case "handling.urgent":
-      return { detail: "Corporate urgent documents. The fee already covers the urgency.", price: fee(p.urgentRate) };
     case "payment.cod":
       return { detail: "Your customer pays the product price to the rider; we pay it to you in settlements.", price: `${p.codPercent}% of the cash collected${p.codMin ? ` (minimum ${tk(p.codMin)})` : ""}` };
     case "option.open_box":
@@ -99,16 +88,22 @@ function serviceDetail(code: string, segment: PackageSegment, p: PackagePrices):
   }
 }
 
-export function serviceSections(segment: PackageSegment, services: readonly string[], prices: PackagePrices) {
+export function serviceSections(segment: PackageSegment, services: readonly string[], prices: PackagePrices, types: readonly DeliveryTypeDef[] = []) {
   const has = new Set(services);
   const offered = servicesFor(segment).filter(s => s.group !== "parcelNotifications" && s.group !== "supportNotifications");
-  return SERVICE_SECTIONS.map(section => ({
+  const sections = SERVICE_SECTIONS.map(section => ({
     title: section.title,
     hint: section.hint,
     items: offered
       .filter(s => section.groups.includes(s.group))
       .map(s => ({ code: s.code, label: s.label, included: has.has(s.code), always: !!s.core, ...serviceDetail(s.code, segment, prices) })),
   })).filter(s => s.items.length);
+  // Delivery types: every active one of the category, with its + charge from the package.
+  const delivery = deliveryTypesFor(segment, types).map(t => {
+    const v = prices.deliveryFees?.[t.code] ?? 0;
+    return { code: `delivery.${t.code}`, label: t.name, included: true, always: false, detail: "Delivery type, chosen per parcel.", price: fee(v) };
+  });
+  return delivery.length ? [{ title: "Delivery types", hint: "Chosen for each parcel at booking.", items: delivery }, ...sections] : sections;
 }
 
 // ───────────── messages ─────────────
@@ -175,7 +170,7 @@ const TIER_EXAMPLE: Record<RouteTier, string> = {
   DIFFERENT_DISTRICT: "Any other route, e.g. Dhaka → Chattogram",
 };
 
-export function priceSections(segment: PackageSegment, services: readonly string[], p: PackagePrices) {
+export function priceSections(segment: PackageSegment, services: readonly string[], p: PackagePrices, types: readonly DeliveryTypeDef[] = []) {
   const banking = isBanking(segment);
   const has = new Set(services);
   const routes = (["SAME_DISTRICT", "DHAKA_SUBURBAN", "DIFFERENT_DISTRICT"] as const).map(t => ({
@@ -197,9 +192,7 @@ export function priceSections(segment: PackageSegment, services: readonly string
     const types = (["REGULAR", "DOCUMENT", "BOOKS"] as const).map(t => [t, p[({ REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" } as const)[t]]] as const);
     if (segment !== "ECOMMERCE" && types.some(([, v]) => v > 0)) for (const [t, v] of types) extras.push({ label: `What you send: ${PRODUCT_TYPE_LABEL[t]}`, value: fee(v) });
   }
-  const speedFee: Partial<Record<SpeedOption, number>> = { REGULAR: p.regularFee, EXPRESS: p.expressFee, ON_DEMAND: p.onDemandFee, B2B: p.b2bRate, TRADE: p.tradeRate, URGENT: p.urgentRate };
-  for (const o of packageOptions(segment, services).speeds)
-    extras.push({ label: `Service: ${SPEED_LABEL[o]}`, value: fee(speedFee[o] ?? 0), ...(o === "EXPRESS" && !banking ? { note: "Same district only." } : o === "B2B" || o === "TRADE" ? { note: "Added on top of Regular." } : {}) });
+  for (const t of deliveryTypesFor(segment, types)) extras.push({ label: `Delivery type: ${t.name}`, value: fee(p.deliveryFees?.[t.code] ?? 0) });
   if (has.has("last.doorstep") && p.homeDeliveryFee) extras.push({ label: LAST_MILE_LABEL.DOORSTEP, value: fee(p.homeDeliveryFee) });
   if (has.has("last.hub_collect")) extras.push({ label: LAST_MILE_LABEL.HUB_COLLECT, value: fee(p.hubPickupFee) });
   if (has.has("first.hub_drop") && p.hubDropDiscount > 0) extras.push({ label: FIRST_MILE_LABEL.HUB_DROP, value: `−${tk(p.hubDropDiscount)} per parcel`, note: "Discount when you bring the parcel to a hub." });
@@ -216,9 +209,12 @@ export function priceSections(segment: PackageSegment, services: readonly string
 }
 
 /** Worked examples with the real formula (the same one the booking uses). */
-export function priceExamples(segment: PackageSegment, services: readonly string[], p: PackagePrices) {
+export function priceExamples(segment: PackageSegment, services: readonly string[], p: PackagePrices, types: readonly DeliveryTypeDef[] = []) {
   const banking = isBanking(segment);
-  const options = packageOptions(segment, services);
+  const options = packageOptions(segment, services, types);
+  const nameOf = (code: string) => types.find(t => t.code === code)?.name ?? code;
+  // A faster type for the third example: the dearest one offered after Regular.
+  const fast = options.speeds.filter(c => c !== "REGULAR").sort((a, b) => (p.deliveryFees?.[b] ?? 0) - (p.deliveryFees?.[a] ?? 0))[0];
   const base: Pick<BookingSelection, "firstMile" | "lastMile" | "productType" | "openBox"> = {
     firstMile: options.defaultFirstMile ?? "RIDER_PICKUP",
     lastMile: options.defaultLastMile ?? "DOORSTEP",
@@ -229,18 +225,15 @@ export function priceExamples(segment: PackageSegment, services: readonly string
     ? [
         { title: "Regular, same district", tier: "SAME_DISTRICT", speed: "REGULAR", weightKg: 0.5, codAmount: 0 },
         { title: "Regular, Dhaka → Chattogram", tier: "DIFFERENT_DISTRICT", speed: "REGULAR", weightKg: 0.5, codAmount: 0 },
-        ...(["URGENT", "B2B", "TRADE", "EXPRESS", "ON_DEMAND"] as const)
-          .filter(o => options.speeds.includes(o))
-          .slice(0, 1)
-          .map(o => ({ title: `${SPEED_LABEL[o]}, same district`, tier: "SAME_DISTRICT" as const, speed: o, weightKg: 0.5, codAmount: 0 })),
+        ...(fast ? [{ title: `${nameOf(fast)}, same district`, tier: "SAME_DISTRICT" as const, speed: fast, weightKg: 0.5, codAmount: 0 }] : []),
       ]
     : [
         { title: "0.5 kg, same district, prepaid", tier: "SAME_DISTRICT", speed: "REGULAR", weightKg: 0.5, codAmount: 0 },
         { title: `1.5 kg, Dhaka → Chattogram${options.cod ? ", ৳1,500 cash on delivery" : ""}`, tier: "DIFFERENT_DISTRICT", speed: "REGULAR", weightKg: 1.5, codAmount: options.cod ? 1500 : 0 },
-        ...(options.speeds.includes("EXPRESS") ? [{ title: `Express (same day), 1 kg${options.cod ? ", ৳800 cash on delivery" : ""}`, tier: "SAME_DISTRICT" as const, speed: "EXPRESS" as const, weightKg: 1, codAmount: options.cod ? 800 : 0 }] : []),
+        ...(fast ? [{ title: `${nameOf(fast)}, 1 kg${options.cod ? ", ৳800 cash on delivery" : ""}`, tier: "SAME_DISTRICT" as const, speed: fast, weightKg: 1, codAmount: options.cod ? 800 : 0 }] : []),
       ];
   return cases.map(c => {
-    const q = priceParcel(p, { segment, services, tier: c.tier, selection: { ...base, speed: c.speed, weightKg: c.weightKg, codAmount: c.codAmount } });
+    const q = priceParcel(p, { segment, services, tier: c.tier, deliveryTypeName: nameOf(c.speed), selection: { ...base, speed: c.speed, weightKg: c.weightKg, codAmount: c.codAmount } });
     return { title: c.title, lines: q.lines.map(l => ({ label: l.label, amount: l.amount })), deliveryCharge: q.deliveryCharge, codFee: q.codFee, total: q.totalCharge };
   });
 }

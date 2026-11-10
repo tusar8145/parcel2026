@@ -74,7 +74,8 @@ export class MerchantPlanService {
       return { sms: state("sms"), email: state("email") };
     };
 
-    const options = packageOptions(segment, services);
+    const types = await this.packages.deliveryTypes();
+    const options = packageOptions(segment, services, types);
     return {
       merchant: { id: merchant.id, code: merchant.code, name: merchant.name, status: merchant.status, pickupDistrict: merchant.pickupDistrict, pickupZone: merchant.pickupZone },
       segment,
@@ -82,7 +83,7 @@ export class MerchantPlanService {
       package: { name: view.package.name, version: view.package.version, isDefault: view.package.isDefault, effectiveFrom: view.package.effectiveFrom },
       scheduled: assignment.scheduled.map(s => ({ name: s.package?.name ?? `${view.segmentLabel} default package`, effectiveFrom: s.effectiveFrom })),
       summary: planSummary(segment, services),
-      services: serviceSections(segment, services, prices),
+      services: serviceSections(segment, services, prices, types),
       messages: {
         stages: MESSAGE_STAGES,
         parcel: await Promise.all(
@@ -98,10 +99,11 @@ export class MerchantPlanService {
           always: !!EVENT_CATALOG[event as keyof typeof EVENT_CATALOG].mandatory,
           channels: channels([event]),
         })),
-        productsWithoutMessages: view.products.filter(p => !p.sendMessages).map(p => p.name),
+        /** Categories whose SMS is off (their parcels get no SMS). */
+        categoriesWithoutSms: view.categories.filter(c => !c.channels.includes("sms")).map(c => c.name),
       },
-      prices: priceSections(segment, services, prices),
-      examples: priceExamples(segment, services, prices),
+      prices: priceSections(segment, services, prices, types),
+      examples: priceExamples(segment, services, prices, types),
       // The calculator: the choices this package offers and the districts.
       calculator: {
         weight: !isBanking(segment),

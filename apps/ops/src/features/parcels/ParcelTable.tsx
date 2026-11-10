@@ -54,6 +54,15 @@ export default function ParcelTable({ list, options }: { list: ParcelListState; 
   const ops = useOps();
   const actions = useParcelActions();
   const { filters, setFilters, rows } = list;
+  // Priority filter: the names of the line's priorities (both lists when no line is chosen).
+  const priorities = useQuery({ queryKey: ["parcel-priorities"], queryFn: () => api<{ segment: string; name: string }[]>("/parcel-priorities"), staleTime: 5 * 60_000 });
+  const priorityOptions = [
+    ...new Set(
+      (priorities.data ?? [])
+        .filter(p => !filters.line || (filters.line === "BANKING_FINANCIAL") === (p.segment === "BANKING_FINANCIAL"))
+        .map(p => p.name),
+    ),
+  ];
   const [q, setQ] = useState(filters.q ?? "");
   const debounced = useDebounced(q, 350);
   useEffect(() => {
@@ -136,6 +145,16 @@ export default function ParcelTable({ list, options }: { list: ParcelListState; 
           {LINES.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
+            </option>
+          ))}
+        </Select>
+      ) : null}
+      {options.lines || options.merchants ? (
+        <Select className="select sm" aria-label="Filter by priority" value={filters.priority || ""} onChange={e => setFilters({ priority: e.target.value })}>
+          <option value="">All priorities</option>
+          {priorityOptions.map(name => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </Select>

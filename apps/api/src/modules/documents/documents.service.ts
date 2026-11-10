@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { addressText } from "../../common/address";
 import type { Readable } from "node:stream";
 import type { z } from "zod";
-import { displayPriceLines, LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, SPEED_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
+import { displayPriceLines, LAST_MILE_LABEL, PARCEL_STATUS_LABEL, SERVICE_LEVEL_LABEL, parcelStatusLabel, type ParcelStatus } from "@delivery-fast/shared";
 import { env } from "../../config/env";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -278,7 +278,7 @@ export class DocumentsService {
         codAmount: num(p.codAmount),
         weightKg: num(p.weightKg),
         isDocument: p.type === "DOCUMENT" || p.merchant?.type === "BANKING_FINANCIAL",
-        service: p.speedOption ? ((SPEED_LABEL as Record<string, string>)[p.speedOption] ?? p.speedOption) : SERVICE_LEVEL_LABEL[p.serviceLevel],
+        service: p.deliveryTypeName ?? p.speedOption ?? SERVICE_LEVEL_LABEL[p.serviceLevel],
         deliveryMode: p.lastMile ? ((LAST_MILE_LABEL as Record<string, string>)[p.lastMile] ?? p.lastMile) + (p.lastMile === "HUB_COLLECT" && p.collectHub ? ` (${p.collectHub.name})` : "") : "Home delivery",
         product: p.productName ?? p.documentType ?? p.contents ?? null,
         productType: PRODUCT_TYPE_LABEL[p.productType ?? "REGULAR"] ?? p.productType ?? "Regular",

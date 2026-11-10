@@ -14,3 +14,14 @@ export const updateScanSchema = z.object({
     z.union([z.string().trim().max(500, "Use at most 500 characters"), z.null()]),
   ),
 });
+
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+/** GET /parcel-scans/usage: Dhaka days, inclusive (default: this month so far), and the log's page. */
+export const scanUsageQuerySchema = z
+  .object({
+    from: day.optional(),
+    to: day.optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(10).max(200).default(50),
+  })
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: "From must be on or before To", path: ["from"] });

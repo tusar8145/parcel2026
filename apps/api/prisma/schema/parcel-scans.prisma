@@ -60,3 +60,42 @@ model ParcelScan {
   @@index([createdAt])
   @@map("parcel_scans")
 }
+
+/// Who read a photo: Claude (SCAN_READER=claude) or the local OCR reader.
+enum ScanReader {
+  CLAUDE
+  LOCAL
+}
+
+/// One reading of a "Scan with phone" photo, kept for usage and cost (super admin › Operational settings ›
+/// Scan with phone usage). Stays when the scan row and its photo are cleaned up.
+model ScanReadLog {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  scanId       String?          @db.Uuid
+  sessionId    String?          @db.Uuid
+  kind         ImportKind
+  merchantId   String?          @db.Uuid
+  /// The staff member who opened the session.
+  userId       String?          @db.Uuid
+  reader       ScanReader
+  /// Claude's model (null for the local reader).
+  model        String?
+  status       ParcelScanStatus
+  /// Claude was asked but failed, so the local reader read it.
+  fallback     Boolean          @default(false)
+  /// Why Claude failed (no secrets).
+  error        String?
+  /// Fields found.
+  fields       Int              @default(0)
+  ms           Int              @default(0)
+  inputTokens  Int              @default(0)
+  cacheRead    Int              @default(0)
+  cacheWrite   Int              @default(0)
+  outputTokens Int              @default(0)
+  /// Estimated from the model's list price (the bill: Anthropic Console › Usage).
+  costUsd      Decimal          @default(0) @db.Decimal(12, 6)
+  createdAt    DateTime         @default(now())
+
+  @@index([createdAt])
+  @@map("scan_read_logs")
+}

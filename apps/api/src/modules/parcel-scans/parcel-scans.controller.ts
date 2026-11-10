@@ -6,8 +6,9 @@ import type { z } from "zod";
 import { CurrentUser, Public, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { UserActor } from "../../common/auth/actor";
 import { AppError } from "../../common/errors";
-import { ApiZodBody, ZBody } from "../../common/zod";
-import { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
+import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
+import { dhakaDayKey } from "../../common/period";
+import { createScanSessionSchema, scanUsageQuerySchema, updateScanSchema } from "./parcel-scans.schemas";
 import { ParcelScansService } from "./parcel-scans.service";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -39,6 +40,15 @@ async function oneFile(req: FastifyRequest, field: string, maxBytes: number) {
 @Controller("parcel-scans")
 export class ParcelScansController {
   constructor(private readonly scans: ParcelScansService) {}
+
+  /** Super admin › Operational settings › Scan with phone usage: photos read, by Claude or the local reader, and the estimated Claude cost. */
+  @RequirePermissions("config:manage")
+  @Get("usage")
+  @ApiZodQuery(scanUsageQuerySchema)
+  usage(@ZQuery(scanUsageQuerySchema) query: z.infer<typeof scanUsageQuerySchema>) {
+    const today = dhakaDayKey();
+    return this.scans.usage({ from: query.from ?? `${today.slice(0, 8)}01`, to: query.to ?? today, page: query.page, pageSize: query.pageSize });
+  }
 
   /** Opens a session: { url, qrSvg, … }. The link works while the modal keeps the session alive (POST …/keepalive every minute). */
   @RequirePermissions("parcel:dispatch")

@@ -53,7 +53,7 @@ const placeList = (p: Places) => `Districts and their thanas / upazilas:\n${p.di
 /**
  * Claude reading the whole label from the photo (SCAN_READER=claude): every column of the kind's
  * template in one call, then each value checked for its form (a BD mobile, an amount, a catalog place).
- * Null when it fails, so the caller can fall back to the local reader.
+ * The fields are null when the call fails, so the caller falls back to the local reader.
  */
 @Injectable()
 export class ScanClaudeService {
@@ -64,7 +64,8 @@ export class ScanClaudeService {
     return env().SCAN_READER === "claude" && !!env().ANTHROPIC_API_KEY;
   }
 
-  async extract(input: { image: Buffer; kind: ImportKindKey; places: Places }): Promise<ScanCells | null> {
+  /** The fields (null when the call failed), with the call's tokens, time and estimated cost for the usage log. */
+  async extract(input: { image: Buffer; kind: ImportKindKey; places: Places }): Promise<ClaudeRead | null> {
     if (!this.enabled()) return null;
     this.client ??= new Anthropic({ apiKey: env().ANTHROPIC_API_KEY, timeout: 120_000, maxRetries: 2 });
     const keys = COLUMNS[input.kind].map(c => c.key);
@@ -77,6 +78,7 @@ export class ScanClaudeService {
     };
     const model = env().SCAN_CLAUDE_MODEL;
     const started = Date.now();
+    const read: ClaudeRead = { cells: null, model, ms: 0, tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, costUsd: 0 };
     try {
       const response = await this.client.beta.messages.create({
         model,
@@ -95,22 +97,49 @@ export class ScanClaudeService {
           },
         ],
       });
-      // Tokens and time of each read (the cost: Console › Usage).
       const u = response.usage;
-      this.logger.log(
-        { model: response.model, ms: Date.now() - started, input: u.input_tokens, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens },
-        "Claude read a parcel photo",
-      );
+      read.model = response.model;
+      read.tokens = { input: u.input_tokens, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens };
+      read.costUsd = costUsd(read.model, read.tokens);
       if (response.stop_reason === "refusal") throw new Error(`refused (${response.stop_details?.category ?? "no category"})`);
       if (response.stop_reason === "max_tokens") throw new Error("the answer was cut off");
       const text = response.content.flatMap(b => (b.type === "text" ? [b.text] : [])).join("");
-      return fromClaude(JSON.parse(text) as Values, input.kind, input.places);
+      read.cells = fromClaude(JSON.parse(text) as Values, input.kind, input.places);
     } catch (err) {
-      const reason = err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err);
-      this.logger.warn({ reason }, "Claude could not read a parcel photo; the local reader is used");
-      return null;
+      read.error = (err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err)).trim().slice(0, 300);
+      this.logger.warn({ reason: read.error }, "Claude could not read a parcel photo; the local reader is used");
     }
+    read.ms = Date.now() - started;
+    this.logger.log({ model: read.model, ms: read.ms, ...read.tokens, costUsd: read.costUsd }, "Claude read a parcel photo");
+    return read;
   }
+}
+
+export interface ClaudeRead {
+  /** The fields, or null when the call failed (the local reader takes over). */
+  cells: ScanCells | null;
+  model: string;
+  ms: number;
+  tokens: { input: number; cacheRead: number; cacheWrite: number; output: number };
+  costUsd: number;
+  error?: string;
+}
+
+/**
+ * List prices in USD per million tokens (input, output, cache read, 5-minute cache write = 1.25 × input).
+ * An estimate for the usage page; the bill is Anthropic Console › Usage. Unknown models count 0.
+ */
+const PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
+  "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2 },
+  "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2 },
+  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5 },
+  "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25 },
+};
+export function costUsd(model: string, t: ClaudeRead["tokens"]): number {
+  const p = PRICES[model];
+  if (!p) return 0;
+  return Math.round(((t.input * p.input + t.cacheWrite * p.input * 1.25 + t.cacheRead * p.cacheRead + t.output * p.output) / 1_000_000) * 1e6) / 1e6;
 }
 
 /** Claude's values kept only when they have the right form; places matched to the catalog. */

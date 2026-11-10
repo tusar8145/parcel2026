@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { fromClaude } from "./scan-claude";
+import { costUsd, fromClaude } from "./scan-claude";
 
 const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, "../../../test/fixtures/scan/catalog.json"), "utf8"));
 
@@ -59,5 +59,17 @@ describe("Claude's reading of a label is checked for form", () => {
     expect(cells.pickup_district).toMatch(/^Dhaka/);
     // The same number for both: it is the recipient's.
     expect(cells.sender_phone).toBeUndefined();
+  });
+});
+
+describe("the estimated cost of a reading", () => {
+  it("prices Haiku 5.5 by list price, cache writes at 1.25 x input", () => {
+    // 418 input, 6,581 cache write, 222 output: (41.8 + 822.625 + 111) / 1M = $0.000975
+    expect(costUsd("claude-haiku-5-5", { input: 418, cacheRead: 0, cacheWrite: 6581, output: 222 })).toBeCloseTo(0.000975, 6);
+    // Cache read at 0.1 x input: (41.8 + 65.81 + 433.5) / 1M = $0.000541
+    expect(costUsd("claude-haiku-5-5", { input: 418, cacheRead: 6581, cacheWrite: 0, output: 867 })).toBeCloseTo(0.000541, 6);
+  });
+  it("counts an unknown model as 0", () => {
+    expect(costUsd("some-other-model", { input: 1000, cacheRead: 0, cacheWrite: 0, output: 1000 })).toBe(0);
   });
 });

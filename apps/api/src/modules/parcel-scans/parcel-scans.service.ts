@@ -20,7 +20,7 @@ import type { ScanCells } from "./scan-parser";
 import { readFields, ScanReaderService } from "./scan-reader";
 import { mergeAi, mergeVision, ScanAiService } from "./scan-ai";
 import { forClaude, forModel, upright } from "./scan-image";
-import { ScanClaudeService } from "./scan-claude";
+import { ScanClaudeService, type ClaudeRead } from "./scan-claude";
 import type { createScanSessionSchema, updateScanSchema } from "./parcel-scans.schemas";
 
 const QUEUE = "parcel-scans";
@@ -328,19 +328,21 @@ export class ParcelScansService implements OnApplicationBootstrap {
 
   /** Background job: OCR, then the fields (fields already typed in the modal are kept). */
   async read(scanId: string) {
-    const scan = await this.prisma.parcelScan.findUnique({ where: { id: scanId }, include: { file: { select: { storageKey: true } }, session: { select: { id: true, kind: true, createdById: true } } } });
+    const scan = await this.prisma.parcelScan.findUnique({ where: { id: scanId }, include: { file: { select: { storageKey: true } }, session: { select: { id: true, kind: true, merchantId: true, createdById: true } } } });
     if (!scan || scan.status !== "READING" || !scan.file) return;
+    const started = Date.now();
     let text = "";
     let cells: ScanCells = {};
     let status: "READ" | "FAILED" = "READ";
+    let byClaude: ClaudeRead | null = null;
     try {
       const photo = await this.storage.read(scan.file.storageKey);
       const kind = kindKeyOf(scan.session.kind);
       const catalog = await this.pricing.catalog();
       // SCAN_READER=claude: Claude reads the whole photo; the local reader only when that call fails.
-      const byClaude = this.claude.enabled() ? await this.claude.extract({ image: await forClaude(photo), kind, places: catalog }) : null;
-      if (byClaude) {
-        cells = byClaude;
+      byClaude = this.claude.enabled() ? await this.claude.extract({ image: await forClaude(photo), kind, places: catalog }) : null;
+      if (byClaude?.cells) {
+        cells = byClaude.cells;
         if (!Object.keys(cells).length) status = "FAILED";
       } else ({ text, cells, status } = await this.readLocal(photo, kind, catalog));
     } catch (err) {
@@ -351,6 +353,105 @@ export class ParcelScansService implements OnApplicationBootstrap {
     if (!fresh) return;
     await this.prisma.parcelScan.update({ where: { id: scanId }, data: { status, text: text.slice(0, 4000) || null, cells: { ...cells, ...(fresh.cells as ScanCells) } } });
     this.realtime.publish({ type: EVENT, id: scan.session.id, userIds: [scan.session.createdById] });
+    // The usage log (super admin › Scan with phone usage): every reading, with Claude's tokens and estimated cost.
+    const claudeRead = !!byClaude?.cells;
+    await this.prisma.scanReadLog
+      .create({
+        data: {
+          scanId,
+          sessionId: scan.session.id,
+          kind: scan.session.kind,
+          merchantId: scan.session.merchantId,
+          userId: scan.session.createdById,
+          reader: claudeRead ? "CLAUDE" : "LOCAL",
+          model: byClaude?.model ?? null,
+          status,
+          fallback: !!byClaude && !claudeRead,
+          error: byClaude?.error ?? null,
+          fields: Object.keys(cells).length,
+          ms: Date.now() - started,
+          inputTokens: byClaude?.tokens.input ?? 0,
+          cacheRead: byClaude?.tokens.cacheRead ?? 0,
+          cacheWrite: byClaude?.tokens.cacheWrite ?? 0,
+          outputTokens: byClaude?.tokens.output ?? 0,
+          costUsd: byClaude?.costUsd ?? 0,
+        },
+      })
+      .catch(err => this.logger.warn({ err, scan: scanId }, "Could not log a scan reading"));
+  }
+
+  // ───────────── usage (super admin) ─────────────
+
+  /** Scan with phone usage between two days (Dhaka dates, inclusive): totals, per day, per model, and the log. */
+  async usage(input: { from: string; to: string; page: number; pageSize: number }) {
+    const start = new Date(`${input.from}T00:00:00+06:00`);
+    const end = new Date(new Date(`${input.to}T00:00:00+06:00`).getTime() + 86_400_000);
+    const where = { createdAt: { gte: start, lt: end } };
+    const sum = { costUsd: true, inputTokens: true, cacheRead: true, cacheWrite: true, outputTokens: true, ms: true } as const;
+    const [all, byReader, byStatus, fallbacks, byModel, total, rows, daily] = await Promise.all([
+      this.prisma.scanReadLog.aggregate({ where, _count: { _all: true }, _sum: sum }),
+      this.prisma.scanReadLog.groupBy({ by: ["reader"], where, _count: { _all: true } }),
+      this.prisma.scanReadLog.groupBy({ by: ["status"], where, _count: { _all: true } }),
+      this.prisma.scanReadLog.count({ where: { ...where, fallback: true } }),
+      this.prisma.scanReadLog.groupBy({ by: ["model"], where: { ...where, reader: "CLAUDE" }, _count: { _all: true }, _sum: sum }),
+      this.prisma.scanReadLog.count({ where }),
+      this.prisma.scanReadLog.findMany({ where, orderBy: { createdAt: "desc" }, skip: (input.page - 1) * input.pageSize, take: input.pageSize }),
+      this.prisma.$queryRaw<{ day: string; photos: bigint; claude: bigint; failed: bigint; cost: string | null }[]>`
+        SELECT to_char(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Dhaka', 'YYYY-MM-DD') AS day,
+               count(*) AS photos,
+               count(*) FILTER (WHERE reader = 'CLAUDE') AS claude,
+               count(*) FILTER (WHERE status = 'FAILED') AS failed,
+               sum("costUsd")::text AS cost
+        FROM scan_read_logs WHERE "createdAt" >= ${start} AND "createdAt" < ${end}
+        GROUP BY 1 ORDER BY 1 DESC`,
+    ]);
+    const users = await this.prisma.user.findMany({ where: { id: { in: [...new Set(rows.map(r => r.userId).filter((v): v is string => !!v))] } }, select: { id: true, name: true } });
+    const merchants = await this.prisma.merchant.findMany({ where: { id: { in: [...new Set(rows.map(r => r.merchantId).filter((v): v is string => !!v))] } }, select: { id: true, name: true, code: true } });
+    const userName = new Map(users.map(u => [u.id, u.name]));
+    const merchantOf = new Map(merchants.map(m => [m.id, m]));
+    const count = <T extends string>(list: { _count: { _all: number } }[], key: (x: never) => T, value: T) => list.find(x => key(x as never) === value)?._count._all ?? 0;
+    const n = (v: unknown) => Number(v ?? 0);
+    return {
+      from: input.from,
+      to: input.to,
+      /** What reads the photos now. */
+      reader: this.claude.enabled() ? { name: "claude", model: env().SCAN_CLAUDE_MODEL } : { name: "local", model: null },
+      totals: {
+        photos: all._count._all,
+        claude: count(byReader, (x: { reader: string }) => x.reader, "CLAUDE"),
+        local: count(byReader, (x: { reader: string }) => x.reader, "LOCAL"),
+        read: count(byStatus, (x: { status: string }) => x.status, "READ"),
+        failed: count(byStatus, (x: { status: string }) => x.status, "FAILED"),
+        fallbacks,
+        tokens: { input: n(all._sum.inputTokens), cacheRead: n(all._sum.cacheRead), cacheWrite: n(all._sum.cacheWrite), output: n(all._sum.outputTokens) },
+        costUsd: n(all._sum.costUsd),
+        avgMs: all._count._all ? Math.round(n(all._sum.ms) / all._count._all) : 0,
+      },
+      models: byModel.map(m => ({ model: m.model, photos: m._count._all, costUsd: n(m._sum.costUsd), avgMs: m._count._all ? Math.round(n(m._sum.ms) / m._count._all) : 0 })),
+      daily: daily.map(d => ({ day: d.day, photos: Number(d.photos), claude: Number(d.claude), failed: Number(d.failed), costUsd: n(d.cost) })),
+      log: {
+        total,
+        page: input.page,
+        pageSize: input.pageSize,
+        items: rows.map(r => ({
+          id: r.id,
+          createdAt: r.createdAt,
+          kind: kindKeyOf(r.kind),
+          kindLabel: KIND_LABEL[kindKeyOf(r.kind)],
+          merchant: r.merchantId ? (merchantOf.get(r.merchantId) ?? null) : null,
+          user: r.userId ? (userName.get(r.userId) ?? null) : null,
+          reader: r.reader,
+          model: r.model,
+          status: r.status,
+          fallback: r.fallback,
+          error: r.error,
+          fields: r.fields,
+          ms: r.ms,
+          tokens: r.inputTokens + r.cacheRead + r.cacheWrite + r.outputTokens,
+          costUsd: Number(r.costUsd),
+        })),
+      },
+    };
   }
 
   /** The local reader: OCR + rules, and the local AI (SCAN_AI_URL) when configured. */

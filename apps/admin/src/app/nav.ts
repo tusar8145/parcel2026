@@ -39,6 +39,7 @@ export const PAGES: PageDef[] = [
   { id: "Products", label: "Products", slug: "products", icon: "box", group: "platform", sub: "Operational settings" },
   { id: "Invoice settings", label: "Invoice settings", slug: "invoice-settings", icon: "file", group: "platform", sub: "Operational settings" },
   { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", group: "platform", sub: "Operational settings", legacy: ["import-template-settings"] },
+  { id: "Scan usage", label: "Scan with phone usage", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
   { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Location settings" },
   { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Location settings" },
   { id: "Integration settings", label: "Integration settings", slug: "integration-settings", icon: "settings", group: "platform" },

@@ -17,6 +17,8 @@ interface Session {
   photos: number;
   maxPhotos: number;
   scans: { number: number; status: "READING" | "READ" | "FAILED" }[];
+  /** Scans left (super admin's scan balance); null = no limit. */
+  scansLeft?: number | null;
 }
 interface Upload {
   key: number;
@@ -173,13 +175,19 @@ export default function ScanPhone({ token }: { token: string }) {
             <h1>Photograph each parcel label</h1>
             <p className="meta">
               {session ? `${session.kindLabel}${session.merchantName ? ` · ${session.merchantName}` : ""} · ${session.photos} sent` : "Connecting…"}
+              {session?.scansLeft != null ? ` · ${session.scansLeft} scan${session.scansLeft === 1 ? "" : "s"} left` : ""}
             </p>
+            {session?.scansLeft === 0 ? (
+              <p className="problem" role="alert" style={{ margin: "0 0 12px" }}>
+                No scans left. Ask the super admin to add scan balance.
+              </p>
+            ) : null}
             <p className="hint">Hold the label flat, fill the frame with it and use good light. Each photo is sent at once and becomes one order on the computer: take the next one straight away.</p>
             <div className="actions">
-              <button type="button" className="primary" onClick={() => camera.current?.click()} disabled={!session}>
+              <button type="button" className="primary" onClick={() => camera.current?.click()} disabled={!session || session.scansLeft === 0}>
                 {"📷 Take photo"}
               </button>
-              <button type="button" onClick={() => gallery.current?.click()} disabled={!session}>
+              <button type="button" onClick={() => gallery.current?.click()} disabled={!session || session.scansLeft === 0}>
                 {"🖼 Choose photos"}
               </button>
             </div>

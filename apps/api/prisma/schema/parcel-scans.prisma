@@ -99,3 +99,15 @@ model ScanReadLog {
   @@index([createdAt])
   @@map("scan_read_logs")
 }
+
+/// How many "Scan with phone" photos may still be read (super admin › Scan with phone usage). One row ("default").
+/// While `limited`, each photo accepted from a phone takes 1; at 0 photos are refused. Off = no limit.
+model ScanBalance {
+  id          String   @id @default("default")
+  limited     Boolean  @default(false)
+  balance     Int      @default(0)
+  updatedById String?  @db.Uuid
+  updatedAt   DateTime @updatedAt
+
+  @@map("scan_balance")
+}

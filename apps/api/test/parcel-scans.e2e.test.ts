@@ -162,4 +162,41 @@ describe("parcel scans", () => {
     expect(await service.cleanup()).toEqual({ scans: 1, sessions: 1 });
     expect(await ctx.prisma.storedFile.count({ where: { id: scan.fileId! } })).toBe(0);
   });
+
+  it("scan balance: unlimited by default; while limited each photo takes 1 and none is accepted at 0; super admin only", async () => {
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+    const open = async () => String((await ctx.api("POST", "/parcel-scans/sessions", { token: ops.token, body: { kind: "customer" } })).body.url).split("/scan/")[1];
+    const photo = (token: string) => send("POST", `/parcel-scans/public/${token}/photos`, "photo", { name: "label.png", data: LABEL, type: "image/png" });
+
+    // No limit yet: photos are accepted and nothing is counted.
+    let token = await open();
+    expect((await photo(token)).status).toBe(201);
+    expect((await ctx.api("GET", `/parcel-scans/public/${token}`)).body.scansLeft).toBeNull();
+    expect((await ctx.api("GET", "/parcel-scans/balance", { token: admin.token })).body).toMatchObject({ limited: false, balance: 0 });
+
+    // Only the super admin changes it.
+    expect((await ctx.api("PUT", "/parcel-scans/balance", { token: ops.token, body: { set: 5 } })).status).toBe(403);
+    expect((await ctx.api("PUT", "/parcel-scans/balance", { token: admin.token, body: { add: 1, set: 2 } })).status).toBe(422);
+    const set = await ctx.api("PUT", "/parcel-scans/balance", { token: admin.token, body: { limited: true, set: 2 } });
+    expect(set.body).toMatchObject({ limited: true, balance: 2 });
+
+    // 2 scans: 3 photos at once → exactly 2 accepted, then none.
+    token = await open();
+    const sent = await Promise.all([photo(token), photo(token), photo(token)]);
+    expect(sent.map(r => r.status).sort()).toEqual([201, 201, 422]);
+    expect(sent.find(r => r.status === 422)!.body.error.code).toBe("SCAN_BALANCE_EMPTY");
+    expect((await ctx.api("GET", `/parcel-scans/public/${token}`)).body.scansLeft).toBe(0);
+    expect((await photo(token)).status).toBe(422);
+
+    // Top up 50: accepted again, 49 left.
+    expect((await ctx.api("PUT", "/parcel-scans/balance", { token: admin.token, body: { add: 50 } })).body.balance).toBe(50);
+    expect((await photo(token)).status).toBe(201);
+    expect((await ctx.api("GET", "/parcel-scans/balance", { token: admin.token })).body.balance).toBe(49);
+    // The limit off: no limit again (the balance is kept).
+    expect((await ctx.api("PUT", "/parcel-scans/balance", { token: admin.token, body: { limited: false } })).body).toMatchObject({ limited: false, balance: 49 });
+    expect((await photo(token)).status).toBe(201);
+    expect((await ctx.api("GET", "/parcel-scans/balance", { token: admin.token })).body.balance).toBe(49);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "parcel_scan.balance" } })).toBe(3);
+  });
 });

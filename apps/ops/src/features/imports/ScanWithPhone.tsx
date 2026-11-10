@@ -53,6 +53,8 @@ interface Session {
   merchant: { id: string; name: string } | null;
   columns: { key: string; header: string }[];
   scans: Scan[];
+  /** Scans left (super admin's scan balance); null = no limit. */
+  scansLeft?: number | null;
 }
 interface MerchantRef {
   id: string;
@@ -391,6 +393,11 @@ function Rows({ first, catalog, setSession, importConfig, close }: { first: Sess
                   </Button>
                 </div>
                 <p style={{ margin: 0, fontSize: 12, color: expired ? "var(--bad)" : "#946200", textAlign: "center" }}>{expired ? "The phone link has expired." : "The link stops working when you close this window."}</p>
+                {session.scansLeft != null ? (
+                  <p role={session.scansLeft === 0 ? "alert" : undefined} style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: session.scansLeft === 0 ? "var(--bad)" : "var(--ink)", textAlign: "center" }}>
+                    {session.scansLeft === 0 ? "No scans left: ask the super admin to add scan balance." : `${session.scansLeft.toLocaleString("en-US")} scan${session.scansLeft === 1 ? "" : "s"} left`}
+                  </p>
+                ) : null}
                 <p style={{ margin: 0, fontSize: 12, color: "var(--muted)", textAlign: "center" }}>Click a row's photo to see it here and compare it with what was read.</p>
               </div>
             )}
@@ -399,7 +406,7 @@ function Rows({ first, catalog, setSession, importConfig, close }: { first: Sess
             <div className="row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
               <strong>
                 {scans.length} parcel{scans.length === 1 ? "" : "s"}
-                {reading ? ` · ${reading} being read (a minute or two each, one at a time)` : ""}
+                {reading ? ` · ${reading} being read (a few at a time)` : ""}
               </strong>
               <span className="faint" style={{ fontSize: 12.5 }}>
                 Changes are saved as you type · they go into the Excel file and the order

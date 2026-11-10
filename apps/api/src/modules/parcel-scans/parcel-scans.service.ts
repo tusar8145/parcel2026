@@ -148,6 +148,8 @@ export class ParcelScansService implements OnApplicationBootstrap {
       /** The template's columns (key, header) in order, for the modal's table. */
       columns: COLUMNS[kind].map(c => ({ key: c.key, header: c.header })),
       scans: scans.map(s => this.scanView(s)),
+      /** Scans left (super admin's scan balance); null = no limit. */
+      scansLeft: await this.balance().then(b => (b.limited ? b.balance : null)),
     };
   }
 
@@ -290,7 +292,8 @@ export class ParcelScansService implements OnApplicationBootstrap {
       this.prisma.parcelScan.findMany({ where: { sessionId: session.id, fileId: { not: null } }, orderBy: { number: "desc" }, take: 50, select: { number: true, status: true, createdAt: true } }),
     ]);
     const kind = kindKeyOf(session.kind);
-    return { kindLabel: KIND_LABEL[kind], merchantName: merchant?.name ?? null, photos: session.scanCount, maxPhotos: MAX_SCANS, expiresAt: session.expiresAt, scans };
+    const { limited, balance } = await this.balance();
+    return { kindLabel: KIND_LABEL[kind], merchantName: merchant?.name ?? null, photos: session.scanCount, maxPhotos: MAX_SCANS, expiresAt: session.expiresAt, scans, scansLeft: limited ? balance : null };
   }
 
   /** A photo from the phone (JPEG / PNG / WebP, compressed on the phone, at most 5 MB): stored, then read in the background. */
@@ -300,6 +303,13 @@ export class ParcelScansService implements OnApplicationBootstrap {
     const who = { userId: session.createdById, name: "Scan with phone (phone link)" };
     let fileId: string | undefined;
     const scan = await this.prisma.$transaction(async tx => {
+      // Scan balance (super admin): while limited, each photo takes 1 and none is taken at 0. Taken in this
+      // transaction, so a photo that isn't stored gives it back.
+      const limit = await tx.scanBalance.findUnique({ where: { id: "default" } });
+      if (limit?.limited) {
+        const taken = await tx.scanBalance.updateMany({ where: { id: "default", limited: true, balance: { gt: 0 } }, data: { balance: { decrement: 1 } } });
+        if (!taken.count) throw new AppError("SCAN_BALANCE_EMPTY", "No scans left. Ask the super admin to add scan balance.", 422);
+      }
       const file = await this.storage.save({ data: photo.data, mimeType: photo.mimeType, filename: photo.filename || "parcel.jpg", uploadedById: session.createdById }, tx);
       fileId = file.id;
       const { scanCount } = await tx.parcelScanSession.update({ where: { id: session.id }, data: { scanCount: { increment: 1 } } });
@@ -380,7 +390,37 @@ export class ParcelScansService implements OnApplicationBootstrap {
       .catch(err => this.logger.warn({ err, scan: scanId }, "Could not log a scan reading"));
   }
 
-  // ───────────── usage (super admin) ─────────────
+  // ───────────── usage and scan balance (super admin) ─────────────
+
+  /** The scan balance: unlimited unless a super admin turned the limit on. */
+  async balance() {
+    const row = await this.prisma.scanBalance.findUnique({ where: { id: "default" } });
+    return { limited: !!row?.limited, balance: row?.balance ?? 0, updatedAt: row?.updatedAt ?? null };
+  }
+
+  /** Turns the limit on / off, adds scans or sets the balance (one of add / set at a time). */
+  async setBalance(actor: UserActor, input: { limited?: boolean; add?: number; set?: number }, meta: RequestMeta) {
+    const before = await this.balance();
+    const after = await this.prisma.$transaction(async tx => {
+      const row = await tx.scanBalance.upsert({
+        where: { id: "default" },
+        create: { id: "default", limited: input.limited ?? before.limited, balance: input.set ?? input.add ?? 0, updatedById: actor.userId },
+        update: {
+          ...(input.limited !== undefined ? { limited: input.limited } : {}),
+          ...(input.set !== undefined ? { balance: input.set } : input.add !== undefined ? { balance: { increment: input.add } } : {}),
+          updatedById: actor.userId,
+        },
+      });
+      await this.audit.record(
+        actor,
+        { action: "parcel_scan.balance", entityType: "scan_balance", entityId: "default", data: { before: { limited: before.limited, balance: before.balance }, after: { limited: row.limited, balance: row.balance }, ...(input.add !== undefined ? { added: input.add } : {}) } },
+        meta,
+        tx,
+      );
+      return row;
+    });
+    return { limited: after.limited, balance: after.balance, updatedAt: after.updatedAt };
+  }
 
   /** Scan with phone usage between two days (Dhaka dates, inclusive): totals, per day, per model, and the log. */
   async usage(input: { from: string; to: string; page: number; pageSize: number }) {
@@ -416,6 +456,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
       to: input.to,
       /** What reads the photos now. */
       reader: this.claude.enabled() ? { name: "claude", model: env().SCAN_CLAUDE_MODEL } : { name: "local", model: null },
+      balance: await this.balance(),
       totals: {
         photos: all._count._all,
         claude: count(byReader, (x: { reader: string }) => x.reader, "CLAUDE"),

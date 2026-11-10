@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, Res } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req, Res } from "@nestjs/common";
 import { ApiBody, ApiConsumes, ApiProduces, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -8,7 +8,7 @@ import type { UserActor } from "../../common/auth/actor";
 import { AppError } from "../../common/errors";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { dhakaDayKey } from "../../common/period";
-import { createScanSessionSchema, scanUsageQuerySchema, updateScanSchema } from "./parcel-scans.schemas";
+import { createScanSessionSchema, scanBalanceSchema, scanUsageQuerySchema, updateScanSchema } from "./parcel-scans.schemas";
 import { ParcelScansService } from "./parcel-scans.service";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -40,6 +40,21 @@ async function oneFile(req: FastifyRequest, field: string, maxBytes: number) {
 @Controller("parcel-scans")
 export class ParcelScansController {
   constructor(private readonly scans: ParcelScansService) {}
+
+  /** The scan balance: { limited, balance } (unlimited while the limit is off). */
+  @RequirePermissions("config:manage")
+  @Get("balance")
+  balance() {
+    return this.scans.balance();
+  }
+
+  /** Super admin: turn the scan limit on / off, add scans or set the balance. Each photo from a phone takes 1. */
+  @RequirePermissions("config:manage")
+  @Put("balance")
+  @ApiZodBody(scanBalanceSchema)
+  setBalance(@CurrentUser() actor: UserActor, @ZBody(scanBalanceSchema) body: z.infer<typeof scanBalanceSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.scans.setBalance(actor, body, meta);
+  }
 
   /** Super admin › Operational settings › Scan with phone usage: photos read, by Claude or the local reader, and the estimated Claude cost. */
   @RequirePermissions("config:manage")

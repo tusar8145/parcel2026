@@ -4,17 +4,20 @@
  * this month by default). The estimate uses list prices; the bill is in the Anthropic Console › Usage.
  */
 import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
 import { saveCsv } from "@panel/lib/csv";
 import { Button, Metric, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Pager } from "@panel/ui/Pager";
+import { confirm } from "@panel/ui/dialogs";
+import { toast } from "@panel/ui/toast";
 import { num, when } from "@/lib/admin";
 
 interface Usage {
   from: string;
   to: string;
   reader: { name: "claude" | "local"; model: string | null };
+  balance: Balance;
   totals: { photos: number; claude: number; local: number; read: number; failed: number; fallbacks: number; tokens: { input: number; cacheRead: number; cacheWrite: number; output: number }; costUsd: number; avgMs: number };
   models: { model: string | null; photos: number; costUsd: number; avgMs: number }[];
   daily: { day: string; photos: number; claude: number; failed: number; costUsd: number }[];
@@ -39,6 +42,12 @@ interface Usage {
       costUsd: number;
     }[];
   };
+}
+
+interface Balance {
+  limited: boolean;
+  balance: number;
+  updatedAt: string | null;
 }
 
 /** Dhaka's today, YYYY-MM-DD. */
@@ -102,6 +111,7 @@ export default function ScanUsage() {
         ) : null}
       </div>
       {usage.error ? <div className="callout bad">{describe(usage.error)}</div> : null}
+      {d ? <BalancePanel balance={d.balance} /> : null}
       <div className="metrics">
         <Metric label="Photos scanned" icon="camera" value={t ? num(t.photos) : "0"} foot={t ? `${num(t.read)} read · ${num(t.failed)} not read` : ""} note={`${from} to ${to}`} />
         <Metric label="Read by Claude" icon="scan" value={t ? num(t.claude) : "0"} foot={t ? `${num(t.local)} by the local reader` : ""} note={t?.fallbacks ? `${num(t.fallbacks)} fell back (Claude failed)` : "no fallbacks"} />
@@ -229,5 +239,68 @@ export default function ScanUsage() {
         />
       </Panel>
     </>
+  );
+}
+
+/**
+ * The scan balance: while "Limit scans" is on, each photo a phone sends takes 1 scan and none is accepted at 0.
+ * Add scans (top up) or set the balance; every change is in the audit log.
+ */
+function BalancePanel({ balance }: { balance: Balance }) {
+  const queryClient = useQueryClient();
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const n = Number(amount);
+  const valid = amount.trim() !== "" && Number.isInteger(n) && n >= 0 && n <= 1_000_000;
+  async function save(body: { limited?: boolean; add?: number; set?: number }, done: string) {
+    setBusy(true);
+    try {
+      const saved = await api<Balance>("/parcel-scans/balance", { method: "PUT", body });
+      await queryClient.invalidateQueries({ queryKey: ["admin", "scan-usage"] });
+      setAmount("");
+      toast(`${done} ${saved.limited ? `${num(saved.balance)} scan${saved.balance === 1 ? "" : "s"} left.` : "Scans are not limited."}`, "good");
+    } catch (err) {
+      toast(describe(err), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const toggle = async () => {
+    if (balance.limited) {
+      if (await confirm({ title: "Stop limiting scans?", message: "Phones can then send any number of photos; the balance is kept for when you turn the limit on again.", ok: "Stop limiting" })) await save({ limited: false }, "Limit off.");
+    } else await save({ limited: true }, "Limit on.");
+  };
+  const empty = balance.limited && balance.balance === 0;
+  return (
+    <Panel
+      title="Scan balance"
+      subtitle={balance.limited ? "Each photo sent from a phone takes 1 scan. At 0, photos are not accepted until you add more." : "Not limited: phones can send any number of photos. Turn the limit on to allow only the scans you add."}
+      tools={
+        <label className="check" style={{ fontWeight: 600 }}>
+          <input type="checkbox" checked={balance.limited} disabled={busy} onChange={() => void toggle()} /> Limit scans
+        </label>
+      }
+    >
+      <div className="row" style={{ gap: 24, alignItems: "end", flexWrap: "wrap", padding: 16 }}>
+        <div>
+          <div className="faint" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>Scans left</div>
+          <div style={{ fontSize: 30, fontWeight: 700, color: empty ? "var(--bad)" : "var(--ink)" }}>{balance.limited ? num(balance.balance) : "No limit"}</div>
+          {empty ? <div style={{ color: "var(--bad)", fontSize: 13, fontWeight: 600 }}>Used up: phones can't send photos now.</div> : balance.updatedAt ? <div className="faint" style={{ fontSize: 12 }}>{`Changed ${when(balance.updatedAt)}`}</div> : null}
+        </div>
+        <label className="field" style={{ width: 160 }}>
+          <span>Scans</span>
+          <input className="input" type="number" min={0} max={1000000} step={1} inputMode="numeric" placeholder="e.g. 50" value={amount} onChange={e => setAmount(e.target.value)} />
+        </label>
+        <Button variant="primary" disabled={busy || !valid || n < 1} onClick={() => void save({ add: n, ...(balance.limited ? {} : { limited: true }) }, `Added ${num(n)}.`)}>
+          Add scans
+        </Button>
+        <Button disabled={busy || !valid} onClick={() => void save({ set: n, ...(balance.limited ? {} : { limited: true }) }, `Balance set to ${num(n)}.`)}>
+          Set balance
+        </Button>
+        <span className="faint" style={{ fontSize: 12.5, maxWidth: 360 }}>
+          Add scans tops up what is left; Set balance replaces it. Either turns the limit on.
+        </span>
+      </div>
+    </Panel>
   );
 }

@@ -9,6 +9,7 @@ new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 
 
 ## 1.29.0 — 2026-11-10
 - Super admin › Operational settings › Scan with phone usage: how many label photos were scanned (by day and in any period), how many Claude read and how many the local reader did, the fields found, the time each took and Claude's estimated cost (in total, per photo and per model), with the full scan log and Export.
+- Scan balance (same page): turn on "Limit scans" and add scans or set the balance (e.g. 50). Each photo a phone sends takes 1; at 0 the phone can't send more until scans are added. The phone and the Operations console show the scans left. Off (the default) means no limit. Every change is in the audit log.
 
 ## 1.28.0 — 2026-11-10
 - Scan with phone: take a photo and it is sent at once, with no crop / turn step and no waiting; several photos upload together, and the next one can be taken straight away. The computer reads several photos at the same time and the Operations console fills each row as it is read.

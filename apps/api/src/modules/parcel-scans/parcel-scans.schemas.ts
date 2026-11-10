@@ -25,3 +25,13 @@ export const scanUsageQuerySchema = z
     pageSize: z.coerce.number().int().min(10).max(200).default(50),
   })
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: "From must be on or before To", path: ["from"] });
+
+/** PUT /parcel-scans/balance: the limit on / off, and scans to add or the balance to set (not both). */
+export const scanBalanceSchema = z
+  .object({
+    limited: z.boolean().optional(),
+    add: z.number().int().min(1, "Add at least 1 scan").max(1_000_000).optional(),
+    set: z.number().int().min(0, "The balance can't be below 0").max(1_000_000).optional(),
+  })
+  .refine(b => !(b.add !== undefined && b.set !== undefined), { message: "Either add scans or set the balance", path: ["add"] })
+  .refine(b => b.limited !== undefined || b.add !== undefined || b.set !== undefined, { message: "Nothing to change", path: ["limited"] });

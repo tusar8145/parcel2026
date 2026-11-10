@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.27.0 — 2026-11-10
+- Excel import (merchant panel and Operations console): choose a Service and, for E-commerce and customer parcels, a Product type (Regular, Document, Books) in the import window. The choice replaces the file's values on every row and the price follows; "From the file" keeps each row's own. The preview and Import history show the choice.
+- Excel import, "Messages to send": Select all and Unselect all buttons.
+
 ## 1.26.2 — 2026-11-10
 - 4 invoices per A4 page has its own, fuller layout (8 per page stays the compact slip): barcode with the cash-to-collect (or service) box, sender and recipient with phones and hubs, the shipment details, the price lines and totals, "Received by" lines with a signature line, and the tracking QR.
 - Invoices no longer print the parcel status (it changes after printing); the A4 invoice heading shows the service and delivery type instead.

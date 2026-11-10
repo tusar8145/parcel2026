@@ -25,7 +25,7 @@ import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, me
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
 import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
-import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, resolveSelection } from "@delivery-fast/shared";
+import { displayPriceLines, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection, SPEED_LABEL } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
 import { autoKeys, fillPlaces, placesOfAddress } from "./import-places";
 import type { analyzeOptionsSchema, importOptionsSchema, listImportsQuerySchema, rowsQuerySchema } from "./imports.schemas";
@@ -473,6 +473,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       dropHubId: dropOff?.hub.id,
       lastMile: options.lastMile,
       notifications: options.notifications,
+      speed: options.speed,
+      productType: options.kind === "document" ? undefined : options.productType,
     };
     // First / last mile, drop hub and messages: only what the file's package offers.
     await this.checkServices(scope.merchantId, options.kind, services);
@@ -493,6 +495,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
     });
     if (!parsed.rows.length) throw new AppError("EMPTY_FILE", "The file has no orders below the header row.", 422);
     const ctx = await this.engine.context({ kind: options.kind, settings, merchantId: scope.merchantId, dropOffHubId: dropOff?.hub.id, services });
+    if (services.speed && !ctx.lists.speeds.includes(SPEED_LABEL[services.speed]))
+      throw new AppError("SERVICE_NOT_IN_PACKAGE", `${SPEED_LABEL[services.speed]} is not in this package (choose ${ctx.lists.speeds.join(", ")})`, 422);
     // District / zone / area picked from each row's address where the file left them out (or misspelt them).
     const columns = new Set(ctx.columns.map(c => c.key));
     const rows = parsed.rows.map(r => ({ ...r, cells: fillPlaces(r.cells, ctx.catalog, columns) }));
@@ -645,6 +649,10 @@ export class ImportJobsService implements OnApplicationBootstrap {
         lastMileLabel: services.lastMile ? LAST_MILE_LABEL[services.lastMile] : null,
         notifications: services.notifications ?? null,
         notificationLabels: services.notifications ? PARCEL_NOTIFICATIONS.filter(n => services.notifications!.includes(n.code)).map(n => `${n.label} (${n.audience})`) : null,
+        speed: services.speed ?? null,
+        speedLabel: services.speed ? SPEED_LABEL[services.speed] : null,
+        productType: services.productType ?? null,
+        productTypeLabel: services.productType ? PRODUCT_TYPE_LABEL[services.productType] : null,
       },
       totals: { rows: totals._count._all, charge: Number(totals._sum.charge ?? 0) },
       rowsAvailable: !job.rowsPurgedAt,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { firstMileSchema, lastMileSchema, PARCEL_INTAKES } from "@delivery-fast/shared";
+import { firstMileSchema, lastMileSchema, PARCEL_INTAKES, PRODUCT_TYPES, speedOptionSchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { IMPORT_KINDS } from "./columns";
 
@@ -21,6 +21,10 @@ export const importOptionsSchema = z.object({
   firstMile: firstMileSchema.optional(),
   dropHubId: z.uuid().optional(),
   lastMile: lastMileSchema.optional(),
+  /** The import modal's Service for every row: overwrites the file's Service column. Empty = each row's own. */
+  speed: speedOptionSchema.optional(),
+  /** E-commerce / customer: the product type (Regular, Document, Books) every row is priced as, instead of its product's. */
+  productType: z.enum(PRODUCT_TYPES, "Choose Regular, Document or Books").optional(),
   /** Parcel notifications to send for these orders (codes; a JSON array or comma-separated; "none" for no messages). Default: every one in the package. */
   notifications: z
     .preprocess(v => (v === "none" ? [] : typeof v === "string" ? (v.trim().startsWith("[") ? JSON.parse(v) : v.split(",").map(x => x.trim()).filter(Boolean)) : v), z.array(z.string().trim().min(1).max(60)).max(40))

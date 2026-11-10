@@ -31,6 +31,12 @@ const KIND_LABEL: Record<string, string> = { customer: "Customer parcel", ecomme
 const MERCHANT_TYPE: Record<string, string> = { ecommerce: "ECOMMERCE", document: "BANKING_FINANCIAL" };
 const FIRST_MILE: Record<string, [string, string]> = { RIDER_PICKUP: ["PICKUP", "Rider pickup"], HUB_DROP: ["DROP_OFF", "Drop at hub"], ON_DEMAND_PICKUP: ["ON_DEMAND_PICKUP", "On-demand pickup"] };
 const LAST_MILE: Record<string, string> = { DOORSTEP: "Home delivery", HUB_COLLECT: "Hub Pickup" };
+const SPEED: Record<string, string> = { REGULAR: "Regular", EXPRESS: "Express", ON_DEMAND: "On-demand", B2B: "B2B Document", TRADE: "Trade Service Document", URGENT: "Corporate Urgent Document" };
+const PRODUCT_TYPE: [string, string][] = [
+  ["REGULAR", "Regular"],
+  ["DOCUMENT", "Document"],
+  ["BOOKS", "Books"],
+];
 const STATUS_OPTIONS: [string, string][] = [
   ["PENDING_CONFIRMATION", "Pending operations confirmation"],
   ["PICKUP_ASSIGNED", "Pickup assigned"],
@@ -113,7 +119,7 @@ interface Job {
   counts: { rows: number; valid: number; incomplete: number; errors: number; toApply: number; warnings: number; alreadyDone: number; ignored: number };
   result: { created: number; createdIncomplete: number; notCreated: number; applied: number; alreadyDone: number; notApplied: number };
   progress: { processed: number; total: number; percent: number };
-  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: unknown[] };
+  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: unknown[]; speedLabel?: string | null; productTypeLabel?: string | null };
   intake?: string;
   dropOffHub?: { name: string } | null;
   batch?: { number: string } | null;
@@ -171,7 +177,7 @@ interface Layout {
   columns: { index: number; letter: string; header?: string; samples: string[]; key: string | null; by?: string | null }[];
 }
 interface Pkg {
-  options: { firstMiles: string[]; lastMiles: string[]; defaultFirstMile?: string; defaultLastMile?: string; [k: string]: unknown };
+  options: { firstMiles: string[]; lastMiles: string[]; speeds?: string[]; defaultFirstMile?: string; defaultLastMile?: string; [k: string]: unknown };
   notifications: { code: string; title: string }[];
   dropHubs?: { id: string; name: string }[];
 }
@@ -227,6 +233,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const [lastMile, setLastMile] = useState("DOORSTEP");
   const [hubId, setHubId] = useState(() => (initial.forOps && initial.merchantId ? initial.merchants?.find(m => m.id === initial.merchantId)?.hubId : null) || initial.hubId || "");
   const [notifications, setNotifications] = useState<Set<string>>(new Set());
+  // The modal's Service and product type for every row ("" = each row's own, from the file).
+  const [speed, setSpeed] = useState("");
+  const [productType, setProductType] = useState("");
   const unticked = useRef<Set<string>>(new Set());
   // Operations: choosing the merchant preselects its hub as the drop-off hub (when this person can use that hub).
   useEffect(() => {
@@ -289,6 +298,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     const o = p.options;
     setFirstMile(f => (o.firstMiles.includes(f) ? f : o.defaultFirstMile || "RIDER_PICKUP"));
     setLastMile(l => (o.lastMiles.includes(l) ? l : o.defaultLastMile || "DOORSTEP"));
+    setSpeed(v => (v && (o.speeds ?? []).includes(v) ? v : ""));
     setNotifications(new Set(p.notifications.map(n => n.code).filter(c => !unticked.current.has(c))));
   }
 
@@ -413,6 +423,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         form.append("dropOffHubId", hubId);
       } else if (pkg && firstMile) form.append("firstMile", firstMile);
       if (pkg && lastMile) form.append("lastMile", lastMile);
+      if (speed) form.append("speed", speed);
+      if (productType && cfg.kind !== "document") form.append("productType", productType);
       if (pkg?.notifications?.length && notifications.size !== pkg.notifications.length) form.append("notifications", notifications.size ? [...notifications].join(",") : "none");
       if (mapsColumns && l) form.append("mapping", JSON.stringify({ headerRow: l.headerRow, columns: l.columns.map(c => c.key || null) }));
     }
@@ -821,12 +833,67 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               </Select>
             </label>
           ) : null}
+          {pkg && (pkg.options.speeds?.length ?? 0) > 0 ? (
+            <label className="field">
+              <span>Service</span>
+              <Select className="select" value={speed} onChange={e => setSpeed(e.target.value)}>
+                <option value="">From the file</option>
+                {pkg.options.speeds!.map(v => (
+                  <option key={v} value={v}>
+                    {SPEED[v] || v}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
+          {pkg && cfg.kind !== "document" ? (
+            <label className="field">
+              <span>Product type</span>
+              <Select className="select" value={productType} onChange={e => setProductType(e.target.value)}>
+                <option value="">From the file</option>
+                {PRODUCT_TYPE.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
         </div>
         {choose ? <p className="muted" style={{ margin: 0 }}>Choose the merchant: the template's services, the choices above and the checks follow its package.</p> : null}
+        {speed || productType ? (
+          <p className="muted" style={{ margin: 0 }}>
+            {[speed ? `Service ${SPEED[speed] || speed}` : "", productType && cfg.kind !== "document" ? `product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]}` : ""].filter(Boolean).join(" and ")} replace{speed && productType && cfg.kind !== "document" ? "" : "s"} the file's values on every row (and the price follows).
+          </p>
+        ) : null}
         {pkg && lastMile === "HUB_COLLECT" ? <p className="muted" style={{ margin: 0 }}>Hub Pickup: each order waits at the hub serving its recipient's zone; the recipient gets an SMS with the hub address and a collection code.</p> : null}
         {pkg?.notifications?.length ? (
           <fieldset style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", margin: 0 }}>
             <legend style={{ fontWeight: 600, fontSize: 13, padding: "0 4px" }}>{`Messages to send for these ${noun} (${notifications.size} of ${pkg.notifications.length})`}</legend>
+            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+              <button
+                type="button"
+                className="button sm"
+                disabled={notifications.size === pkg.notifications.length}
+                onClick={() => {
+                  unticked.current.clear();
+                  setNotifications(new Set(pkg.notifications.map(n => n.code)));
+                }}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="button sm"
+                disabled={notifications.size === 0}
+                onClick={() => {
+                  pkg.notifications.forEach(n => unticked.current.add(n.code));
+                  setNotifications(new Set());
+                }}
+              >
+                Unselect all
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "6px 12px" }}>
               {pkg.notifications.map(n => (
                 <label key={n.code} className="check">
@@ -1059,6 +1126,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         const where = [
           job.intake === "DROP_OFF" ? ` · drop-off at ${job.dropOffHub?.name || "hub"}` : s.firstMileLabel ? ` · ${s.firstMileLabel.toLowerCase()}` : cfg.forOps ? " · rider pickup" : "",
           s.lastMileLabel ? ` · ${s.lastMileLabel.toLowerCase()}` : "",
+          s.speedLabel ? ` · service ${s.speedLabel} (every row)` : "",
+          s.productTypeLabel ? ` · product type ${s.productTypeLabel} (every row)` : "",
           s.notifications ? ` · ${s.notifications.length} message${s.notifications.length === 1 ? "" : "s"}` : "",
         ].join("");
         subtitle = `${job.number}${where} · nothing is created until you confirm.`;

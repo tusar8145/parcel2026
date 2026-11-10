@@ -67,6 +67,10 @@ export interface ImportServiceOptions {
   dropHubId?: string | null;
   /** Parcel notifications to send; omitted = every one in the package. */
   notifications?: string[] | null;
+  /** The modal's Service for every row (overwrites the file's Service column). */
+  speed?: SpeedOption | null;
+  /** E-commerce / customer: the product type every row is priced as (overwrites its product's type). */
+  productType?: ProductType | null;
 }
 
 export interface RowResult {
@@ -281,7 +285,8 @@ export class ImportEngineService {
             delivery: { district: r.destination!.district, zone: r.destination!.zone, area: b.delivery.area },
             weightKg: b.weightKg,
             codAmount: b.codAmount,
-            productType: (product?.type as ProductType | undefined) ?? "REGULAR",
+            // The modal's product type, when chosen, overwrites the product's (Banking & Financial has none).
+            productType: (ctx.kind !== "document" && ctx.services.productType) || ((product?.type as ProductType | undefined) ?? "REGULAR"),
             firstMile: b.firstMile,
             dropHubId: b.dropHubId,
             lastMile: b.lastMile,
@@ -351,6 +356,8 @@ export class ImportEngineService {
     const settings = ctx.settings.templates[ctx.kind];
     const customer = ctx.kind === "customer";
     const banking = isBanking(ctx.pkg.segment);
+    // The modal's Service, when chosen, overwrites the file's column (the preview shows it).
+    if (ctx.services.speed) cells.service_level = SPEED_LABEL[ctx.services.speed];
     const raw = (key: ColumnKey) => (cells[key] ?? "").trim();
     // Required columns (super admin), then defaults for empty cells.
     for (const col of ctx.columns) if (settings[col.key]?.required && !raw(col.key)) err(col.key, "required");

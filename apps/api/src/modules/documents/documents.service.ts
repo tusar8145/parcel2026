@@ -66,6 +66,7 @@ const parcelInclude = {
 type ParcelRow = Prisma.ParcelGetPayload<{ include: typeof parcelInclude }>;
 
 const num = (v: unknown) => (v == null ? 0 : Number(v));
+const PRODUCT_TYPE_LABEL: Record<string, string> = { REGULAR: "Regular", DOCUMENT: "Document", BOOKS: "Books" };
 const stamp = (d = new Date()) => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
   const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
@@ -280,6 +281,7 @@ export class DocumentsService {
         service: p.speedOption ? ((SPEED_LABEL as Record<string, string>)[p.speedOption] ?? p.speedOption) : SERVICE_LEVEL_LABEL[p.serviceLevel],
         deliveryMode: p.lastMile ? ((LAST_MILE_LABEL as Record<string, string>)[p.lastMile] ?? p.lastMile) + (p.lastMile === "HUB_COLLECT" && p.collectHub ? ` (${p.collectHub.name})` : "") : "Home delivery",
         product: p.productName ?? p.documentType ?? p.contents ?? null,
+        productType: PRODUCT_TYPE_LABEL[p.productType ?? "REGULAR"] ?? p.productType ?? "Regular",
         intake: p.intake,
         originHub: origin ? { code: origin.code, name: origin.name } : null,
         destHub: destHub ? { code: destHub.code, name: destHub.name } : null,
@@ -297,6 +299,12 @@ export class DocumentsService {
 
   private async toShipments(rows: ParcelRow[], vatRate: number): Promise<ShipmentDoc[]> {
     const labels = await this.toLabels(rows);
+    // "Received at hub": when the parcel first reached a hub (its first AT_HUB tracking event).
+    const firstAtHub = new Map(
+      (
+        await this.prisma.trackingEvent.groupBy({ by: ["parcelId"], where: { parcelId: { in: rows.map(r => r.id) }, status: "AT_HUB" }, _min: { createdAt: true } })
+      ).map(g => [g.parcelId, g._min.createdAt]),
+    );
     // Financial merchants' prepaid parcels: the bill that billed the parcel's charge (Accounts).
     const billed = new Map(
       (
@@ -351,6 +359,7 @@ export class DocumentsService {
         line,
         rider: rider ? `${rider.code} · ${rider.user.name}` : null,
         deliveredAt: p.deliveredAt,
+        hubReceivedAt: firstAtHub.get(p.id) ?? null,
         packaging: p.packaging,
         contents: p.contents,
         declaredValue: p.declaredValue == null ? null : num(p.declaredValue),

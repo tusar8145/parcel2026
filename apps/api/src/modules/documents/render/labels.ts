@@ -18,6 +18,8 @@ export interface LabelData {
   service: string;
   deliveryMode: string;
   product: string | null;
+  /** E-commerce / customer parcels: the product's type, "Regular", "Document" or "Books" (prices the parcel). */
+  productType: string;
   intake: "PICKUP" | "DROP_OFF";
   originHub: { code: string; name: string } | null;
   destHub: { code: string; name: string } | null;
@@ -80,9 +82,16 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   pdf.text(zoneLine, ix, cy + 17, { size: 9.5, bold: true, width: destW, maxLines: 1 });
   pdf.text(l.destHub ? `Dest. hub: ${l.destHub.code} · ${l.destHub.name}` : "Dest. hub: to be routed", ix, cy + 31, { size: 7.5, color: COLOR.muted, width: destW, maxLines: 2 });
   const cod = l.codAmount > 0;
-  pdf.box(ix + iw - codW, cy, codW, destH, cod ? { fill: COLOR.dark, radius: 3 } : { stroke: COLOR.ink, width: 1.2, radius: 3 });
-  pdf.text(cod ? "COLLECT COD" : "NO CASH TO COLLECT", ix + iw - codW, cy + 6, { size: 7, bold: true, color: cod ? "#fff" : COLOR.muted, width: codW, align: "center" });
-  pdf.text(cod ? taka(l.codAmount) : "PREPAID", ix + iw - codW, cy + 18, { size: cod ? 17 : 14, bold: true, color: cod ? "#fff" : COLOR.ink, width: codW, align: "center", maxLines: 1 });
+  if (l.isDocument) {
+    // Banking & Financial: never COD; signed for by the authorised recipient.
+    pdf.box(ix + iw - codW, cy, codW, destH, { stroke: COLOR.ink, width: 1.2, radius: 3 });
+    pdf.text("SECURE DOCUMENT", ix + iw - codW, cy + 9, { size: 7.5, bold: true, color: COLOR.muted, width: codW, align: "center" });
+    pdf.text("SIGN ON DELIVERY", ix + iw - codW, cy + 22, { size: 10, bold: true, width: codW, align: "center", maxLines: 1 });
+  } else {
+    pdf.box(ix + iw - codW, cy, codW, destH, cod ? { fill: COLOR.dark, radius: 3 } : { stroke: COLOR.ink, width: 1.2, radius: 3 });
+    pdf.text(cod ? "COLLECT COD" : "NO CASH TO COLLECT", ix + iw - codW, cy + 6, { size: 7, bold: true, color: cod ? "#fff" : COLOR.muted, width: codW, align: "center" });
+    pdf.text(cod ? taka(l.codAmount) : "PREPAID", ix + iw - codW, cy + 18, { size: cod ? 17 : 14, bold: true, color: cod ? "#fff" : COLOR.ink, width: codW, align: "center", maxLines: 1 });
+  }
   cy += destH + 6;
 
   // Needs info
@@ -119,13 +128,21 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
 
   // Details grid
   // [label, value, columns spanned]: the order ref gets two columns (merchant refs can be long).
-  const cells: [string, string, number][] = [
-    ["Weight", `${l.weightKg} kg`, 1],
-    ["Delivery", l.deliveryMode, 1],
-    ["Booked", fmtDate(l.bookedAt), 1],
-    ["Order ref", l.orderRef ?? "—", 2],
-    [l.isDocument ? "Type" : "Product", l.product ?? (l.isDocument ? "Document" : "Parcel"), 1],
-  ];
+  const cells: [string, string, number][] = l.isDocument
+    ? [
+        ["Service", l.service, 1],
+        ["Delivery", l.deliveryMode, 1],
+        ["Booked", fmtDate(l.bookedAt), 1],
+        ["Reference", l.orderRef ?? "—", 2],
+        ["Document type", l.product ?? "Document", 1],
+      ]
+    : [
+        ["Weight", `${l.weightKg} kg`, 1],
+        ["Delivery", l.deliveryMode, 1],
+        ["Booked", fmtDate(l.bookedAt), 1],
+        ["Order ref", l.orderRef ?? "—", 2],
+        ["Product type", l.productType, 1],
+      ];
   const colW = iw / 3;
   let col = 0;
   let row = 0;
@@ -148,7 +165,24 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   pdf.text("Scan to track", ix + iw - qr, qrY + qr, { size: 6, color: COLOR.muted, width: qr, align: "center" });
   const noteW = iw - qr - 8;
   const notes = [l.openBox ? "Open box allowed: recipient may check contents before paying." : null, l.instructions ? `Note: ${l.instructions}` : null].filter(Boolean).join(" ");
-  const room = Math.max(0, Math.floor((qrY + qr - 18 - cy) / (7.5 * 1.3)));
+  // Received by: filled in by hand at the door (above the footer lines, left of the QR code).
+  const rsize = 6.5;
+  const rh = rsize * 2.3 * 3;
+  const rTop = bottom - 22 - rh;
+  const receiver = cy + 4 <= rTop;
+  if (receiver) {
+    const row = rsize * 2.3;
+    const fill = (label: string, fx: number, fy: number, fw: number) => {
+      pdf.text(label, fx, fy, { size: rsize, bold: true, color: COLOR.muted, width: fw, maxLines: 1 });
+      const lw = Math.min(pdf.measureWidth(label, rsize, true) + 3, fw - 8);
+      pdf.line(fx + lw, fy + rsize, fx + fw, fy + rsize, { color: COLOR.muted, width: 0.5, dash: 1.5 });
+    };
+    fill("Received by (Name):", ix, rTop, noteW);
+    fill("Relation:", ix, rTop + row, noteW * 0.5 - 4);
+    fill("Date:", ix + noteW * 0.5, rTop + row, noteW * 0.5);
+    fill("Identification:", ix, rTop + row * 2, noteW);
+  }
+  const room = Math.max(0, Math.floor(((receiver ? rTop - 3 : qrY + qr - 18) - cy) / (7.5 * 1.3)));
   if (notes && room > 0) pdf.text(notes, ix, cy, { size: 7.5, width: noteW, maxLines: Math.min(room, 4) });
   pdf.text(`Label ${n} of ${total}${l.batch ? ` · batch ${l.batch}` : ""} · printed ${fmtDateTime(printedAt)}`, ix, bottom - 8, { size: 6, color: COLOR.faint, width: noteW, maxLines: 1 });
   pdf.text(brand.support ? `Support: ${brand.support}` : brand.website, ix, bottom - 17, { size: 6, color: COLOR.faint, width: noteW, maxLines: 1 });

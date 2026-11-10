@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.26.0 — 2026-11-10
+- Printed invoices (A4, 4 / 8 per page, POS) and shipment labels now follow the parcel line. E-commerce and customer parcels show COD, weight, product and product type (Regular / Document / Books); Banking & Financial documents show the service box, document type and reference instead, with no COD or weight.
+- Every invoice and label shows "Received at hub" (when the parcel first reached a hub) and a "Received by" block to fill in on delivery: Name, Relation, Date, Identification (and Signature on A4 invoices).
+
 ## 1.25.2 — 2026-11-10
 - Operations console: after an import, and on each import in Import history, "Print…" offers every print format of the parcel lists (all / e-commerce / document / customer invoices on A4, 4 or 8 invoices per A4 page, POS 80 mm invoice, shipment labels, the order / shipment list) for the parcels that import created, instead of labels only.
 

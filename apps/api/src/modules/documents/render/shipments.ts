@@ -1,4 +1,4 @@
-import { compactHeader, footers, header, keyValues, MARGIN, pill, signatures, table, totals, type Brand, type DocMeta } from "../pdf/layout";
+import { compactHeader, footers, header, keyValues, MARGIN, pill, table, totals, type Brand, type DocMeta } from "../pdf/layout";
 import { addressText } from "../../../common/address";
 import { A4, COLOR, fmtAmount, fmtDate, fmtDateTime, MM, PdfWriter, taka } from "../pdf/writer";
 import type { LabelData } from "./labels";
@@ -10,6 +10,8 @@ export interface ShipmentDoc extends LabelData {
   line: "ecommerce" | "document" | "customer";
   rider: string | null;
   deliveredAt: Date | null;
+  /** "Received at hub": when the parcel first reached a hub (its first AT_HUB scan). */
+  hubReceivedAt: Date | null;
   packaging: string | null;
   contents: string | null;
   declaredValue: number | null;
@@ -24,6 +26,40 @@ export interface ShipmentDoc extends LabelData {
 }
 
 export type InvoiceLayout = "a4" | "a4-4" | "a4-8" | "pos";
+
+/** Banking & Financial consignments carry no COD, weight or product type; e-commerce and customer parcels do. */
+const isDoc = (s: ShipmentDoc) => s.line === "document";
+
+/** A caption followed by a dotted line to fill in by hand, ending at x + w. */
+function fillIn(pdf: PdfWriter, label: string, x: number, y: number, w: number, size: number) {
+  pdf.text(label, x, y, { size, bold: true, color: COLOR.muted, width: w, maxLines: 1 });
+  const lw = Math.min(pdf.measureWidth(label, size, true) + 4, w - 10);
+  pdf.line(x + lw, y + size, x + w, y + size, { color: COLOR.muted, width: 0.6, dash: 1.5 });
+}
+
+/**
+ * The receiver's details, written by hand at the door:
+ *   Received by (Name): ......................
+ *   Relation: ............ Date: ............
+ *   Identification: ..........................
+ * Returns the height used.
+ */
+function receivedBy(pdf: PdfWriter, x: number, y: number, w: number, size: number, opts: { signature?: boolean } = {}) {
+  const row = size * 2.3;
+  let cy = y;
+  fillIn(pdf, "Received by (Name):", x, cy, w, size);
+  cy += row;
+  fillIn(pdf, "Relation:", x, cy, w * 0.5 - 6, size);
+  fillIn(pdf, "Date:", x + w * 0.5, cy, w * 0.5, size);
+  cy += row;
+  fillIn(pdf, "Identification:", x, cy, w, size);
+  cy += row;
+  if (opts.signature) {
+    fillIn(pdf, "Signature:", x, cy, w, size);
+    cy += row;
+  }
+  return cy - y;
+}
 
 const KIND: Record<ShipmentDoc["line"], string> = {
   ecommerce: "E-commerce parcel invoice",
@@ -47,9 +83,16 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   const cod = s.codAmount > 0;
   const bx = x + 250;
   const bw = w - 250 - 76;
-  pdf.box(bx, y, bw, 52, cod ? { fill: COLOR.dark, radius: 4 } : { stroke: COLOR.ink, radius: 4, width: 1 });
-  pdf.text(cod ? "CASH TO COLLECT FROM RECIPIENT" : "NO CASH TO COLLECT", bx, y + 8, { size: 7.5, bold: true, color: cod ? "#fff" : COLOR.muted, width: bw, align: "center" });
-  pdf.text(cod ? taka(s.codAmount) : "PREPAID", bx, y + 21, { size: 18, bold: true, color: cod ? "#fff" : COLOR.ink, width: bw, align: "center" });
+  if (isDoc(s)) {
+    // Banking & Financial: never COD; the box shows the service instead.
+    pdf.box(bx, y, bw, 52, { stroke: COLOR.ink, radius: 4, width: 1 });
+    pdf.text("SERVICE", bx, y + 8, { size: 7.5, bold: true, color: COLOR.muted, width: bw, align: "center" });
+    pdf.text(s.service, bx, y + 21, { size: 15, bold: true, width: bw, align: "center", maxLines: 1 });
+  } else {
+    pdf.box(bx, y, bw, 52, cod ? { fill: COLOR.dark, radius: 4 } : { stroke: COLOR.ink, radius: 4, width: 1 });
+    pdf.text(cod ? "CASH TO COLLECT FROM RECIPIENT" : "NO CASH TO COLLECT", bx, y + 8, { size: 7.5, bold: true, color: cod ? "#fff" : COLOR.muted, width: bw, align: "center" });
+    pdf.text(cod ? taka(s.codAmount) : "PREPAID", bx, y + 21, { size: 18, bold: true, color: cod ? "#fff" : COLOR.ink, width: bw, align: "center" });
+  }
   y += 72;
 
   if (s.incomplete) {
@@ -88,22 +131,38 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   y += 8;
 
   // Shipment details
+  const hubReceived = s.hubReceivedAt ? fmtDateTime(s.hubReceivedAt) : "—";
   y = keyValues(
     pdf,
-    [
-      ["Service", s.service],
-      ["Delivery", s.deliveryMode],
-      ["Weight", `${s.weightKg} kg`],
-      [s.line === "document" ? "Document type" : "Product", s.product ?? s.contents ?? "—"],
-      ["Order ref", s.orderRef ?? "—"],
-      ["Packaging", s.packaging ?? "—"],
-      ["Booked", fmtDateTime(s.bookedAt)],
-      ["Delivered", s.deliveredAt ? fmtDateTime(s.deliveredAt) : "—"],
-      ["Rider", s.rider ?? "—"],
-      ["CN", s.cn ?? "—"],
-      ["Declared value", s.declaredValue != null ? taka(s.declaredValue) : "—"],
-      ["Batch", s.batch ?? "—"],
-    ],
+    isDoc(s)
+      ? [
+          ["Service", s.service],
+          ["Delivery", s.deliveryMode],
+          ["Document type", s.product ?? s.contents ?? "—"],
+          ["Reference", s.orderRef ?? "—"],
+          ["Booked", fmtDateTime(s.bookedAt)],
+          ["Received at hub", hubReceived],
+          ["Delivered", s.deliveredAt ? fmtDateTime(s.deliveredAt) : "—"],
+          ["Rider", s.rider ?? "—"],
+          ["CN", s.cn ?? "—"],
+          ["Batch", s.batch ?? "—"],
+        ]
+      : [
+          ["Service", s.service],
+          ["Delivery", s.deliveryMode],
+          ["Product type", s.productType],
+          ["Product", s.product ?? s.contents ?? "—"],
+          ["Weight", `${s.weightKg} kg`],
+          ["Order ref", s.orderRef ?? "—"],
+          ["Booked", fmtDateTime(s.bookedAt)],
+          ["Received at hub", hubReceived],
+          ["Delivered", s.deliveredAt ? fmtDateTime(s.deliveredAt) : "—"],
+          ["Rider", s.rider ?? "—"],
+          ["CN", s.cn ?? "—"],
+          ["Declared value", s.declaredValue != null ? taka(s.declaredValue) : "—"],
+          ["Packaging", s.packaging ?? "—"],
+          ["Batch", s.batch ?? "—"],
+        ],
     x,
     y,
     w,
@@ -138,7 +197,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
             { label: "Delivery charge incl. VAT", value: `৳ ${fmtAmount(s.total)}`, strong: true },
           ]
         : [{ label: "Delivery charge", value: `৳ ${fmtAmount(s.total)}`, strong: true }]),
-      { label: "COD to collect", value: `৳ ${fmtAmount(s.codAmount)}` },
+      ...(isDoc(s) ? [] : [{ label: "COD to collect", value: `৳ ${fmtAmount(s.codAmount)}` }]),
     ],
     y,
   );
@@ -147,7 +206,15 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   if (charge) pdf.text(s.deliveryCharge, x, y + 20, { size: 8, color: COLOR.muted, width: w * 0.6 });
   if (vat) pdf.text(brand.bin ? `Seller BIN ${brand.bin}. Prices include VAT at ${brand.vatRate}%.` : `Prices include VAT at ${brand.vatRate}%.`, x, y + 32, { size: 7.5, color: COLOR.faint, width: w * 0.6 });
   if (s.instructions) pdf.text(`Instructions: ${s.instructions}`, x, y + 44, { size: 8, width: w * 0.6, maxLines: 3 });
-  signatures(pdf, ["Received by (recipient name & signature)", "Delivered by (rider)"], Math.min(Math.max(y + 70, 0), pdf.height - 120));
+  // At the door: who received it (by hand), and the rider's signature.
+  const sy = Math.min(Math.max(y + 70, 0), pdf.height - 150);
+  pdf.text("RECEIVED BY", x, sy, { size: 7, bold: true, color: COLOR.faint });
+  receivedBy(pdf, x, sy + 12, w * 0.6, 8.5, { signature: true });
+  const rx = x + w * 0.68;
+  const rw = w - w * 0.68;
+  pdf.line(rx, sy + 70, rx + rw, sy + 70, { color: COLOR.muted, width: 0.8 });
+  pdf.text("Delivered by (rider)", rx, sy + 74, { size: 7.5, color: COLOR.muted, width: rw });
+  pdf.text("Date & time:", rx, sy + 86, { size: 7, color: COLOR.faint, width: rw });
 }
 
 /** A compact invoice in a grid cell (4 or 8 per A4 page). */
@@ -176,11 +243,18 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   cy += Math.max(a, b);
   cy += pdf.text(addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending", ix + half + 6, cy, { size: fs - 0.5, width: half, maxLines: dense ? 2 : 3, color: COLOR.muted });
   cy += 4;
+  const hubReceived = s.hubReceivedAt ? fmtDate(s.hubReceivedAt) : "—";
   const grid: [string, string][] = [
     ["Service", s.service],
-    ["Weight", `${s.weightKg} kg`],
-    ["COD", s.codAmount > 0 ? taka(s.codAmount) : "Prepaid"],
+    ...((isDoc(s)
+      ? [["Document type", s.product ?? "—"]]
+      : [
+          ["Product type", s.productType],
+          ["Weight", `${s.weightKg} kg`],
+          ["COD", s.codAmount > 0 ? taka(s.codAmount) : "Prepaid"],
+        ]) as [string, string][]),
     ...((charge ? [["Charge", taka(s.total)]] : []) as [string, string][]),
+    ["Received at hub", hubReceived],
     ...(dense ? [] : ((charge && brand.vatRate > 0 ? [["VAT incl.", taka(s.vat)], ["Status", s.statusLabel]] : [["Status", s.statusLabel]]) as [string, string][])),
   ];
   const cols = dense ? 4 : 3;
@@ -197,9 +271,15 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
     pdf.text("DETAILS PENDING", ix, cy + 1.5, { size: 6.5, bold: true, color: "#fff", width: iw, align: "center" });
     cy += 14;
   }
+  // "Received by" lines, filled in by hand at the door, just above the footer.
+  const rsize = dense ? 6 : 7;
+  const rh = rsize * 2.3 * 3;
+  const rTop = dense ? y + h - pad - 12 - rh : y + h - pad - 58 - rh;
+  const roomForReceiver = cy + 2 <= rTop;
+  if (roomForReceiver) receivedBy(pdf, ix, rTop, iw, rsize);
   if (!dense) {
     // Price lines while there is room above the QR code.
-    const room = y + h - pad - 58;
+    const room = roomForReceiver ? rTop - 4 : y + h - pad - 58;
     for (const l of charge ? s.chargeLines : []) {
       if (cy + 10 > room) break;
       pdf.text(l.label, ix, cy, { size: 6.8, color: COLOR.muted, width: iw * 0.7, maxLines: 1 });
@@ -242,8 +322,14 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
     ["To", `${s.recipient.name ?? "Recipient pending"}, ${s.recipient.phone ?? "phone pending"}`],
     ["Address", addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending"],
     ["Service", `${s.service} · ${s.deliveryMode}`],
-    ["Weight", `${s.weightKg} kg`],
-    ...(s.orderRef ? ([["Order ref", s.orderRef]] as [string, string][]) : []),
+    ...((isDoc(s)
+      ? [["Doc. type", s.product ?? "—"]]
+      : [
+          ["Product", [s.product, s.productType].filter(Boolean).join(" · ")],
+          ["Weight", `${s.weightKg} kg`],
+        ]) as [string, string][]),
+    ["At hub", s.hubReceivedAt ? fmtDateTime(s.hubReceivedAt) : "—"],
+    ...(s.orderRef ? ([[isDoc(s) ? "Reference" : "Order ref", s.orderRef]] as [string, string][]) : []),
   ];
   for (const [k, v] of rows) {
     const h = draw ? pdf.text(v, pad + 52, y, { size: 7.5, width: iw - 52, maxLines: 3 }) : pdf.measure(v, { size: 7.5, width: iw - 52, maxLines: 3 });
@@ -262,7 +348,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
   const sum: [string, string, boolean][] = [
     ...(charge && brand.vatRate > 0 ? ([[`VAT ${brand.vatRate}% (included)`, fmtAmount(s.vat), false]] as [string, string, boolean][]) : []),
     ...(charge ? ([["Delivery charge", `৳ ${fmtAmount(s.total)}`, true]] as [string, string, boolean][]) : []),
-    ["COD to collect", `৳ ${fmtAmount(s.codAmount)}`, true],
+    ...(isDoc(s) ? [] : ([["COD to collect", `৳ ${fmtAmount(s.codAmount)}`, true]] as [string, string, boolean][])),
   ];
   y += 3;
   for (const [k, v, strong] of sum) {
@@ -275,6 +361,9 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
   y += 4;
   y += t(s.payment, { size: 7.5, bold: true, align: "center", maxLines: 2 });
   if (s.incomplete) y += t("DETAILS PENDING", { size: 9, bold: true, align: "center", color: COLOR.danger });
+  // Received by: filled in by hand at the door.
+  y += 6;
+  for (const line of ["Received by (Name): ...................................", "Relation: .................. Date: ....................", "Identification: ......................................"]) y += t(line, { size: 7.5, maxLines: 1 }) + 4;
   if (draw) pdf.qr(s.trackingUrl, pad + iw / 2 - 30, y + 4, 60);
   y += 66;
   y += t("Scan to track · thank you", { size: 7, align: "center", color: COLOR.muted });
@@ -346,8 +435,8 @@ export function drawShipmentList(pdf: PdfWriter, brand: Brand, items: ShipmentDo
       { text: s.recipient.name ?? "Pending", sub: s.recipient.phone ?? undefined, color: s.recipient.name ? undefined : COLOR.danger },
       [s.address.zone, s.address.district].filter(Boolean).join(", ") || "Pending",
       s.service,
-      `${s.weightKg} kg`,
-      s.codAmount ? fmtAmount(s.codAmount) : "—",
+      isDoc(s) ? "—" : `${s.weightKg} kg`,
+      !isDoc(s) && s.codAmount ? fmtAmount(s.codAmount) : "—",
       fmtAmount(s.total),
       { text: s.statusLabel, sub: s.incomplete ? "Details pending" : undefined },
       s.rider ?? "—",

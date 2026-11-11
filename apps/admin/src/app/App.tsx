@@ -39,6 +39,7 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   "Email messages": lazy(() => import("@/pages/Messaging").then(m => ({ default: m.EmailMessagesPage }))),
   "Integration settings": lazy(() => import("@/pages/Integrations")),
   "Website settings": lazy(() => import("@/pages/WebsiteSettings")),
+  "Mobile apps": lazy(() => import("@/pages/MobileApps")),
   "Return reasons": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.ReturnReasons }))),
   "Receiver relations": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.ReceiverRelations }))),
   "Fail delivery reasons": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.FailReasons }))),

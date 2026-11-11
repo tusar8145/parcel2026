@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'update.dart';
+
 /// The API's address is set when building:
 ///   flutter build apk --dart-define=API_BASE=https://your-domain/api/v1
 const apiBase = String.fromEnvironment('API_BASE', defaultValue: 'https://deliveryfast.com.bd/api/v1');
@@ -139,7 +141,15 @@ class Api {
     final uri = Uri.parse('$apiBase$path').replace(queryParameters: q.isEmpty ? null : q);
     http.Response res;
     try {
-      final h = {'content-type': 'application/json', 'accept': 'application/json', if (Session.accessToken != null) 'authorization': 'Bearer ${Session.accessToken}', ...?headers};
+      final h = {
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        if (Session.accessToken != null) 'authorization': 'Bearer ${Session.accessToken}',
+        // Forced updates: the server refuses an app older than its minimum version (APP_UPDATE_REQUIRED).
+        if (AppConfig.version.isNotEmpty) 'x-app': AppConfig.appName.toLowerCase(),
+        if (AppConfig.version.isNotEmpty) 'x-app-version': AppConfig.version,
+        ...?headers,
+      };
       final req = switch (method) {
         'GET' => client.get(uri, headers: h),
         'PATCH' => client.patch(uri, headers: h, body: jsonEncode(body)),
@@ -166,6 +176,10 @@ class Api {
     if (res.statusCode >= 400) {
       final err = data is Map ? data['error'] : null;
       final message = err is Map ? err['message'] as String? : null;
+      if (res.statusCode == 426 && err is Map && err['code'] == 'APP_UPDATE_REQUIRED') {
+        final details = err['details'];
+        AppUpdate.required(message ?? 'Please install the new version of the app.', details is Map ? details['downloadUrl'] as String? : null);
+      }
       throw ApiError(message ?? 'Something went wrong (${res.statusCode}).', status: res.statusCode, code: err is Map ? err['code'] as String? : null);
     }
     return data;

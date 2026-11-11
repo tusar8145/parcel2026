@@ -180,7 +180,7 @@ Future<bool> addRiderVia(BuildContext context, {required String path, Map<String
   if (f == null || !context.mounted) return false;
   try {
     final made = await Api.post(path, {'name': f['name'], 'phone': f['phone'], if (f['email']!.isNotEmpty) 'email': f['email'], 'password': f['password'], ...extra});
-    final m = made is Map ? made.cast<String, dynamic>() : <String, dynamic>{};
+    final m = made.cast<String, dynamic>();
     final kept = m['passwordSet'] == false;
     if (context.mounted) {
       await showSignInDetails(

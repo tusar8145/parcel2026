@@ -10,3 +10,4 @@ export 'src/push.dart';
 export 'src/scanner.dart';
 export 'src/support.dart';
 export 'src/widgets.dart';
+export 'src/update.dart';

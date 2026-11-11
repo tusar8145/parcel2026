@@ -33,6 +33,7 @@ export const PAGES: PageDef[] = [
   { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "phone", group: "platform", sub: "Messaging", legacy: ["push-messages"] },
   { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "message", group: "platform", sub: "Messaging" },
   { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "message", group: "platform", sub: "Messaging" },
+  { id: "Mobile apps", label: "Mobile apps", slug: "mobile-apps", icon: "phone", group: "platform" },
   { id: "Website settings", label: "Website & branding", slug: "website-settings", icon: "edit", group: "platform", legacy: ["website-and-branding"] },
   { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh", group: "platform", sub: "Operational settings" },
   { id: "Receiver relations", label: "Receiver relations", slug: "receiver-relations", icon: "users", group: "platform", sub: "Operational settings" },

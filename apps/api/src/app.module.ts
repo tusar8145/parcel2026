@@ -15,6 +15,8 @@ import { AllExceptionsFilter } from "./common/exception.filter";
 import { RedisThrottlerStorage } from "./common/throttler-redis.storage";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { AppVersionsModule } from "./modules/app-versions/app-versions.module";
+import { AppVersionGuard } from "./modules/app-versions/app-version.guard";
 import { HealthController } from "./modules/health/health.controller";
 import { StorageModule } from "./common/storage.service";
 import { RealtimeModule } from "./common/realtime.service";
@@ -133,11 +135,14 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     TrackingModule,
     FranchiseModule,
     WorkQueueModule,
+    AppVersionsModule,
   ],
   controllers: [HealthController, EventsController],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard }, // runs first: rate limit before auth work
+    // Android apps older than their minimum version are refused with the download link (before sign-in work).
+    { provide: APP_GUARD, useClass: AppVersionGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     // Scan desk entries dated with X-Operation-Time (common/operation-time.ts).
     { provide: APP_INTERCEPTOR, useClass: OperationTimeInterceptor },

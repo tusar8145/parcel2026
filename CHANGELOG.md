@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.41.0 — 2026-11-12
+- Forced app updates: super admin › Mobile apps sets the lowest version of the Operations, Rider and Merchant apps that may still be used. An older app stops working and shows an "Update the app" page with the download link.
+- New apps: Operations 1.4.0 (Riders: add a rider with a password, copy the sign-in details, set a new password), Rider 1.5.1 and Merchant 1.4.2. From these versions on, an update can be forced; apps installed before keep working.
+
 ## 1.40.0 — 2026-11-12
 - Hubs & zones and Admin users & roles: each group (Inside Dhaka…, or a role) has its own light-coloured heading row.
 - Admin users & roles › Manage: "Edit details" (name, mobile, email) and "Set new password" for another administrator (they are signed out everywhere).

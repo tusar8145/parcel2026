@@ -178,22 +178,6 @@ describe("website settings", () => {
     return res.body.id as string;
   };
 
-  it("product categories: their message channels, unique names, delete only when empty and unused; super admin only", async () => {
-    const a = await admin();
-    const id = await category(a.token, "Quiet things", { notifySms: false, notifyPush: false });
-    expect(await ctx.prisma.productCategory.findUniqueOrThrow({ where: { id } })).toMatchObject({ notifySms: false, notifyEmail: true, notifyPush: false, active: true });
-    expect((await ctx.api("POST", "/product-categories", { token: a.token, body: { segment: "ECOMMERCE", name: "quiet THINGS" } })).body.error.code).toBe("CATEGORY_NAME_TAKEN");
-    const product = await ctx.api("POST", "/parcel-products", { token: a.token, body: { segment: "ECOMMERCE", name: "Silent box", categoryId: id } });
-    expect(product.status, JSON.stringify(product.body)).toBe(201);
-    expect((await ctx.api("DELETE", `/product-categories/${id}`, { token: a.token })).body.error.code).toBe("CATEGORY_NOT_EMPTY");
-    const listed = (await ctx.api("GET", "/product-categories?segment=CUSTOMER")).body as { name: string; products: number }[];
-    expect(listed.find(c => c.name === "Quiet things")).toMatchObject({ products: 1 });
-    expect((await ctx.api("PATCH", `/product-categories/${id}`, { token: a.token, body: { notifySms: true } })).body).toMatchObject({ notifySms: true });
-    const staff = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
-    expect((await ctx.api("POST", "/product-categories", { token: staff.token, body: { segment: "ECOMMERCE", name: "Nope" } })).status).toBe(403);
-    expect(await ctx.prisma.auditLog.count({ where: { action: { startsWith: "product_category." } } })).toBe(2);
-  });
-
   it("exports a product list to Excel with the page's search and status, without messages", async () => {
     const a = await admin();
     const cat = await category(a.token);
@@ -208,14 +192,14 @@ describe("website settings", () => {
       return readXlsx(res.rawPayload, { maxRows: 100 }).rows;
     };
     const header = (await rows("q=notebook"))[0];
-    expect(header).toEqual(["Category", "Product", "Type", "Status", "Parcels"]);
-    const names = async (query: string) => (await rows(query)).slice(1).map(r => r[1]).sort();
+    expect(header).toEqual(["Product", "Type", "SMS", "Email", "Push", "Status", "Parcels"]);
+    const names = async (query: string) => (await rows(query)).slice(1).map(r => r[0]).sort();
     expect(await names("q=notebook")).toEqual(["Blue Notebook", "Red Notebook"]);
     expect(await names("q=notebook&status=inactive")).toEqual(["Red Notebook"]);
-    const order = async (sort: string) => (await rows(`sort=${sort}`)).slice(1).map(r => r[1]);
+    const order = async (sort: string) => (await rows(`sort=${sort}`)).slice(1).map(r => r[0]);
     expect(await order("asc")).toEqual(["Blue Notebook", "Green Pen", "Red Notebook"]);
     expect(await order("desc")).toEqual(["Red Notebook", "Green Pen", "Blue Notebook"]);
-    expect((await rows("q=red"))[1]).toEqual(["Test category", "Red Notebook", "Books", "Inactive", "0"]);
+    expect((await rows("q=red"))[1]).toEqual(["Red Notebook", "Books", "On", "On", "On", "Inactive", "0"]);
     const customer = await userWithRoles(ctx, [{ role: "CUSTOMER" }], "Customer");
     expect((await ctx.api("GET", "/parcel-products/export?segment=ECOMMERCE", { token: customer.token })).status).toBe(403);
 

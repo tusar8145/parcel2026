@@ -20,6 +20,7 @@ import {
   failedRowsQuerySchema,
   importKindSchema,
   importOptionsSchema,
+  importOptionsUpdateSchema,
   importRowsBodySchema,
   listImportsQuerySchema,
   rowsQuerySchema,
@@ -220,6 +221,16 @@ export class ImportsController {
    * zone / area): the row is checked and priced again and the file's counts follow. `detect`: the address
    * changed, so its district / zone / area are picked again from it. Returns { row, job }.
    */
+  /** The window's second screen: delivery type, priority and messages for the whole file (every row checked again). */
+  @AllowApiKey()
+  @RequireApiKeyScope("parcels:write")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Patch(":id/options")
+  @ApiZodBody(importOptionsUpdateSchema)
+  updateOptions(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(importOptionsUpdateSchema) body: z.infer<typeof importOptionsUpdateSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.jobs.updateOptions(actor, id, body, meta);
+  }
+
   @AllowApiKey()
   @RequireApiKeyScope("parcels:write")
   @Throttle({ default: { limit: 120, ttl: 60_000 } })

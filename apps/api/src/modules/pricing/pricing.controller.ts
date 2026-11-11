@@ -59,8 +59,8 @@ export class PricingController {
       // Products are the Customer & E-commerce parcel products only (Service plans → Products), never the
       // old catalog list (its `products` field is legacy and not read).
       products: view.products.map(p => p.name),
-      /** Products whose category sends no SMS / email: the booking form disables its messages checklist. */
-      productsWithoutMessages: view.products.filter(p => { const c = view.categories.find(x => x.id === p.categoryId); return !!c && !c.channels.includes("sms") && !c.channels.includes("email"); }).map(p => p.name),
+      /** Products that send no SMS / email: the booking form disables its messages checklist. */
+      productsWithoutMessages: view.products.filter(p => !p.channels.includes("sms") && !p.channels.includes("email")).map(p => p.name),
       serviceLevels: SERVICE_LEVEL_LABEL,
       customerRateCard: legacyCardOf(view.prices),
       customerPackage: {
@@ -71,11 +71,7 @@ export class PricingController {
         dropHubs: view.dropHubs,
         package: view.package,
         /** The active Customer & E-commerce products with their type (the booking form lists "Name · Type"). */
-        products: view.products.map(p => {
-          const c = view.categories.find(x => x.id === p.categoryId);
-          return { name: p.name, type: p.type, category: p.categoryName, sendMessages: !c || c.channels.includes("sms") || c.channels.includes("email") };
-        }),
-        categories: view.categories,
+        products: view.products.map(p => ({ name: p.name, type: p.type, sendMessages: p.channels.includes("sms") || p.channels.includes("email") })),
         priorities: view.priorities,
       },
     };

@@ -22,9 +22,9 @@ describe("AI import", () => {
       const n = (re: RegExp) => Number(re.exec(user)?.[1] ?? 0);
       const products = [];
       const p1 = n(/P(\d+): Tshirt men XL/);
-      if (p1) products.push({ i: p1, existing: "T-Shirt", newProduct: "", category: "", newCategory: "", sms: false, email: false, push: false });
+      if (p1) products.push({ i: p1, existing: "T-Shirt", newProduct: "", sms: false, email: false, push: false });
       const p2 = n(/P(\d+): Drone propeller set/);
-      if (p2) products.push({ i: p2, existing: "", newProduct: "Drone Parts", category: "", newCategory: "Drones & Gadgets", sms: false, email: true, push: true });
+      if (p2) products.push({ i: p2, existing: "", newProduct: "Drone Parts", sms: false, email: true, push: true });
       const places = [];
       const a1 = n(/A(\d+): [^\n]*Kazipara/);
       if (a1) places.push({ i: a1, district: "Dhaka Central", zone: "Mirpur", newZone: false, nearZone: "" });
@@ -49,16 +49,13 @@ describe("AI import", () => {
     return res.body as { id: string; rows: { items: { rowNumber: number; status: string; cells: Record<string, string> }[] } };
   };
 
-  it("matches and creates products, categories and zones; remembers them; super admin settings, limit and log", async () => {
+  it("matches products itself first, creates new products (channels from the rule) and zones; remembers them; settings, limit and log", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
     const merchant = await shop();
     await ctx.api("GET", "/packages", { token: admin.token }); // set-up (catalog seeded)
     await ctx.prisma.parcelProduct.updateMany({ where: { segment: "ECOMMERCE", name: { contains: "T-Shirt" } }, data: { name: "T-Shirt" } }).catch(() => undefined);
-    if (!(await ctx.prisma.parcelProduct.findFirst({ where: { segment: "ECOMMERCE", name: "T-Shirt" } }))) {
-      const cat = await ctx.prisma.productCategory.findFirstOrThrow({ where: { segment: "ECOMMERCE" } });
-      await ctx.prisma.parcelProduct.create({ data: { segment: "ECOMMERCE", name: "T-Shirt", categoryId: cat.id } });
-    }
+    if (!(await ctx.prisma.parcelProduct.findFirst({ where: { segment: "ECOMMERCE", name: "T-Shirt" } }))) await ctx.prisma.parcelProduct.create({ data: { segment: "ECOMMERCE", name: "T-Shirt" } });
     const rows = [
       row(1, { address: "House 9, Kazipara, Dhaka", district: "Dhaka Central", product_type: "Tshirt men XL" }),
       row(2, { address: "House 2, Notunbazar Para, Dhaka", district: "Dhaka North", product_type: "Drone propeller set" }),
@@ -80,13 +77,14 @@ describe("AI import", () => {
     expect(at(2).cells).toMatchObject({ product_type: "T-Shirt", district: "Dhaka Central", zone: "Mirpur" });
     expect(at(3).cells).toMatchObject({ product_type: "Drone Parts", district: "Dhaka North", zone: "Notunbazar" });
     expect(at(2).status).toBe("VALID");
-    // The Category column is filled from each row's product (shown before Product in the preview).
-    expect(at(3).cells.category).toBe("Drones & Gadgets");
-    expect(at(2).cells.category).toBeTruthy();
     expect(at(3).status).toBe("VALID");
-    // Created at once, tagged; the category's channels from the rule.
-    expect(await ctx.prisma.productCategory.findFirstOrThrow({ where: { name: "Drones & Gadgets" } })).toMatchObject({ aiCreated: true, notifySms: false, notifyEmail: true, notifyPush: true });
-    expect(await ctx.prisma.parcelProduct.findFirstOrThrow({ where: { name: "Drone Parts" } })).toMatchObject({ aiCreated: true, segment: "ECOMMERCE" });
+    // "Tshirt men XL" is the T-Shirt by the system's own matching: only the drone part went to the AI.
+    expect(calls[0]).not.toContain("Tshirt");
+    expect(calls[0]).toContain("Drone propeller set");
+    // The file's own names are kept for the parcels (prints show them).
+    expect([at(2).cells.__label, at(3).cells.__label]).toEqual(["Tshirt men XL", "Drone propeller set"]);
+    // Created at once, tagged; its channels from the rule.
+    expect(await ctx.prisma.parcelProduct.findFirstOrThrow({ where: { name: "Drone Parts" } })).toMatchObject({ aiCreated: true, segment: "ECOMMERCE", notifySms: false, notifyEmail: true, notifyPush: true });
     const catalog = (await ctx.api("GET", "/catalog")).body as { zonesByDistrict: Record<string, string[]> };
     expect(catalog.zonesByDistrict["Dhaka North"]).toContain("Notunbazar");
 
@@ -97,11 +95,11 @@ describe("AI import", () => {
 
     // The log and this month's spend.
     const overview = (await ctx.api("GET", "/imports/ai", { token: admin.token })).body;
-    expect(overview.thisMonth).toMatchObject({ imports: 1, calls: 1, productsCreated: 1, categoriesCreated: 1, zonesCreated: 1 });
+    expect(overview.thisMonth).toMatchObject({ imports: 1, calls: 1, productsCreated: 1, categoriesCreated: 0, zonesCreated: 1 });
     expect(overview.thisMonth.costUsd).toBeGreaterThan(0);
-    expect(overview.created).toMatchObject({ products: 1, categories: 1, zones: expect.any(Number) });
+    expect(overview.created).toMatchObject({ products: 1, zones: expect.any(Number) });
     const log = (await ctx.api("GET", "/imports/ai/usage", { token: admin.token })).body;
-    expect(log.items[0]).toMatchObject({ productsMatched: 1, productsCreated: 1, zonesCreated: 1, importNumber: expect.stringMatching(/^IMP-/), user: "Ops" });
+    expect(log.items[0]).toMatchObject({ productsMatched: 0, productsCreated: 1, zonesCreated: 1, importNumber: expect.stringMatching(/^IMP-/), user: "Ops" });
 
     // A partial save keeps the other settings.
     expect((await ai.settings()).channelPrompt).toBe("Gadgets: no SMS, email and push on.");
@@ -118,13 +116,41 @@ describe("AI import", () => {
     const config = (await ctx.api("GET", "/imports/config", { token: ops.token })).body as { ai: boolean; templates: Record<string, { key: string; inTemplate: boolean }[]> };
     expect(config.ai).toBe(true);
     const inTemplate = (key: string) => config.templates.ecommerce.find(c => c.key === key)?.inTemplate;
-    expect([inTemplate("category"), inTemplate("service_level"), inTemplate("priority"), inTemplate("product_type")]).toEqual([false, false, false, true]);
+    expect([inTemplate("service_level"), inTemplate("priority"), inTemplate("product_type")]).toEqual([false, false, true]);
+    expect(config.templates.ecommerce.some(c => c.key === "category")).toBe(false);
 
     // No duplicates: the same thing under another name is the existing product (no AI, nothing created).
     const before = await ctx.prisma.parcelProduct.count();
     const dup = await validate(ops.token, merchant.id, [row(6, { address: "House 3, Kalabagan", district: "Dhaka Central", zone: "Dhanmondi", product_type: "T Shirts" })]);
     expect(dup.rows.items[0].cells.product_type).toBe("T-Shirt");
     expect(await ctx.prisma.parcelProduct.count()).toBe(before);
+  });
+
+  it("the window's second screen: delivery type, priority and messages for the whole file; the file's product name is kept", async () => {
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const merchant = await shop();
+    await ctx.api("GET", "/packages/effective?segment=ECOMMERCE", { token: ops.token });
+    const checked = await validate(ops.token, merchant.id, [row(1, { address: "House 9, Dhanmondi", district: "Dhaka Central", zone: "Dhanmondi", product_type: "Blue cotton shirt x2" })]);
+    const before = checked.rows.items[0] as unknown as { charge: number; cells: Record<string, string> };
+    expect(before.cells.service_level).toBeUndefined();
+    const view = (await ctx.api("GET", `/packages/effective?merchantId=${merchant.id}`, { token: ops.token })).body as { priorities: { id: string; name: string }[] };
+    const fragile = view.priorities.find(p => p.name === "Fragile")!;
+    const res = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { speed: "EXPRESS", priority: fragile.id, notifications: ["notify.delivered"] } });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.services).toMatchObject({ speed: "EXPRESS", priority: fragile.id, notifications: ["notify.delivered"] });
+    const after = res.body.rows.items[0] as { charge: number; cells: Record<string, string> };
+    expect(after.cells).toMatchObject({ service_level: "Express", priority: "Fragile" });
+    expect(after.charge).toBeGreaterThan(before.charge);
+    // A delivery type that isn't offered is refused.
+    expect((await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { speed: "Rocket" } })).status).toBe(422);
+    expect((await ctx.api("POST", `/imports/${checked.id}/commit`, { token: ops.token })).body).toMatchObject({ status: "COMPLETED" });
+    const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantId: merchant.id } });
+    expect(parcel).toMatchObject({ speedOption: "EXPRESS", priorityName: "Fragile", notifications: ["notify.delivered"], productName: "Shirt", productLabel: "Blue cotton shirt x2" });
+    // Screens and prints show the file's name.
+    const detail = (await ctx.api("GET", `/parcels/${parcel.trackingId}`, { token: ops.token })).body;
+    expect(detail).toMatchObject({ product: "Blue cotton shirt x2", systemProduct: "Shirt" });
+    // Not after it was submitted.
+    expect((await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { speed: "REGULAR" } })).status).toBe(409);
   });
 
   it("a merchant's own import uses it too", async () => {

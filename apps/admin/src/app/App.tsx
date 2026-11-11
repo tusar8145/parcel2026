@@ -42,7 +42,6 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   "Receiver relations": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.ReceiverRelations }))),
   "Fail delivery reasons": lazy(() => import("@/pages/CatalogList").then(m => ({ default: m.FailReasons }))),
   Products: lazy(() => import("@/pages/Products")),
-  "Product categories": lazy(() => import("@/pages/Catalog").then(m => ({ default: m.ProductCategories }))),
   Priorities: lazy(() => import("@/pages/Catalog").then(m => ({ default: m.Priorities }))),
   "Delivery types": lazy(() => import("@/pages/Catalog").then(m => ({ default: m.DeliveryTypes }))),
   "Invoice settings": lazy(() => import("@/pages/InvoiceSettings")),

@@ -613,6 +613,8 @@ model Parcel {
   onDemand                Boolean   @default(false)
   productId               String?   @db.Uuid
   productName             String?
+  /// The product as the merchant wrote it (an Excel import's product name); prints and screens show it.
+  productLabel            String?
   /// REGULAR | DOCUMENT | BOOKS: the product's type at booking (no product = REGULAR).
   productType             String?
   /// The product category (its product's, or the one chosen), and its name at booking.

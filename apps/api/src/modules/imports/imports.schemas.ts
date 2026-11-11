@@ -93,3 +93,16 @@ export const editRowSchema = z.object({
   /** The address changed: pick its district / zone / area again. */
   detect: z.boolean().optional(),
 });
+
+/**
+ * The second screen of the import window (after the file is checked): the delivery type, priority and messages for
+ * the whole file. Every row is checked and priced again.
+ */
+export const importOptionsUpdateSchema = z.object({
+  /** A delivery type (code or name) of the file's package. */
+  speed: z.string().trim().min(1).max(60).optional(),
+  /** A priority (id) of the list. */
+  priority: z.uuid().optional(),
+  /** Message codes of the package; [] = no messages. */
+  notifications: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
+});

@@ -72,8 +72,8 @@ export interface BookingOptions {
   quote?: PackageQuote;
   /** The product, when already resolved (null = none). */
   /** id null: a product name that isn't listed (E-commerce imports), priced as Regular. */
-  product?: { id: string | null; name: string; type: string; category?: BookingTags["category"] } | null;
-  /** The category and priority, when already resolved (imports). */
+  product?: { id: string | null; name: string; type: string; label?: string | null; notifySms?: boolean; notifyEmail?: boolean; notifyPush?: boolean } | null;
+  /** The priority, when already resolved (imports). */
   tags?: BookingTags;
 }
 
@@ -132,14 +132,12 @@ export class ParcelsService {
 
   // ───────────── booking ─────────────
 
-  /** The category (named, else the product's: parcelFields) and priority (named, else the default) of a booking. */
-  private async bookingTags(segment: Segment, input: Pick<BookingInput, "category" | "priority">, db: Db): Promise<BookingTags> {
-    const category = input.category ? await this.catalog.findCategory(segment, input.category, db) : null;
-    if (input.category && !category) throw new AppError("UNKNOWN_CATEGORY", `"${input.category}" is not one of the categories`, 422, [{ path: "category", code: "UNKNOWN_CATEGORY", message: "Choose a category from the list" }]);
+  /** The priority (named, else the default) of a booking. Product categories are no longer used (a sent `category` is ignored). */
+  private async bookingTags(segment: Segment, input: Pick<BookingInput, "priority">, db: Db): Promise<BookingTags> {
     const { priority, named, options } = await this.catalog.priorityFor(segment, input.priority, db);
     if (named && !priority)
       throw new AppError("UNKNOWN_PRIORITY", `"${input.priority}" is not a priority (${options.map(p => p.name).join(", ")})`, 422, [{ path: "priority", code: "UNKNOWN_PRIORITY", message: "Choose a priority from the list" }]);
-    return { ...(category ? { category } : {}), priority: priority ? { id: priority.id, name: priority.name } : null };
+    return { priority: priority ? { id: priority.id, name: priority.name } : null };
   }
 
   async create(actor: Actor, input: CreateParcelInput, meta: RequestMeta, opts: BookingOptions = {}) {

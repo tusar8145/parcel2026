@@ -141,7 +141,7 @@ describe("imports", () => {
       expect(t.workbook).not.toContain('<definedName name="L_districts">');
       expect(t.workbook).not.toMatch(/<definedName name="ZN_1">/);
       // Exactly the E-commerce columns (the default package has COD and open box); the phone is optional by default.
-      expect(t.header).toEqual(["Customer name", "Customer phone", "Delivery address", "Category", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Open box", "Order ID", "Delivery instructions"]);
+      expect(t.header).toEqual(["Customer name", "Customer phone", "Delivery address", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Open box", "Order ID", "Delivery instructions"]);
       for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
       // Optional by default (a super admin can make it required): the plain header style, no "*".
       expect(t.sheet).toContain('<c r="B1" s="2" t="inlineStr"><is><t>Customer phone</t></is></c>');
@@ -160,17 +160,17 @@ describe("imports", () => {
       expect(products.indexOf("Gifts & Crafts (Regular)")).toBeGreaterThan(products.indexOf("Warranty Documents (Document)"));
       expect(products.some(p => /Credit Card/.test(p))).toBe(false);
       expect(t.listOf("Delivery type")).toEqual([]); // chosen in the import window
-      expect(t.listOf("Categories")[0]).toBe("Fashion & Clothing");
+      expect(t.listOf("Categories")).toEqual([]); // no product categories
       expect(t.listOf("Priorities")).toEqual([]); // chosen in the import window
       // Instructions for this category: phone required, upload-screen choices, pricing by district, Express same day.
       const text = t.help.join("\n");
       expect(text).toContain("at most 5,000 rows");
       expect(text).not.toContain("The customer phone is required");
       expect(text).toContain('Rows missing the recipient name, the customer phone or the delivery address');
-      expect(text).toContain("First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen");
+      expect(text).toContain("First mile (rider pickup or drop at a hub), the drop-off hub and last mile are chosen on the upload screen; the delivery type, priority and the messages to send on the next screen");
       expect(text).toContain("Pricing is by district");
       expect(text).not.toContain("Express is same-day");
-      expect(text).toContain("Messages follow the category");
+      expect(text).toContain("Messages follow the product");
       expect(text).not.toContain("pickup zone)\n");
       expect(text).toContain("Customer phone | No | Bangladeshi mobile number");
       // The address column asks for the full address; district / zone / area are found from it.
@@ -192,14 +192,14 @@ describe("imports", () => {
         const t = await template(bank.owner.token, url);
         expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
         expect(t.workbook).toContain('<sheet name="Consignments"');
-        expect(t.header).toEqual(["Recipient name", "Recipient phone", "Delivery address", "Category", "Product", "Reference no.", "Delivery instructions"]);
+        expect(t.header).toEqual(["Recipient name", "Recipient phone", "Delivery address", "Product", "Reference no.", "Delivery instructions"]);
         for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
         expect(t.sheet).not.toContain("Weight");
         expect(t.sheet).not.toContain("COD");
         expect(t.listOf("Products")[0]).toBe("Debit Card (Regular)");
         expect(t.listOf("Products")).not.toContain("Saree (Regular)");
         expect(t.listOf("Delivery type")).toEqual([]); // chosen in the import window
-        expect(t.listOf("Categories")[0]).toBe("Cards & PIN");
+        expect(t.listOf("Categories")).toEqual([]); // no product categories
         expect(t.listOf("Priorities")).toEqual([]); // chosen in the import window
         const text = t.help.join("\n");
         expect(text).not.toMatch(/weight and service defaults|Weight \(kg\)|Express is same-day/);
@@ -256,7 +256,6 @@ describe("imports", () => {
         "Recipient name",
         "Recipient phone",
         "Delivery address",
-        "Category",
         "Product",
         "COD amount (৳)",
         "Product value (৳)",
@@ -403,24 +402,25 @@ describe("imports", () => {
       });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body.counts).toMatchObject({ valid: 3, errors: 0 });
-      // A listed product whose category has SMS, email and push off: its parcels get no channel; unlisted names keep them all.
-      expect((await ctx.prisma.productCategory.updateMany({ where: { segment: "ECOMMERCE", name: "Books, Stationery & Documents" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } })).count).toBe(1);
+      // A listed product with SMS, email and push off: its parcels get no channel; unlisted names keep them all.
+      expect((await ctx.prisma.parcelProduct.updateMany({ where: { segment: "ECOMMERCE", name: "Papers & Documents" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } })).count).toBe(1);
       const commit = await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       expect(commit.body).toMatchObject({ status: "COMPLETED", result: { created: 3 } });
       const parcels = await ctx.prisma.parcel.findMany({ where: { merchantId: m.id }, orderBy: { merchantOrderRef: "asc" } });
-      expect(parcels.map(p => [p.merchantOrderRef, p.productName, p.productType, p.productId === null])).toEqual([
-        ["FREE-1", "Blue cotton shirt x2", "REGULAR", true],
-        ["FREE-2", "Papers & Documents", "DOCUMENT", false],
-        ["FREE-3", null, "REGULAR", true],
+      // "Blue cotton shirt x2" is the listed Shirt (the most similar product); the file's name is kept and printed.
+      expect(parcels.map(p => [p.merchantOrderRef, p.productName, p.productLabel, p.productType, p.productId === null])).toEqual([
+        ["FREE-1", "Shirt", "Blue cotton shirt x2", "REGULAR", false],
+        ["FREE-2", "Papers & Documents", "Papers & Documents", "DOCUMENT", false],
+        ["FREE-3", null, null, "REGULAR", true],
       ]);
       // E-commerce merchants' parcels are EP-…
       expect(parcels.every(p => /^EP-\d{6}-/.test(p.trackingId))).toBe(true);
       // The same row with a listed Regular product costs the same as the free name.
       expect(Number(parcels[0].totalCharge)).toBe(Number(parcels[2].totalCharge));
-      expect(parcels[0].notifications.length).toBeGreaterThan(0); // unlisted product: SMS / email / push on
+      expect(parcels[0].notifications.length).toBeGreaterThan(0); // Shirt: SMS / email / push on
       expect(parcels[0].notifyChannels).toEqual(["sms", "email", "push"]);
       expect(parcels[0].notifications).toEqual(parcels[2].notifications);
-      expect(parcels[1]).toMatchObject({ categoryName: "Books, Stationery & Documents", notifyChannels: [] }); // its category sends nothing
+      expect(parcels[1]).toMatchObject({ notifyChannels: [] }); // the product sends nothing
 
       // Banking & Financial too: an unlisted name is booked as written and priced as Regular (like an empty Product).
       const { m: bm, owner: bank } = await merchant("BANKING_FINANCIAL");
@@ -430,9 +430,10 @@ describe("imports", () => {
       expect(doc.body.counts).toMatchObject({ valid: 2, errors: 0 });
       expect((await ctx.api("POST", `/imports/${doc.body.id}/commit`, { token: bank.token })).body).toMatchObject({ status: "COMPLETED", result: { created: 2 } });
       const docs = await ctx.prisma.parcel.findMany({ where: { merchantId: bm.id }, orderBy: { merchantOrderRef: "asc" } });
-      expect(docs.map(p => [p.merchantOrderRef, p.productName, p.productType, p.productId === null])).toEqual([
-        ["BANK-1", "Debit card renewal kit", "REGULAR", true],
-        ["BANK-2", null, "REGULAR", true],
+      // "Debit card renewal kit" is the listed Debit Card (the most similar); the file's name is kept.
+      expect(docs.map(p => [p.merchantOrderRef, p.productName, p.productLabel, p.productId === null])).toEqual([
+        ["BANK-1", "Debit Card", "Debit card renewal kit", false],
+        ["BANK-2", null, null, true],
       ]);
       expect(Number(docs[0].totalCharge)).toBe(Number(docs[1].totalCharge));
       // … Banking & Financial merchants' FD-…

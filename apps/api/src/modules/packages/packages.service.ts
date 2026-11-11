@@ -86,18 +86,18 @@ export interface QuoteRequest {
   documentType?: string | null;
 }
 
-/** A product as bookings use it: its pricing type and its category (the category's message channels). */
+/** A product as bookings use it: its pricing type and its message channels (SMS, email, push). */
 export interface BookingProduct {
   id: string;
   name: string;
   type: string;
-  categoryId?: string | null;
-  category?: { id: string; name: string; notifySms: boolean; notifyEmail: boolean; notifyPush: boolean } | null;
+  notifySms?: boolean;
+  notifyEmail?: boolean;
+  notifyPush?: boolean;
 }
 
-/** The category and priority stored on a booking (resolved by the caller: import modal, form, row or product). */
+/** The priority stored on a booking (resolved by the caller: import window, form or default). */
 export interface BookingTags {
-  category?: { id: string; name: string; notifySms: boolean; notifyEmail: boolean; notifyPush: boolean } | null;
   priority?: { id: string; name: string } | null;
 }
 
@@ -423,11 +423,16 @@ export class PackagesService implements OnModuleInit {
   }
 
   /**
-   * Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). The category
-   * (given, else the product's) sets the message channels; the priority is a tag.
+   * Parcel columns for a package-priced booking (charges, choices, frozen services and notifications). The product's
+   * channels decide where its messages go (no product: every channel); `label` is the product as the merchant wrote it
+   * (an Excel name), kept next to the system product. The priority is a tag.
    */
-  parcelFields(q: PackageQuote, product: { id: string | null; name: string; category?: BookingTags["category"] } | null, tags: BookingTags = {}) {
-    const category = tags.category ?? product?.category ?? null;
+  parcelFields(
+    q: PackageQuote,
+    product: { id: string | null; name: string; label?: string | null; notifySms?: boolean; notifyEmail?: boolean; notifyPush?: boolean } | null,
+    tags: BookingTags = {},
+  ) {
+    const channels = product?.id && product.notifySms !== undefined ? { notifySms: !!product.notifySms, notifyEmail: !!product.notifyEmail, notifyPush: !!product.notifyPush } : null;
     return {
       baseCharge: q.columns.baseCharge,
       weightCharge: q.columns.weightCharge,
@@ -444,15 +449,14 @@ export class PackagesService implements OnModuleInit {
       onDemand: q.selection.firstMile === "ON_DEMAND_PICKUP",
       productId: product?.id ?? null,
       productName: product?.name ?? null,
+      productLabel: product?.label?.trim() ? product.label.trim().slice(0, 120) : (product?.name ?? null),
       productType: q.selection.productType,
-      categoryId: category?.id ?? null,
-      categoryName: category?.name ?? null,
       priorityId: tags.priority?.id ?? null,
       priorityName: tags.priority?.name ?? null,
       services: q.services,
-      // The booking's ticked messages (default: every message in the package); the category's channels decide where they go.
+      // The booking's ticked messages (default: every message in the package); the product's channels decide where they go.
       notifications: q.selection.notifications,
-      notifyChannels: channelsOf(category),
+      notifyChannels: channelsOf(channels),
       collectHubId: q.collectHub?.id ?? null,
       serviceLevel: q.serviceLevel,
     };
@@ -468,11 +472,10 @@ export class PackagesService implements OnModuleInit {
 
   async bookingView(who: PackageSubject, db: Db = this.prisma) {
     const pkg = await this.effective(who, db);
-    const [products, hubs, types, categories, priorities] = await Promise.all([
+    const [products, hubs, types, priorities] = await Promise.all([
       this.products(pkg.segment, db),
       db.hub.findMany({ where: { active: true }, select: { id: true, code: true, name: true, address: true, district: true, type: true }, orderBy: { name: "asc" } }),
       this.catalog.deliveryTypes(),
-      db.productCategory.findMany({ where: { segment: listOf(pkg.segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
       db.parcelPriority.findMany({ where: { segment: listOf(pkg.segment), active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     ]);
     const options = packageOptions(pkg.segment, pkg.services, types);
@@ -485,9 +488,9 @@ export class PackagesService implements OnModuleInit {
       options,
       labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, speed: Object.fromEntries(types.map(t => [t.code, t.name])), tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
       notifications: PARCEL_NOTIFICATIONS.filter(n => options.notifications.includes(n.code)).map(n => ({ code: n.code, label: n.label, audience: n.audience, title: `${n.label} (${n.audience})` })),
-      products: products.map(p => ({ id: p.id, name: p.name, type: p.type, categoryId: p.categoryId, categoryName: p.category?.name ?? null })),
-      /** Categories (their channels decide where messages go) and priorities (tags; `isDefault` preselected). */
-      categories: categories.map(c => ({ id: c.id, name: c.name, channels: channelsOf(c) })),
+      /** Products with their message channels (where their parcels' messages go). */
+      products: products.map(p => ({ id: p.id, name: p.name, type: p.type, channels: channelsOf(p) })),
+      /** Priorities (tags; `isDefault` preselected). */
       priorities: priorities.map(p => ({ id: p.id, name: p.name, isDefault: p.isDefault })),
       prices: pkg.prices,
       dropHubs: options.firstMiles.includes("HUB_DROP") ? hubs : [],

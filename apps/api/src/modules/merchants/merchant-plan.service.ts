@@ -99,8 +99,8 @@ export class MerchantPlanService {
           always: !!EVENT_CATALOG[event as keyof typeof EVENT_CATALOG].mandatory,
           channels: channels([event]),
         })),
-        /** Categories whose SMS is off (their parcels get no SMS). */
-        categoriesWithoutSms: view.categories.filter(c => !c.channels.includes("sms")).map(c => c.name),
+        /** Products whose SMS is off (their parcels get no SMS). */
+        productsWithoutSms: view.products.filter(p => !p.channels.includes("sms")).map(p => p.name),
       },
       prices: priceSections(segment, services, prices, types),
       examples: priceExamples(segment, services, prices, types),

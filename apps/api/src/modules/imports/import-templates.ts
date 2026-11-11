@@ -198,8 +198,8 @@ export function buildTemplate(ctx: EngineContext, opts: TemplateOptions): Buffer
     banking
       ? "Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus the delivery type. Banking & Financial parcels have no weight, no cash on delivery and no product-type charge."
       : `Pricing is by district: the route from the pickup district to the delivery district (same district, Dhaka ↔ Sub-urban or different district), plus weight above 0.5 kg, the product type, the delivery type${cols.some(c => c.key === "cod_amount") ? " and the COD fee" : ""}.`,
-    "First mile (rider pickup or drop at a hub), the drop-off hub, last mile and the messages to send are chosen on the upload screen for the whole file, not in this sheet. The upload screen can also set the delivery type, category and priority for every row.",
-    "Messages follow the category: a category with SMS, email or push turned off sends nothing on that channel for its parcels.",
+    "First mile (rider pickup or drop at a hub), the drop-off hub and last mile are chosen on the upload screen; the delivery type, priority and the messages to send on the next screen, for the whole file, not in this sheet.",
+    "The product: write it as you call it. It is matched to the system's product (spelling, size and colour don't matter); your name is kept on the parcel and printed. Messages follow the product: a product with SMS, email or push turned off sends nothing on that channel for its parcels.",
     `Limits: at most ${opts.maxRows.toLocaleString("en-US")} rows and ${opts.maxFileMb} MB per file. Upload the .xlsx (or a CSV with the same headers).`,
     "Each row is booked once: rows already booked (same reference, or the same details without one) are not booked again.",
   ];

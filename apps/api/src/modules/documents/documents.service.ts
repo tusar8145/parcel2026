@@ -280,7 +280,9 @@ export class DocumentsService {
         isDocument: p.type === "DOCUMENT" || p.merchant?.type === "BANKING_FINANCIAL",
         service: p.deliveryTypeName ?? p.speedOption ?? SERVICE_LEVEL_LABEL[p.serviceLevel],
         deliveryMode: p.lastMile ? ((LAST_MILE_LABEL as Record<string, string>)[p.lastMile] ?? p.lastMile) + (p.lastMile === "HUB_COLLECT" && p.collectHub ? ` (${p.collectHub.name})` : "") : "Home delivery",
-        product: p.productName ?? p.documentType ?? p.contents ?? null,
+        // The product as the merchant wrote it (Excel), else the system product.
+        product: p.productLabel ?? p.productName ?? p.documentType ?? p.contents ?? null,
+        priority: p.priorityName ?? null,
         productType: PRODUCT_TYPE_LABEL[p.productType ?? "REGULAR"] ?? p.productType ?? "Regular",
         intake: p.intake,
         originHub: origin ? { code: origin.code, name: origin.name } : null,

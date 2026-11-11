@@ -12,6 +12,9 @@ import { GeographyService } from "../geography/geography.service";
 import { resolvePlace } from "../parcels/places";
 import { listOf } from "../packages/catalog.service";
 import { productNameOfCell, type Cells, type EngineContext } from "./import-engine.service";
+import { matchProduct, productKey } from "./product-match";
+
+export { productKey } from "./product-match";
 
 export const AI_IMPORT_KEY = "import-ai";
 
@@ -19,7 +22,7 @@ export const aiImportSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   /** Monthly spend limit in USD (estimated from the list prices); at the limit the AI stops until next month. */
   monthlyLimitUsd: z.coerce.number().min(0).max(10_000).default(5),
-  /** The super admin's rule for new categories' channels, e.g. "Cards, PIN and cheques: SMS on…". */
+  /** The super admin's rule for new products' channels, e.g. "Cards, PIN and cheques: SMS on…". */
   channelPrompt: z.string().trim().max(4000).default(""),
 });
 export type AiImportSettings = z.infer<typeof aiImportSettingsSchema>;
@@ -32,24 +35,6 @@ export const updateAiImportSettingsSchema = z.object({
 export const aiUsageQuerySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) });
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-/** Words that don't change what a product is (sizes, colours, packing). */
-const NOISE = new Set(["xs", "s", "m", "l", "xl", "xxl", "xxxl", "2xl", "3xl", "free", "size", "pcs", "pc", "piece", "pieces", "set", "pack", "black", "white", "red", "blue", "green", "yellow", "pink", "grey", "gray", "brown", "navy", "new", "original"]);
-/**
- * A product's matching key: lower case, "&" = "and", punctuation and spaces dropped, plurals made singular, sizes /
- * colours / quantities left out ("T-Shirts", "t shirt", "Tshirt XL Black" → "tshirt"). Two names with the same key
- * are the same product: the system never creates the second one.
- */
-export function productKey(name: string) {
-  const words = name
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/\(.*?\)/g, " ")
-    .replace(/\b\d+(\.\d+)?\s*(ml|l|ltr|g|gm|gram|kg|pcs|pc|inch|in|cm|mm)\b/g, " ")
-    .split(/[^a-z0-9\u0980-\u09ff]+/)
-    .filter(w => w && !NOISE.has(w) && !/^\d+$/.test(w))
-    .map(w => (w.length > 4 && w.endsWith("ies") ? `${w.slice(0, -3)}y` : w.length > 4 && /(ches|shes|xes|sses)$/.test(w) ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w));
-  return words.join("");
-}
 const CHUNK = 60;
 const PARALLEL = 4;
 
@@ -57,8 +42,6 @@ interface ProductAnswer {
   i: number;
   existing: string;
   newProduct: string;
-  category: string;
-  newCategory: string;
   sms: boolean;
   email: boolean;
   push: boolean;
@@ -96,13 +79,11 @@ const SCHEMA = {
           i: { type: "integer", description: "the item's number (P<i>)" },
           existing: { type: "string", description: "the exact name of the listed product that is the same thing (a spelling, size, colour or plural variant), else \"\"" },
           newProduct: { type: "string", description: "when no listed product is the same: a short, clean product name (Title Case, no size / colour / brand / quantity), else \"\"" },
-          category: { type: "string", description: "for a new product: the exact name of the listed category it belongs to, else \"\"" },
-          newCategory: { type: "string", description: "for a new product that fits no listed category: a short new category name, else \"\"" },
-          sms: { type: "boolean", description: "new category only: send SMS (follow the channel rule)" },
-          email: { type: "boolean", description: "new category only: send email (follow the channel rule)" },
-          push: { type: "boolean", description: "new category only: send push (follow the channel rule)" },
+          sms: { type: "boolean", description: "new product only: send SMS (follow the channel rule)" },
+          email: { type: "boolean", description: "new product only: send email (follow the channel rule)" },
+          push: { type: "boolean", description: "new product only: send push (follow the channel rule)" },
         },
-        required: ["i", "existing", "newProduct", "category", "newCategory", "sms", "email", "push"],
+        required: ["i", "existing", "newProduct", "sms", "email", "push"],
         additionalProperties: false,
       },
     },
@@ -129,8 +110,8 @@ const SCHEMA = {
 /**
  * AI import (Operational settings › AI import, Setting "import-ai"): an Excel file's product names and delivery
  * addresses that the system's lists don't match (after the free matching) go to Claude in a few batched calls.
- * - A product: the same listed product, or a new product in a listed category, or a new category too (its SMS /
- *   email / push from the super admin's channel prompt). Created at once (tagged AI created).
+ * - A product: the same listed product, or a new product (its SMS / email / push from the super admin's channel
+ *   prompt). Created at once (tagged AI created). The file's own name stays on the parcel (prints show it).
  * - An address: its listed district and thana; a real thana that isn't listed becomes a new zone of the district,
  *   served by the hub of the nearest zone (routed at once, tagged AI created).
  * Each decision is remembered (AiImportAlias), so the same name never goes to the AI again. Off, over the monthly
@@ -245,20 +226,7 @@ export class ImportAiService {
    * aren't listed. Never throws: anything wrong leaves the rows as they were (with a note).
    */
   async enrich(ctx: EngineContext, rows: { rowNumber: number; cells: Cells }[], actor: Actor, meta: RequestMeta, merchantId: string | null): Promise<AiImportResult> {
-    const result = await this.enrichRows(ctx, rows, actor, meta, merchantId);
-    if (!(await this.active()) || !ctx.columns.some(c => c.key === "category")) return result;
-    // Every row shows its category (before Product): its product's, unless the file named one.
-    const products = await this.prisma.parcelProduct.findMany({ where: { segment: listOf(ctx.pkg.segment) }, select: { name: true, category: { select: { name: true, active: true } } } });
-    const categoryOf = new Map(products.flatMap(p => (p.category?.active ? [[norm(p.name), p.category.name] as const] : [])));
-    for (const r of result.rows) {
-      const c = r.cells;
-      if ((c.category ?? "").trim() || !(c.product_type ?? "").trim()) continue;
-      const cat = categoryOf.get(norm(productNameOfCell(c.product_type!)));
-      if (!cat) continue;
-      c.category = cat;
-      c.__auto = [...new Set([...(c.__auto ?? "").split(",").filter(Boolean), "category"])].join(",");
-    }
-    return result;
+    return this.enrichRows(ctx, rows, actor, meta, merchantId);
   }
 
   private async enrichRows(ctx: EngineContext, rows: { rowNumber: number; cells: Cells }[], actor: Actor, meta: RequestMeta, merchantId: string | null): Promise<AiImportResult> {
@@ -269,8 +237,12 @@ export class ImportAiService {
     const columns = new Set(ctx.columns.map(c => c.key));
     const out = rows.map(r => ({ rowNumber: r.rowNumber, cells: { ...r.cells } }));
     const known = new Map(ctx.products.map(p => [norm(p.name), p.name]));
-    const knownByKey = new Map(ctx.products.map(p => [productKey(p.name), p.name] as const).filter(([k]) => k));
-    const categoryByName = new Map(ctx.categories.map(c => [norm(c.name), c]));
+    // The file's own name is kept (`__label`) when the cell becomes a system product.
+    const use = (c: Cells, product: string) => {
+      if (norm(product) === norm(productNameOfCell(c.product_type ?? ""))) return;
+      c.__label = c.__label || (c.product_type ?? "").trim();
+      c.product_type = product;
+    };
 
     // ── what the lists don't match ──
     const productAliases = new Map(
@@ -285,11 +257,12 @@ export class ImportAiService {
       const raw = (c.product_type ?? "").trim();
       if (raw && columns.has("product_type")) {
         const name = productNameOfCell(raw);
-        const sameKey = knownByKey.get(productKey(name));
-        if (!known.has(norm(name)) && sameKey) c.product_type = sameKey;
+        // The system first: the same product under another spelling, or a similar enough one.
+        const similar = known.has(norm(name)) ? null : matchProduct(name, ctx.products);
+        if (similar) use(c, similar.product.name);
         else if (!known.has(norm(name))) {
           const alias = productAliases.get(norm(name));
-          if (alias && known.has(norm(alias))) c.product_type = known.get(norm(alias))!;
+          if (alias && known.has(norm(alias))) use(c, known.get(norm(alias))!);
           else {
             const e = unknownProducts.get(norm(name)) ?? { raw: raw.replace(/\s+/g, " ").slice(0, 120), rows: [] };
             e.rows.push(idx);
@@ -312,20 +285,6 @@ export class ImportAiService {
         if (address) unknownPlaces.push({ row: idx, district: (c.district ?? "").trim(), zone: (c.zone ?? "").trim(), address: address.slice(0, 300) });
       }
     });
-    // A file category that is listed: the product goes there without the AI.
-    for (const [key, e] of [...unknownProducts]) {
-      const named = e.rows.map(i => (out[i].cells.category ?? "").trim()).find(Boolean);
-      const cat = named ? categoryByName.get(norm(named)) : undefined;
-      if (!cat) continue;
-      const product = await this.createProduct(list, e.raw, cat.id);
-      if (product) {
-        result.created = true;
-        known.set(norm(product), product);
-        for (const i of e.rows) out[i].cells.product_type = product;
-        await this.remember("PRODUCT", list, key, product);
-      }
-      unknownProducts.delete(key);
-    }
     if (!unknownProducts.size && !unknownPlaces.length) return { ...result, rows: out };
 
     // ── the monthly limit ──
@@ -379,7 +338,6 @@ export class ImportAiService {
     const counts = { productsMatched: 0, productsCreated: 0, categoriesCreated: 0, placesMatched: 0, zonesCreated: 0 };
     const productByN = new Map(productItems.map(p => [p.n, p]));
     const placeByN = new Map(placeItems.map(p => [p.n, p]));
-    const newCategories = new Map<string, string>();
     for (const a of answers.flatMap(x => x.products ?? [])) {
       const item = productByN.get(a.i);
       if (!item) continue;
@@ -390,20 +348,9 @@ export class ImportAiService {
         name = existing;
         counts.productsMatched++;
       } else if (a.newProduct?.trim()) {
-        let categoryId = a.category?.trim() ? categoryByName.get(norm(a.category))?.id : undefined;
-        if (!categoryId && a.newCategory?.trim()) {
-          const catName = a.newCategory.trim().replace(/\s+/g, " ").slice(0, 80);
-          categoryId = categoryByName.get(norm(catName))?.id ?? newCategories.get(norm(catName));
-          if (!categoryId) {
-            const channels = settings.channelPrompt.trim() ? { notifySms: !!a.sms, notifyEmail: !!a.email, notifyPush: !!a.push } : {};
-            categoryId = (await this.createCategory(list, catName, channels)) ?? undefined;
-            if (categoryId) {
-              newCategories.set(norm(catName), categoryId);
-              counts.categoriesCreated++;
-            }
-          }
-        }
-        const created = await this.createProduct(list, a.newProduct.trim().replace(/\s+/g, " ").slice(0, 120), categoryId ?? null);
+        // Its SMS / email / push from the super admin's rule (no rule: all on).
+        const channels = settings.channelPrompt.trim() ? { notifySms: !!a.sms, notifyEmail: !!a.email, notifyPush: !!a.push } : {};
+        const created = await this.createProduct(list, a.newProduct.trim().replace(/\s+/g, " ").slice(0, 120), channels);
         if (created) {
           name = created;
           if (!known.has(norm(created))) counts.productsCreated++;
@@ -411,7 +358,7 @@ export class ImportAiService {
         }
       }
       if (!name) continue;
-      for (const i of item.rows) out[i].cells.product_type = name;
+      for (const i of item.rows) use(out[i].cells, name);
       await this.remember("PRODUCT", list, item.key, name);
     }
     let catalog = ctx.catalog;
@@ -474,25 +421,21 @@ export class ImportAiService {
   }
 
   private systemPrompt(ctx: EngineContext, settings: AiImportSettings) {
-    const byCategory = new Map<string, string[]>();
-    for (const p of ctx.products) {
-      const c = p.category?.name ?? "No category";
-      byCategory.set(c, [...(byCategory.get(c) ?? []), p.name]);
-    }
-    const categories = ctx.categories.map(c => `- ${c.name} (SMS ${c.notifySms ? "on" : "off"}, email ${c.notifyEmail ? "on" : "off"}, push ${c.notifyPush ? "on" : "off"}): ${(byCategory.get(c.name) ?? []).join(", ")}`).join("\n");
+    const on = (v: boolean | undefined) => (v === false ? "off" : "on");
+    const products = ctx.products.map(p => `- ${p.name} (SMS ${on(p.notifySms)}, email ${on(p.notifyEmail)}, push ${on(p.notifyPush)})`).join("\n");
     const places = ctx.catalog.districts.map(d => `${d}: ${(ctx.catalog.zonesByDistrict[d] ?? []).join(", ")}`).join("\n");
     return `You match a Bangladeshi courier's Excel orders to its lists. Products are what is being sent; places are delivery addresses.
 
-Products (P items): for each name, if a listed product is the same thing (a spelling, plural, size, colour, brand or quantity variant), give it as "existing". Otherwise make a short clean "newProduct" name and put it in the listed category it fits ("category"); only if no category fits, give a "newCategory" (short, general, like the listed ones) and its sms / email / push from the channel rule.
+Products (P items): for each name, if a listed product is the same thing (a spelling, plural, size, colour, brand or quantity variant), give it as "existing". Otherwise make a short clean, general "newProduct" name (like the listed ones) and its sms / email / push from the channel rule.
 
 Places (A items): give the listed district and its listed thana / upazila ("zone") the address is in; an area, road or neighbourhood name points to its thana. Only when the address is clearly in a real thana / upazila of that district that is not listed, give its proper name with newZone true and the nearest listed zone of the district as "nearZone". Never invent places: leave "" when unsure.
 
 Never make a new product that is a listed product under another name (no duplicates); P items that are the same thing get the same newProduct name. Answer every item. Use the exact spelling of listed names.
 
-Channel rule for new categories (the super admin's): ${settings.channelPrompt.trim() || "SMS, email and push on."}
+Channel rule for new products (the super admin's): ${settings.channelPrompt.trim() || "SMS, email and push on."}
 
-Categories and their products:
-${categories}
+Products and their channels:
+${products}
 
 Districts and their thanas / upazilas:
 ${places}`;
@@ -536,7 +479,7 @@ ${places}`;
   }
 
   /** The product (created when new, tagged AI created); its name, or null. */
-  private async createProduct(list: "ECOMMERCE" | "BANKING_FINANCIAL", name: string, categoryId: string | null): Promise<string | null> {
+  private async createProduct(list: "ECOMMERCE" | "BANKING_FINANCIAL", name: string, channels: { notifySms?: boolean; notifyEmail?: boolean; notifyPush?: boolean } = {}): Promise<string | null> {
     if (name.length < 2) return null;
     const key = productKey(name);
     const all = await this.prisma.parcelProduct.findMany({ where: { segment: list }, select: { name: true, active: true, id: true } });
@@ -545,21 +488,12 @@ ${places}`;
       if (!existing.active) await this.prisma.parcelProduct.update({ where: { id: existing.id }, data: { active: true } });
       return existing.name;
     }
-    const last = await this.prisma.parcelProduct.aggregate({ where: { segment: list, categoryId }, _max: { sortOrder: true } });
+    const last = await this.prisma.parcelProduct.aggregate({ where: { segment: list }, _max: { sortOrder: true } });
     const created = await this.prisma.parcelProduct
-      .create({ data: { segment: list, name, type: list === "BANKING_FINANCIAL" ? "DOCUMENT" : "REGULAR", categoryId, sortOrder: (last._max.sortOrder ?? 0) + 1, aiCreated: true } })
+      .create({ data: { segment: list, name, type: list === "BANKING_FINANCIAL" ? "DOCUMENT" : "REGULAR", sortOrder: (last._max.sortOrder ?? 0) + 1, aiCreated: true, ...channels } })
       .catch(() => null);
-    if (created) await this.audit.record("system", { action: "parcel_product.ai_create", entityType: "parcel_product", entityId: created.id, data: { name, categoryId } });
+    if (created) await this.audit.record("system", { action: "parcel_product.ai_create", entityType: "parcel_product", entityId: created.id, data: { name, ...channels } });
     return created?.name ?? (await this.prisma.parcelProduct.findFirst({ where: { segment: list, name: { equals: name, mode: "insensitive" } }, select: { name: true } }))?.name ?? null;
-  }
-
-  private async createCategory(list: "ECOMMERCE" | "BANKING_FINANCIAL", name: string, channels: { notifySms?: boolean; notifyEmail?: boolean; notifyPush?: boolean }): Promise<string | null> {
-    const existing = await this.prisma.productCategory.findFirst({ where: { segment: list, name: { equals: name, mode: "insensitive" } }, select: { id: true } });
-    if (existing) return existing.id;
-    const last = await this.prisma.productCategory.aggregate({ where: { segment: list }, _max: { sortOrder: true } });
-    const created = await this.prisma.productCategory.create({ data: { segment: list, name, sortOrder: (last._max.sortOrder ?? 0) + 1, aiCreated: true, ...channels } }).catch(() => null);
-    if (created) await this.audit.record("system", { action: "product_category.ai_create", entityType: "product_category", entityId: created.id, data: { name, ...channels } });
-    return created?.id ?? null;
   }
 
   /** A new zone of the district, served by the nearest zone's hub (else the district's usual hub). */

@@ -7,7 +7,7 @@
  *                    approves; the API answers PENDING).
  *   Merchants        assign a package from a date (PUT /merchants/:id/package); search. ?merchant=<code> opens a row.
  *   Price simulator  what a booking costs on the default package (POST /packages/simulate)
- *   (Messages follow the product category: Operational settings › Product categories.)
+ *   (Messages follow the product: its SMS / email / push switches in Operational settings › Products.)
  *   Hub Pickup       the hold period and the reminder (GET / PUT /packages/settings)
  * The segment (?tab=customer|e-commerce|banking) and the section (?section=) stay in the address.
  */

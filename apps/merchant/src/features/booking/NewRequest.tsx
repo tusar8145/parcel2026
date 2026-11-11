@@ -27,9 +27,9 @@ const taka = (n: unknown) => `৳${Number(n || 0).toLocaleString("en-BD")}`;
 interface PackageView {
   options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
-  products?: { id: string; name: string; type: string; categoryId?: string | null; categoryName?: string | null }[];
-  /** Categories (their channels decide where messages go) and priorities (tags; one is the default). */
-  categories?: { id: string; name: string; channels: string[] }[];
+  /** Products with their message channels (sms, email, push: where their parcels' messages go). */
+  products?: { id: string; name: string; type: string; channels?: string[] }[];
+  /** Priorities (tags; one is the default). */
   priorities?: { id: string; name: string; isDefault: boolean }[];
   notifications?: { code: string; title: string }[];
   dropHubs?: { id: string; name: string; type?: string }[];
@@ -110,9 +110,8 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   }, []);
 
   const product = view?.products?.find(p => p.name === req.product) ?? null;
-  // The category: chosen, else the product's. One without SMS and email sends no messages to tick.
-  const category = view?.categories?.find(c => c.id === (svc.category || product?.categoryId)) ?? null;
-  const silent = !!category && !category.channels.includes("sms") && !category.channels.includes("email");
+  // A product without SMS and email sends no messages to tick.
+  const silent = !!product?.channels && !product.channels.includes("sms") && !product.channels.includes("email");
   /** The service as sent (order-services.js read). */
   const service = useMemo(() => {
     if (!view) return null;
@@ -127,7 +126,6 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
       lastMile,
       speed: (o.speeds.length > 1 ? svc.speed : "") || o.speeds[0] || "REGULAR",
       ...(req.product ? { product: req.product } : {}),
-      ...(svc.category ? { category: svc.category } : {}),
       ...(svc.priority ? { priority: svc.priority } : {}),
       openBox: o.openBox ? svc.openBox : false,
       // Cash on delivery (E-commerce): only when the package offers it and it is ticked.
@@ -273,8 +271,8 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
   );
   const o = view?.options;
   const L = view?.labels;
-  // Products in the catalog's order (by category), narrowed to the chosen category.
-  const products = (view?.products ?? []).filter(p => !svc.category || p.categoryId === svc.category);
+  // Products in the catalog's order.
+  const products = view?.products ?? [];
   const zones = catalog?.zonesByDistrict?.[place.district] ?? [];
   const areas = catalog?.areasByZone?.[place.zone] ?? [];
   const notes = view?.notifications ?? [];
@@ -509,30 +507,6 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                 { full: true },
               )
             : null}
-          {view?.categories?.length
-            ? field(
-                "category",
-                "Category",
-                <Select
-                  id="nr_category"
-                  className="select"
-                  searchable={false}
-                  value={svc.category}
-                  onChange={e => {
-                    const next = e.target.value;
-                    setSvc(s => ({ ...s, category: next }));
-                    if (next && product && product.categoryId !== next) setReq(r => ({ ...r, product: "" }));
-                  }}
-                >
-                  <option value="">{product?.categoryName ? `From the product (${product.categoryName})` : "From the product"}</option>
-                  {view.categories.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>,
-              )
-            : null}
           {products.length
             ? field(
                 "product",
@@ -543,7 +517,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
                   value={req.product}
                   onChange={v => setReq(r => ({ ...r, product: v }))}
                   emptyLabel="No product (Regular)"
-                  options={products.map(p => ({ value: p.name, label: `${p.name} · ${L?.productType?.[p.type] || p.type}${svc.category || !p.categoryName ? "" : ` · ${p.categoryName}`}` }))}
+                  options={products.map(p => ({ value: p.name, label: `${p.name} · ${L?.productType?.[p.type] || p.type}` }))}
                 />,
               )
             : null}

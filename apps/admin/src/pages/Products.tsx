@@ -1,8 +1,8 @@
 /**
  * Products (Operational settings, bridge-packages.js renderProducts): the products offered in bookings, one list per
  * merchant type (Customer & E-commerce · Banking & Financial). Search, status filter, sort by name, Export Excel
- * (GET /parcel-products/export), add / edit (name, category and type), activate / deactivate, delete one without parcels.
- * Messages follow the product's category (Operational settings › Product categories).
+ * (GET /parcel-products/export), add / edit (name, type and where its messages go: SMS, email, push), activate /
+ * deactivate, delete one without parcels. The SMS / email / push switches can also be flipped in the list.
  */
 import { useState } from "react";
 import { useSearchParams } from "react-router";
@@ -13,7 +13,7 @@ import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Pager, usePaged } from "@panel/ui/Pager";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { useCategories, useProducts, useServiceCatalog, type Product } from "@/lib/packages";
+import { useProducts, useServiceCatalog, type Product } from "@/lib/packages";
 
 // Banking & Financial first (most of the work).
 const LISTS: ["ECOMMERCE" | "BANKING_FINANCIAL", string, string][] = [
@@ -21,14 +21,17 @@ const LISTS: ["ECOMMERCE" | "BANKING_FINANCIAL", string, string][] = [
   ["ECOMMERCE", "Customer & E-commerce", "e-commerce"],
 ];
 
+const CHANNELS = [
+  ["notifySms", "SMS"],
+  ["notifyEmail", "Email"],
+  ["notifyPush", "Push"],
+] as const;
+
 export default function Products() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const list = params.get("tab") === "e-commerce" ? "ECOMMERCE" : "BANKING_FINANCIAL";
   const products = useProducts();
-  const categories = useCategories();
-  const [category, setCategory] = useState("");
-  const listCategories = (categories.data ?? []).filter(c => c.segment === list);
   const catalog = useServiceCatalog();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -38,7 +41,7 @@ export default function Products() {
   const all = (products.data ?? []).filter(p => p.segment === list);
   if (sort) all.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }) * (sort === "asc" ? 1 : -1));
   const query = q.trim().toLowerCase();
-  const shown = all.filter(p => (!query || p.name.toLowerCase().includes(query)) && (!status || p.active === (status === "active")) && (!category || p.categoryId === category));
+  const shown = all.filter(p => (!query || p.name.toLowerCase().includes(query)) && (!status || p.active === (status === "active")));
   const { rows, pager } = usePaged(shown, 25);
   const typeLabel = (code: string) => catalog.data?.productTypes.find(t => t.code === code)?.label || code;
   const listLabel = LISTS.find(l => l[0] === list)![1];
@@ -50,22 +53,17 @@ export default function Products() {
       submit: product ? "Save" : "Add product",
       fields: [
         { id: "name", label: "Product name", required: true, maxLength: 120, value: product?.name ?? "", placeholder: list === "BANKING_FINANCIAL" ? "e.g. Credit Card" : "e.g. Saree", full: true },
-        {
-          id: "categoryId",
-          label: "Category",
-          type: "select",
-          required: true,
-          value: product?.categoryId ?? (category || listCategories.find(c => c.active)?.id || ""),
-          options: listCategories.filter(c => c.active || c.id === product?.categoryId).map(c => ({ value: c.id, label: c.name })),
-          hint: "Its parcels' messages follow the category's SMS / email / push switches.",
-          full: true,
-        },
         { id: "type", label: "Type", type: "select", required: true, value: product?.type ?? types[0]?.code ?? "", options: types.map(t => ({ value: t.code, label: t.label })), hint: "The type prices the parcel.", full: true },
+        { id: "channels", label: "Messages for its parcels (off: nothing is sent on that channel)", type: "static", render: null },
+        { id: "notifySms", label: "SMS", type: "checkbox", value: product ? product.notifySms : true },
+        { id: "notifyEmail", label: "Email", type: "checkbox", value: product ? product.notifyEmail : true },
+        { id: "notifyPush", label: "Push", type: "checkbox", value: product ? product.notifyPush : true },
       ],
       onSubmit: async v => {
         const name = v.name.trim();
-        if (product) await api(`/parcel-products/${product.id}`, { method: "PATCH", body: { name, type: v.type, categoryId: v.categoryId } });
-        else await api("/parcel-products", { method: "POST", body: { segment: list, name, type: v.type, categoryId: v.categoryId } });
+        const channels = { notifySms: v.notifySms === "true", notifyEmail: v.notifyEmail === "true", notifyPush: v.notifyPush === "true" };
+        if (product) await api(`/parcel-products/${product.id}`, { method: "PATCH", body: { name, type: v.type, ...channels } });
+        else await api("/parcel-products", { method: "POST", body: { segment: list, name, type: v.type, ...channels } });
         await reload();
         return product ? `${name} saved.` : `${name} added.`;
       },
@@ -100,7 +98,7 @@ export default function Products() {
 
   return (
     <>
-      <PageHeading eyebrow="Operational settings" title="Products" subtitle="The products offered in bookings, under their categories, by merchant type. A product's type (Regular, Document, Books) prices the parcel." />
+      <PageHeading eyebrow="Operational settings" title="Products" subtitle="The products offered in bookings, by merchant type. A product's type (Regular, Document, Books) prices the parcel; its SMS / email / push switches decide where its parcels' messages go." />
       <div className="seg-tabs" role="tablist" style={{ marginBottom: 12 }}>
         {LISTS.map(([code, label, slug]) => (
           <button
@@ -113,24 +111,15 @@ export default function Products() {
               setParams({ tab: slug }, { replace: true });
               setQ("");
               setStatus("");
-              setCategory("");
             }}
           >
             {label}
           </button>
         ))}
       </div>
-      <Panel title={`${listLabel} products`} subtitle="Optional in bookings. A product with parcels can be deactivated; one without can be deleted. Messages follow the category.">
+      <Panel title={`${listLabel} products`} subtitle="Optional in bookings. A product with parcels can be deactivated; one without can be deleted. Click SMS / Email / Push to switch it.">
         <div className="row" style={{ gap: 8, flexWrap: "wrap", padding: "12px 16px" }}>
           <input className="input sm" type="search" placeholder="Search products" aria-label="Search products" value={q} onChange={e => setQ(e.target.value)} style={{ width: 240 }} />
-          <Select className="select sm" aria-label="Filter by category" value={category} onChange={e => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {listCategories.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
           <Select className="select sm" aria-label="Filter by status" value={status} onChange={e => setStatus(e.target.value)}>
             <option value="">All statuses</option>
             <option value="active">Active</option>
@@ -167,8 +156,8 @@ export default function Products() {
                         PRODUCT <span aria-hidden="true">{sort === "asc" ? "▲" : sort === "desc" ? "▼" : "↕"}</span>
                       </button>
                     </th>
-                    <th>Category</th>
                     <th>Type</th>
+                    <th>Messages</th>
                     <th>Status</th>
                     <th className="num">Parcels</th>
                     <th />
@@ -179,10 +168,25 @@ export default function Products() {
                     <tr key={p.id}>
                       <td className="strong">
                         {p.name}
-                        {(p as { aiCreated?: boolean }).aiCreated ? <> <Pill>AI created</Pill></> : null}
+                        {p.aiCreated ? <> <Pill>AI created</Pill></> : null}
                       </td>
-                      <td>{p.categoryName ?? <span className="faint">No category</span>}</td>
                       <td>{typeLabel(p.type)}</td>
+                      <td className="nowrap">
+                        {CHANNELS.map(([key, label]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={p[key] ? "button sm primary" : "button sm"}
+                            style={{ marginRight: 4 }}
+                            aria-pressed={p[key]}
+                            title={label + (p[key] ? " on" : " off") + ": click to switch"}
+                            disabled={busy === p.id}
+                            onClick={() => void run(p.id, () => api("/parcel-products/" + p.id, { method: "PATCH", body: { [key]: !p[key] } }))}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </td>
                       <td>
                         <Pill tone={p.active ? "good" : "warn"}>{p.active ? "Active" : "Inactive"}</Pill>
                       </td>

@@ -85,8 +85,10 @@ export const productSchema = z.object({
   name: z.string().trim().min(1, "Enter the product name").max(120, "Use at most 120 characters"),
   /** One of the three fixed product types; it prices the parcel. */
   type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").default("REGULAR"),
-  /** The category it is listed under (its messages follow the category's channels). */
-  categoryId: z.uuid("Choose the category"),
+  /** Where its parcels' messages go: off sends nothing on that channel, whatever the booking ticked. */
+  notifySms: z.boolean().default(true),
+  notifyEmail: z.boolean().default(true),
+  notifyPush: z.boolean().default(true),
 });
 /** Operational settings › Products › Export: a list, with the page's search and status. */
 export const exportProductsQuerySchema = z.object({
@@ -101,7 +103,9 @@ export const exportProductsQuerySchema = z.object({
 export const updateProductSchema = z.object({
   name: productSchema.shape.name.optional(),
   type: z.enum(PRODUCT_TYPES, "Choose REGULAR, DOCUMENT or BOOKS").optional(),
-  categoryId: z.uuid("Choose the category").optional(),
+  notifySms: z.boolean().optional(),
+  notifyEmail: z.boolean().optional(),
+  notifyPush: z.boolean().optional(),
   active: z.boolean().optional(),
 });
 export const listProductsQuerySchema = z.object({

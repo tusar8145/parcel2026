@@ -1,6 +1,6 @@
 /**
  * Spreadsheet import and bulk updates (shared/importer.js), one dialog with steps:
- *   Import      choose (category, merchant, first / last mile, drop-off hub, messages, file) → match the columns of
+ *   Import      choose (category, merchant, first / last mile, drop-off hub, file) → match the columns of
  *               any merchant's file (POST /imports/analyze) → check (POST /imports/validate) → preview (filters,
  *               pages, address / district / zone / area corrected inline: PATCH /imports/:id/rows/:row) → create
  *               (POST /imports/:id/commit) → progress (import.* events + poll) → result (failed rows, labels)
@@ -118,7 +118,7 @@ interface Job {
   counts: { rows: number; valid: number; incomplete: number; errors: number; toApply: number; warnings: number; alreadyDone: number; ignored: number };
   result: { created: number; createdIncomplete: number; notCreated: number; applied: number; alreadyDone: number; notApplied: number };
   progress: { processed: number; total: number; percent: number };
-  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: unknown[]; speedLabel?: string | null; productTypeLabel?: string | null; categoryLabel?: string | null; priorityLabel?: string | null };
+  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: string[] | null; speed?: string | null; speedLabel?: string | null; productTypeLabel?: string | null; priority?: string | null; priorityLabel?: string | null };
   intake?: string;
   dropOffHub?: { name: string } | null;
   batch?: { number: string } | null;
@@ -235,11 +235,10 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const [lastMile, setLastMile] = useState("DOORSTEP");
   const [hubId, setHubId] = useState(() => (initial.forOps && initial.merchantId ? initial.merchants?.find(m => m.id === initial.merchantId)?.hubId : null) || initial.hubId || "");
   const [notifications, setNotifications] = useState<Set<string>>(new Set());
-  // The modal's Service and product type for every row ("" = each row's own, from the file).
+  // The delivery type and priority for the whole file (the first preselected; changed on the second screen), and the
+  // product type for every row ("" = each row's own).
   const [speed, setSpeed] = useState("");
   const [productType, setProductType] = useState("");
-  // The modal's category (none = each row's own / its product's) and priority (the default preselected).
-  const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("");
   const unticked = useRef<Set<string>>(new Set());
   // Operations: choosing the merchant preselects its hub as the drop-off hub (when this person can use that hub).
@@ -307,7 +306,6 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     setLastMile(l => (o.lastMiles.includes(l) ? l : o.defaultLastMile || "DOORSTEP"));
     // Delivery type and priority: for the whole file, the first (default) preselected.
     setSpeed(v => (v && (o.speeds ?? []).includes(v) ? v : (o.speeds ?? [])[0] || ""));
-    setCategory(v => (v && (p.categories ?? []).some(c => c.id === v) ? v : ""));
     setPriority(v => (v && (p.priorities ?? []).some(x => x.id === v) ? v : ((p.priorities ?? []).find(x => x.isDefault)?.id ?? (p.priorities ?? [])[0]?.id ?? "")));
     setNotifications(new Set(p.notifications.map(n => n.code).filter(c => !unticked.current.has(c))));
   }
@@ -435,7 +433,6 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       if (pkg && lastMile) form.append("lastMile", lastMile);
       if (speed) form.append("speed", speed);
       if (productType && cfg.kind !== "document") form.append("productType", productType);
-      if (category && !config?.ai) form.append("category", category);
       if (priority) form.append("priority", priority);
       if (pkg?.notifications?.length && notifications.size !== pkg.notifications.length) form.append("notifications", notifications.size ? [...notifications].join(",") : "none");
       if (mapsColumns && l) form.append("mapping", JSON.stringify({ headerRow: l.headerRow, columns: l.columns.map(c => c.key || null) }));
@@ -601,6 +598,71 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       {message}
     </p>
   ) : null;
+
+  const messagesBox = (
+        pkg?.notifications?.length ? (
+          <fieldset style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", margin: 0 }}>
+            <legend style={{ fontWeight: 600, fontSize: 13, padding: "0 4px" }}>{`Messages to send for these ${noun} (${notifications.size} of ${pkg.notifications.length})`}</legend>
+            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+              <button
+                type="button"
+                className="button sm"
+                disabled={notifications.size === pkg.notifications.length}
+                onClick={() => {
+                  unticked.current.clear();
+                  setNotifications(new Set(pkg.notifications.map(n => n.code)));
+                }}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="button sm"
+                disabled={notifications.size === 0}
+                onClick={() => {
+                  pkg.notifications.forEach(n => unticked.current.add(n.code));
+                  setNotifications(new Set());
+                }}
+              >
+                Unselect all
+              </button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "6px 12px" }}>
+              {pkg.notifications.map(n => (
+                <label key={n.code} className="check">
+                  <input
+                    type="checkbox"
+                    checked={notifications.has(n.code)}
+                    onChange={e => {
+                      const next = new Set(notifications);
+                      if (e.target.checked) (next.add(n.code), unticked.current.delete(n.code));
+                      else (next.delete(n.code), unticked.current.add(n.code));
+                      setNotifications(next);
+                    }}
+                  />
+                  {n.title}
+                </label>
+              ))}
+            </div>
+            <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
+              Rows whose product doesn't send messages are booked without any.
+            </p>
+          </fieldset>
+        ) : null
+  );
+  /** The second screen's choices differ from the ones the rows were checked with. */
+  const optionsChanged = (j: Job) => {
+    const s = j.services || {};
+    const sent = new Set(s.notifications ?? (pkg?.notifications ?? []).map(n => n.code));
+    return (!!speed && speed !== (s.speed ?? "")) || (!!priority && priority !== (s.priority ?? "")) || sent.size !== notifications.size || [...notifications].some(c => !sent.has(c));
+  };
+  const applyOptions = async (j: Job) => {
+    const next = await api<Job & { rows: Rows }>(`${base}/${j.id}/options`, { method: "PATCH", body: { ...(speed ? { speed } : {}), ...(priority ? { priority } : {}), notifications: [...notifications] } });
+    setJob(next);
+    setRows(next.rows);
+    setFilter("all");
+    toast("Every row was checked and priced again.", "good");
+  };
 
   if (step === "loading") {
     title = bulk ? bulkTitle : `Import ${noun} from Excel`;
@@ -845,43 +907,6 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               </Select>
             </label>
           ) : null}
-          {pkg && (pkg.options.speeds?.length ?? 0) > 0 ? (
-            <label className="field">
-              <span>Delivery type</span>
-              <Select className="select" value={speed} onChange={e => setSpeed(e.target.value)}>
-                {pkg.options.speeds!.map(v => (
-                  <option key={v} value={v}>
-                    {typeName(v)}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          ) : null}
-          {pkg?.categories?.length && !config?.ai ? (
-            <label className="field">
-              <span>Category</span>
-              <Select className="select" value={category} onChange={e => setCategory(e.target.value)}>
-                <option value="">From the file / product</option>
-                {pkg.categories.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          ) : null}
-          {pkg?.priorities?.length ? (
-            <label className="field">
-              <span>Priority</span>
-              <Select className="select" value={priority} onChange={e => setPriority(e.target.value)}>
-                {pkg.priorities.map(x => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          ) : null}
           {pkg && cfg.kind !== "document" ? (
             <label className="field">
               <span>Product type</span>
@@ -897,69 +922,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           ) : null}
         </div>
         {choose ? <p className="muted" style={{ margin: 0 }}>Choose the merchant: the template's services, the choices above and the checks follow its package.</p> : null}
-        {(() => {
-          const chosen = [
-            speed ? `delivery type ${typeName(speed)}` : "",
-            productType && cfg.kind !== "document" ? `product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]}` : "",
-            category && !config?.ai ? `category ${pkg?.categories?.find(c => c.id === category)?.name}` : "",
-            priority ? `priority ${pkg?.priorities?.find(x => x.id === priority)?.name}` : "",
-          ].filter(Boolean);
-          return chosen.length ? (
-            <p className="muted" style={{ margin: 0 }}>
-              {`${chosen.join(", ").replace(/^./, c => c.toUpperCase())}: for every row (the price follows the delivery and product type).`}
-            </p>
-          ) : null;
-        })()}
+        {productType && cfg.kind !== "document" ? <p className="muted" style={{ margin: 0 }}>{`Product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]} for every row (the price follows it).`}</p> : null}
+        <p className="muted" style={{ margin: 0 }}>The delivery type, priority and messages are chosen on the next screen, with the file's rows.</p>
         {pkg && lastMile === "HUB_COLLECT" ? <p className="muted" style={{ margin: 0 }}>Hub Pickup: each order waits at the hub serving its recipient's zone; the recipient gets an SMS with the hub address and a collection code.</p> : null}
-        {pkg?.notifications?.length ? (
-          <fieldset style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px", margin: 0 }}>
-            <legend style={{ fontWeight: 600, fontSize: 13, padding: "0 4px" }}>{`Messages to send for these ${noun} (${notifications.size} of ${pkg.notifications.length})`}</legend>
-            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
-              <button
-                type="button"
-                className="button sm"
-                disabled={notifications.size === pkg.notifications.length}
-                onClick={() => {
-                  unticked.current.clear();
-                  setNotifications(new Set(pkg.notifications.map(n => n.code)));
-                }}
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                className="button sm"
-                disabled={notifications.size === 0}
-                onClick={() => {
-                  pkg.notifications.forEach(n => unticked.current.add(n.code));
-                  setNotifications(new Set());
-                }}
-              >
-                Unselect all
-              </button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "6px 12px" }}>
-              {pkg.notifications.map(n => (
-                <label key={n.code} className="check">
-                  <input
-                    type="checkbox"
-                    checked={notifications.has(n.code)}
-                    onChange={e => {
-                      const next = new Set(notifications);
-                      if (e.target.checked) (next.add(n.code), unticked.current.delete(n.code));
-                      else (next.delete(n.code), unticked.current.add(n.code));
-                      setNotifications(next);
-                    }}
-                  />
-                  {n.title}
-                </label>
-              ))}
-            </div>
-            <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
-              Rows whose product doesn't send messages are booked without any.
-            </p>
-          </fieldset>
-        ) : null}
         {fileDrop}
         {errorLine}
       </div>
@@ -1167,16 +1132,66 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       } else {
         title = `Preview · ${job.fileName || "upload"}`;
         const s = job.services || {};
-        const where = [
-          job.intake === "DROP_OFF" ? ` · drop-off at ${job.dropOffHub?.name || "hub"}` : s.firstMileLabel ? ` · ${s.firstMileLabel.toLowerCase()}` : cfg.forOps ? " · rider pickup" : "",
-          s.lastMileLabel ? ` · ${s.lastMileLabel.toLowerCase()}` : "",
-          s.speedLabel ? ` · delivery type ${s.speedLabel} (every row)` : "",
-          s.productTypeLabel ? ` · product type ${s.productTypeLabel} (every row)` : "",
-          s.categoryLabel ? ` · category ${s.categoryLabel} (every row)` : "",
-          s.priorityLabel ? ` · priority ${s.priorityLabel}` : "",
-          s.notifications ? ` · ${s.notifications.length} message${s.notifications.length === 1 ? "" : "s"}` : "",
-        ].join("");
-        subtitle = `${job.number}${where} · nothing is created until you confirm.`;
+        subtitle = `${job.number} · nothing is created until you confirm.`;
+        // The first screen's choices that the rows don't show: read-only here.
+        const merchantName = (cfg.merchants ?? []).find(m => m.id === (merchantId || cfg.merchantId))?.name;
+        const readOnly: [string, string][] = [
+          ...((merchantName ? [["Merchant", merchantName]] : []) as [string, string][]),
+          ["First mile", job.intake === "DROP_OFF" ? `Drop-off at ${job.dropOffHub?.name || "hub"}` : s.firstMileLabel || "Rider pickup"],
+          ...((s.lastMileLabel ? [["Last mile", s.lastMileLabel]] : []) as [string, string][]),
+          ...((s.productTypeLabel ? [["Product type", s.productTypeLabel]] : []) as [string, string][]),
+        ];
+        const changed = job.status === "VALIDATED" && optionsChanged(job);
+        const options = (
+          <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+            <div className="row" style={{ gap: 14, flexWrap: "wrap", fontSize: 13 }}>
+              {readOnly.map(([k, v]) => (
+                <span key={k}>
+                  <span className="muted">{k}: </span>
+                  <strong>{v}</strong>
+                </span>
+              ))}
+            </div>
+            {job.status === "VALIDATED" ? (
+              <>
+                <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  {pkg && (pkg.options.speeds?.length ?? 0) > 0 ? (
+                    <label className="field" style={{ minWidth: 200 }}>
+                      <span>Delivery type</span>
+                      <Select className="select" value={speed} onChange={e => setSpeed(e.target.value)}>
+                        {pkg.options.speeds!.map(v => (
+                          <option key={v} value={v}>
+                            {typeName(v)}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  ) : null}
+                  {pkg?.priorities?.length ? (
+                    <label className="field" style={{ minWidth: 200 }}>
+                      <span>Priority</span>
+                      <Select className="select" value={priority} onChange={e => setPriority(e.target.value)}>
+                        {pkg.priorities.map(x => (
+                          <option key={x.id} value={x.id}>
+                            {x.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  ) : null}
+                  {changed ? (
+                    <button type="button" className="button primary" disabled={busy} aria-busy={busy || undefined} onClick={run(() => applyOptions(job))}>
+                      Apply to every row
+                    </button>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 12.5, paddingBottom: 8 }}>For every row (the price follows the delivery type).</span>
+                  )}
+                </div>
+                {messagesBox}
+              </>
+            ) : null}
+          </div>
+        );
         const toBook = c.valid + c.incomplete;
         const notes = [
           job.ignoredColumns?.length ? `Ignored columns (${cfg.forOps ? "not matched to a field" : "not in the template"}): ${job.ignoredColumns.join(", ")}.` : "",
@@ -1188,6 +1203,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         ].filter(Boolean);
         body = (
           <>
+            {options}
             {summary([
               [`${num(c.rows)} rows`, "info"],
               [`${num(c.valid)} valid`, "good"],
@@ -1229,7 +1245,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               </button>
             ) : null}
           </div>
-          <button type="button" className="button primary" disabled={!toDo || busy} aria-busy={busy || undefined} onClick={run(commit)}>
+          <button type="button" className="button primary" disabled={!toDo || busy || (!bulk && job.status === "VALIDATED" && optionsChanged(job))} title={!bulk && optionsChanged(job) ? "Apply the delivery type, priority and messages first" : undefined} aria-busy={busy || undefined} onClick={run(commit)}>
             {bulk ? (toDo ? `Apply ${num(toDo)} row${toDo === 1 ? "" : "s"}` : "Nothing to apply") : toDo ? `Create ${count(toDo)}` : "Nothing to create"}
           </button>
         </>

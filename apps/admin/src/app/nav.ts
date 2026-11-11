@@ -37,7 +37,6 @@ export const PAGES: PageDef[] = [
   { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh", group: "platform", sub: "Operational settings" },
   { id: "Receiver relations", label: "Receiver relations", slug: "receiver-relations", icon: "users", group: "platform", sub: "Operational settings" },
   { id: "Fail delivery reasons", label: "Fail delivery reasons", slug: "fail-delivery-reasons", icon: "alert", group: "platform", sub: "Operational settings" },
-  { id: "Product categories", label: "Product categories", slug: "product-categories", icon: "grid", group: "platform", sub: "Operational settings" },
   { id: "Products", label: "Products", slug: "products", icon: "box", group: "platform", sub: "Operational settings" },
   { id: "Priorities", label: "Priorities", slug: "priorities", icon: "alert", group: "platform", sub: "Operational settings" },
   { id: "Delivery types", label: "Delivery types", slug: "delivery-types", icon: "truck", group: "platform", sub: "Operational settings" },

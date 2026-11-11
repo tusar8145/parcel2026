@@ -137,6 +137,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
     isDoc(s)
       ? [
           ["Service", s.service],
+          ["Priority", s.priority ?? "—"],
           ["Delivery", s.deliveryMode],
           ["Document type", s.product ?? s.contents ?? "—"],
           ["Reference", s.orderRef ?? "—"],
@@ -149,6 +150,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
         ]
       : [
           ["Service", s.service],
+          ["Priority", s.priority ?? "—"],
           ["Delivery", s.deliveryMode],
           ["Product type", s.productType],
           ["Product", s.product ?? s.contents ?? "—"],
@@ -222,6 +224,7 @@ const detailItems = (s: ShipmentDoc): [string, string][] =>
   isDoc(s)
     ? [
         ["Service", s.service],
+        ["Priority", s.priority ?? "—"],
         ["Delivery", s.deliveryMode],
         ["Document type", s.product ?? s.contents ?? "—"],
         ["Reference", s.orderRef ?? "—"],
@@ -230,6 +233,7 @@ const detailItems = (s: ShipmentDoc): [string, string][] =>
       ]
     : [
         ["Service", s.service],
+        ["Priority", s.priority ?? "—"],
         ["Delivery", s.deliveryMode],
         ["Product type", s.productType],
         ["Product", s.product ?? s.contents ?? "—"],
@@ -292,7 +296,7 @@ function quarterInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number,
   pdf.text("DELIVER TO", tx, cy, { size: 5.5, bold: true, color: COLOR.faint });
   cy += 7;
   let fy = cy;
-  fy += pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, fy, { size: 7.8, bold: true, width: half, maxLines: 2 });
+  fy += pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, fy, { size: 7.8, bold: true, width: half, maxLines: 4 });
   if (s.sender.phone) fy += pdf.text(s.sender.phone, ix, fy, { size: 7, width: half, maxLines: 1 });
   const origin = s.intake === "DROP_OFF" ? `Dropped off at ${s.originHub?.name ?? "hub"}` : s.originHub ? `Origin hub: ${s.originHub.name}` : "";
   if (origin) fy += pdf.text(origin, ix, fy, { size: 6.5, color: COLOR.muted, width: half, maxLines: 2 });
@@ -308,13 +312,16 @@ function quarterInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number,
   // Shipment details, two columns of label: value.
   const items = detailItems(s);
   const colW = iw / 2;
-  items.forEach(([k, v], i) => {
-    const gx = ix + (i % 2) * colW;
-    const gy = cy + Math.floor(i / 2) * 11;
-    pdf.text(`${k}:`, gx, gy, { size: 6.3, color: COLOR.muted, width: colW * 0.46, maxLines: 1 });
-    pdf.text(v, gx + colW * 0.46, gy, { size: 6.6, bold: true, width: colW * 0.54 - 2, maxLines: 1 });
-  });
-  cy += Math.ceil(items.length / 2) * 11 + 3;
+  for (let i = 0; i < items.length; i += 2) {
+    let rowH = 0;
+    items.slice(i, i + 2).forEach(([k, v], j) => {
+      const gx = ix + j * colW;
+      const kh = pdf.text(`${k}:`, gx, cy, { size: 6.3, color: COLOR.muted, width: colW * 0.36 - 2, maxLines: 2 });
+      rowH = Math.max(rowH, kh, pdf.text(v, gx + colW * 0.36, cy, { size: 6.6, bold: true, width: colW * 0.64 - 3, maxLines: 5 }));
+    });
+    cy += Math.max(rowH, 9) + 2;
+  }
+  cy += 3;
 
   // The bottom: "Received by" lines on the left, QR on the right, payment under them.
   const qr = 48;
@@ -371,7 +378,7 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   pdf.text("FROM", ix, cy, { size: 5.5, bold: true, color: COLOR.faint });
   pdf.text("TO", ix + half + 6, cy, { size: 5.5, bold: true, color: COLOR.faint });
   cy += 7;
-  const a = pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, cy, { size: fs, bold: true, width: half, maxLines: 2 });
+  const a = pdf.text(`${s.merchant}${s.merchantCode ? ` (${s.merchantCode})` : ""}`, ix, cy, { size: fs, bold: true, width: half, maxLines: 3 });
   const b = pdf.text(`${s.recipient.name ?? "Recipient pending"} · ${s.recipient.phone ?? "phone pending"}`, ix + half + 6, cy, { size: fs, bold: true, width: half, maxLines: 2 });
   cy += Math.max(a, b);
   cy += pdf.text(addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending", ix + half + 6, cy, { size: fs - 0.5, width: half, maxLines: dense ? 2 : 3, color: COLOR.muted });
@@ -379,9 +386,11 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   const hubReceived = fmtDate(s.hubReceivedAt);
   const grid: [string, string][] = [
     ["Service", s.service],
+    ["Priority", s.priority ?? "—"],
     ...((isDoc(s)
       ? [["Document type", s.product ?? "—"]]
       : [
+          ["Product", s.product ?? "—"],
           ["Product type", s.productType],
           ["Weight", `${s.weightKg} kg`],
           ["COD", s.codAmount > 0 ? taka(s.codAmount) : "Prepaid"],
@@ -392,13 +401,15 @@ function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y:
   ];
   const cols = dense ? 4 : 3;
   const cw = iw / cols;
-  grid.forEach(([k, v], i) => {
-    const gx = ix + (i % cols) * cw;
-    const gy = cy + Math.floor(i / cols) * (dense ? 17 : 21);
-    pdf.text(k.toUpperCase(), gx, gy, { size: 5.3, bold: true, color: COLOR.faint, width: cw - 3 });
-    pdf.text(v, gx, gy + 6.5, { size: dense ? 7 : 8, bold: true, width: cw - 3, maxLines: 1 });
-  });
-  cy += Math.ceil(grid.length / cols) * (dense ? 17 : 21);
+  for (let i = 0; i < grid.length; i += cols) {
+    let rowH = 0;
+    grid.slice(i, i + cols).forEach(([k, v], j) => {
+      const gx = ix + j * cw;
+      pdf.text(k.toUpperCase(), gx, cy, { size: 5.3, bold: true, color: COLOR.faint, width: cw - 3, maxLines: 1 });
+      rowH = Math.max(rowH, pdf.text(v, gx, cy + 6.5, { size: dense ? 7 : 8, bold: true, width: cw - 3, maxLines: 4 }));
+    });
+    cy += 6.5 + Math.max(rowH, dense ? 8 : 9) + (dense ? 2 : 4);
+  }
   if (s.incomplete && !dense && cy + 12 < y + h) {
     pdf.box(ix, cy, iw, 11, { fill: COLOR.danger, radius: 2 });
     pdf.text("DETAILS PENDING", ix, cy + 1.5, { size: 6.5, bold: true, color: "#fff", width: iw, align: "center" });
@@ -458,6 +469,7 @@ function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean)
     ["To", `${s.recipient.name ?? "Recipient pending"}, ${s.recipient.phone ?? "phone pending"}`],
     ["Address", addressText(s.address.street, s.address.area, s.address.zone, s.address.district) || "Address pending"],
     ["Service", `${s.service} · ${s.deliveryMode}`],
+    ...((s.priority ? [["Priority", s.priority]] : []) as [string, string][]),
     ...((isDoc(s)
       ? [["Doc. type", s.product ?? "—"]]
       : [

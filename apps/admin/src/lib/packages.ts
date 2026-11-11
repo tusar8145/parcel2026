@@ -49,8 +49,11 @@ export interface Product {
   type: string;
   active: boolean;
   parcels: number;
-  categoryId: string | null;
-  categoryName: string | null;
+  /** Where its parcels' messages go. */
+  notifySms: boolean;
+  notifyEmail: boolean;
+  notifyPush: boolean;
+  aiCreated?: boolean;
 }
 /** A product category (its channels decide where its parcels' messages go). */
 export interface Category {

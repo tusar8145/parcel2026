@@ -7,6 +7,13 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.34.0 — 2026-11-12
+- Product categories are gone from everywhere (menu, products, booking forms, Excel templates, the import window and the AI). Each product now has its own SMS, email and push switches (Operational settings › Products: in Add / Edit, or click SMS / Email / Push in the list); every product took its old category's settings.
+- Excel import, the product: the system matches the file's product name to its own (the same product under another spelling, size or colour, else the most similar one). Nothing close: the parcel is booked with the file's name. The parcel keeps both: the system's product and the name the file wrote; prints and screens show the file's name.
+- AI import on: a name the system can't match goes to the AI, which picks the existing product or creates a new one; a new product's SMS / email / push come from the super admin's rule (AI import › Channel rule for new products).
+- Import window: Delivery type, Priority and the messages to send are chosen on the second screen, with the file's rows (the first one preselected). Changing them checks and prices every row again ("Apply to every row"). The first screen's choices (merchant, first mile, last mile, product type) are shown there read-only.
+- Prints (A4, 4 and 8 per page, labels, receipts): the delivery type and the priority are printed; long values (product, merchant, labels) go on to the next line instead of being cut.
+
 ## 1.33.0 — 2026-11-11
 - Excel import: Delivery type and Priority are chosen in the import window for the whole file (the first one is selected when it opens; there is no "From the file" any more). The Excel templates no longer have Delivery type and Priority columns.
 - AI import on: the import window has no Category choice and the template has no Category column. In the preview each row's Category shows before its Product: the product's category, or the one the AI chose (new products and categories are added to the system).

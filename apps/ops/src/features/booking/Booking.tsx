@@ -49,9 +49,9 @@ interface Merchant {
 interface PackageView {
   options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
-  products?: { id: string; name: string; type: string; categoryId?: string | null; categoryName?: string | null }[];
-  /** Categories (their channels decide where messages go) and priorities (tags; one is the default). */
-  categories?: { id: string; name: string; channels: string[] }[];
+  /** Products with their message channels (sms, email, push: where their parcels' messages go). */
+  products?: { id: string; name: string; type: string; channels?: string[] }[];
+  /** Priorities (tags; one is the default). */
   priorities?: { id: string; name: string; isDefault: boolean }[];
   notifications?: { code: string; title: string }[];
   dropHubs?: { id: string; name: string; type?: string }[];
@@ -155,9 +155,8 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   const view = pkg?.view ?? null;
   const dropHubsOf = (v: PackageView) => (ops.myHubs ?? ops.hubs.filter(h => h.active !== false)).map(h => ({ id: h.id, name: h.name, type: h.type })) || v.dropHubs || [];
   const product = view?.products?.find(p => p.name === parcel.product) ?? null;
-  // The category: chosen, else the product's. One without SMS and email sends no messages to tick.
-  const category = view?.categories?.find(c => c.id === (svc.category || product?.categoryId)) ?? null;
-  const silent = !!category && !category.channels.includes("sms") && !category.channels.includes("email");
+  // A product without SMS and email sends no messages to tick.
+  const silent = !!product?.channels && !product.channels.includes("sms") && !product.channels.includes("email");
 
   /** The service as sent (order-services.js read): the select's value, else the package's only / default way. */
   const service = useMemo(() => {
@@ -173,7 +172,6 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
       ...(firstMile === "HUB_DROP" && svc.dropHubId ? { dropHubId: svc.dropHubId } : {}),
       lastMile,
       speed: (o.speeds.length > 1 ? svc.speed : "") || o.speeds[0] || "REGULAR",
-      ...(svc.category ? { category: svc.category } : {}),
       ...(svc.priority ? { priority: svc.priority } : {}),
       ...(parcel.product ? { product: parcel.product } : {}),
       openBox: o.openBox ? svc.openBox : false,
@@ -351,8 +349,8 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
     </div>
   );
   const o = view?.options;
-  // Products in the catalog's order (by category), narrowed to the chosen category.
-  const sortedProducts = (view?.products ?? []).filter(p => !svc.category || p.categoryId === svc.category);
+  // Products in the catalog's order.
+  const sortedProducts = view?.products ?? [];
   const dropHubs = view ? dropHubsOf(view) : [];
   const notes = view?.notifications ?? [];
   const onCount = notes.filter(n => !svc.off.has(n.code)).length;
@@ -576,31 +574,6 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
           />
 
           {section("Parcel")}
-          {view?.categories?.length
-            ? field(
-                "category",
-                "Category",
-                <Select
-                  id="bk_category"
-                  className="select"
-                  value={svc.category}
-                  onChange={e => {
-                    const next = e.target.value;
-                    setSvc(s => ({ ...s, category: next }));
-                    // A product of another category no longer fits.
-                    if (next && product && product.categoryId !== next) setParcel(p => ({ ...p, product: "" }));
-                  }}
-                  disabled={!view}
-                >
-                  <option value="">{product?.categoryName ? `From the product (${product.categoryName})` : "From the product"}</option>
-                  {view.categories.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>,
-              )
-            : null}
           {field(
             "product",
             "Product (optional)",
@@ -609,7 +582,6 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
               {sortedProducts.map(p => (
                 <option key={p.id} value={p.name}>
                   {p.name} · {view?.labels.productType?.[p.type] || p.type}
-                  {svc.category || !p.categoryName ? "" : ` · ${p.categoryName}`}
                 </option>
               ))}
             </Select>,

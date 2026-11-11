@@ -193,12 +193,12 @@ describe("service packages", () => {
       const sheet = readZip(tpl.rawPayload, { maxBytes: 50_000_000 }).get("xl/worksheets/sheet1.xml")!.toString();
       expect(sheet).toContain("<t>Open box</t>");
       expect(sheet).not.toContain("<t>Delivery type</t>"); // chosen in the import window
-      expect(sheet).toContain("<t>Category</t>");
+      expect(sheet).not.toContain("<t>Category</t>"); // no product categories
       expect(sheet).not.toContain("<t>Priority</t>");
       expect(sheet).not.toContain("<t>COD amount (৳)</t>");
       expect(sheet).not.toContain("<t>Cash on delivery</t>");
-      // A category with SMS, email and push off: its rows are booked with no channel, whatever the modal ticks.
-      await ctx.prisma.productCategory.updateMany({ where: { segment: "ECOMMERCE", name: "Food & Grocery" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
+      // A product with SMS, email and push off: its rows are booked with no channel, whatever the window ticks.
+      await ctx.prisma.parcelProduct.updateMany({ where: { segment: "ECOMMERCE", name: "Honey" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
       const res = await ctx.api("POST", "/imports/validate", {
         token: owner.token,
         body: {
@@ -219,46 +219,39 @@ describe("service packages", () => {
       // Express to another district is fine (any delivery type on any route).
       expect(rows[1]).toMatchObject({ status: "VALID", charge: P.differentDistrict + P.deliveryFees.EXPRESS });
       expect(rows[0]).toMatchObject({ messagesOff: false, messagesNote: null });
-      expect(rows[2]).toMatchObject({ status: "VALID", messagesOff: true, messagesNote: "This category doesn't send SMS or email" });
+      expect(rows[2]).toMatchObject({ status: "VALID", messagesOff: true, messagesNote: "This product doesn't send SMS or email" });
       expect(res.body.totals).toEqual({ rows: 3, charge: P.sameDistrict + 12 + rows[1].charge + rows[2].charge });
       expect(res.body.services).toMatchObject({ lastMile: "DOORSTEP", notifications: ["notify.delivered"] });
       await ctx.api("POST", `/imports/${res.body.id}/commit`, { token: owner.token });
       const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-1" } });
       expect(parcel).toMatchObject({ openBox: true, productName: "Books", productType: "BOOKS", notifications: ["notify.delivered"] });
-      expect(await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-3" } })).toMatchObject({ productName: "Honey", categoryName: "Food & Grocery", notifyChannels: [] });
+      expect(await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantOrderRef: "PK-3" } })).toMatchObject({ productName: "Honey", notifyChannels: [] });
     });
   });
 
   describe("notifications, proof, gating", () => {
-    it("products belong to a category of their list; editing other fields keeps it", async () => {
+    it("products have their own SMS / email / push switches (default on); editing other fields keeps them", async () => {
       const { token } = await admin();
       await ctx.api("GET", "/packages", { token }); // set-up
-      const categories = (await ctx.api("GET", "/product-categories?segment=ECOMMERCE")).body as { id: string; name: string }[];
-      const fashion = categories.find(c => c.name === "Fashion & Clothing")!;
-      const bankCategory = ((await ctx.api("GET", "/product-categories?segment=BANKING_FINANCIAL")).body as { id: string }[])[0];
-      expect((await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "No category" } })).status).toBe(422);
-      expect((await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Wrong list", categoryId: bankCategory.id } })).body.error.code).toBe("UNKNOWN_CATEGORY");
-      const created = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Quiet goods", type: "REGULAR", categoryId: fashion.id } });
+      const created = await ctx.api("POST", "/parcel-products", { token, body: { segment: "ECOMMERCE", name: "Quiet goods", type: "REGULAR", notifySms: false } });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
-      expect(created.body).toMatchObject({ name: "Quiet goods", categoryId: fashion.id });
-      // A PATCH of another field doesn't reset the category (or the type).
+      expect(created.body).toMatchObject({ name: "Quiet goods", notifySms: false, notifyEmail: true, notifyPush: true });
+      // A PATCH of another field doesn't reset the switches (or the type).
       await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { type: "BOOKS" } });
-      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ categoryId: fashion.id, type: "BOOKS" });
-      await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { active: false } });
-      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ categoryId: fashion.id, type: "BOOKS", active: false });
-      const listed = (await ctx.api("GET", "/parcel-products?segment=ECOMMERCE&includeInactive=true", { token })).body as { name: string; categoryName: string }[];
-      expect(listed.find(p => p.name === "Quiet goods")?.categoryName).toBe("Fashion & Clothing");
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ notifySms: false, type: "BOOKS" });
+      await ctx.api("PATCH", `/parcel-products/${created.body.id}`, { token, body: { notifyPush: false, active: false } });
+      expect(await ctx.prisma.parcelProduct.findUniqueOrThrow({ where: { id: created.body.id } })).toMatchObject({ notifySms: false, notifyEmail: true, notifyPush: false, type: "BOOKS", active: false });
       expect(await ctx.prisma.auditLog.count({ where: { action: "parcel_product.update", entityId: created.body.id } })).toBe(2);
     });
 
-    it("stores the parcel's messages at booking (default all, unticked left out; a category's channels off send nothing) and only sends those", async () => {
+    it("stores the parcel's messages at booking (default all, unticked left out; a product's channels off send nothing) and only sends those", async () => {
       const { owner } = await merchant();
       const view = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { notifications: { code: string }[]; products: { name: string; sendMessages: boolean }[] };
       const all = view.notifications.map(n => n.code);
       expect(all).toEqual(expect.arrayContaining(["notify.booked", "notify.cancelled", "notify.delivery_code", "notify.collection"]));
-      await ctx.prisma.productCategory.updateMany({ where: { segment: "ECOMMERCE", name: "Books, Stationery & Documents" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
-      const me = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { categories: { name: string; channels: string[] }[] };
-      expect(me.categories.find(c => c.name === "Books, Stationery & Documents")?.channels).toEqual([]);
+      await ctx.prisma.parcelProduct.updateMany({ where: { segment: "ECOMMERCE", name: "Books" }, data: { notifySms: false, notifyEmail: false, notifyPush: false } });
+      const me = (await ctx.api("GET", "/packages/me", { token: owner.token })).body as { products: { name: string; channels: string[] }[] };
+      expect(me.products.find(p => p.name === "Books")?.channels).toEqual([]);
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
       const sent = (template: string, trackingId: string) => ctx.prisma.outboxMessage.count({ where: { template, body: { contains: trackingId } } });
 
@@ -276,10 +269,10 @@ describe("service packages", () => {
       expect(await sent("parcel.booked", unticked.body.trackingId)).toBe(0);
       expect(unticked.body.proofMethods).toContain("OTP"); // the delivery code is still sent
 
-      // A product of a category with every channel off: no channel, whatever was ticked; nothing sent; no OTP proof.
+      // A product with every channel off: no channel, whatever was ticked; nothing sent; no OTP proof.
       const silent = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ product: "Books", notifications: all }) });
       expect(silent.status, JSON.stringify(silent.body)).toBe(201);
-      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: silent.body.trackingId } })).toMatchObject({ categoryName: "Books, Stationery & Documents", notifyChannels: [] });
+      expect(await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: silent.body.trackingId } })).toMatchObject({ productName: "Books", notifyChannels: [] });
       expect(await sent("parcel.booked", silent.body.trackingId)).toBe(0);
       expect(silent.body.proofMethods).toEqual(["SIGNATURE", "PHOTO"]);
 

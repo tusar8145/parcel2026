@@ -1,7 +1,7 @@
 /**
  * Operational settings › AI import (GET / PUT /imports/ai, GET /imports/ai/usage): Claude matches an Excel file's
- * product names and addresses that the lists don't, creating products, categories and zones (tagged AI created).
- * On / off, the monthly limit in USD, the channel rule for new categories, this month's spend and the log.
+ * product names and addresses that the lists don't, creating products and zones (tagged AI created).
+ * On / off, the monthly limit in USD, the channel rule for new products, this month's spend and the log.
  */
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -97,13 +97,13 @@ export default function AiImport() {
       <PageHeading
         eyebrow="Operational settings"
         title="AI import"
-        subtitle="Excel imports (merchants and operations): product names and addresses the lists don't match are matched by AI. A new product, category or zone is created at once (tagged AI created; a new zone is served by the nearest zone's hub). Each decision is remembered, so the same name doesn't go to the AI again."
+        subtitle="Excel imports (merchants and operations): product names and addresses the system can't match itself go to AI. A new product or zone is created at once (tagged AI created; a new zone is served by the nearest zone's hub). Each decision is remembered, so the same name doesn't go to the AI again."
       />
       {!o.apiKey ? <div className="callout warn" style={{ marginBottom: 12 }}>No Anthropic API key on the server (ANTHROPIC_API_KEY): the AI can't run.</div> : null}
       <div className="metrics" style={{ marginBottom: 16 }}>
         <Metric label="Spent this month" icon="chart" value={usd(m.costUsd)} foot={`of ${usd(o.settings.monthlyLimitUsd)} (${used}%)`} note={`${usd(m.remainingUsd)} left`} />
         <Metric label="Files" icon="sheet" value={num(m.imports)} foot={`${num(m.calls)} AI calls`} note={`${num(m.products + m.places)} names sent`} />
-        <Metric label="Created this month" icon="box" value={num(m.productsCreated + m.categoriesCreated + m.zonesCreated)} foot={`${num(m.productsCreated)} prod · ${num(m.categoriesCreated)} cat · ${num(m.zonesCreated)} zones`} note={`all time ${num(o.created.products + o.created.categories + o.created.zones)}`} />
+        <Metric label="Created this month" icon="box" value={num(m.productsCreated + m.zonesCreated)} foot={`${num(m.productsCreated)} products · ${num(m.zonesCreated)} zones`} note={`all time ${num(o.created.products + o.created.zones)}`} />
         <Metric label="Tokens this month" icon="refresh" value={num(m.tokens.input + m.tokens.output)} foot={`${num(m.tokens.input)} in · ${num(m.tokens.output)} out`} note={`+${num(m.tokens.cacheRead + m.tokens.cacheWrite)} cached`} />
       </div>
       <Panel
@@ -117,7 +117,7 @@ export default function AiImport() {
             <input className="input" type="number" min={0} step={0.5} value={limit} onChange={e => setLimit(e.target.value)} />
           </label>
           <label className="field">
-            <span>Channel rule for new categories</span>
+            <span>Channel rule for new products</span>
             <textarea
               className="textarea"
               rows={4}
@@ -126,7 +126,7 @@ export default function AiImport() {
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
             />
-            <small className="faint">When the AI creates a category, it sets its SMS, email and push from this rule (empty: all on). The super admin can change them later in Product categories.</small>
+            <small className="faint">When the AI creates a product, it sets its SMS, email and push from this rule (empty: all on). The super admin can change them later in Products.</small>
           </label>
           <div>
             <Button type="submit" variant="primary" disabled={busy}>
@@ -179,7 +179,7 @@ export default function AiImport() {
                     {num(r.places)}
                     <span className="sub">{num(r.placesMatched)} placed</span>
                   </td>
-                  <td>{[r.productsCreated ? `${r.productsCreated} products` : "", r.categoriesCreated ? `${r.categoriesCreated} categories` : "", r.zonesCreated ? `${r.zonesCreated} zones` : ""].filter(Boolean).join(" · ") || "—"}</td>
+                  <td>{[r.productsCreated ? `${r.productsCreated} products` : "", r.zonesCreated ? `${r.zonesCreated} zones` : ""].filter(Boolean).join(" · ") || "—"}</td>
                   <td className="num">
                     {num(r.inputTokens + r.outputTokens)}
                     <span className="sub">{`${r.calls} call${r.calls === 1 ? "" : "s"} · ${(r.ms / 1000).toFixed(1)} s`}</span>

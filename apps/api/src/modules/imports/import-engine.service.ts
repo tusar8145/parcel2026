@@ -28,6 +28,7 @@ import { PricingService, type Catalog } from "../pricing/pricing.service";
 import type { BookingInput } from "../parcels/parcels.service";
 import type { MissingField } from "../parcels/incomplete";
 import { resolvePlace } from "../parcels/places";
+import { matchProduct } from "./product-match";
 import { PackagesService, type BookingProduct, type BookingTags, type HubRef, type PackageQuote, type PackageSubject } from "../packages/packages.service";
 import { CatalogService, listOf } from "../packages/catalog.service";
 import type { PackageView } from "../packages/package-resolver";
@@ -38,7 +39,8 @@ import type { ImportSettings } from "./import-config.service";
  * `__scan`: the Scan ID of a "Scan with phone" row (parcel-scans); the booked parcel keeps its photo.
  * `__auto`: place columns picked from the address (import-places.ts), comma-separated.
  */
-export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto", string>>;
+/** `__label`: the product as the file wrote it, when the AI import replaced the cell with the system product. */
+export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label", string>>;
 export interface CellError {
   column: string;
   message: string;
@@ -94,8 +96,10 @@ export interface RowResult {
   destination?: { district: string; zone: string };
   /** Priced and checked against the package. */
   quote?: PackageQuote;
-  product?: (Pick<BookingProduct, "name" | "type" | "category"> & { id: string | null }) | null;
-  /** The row's category (named or the modal's) and priority (named, the modal's or the default). */
+  product?: (Pick<BookingProduct, "name" | "type" | "notifySms" | "notifyEmail" | "notifyPush"> & { id: string | null; label?: string | null }) | null;
+  /** The product as the file wrote it (kept on the parcel; prints show it). */
+  label?: string;
+  /** The row's priority (the window's or the default). */
   tags?: BookingTags;
   /** E-commerce, Banking & Financial: a product name that isn't one of the listed products (booked as written, priced as Regular). */
   freeProduct?: string;
@@ -289,7 +293,8 @@ export class ImportEngineService {
       if (r.status === "ERROR" || !r.booking) continue;
       const b = r.booking;
       try {
-        const product = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR", category: null } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
+        const resolved = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR" } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
+        const product = resolved ? { ...resolved, label: r.label ?? null } : null;
         const quote = await this.packages.quote(
           subject,
           {
@@ -369,7 +374,6 @@ export class ImportEngineService {
     const banking = isBanking(ctx.pkg.segment);
     // The modal's delivery type, category and priority, when chosen, overwrite the file's columns (the preview shows them).
     if (ctx.services.speed) cells.service_level = ctx.deliveryTypes.find(t => t.code === ctx.services.speed)?.name ?? ctx.services.speed;
-    if (ctx.services.category) cells.category = ctx.categories.find(c => c.id === ctx.services.category)?.name ?? cells.category;
     if (ctx.services.priority) cells.priority = ctx.priorities.find(p => p.id === ctx.services.priority)?.name ?? cells.priority;
     const raw = (key: ColumnKey) => (cells[key] ?? "").trim();
     // Required columns (super admin), then defaults for empty cells.
@@ -453,11 +457,6 @@ export class ImportEngineService {
       else err("service_level", `"${serviceText}" is not a delivery type (${offered.map(t => t.name).join(", ")})`);
     }
     // Category (optional; empty = the product's) and priority (optional; empty = the default).
-    let rowCategory: EngineContext["categories"][number] | null = null;
-    if (value("category")) {
-      rowCategory = ctx.categories.find(c => lower(c.name) === lower(value("category"))) ?? null;
-      if (!rowCategory) err("category", `"${value("category")}" is not a category (${ctx.lists.categories.join(", ")})`);
-    }
     let rowPriority = ctx.priorities.find(p => p.isDefault) ?? ctx.priorities[0] ?? null;
     if (value("priority")) {
       const hit = ctx.priorities.find(p => lower(p.name) === lower(value("priority")));
@@ -470,16 +469,17 @@ export class ImportEngineService {
     const instructions = text("instructions", 500);
     const openBox = banking ? false : (yesNo("open_box") ?? false);
     const ref = text("order_ref", 80);
-    // Product (optional): the category's list, by its dropdown label or its name; its type prices the row.
-    // E-commerce and Banking & Financial take any name: one that isn't listed is booked as written and priced as Regular.
+    // Product (optional): the system product the file's name means: the same name or label, the same product under
+    // another spelling (plural, size, colour), else the most similar one when it is close enough. Nothing close: booked
+    // as written (priced as Regular, every message channel). The file's own name is kept on the parcel (prints show it).
     let product: string | undefined;
     let freeProduct: string | undefined;
+    const written = (cells.__label ?? "").trim() || value("product_type").replace(/\s+/g, " ").slice(0, 120);
     if (value("product_type")) {
       const wanted = productNameOfCell(value("product_type"));
-      const hit = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type")));
+      const hit = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type"))) ?? matchProduct(wanted, ctx.products)?.product;
       if (hit) product = hit.name;
-      else if (ctx.kind === "ecommerce" || ctx.kind === "document") freeProduct = value("product_type").replace(/\s+/g, " ").slice(0, 120);
-      else err("product_type", `"${value("product_type")}" is not an option (choose a product of the ${SEGMENT_LABEL[ctx.pkg.segment]} list)`);
+      else freeProduct = value("product_type").replace(/\s+/g, " ").slice(0, 120);
     }
     let codAmount = 0;
     if (!banking) codAmount = number("cod_amount", 0, 1_000_000, "") ?? 0;
@@ -544,7 +544,8 @@ export class ImportEngineService {
     };
     result.booking = booking;
     result.freeProduct = freeProduct;
-    result.tags = { ...(rowCategory ? { category: rowCategory } : {}), priority: rowPriority ? { id: rowPriority.id, name: rowPriority.name } : null };
+    result.tags = { priority: rowPriority ? { id: rowPriority.id, name: rowPriority.name } : null };
+    if (written) result.label = written;
     result.destination = destination;
     result.status = result.missing.length ? "INCOMPLETE" : "VALID";
     // The content hash keeps the fields of the older templates in place (re-uploads of older files stay

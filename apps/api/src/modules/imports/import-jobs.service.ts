@@ -671,8 +671,6 @@ export class ImportJobsService implements OnApplicationBootstrap {
         notificationLabels: services.notifications ? PARCEL_NOTIFICATIONS.filter(n => services.notifications!.includes(n.code)).map(n => `${n.label} (${n.audience})`) : null,
         speed: services.speed ?? null,
         speedLabel: services.speed ? await this.packages.deliveryTypeName(services.speed) : null,
-        category: services.category ?? null,
-        categoryLabel: services.category ? ((await this.prisma.productCategory.findUnique({ where: { id: services.category }, select: { name: true } }))?.name ?? null) : null,
         priority: services.priority ?? null,
         priorityLabel: services.priority ? ((await this.prisma.parcelPriority.findUnique({ where: { id: services.priority }, select: { name: true } }))?.name ?? null) : null,
         productType: services.productType ?? null,
@@ -709,19 +707,12 @@ export class ImportJobsService implements OnApplicationBootstrap {
   /** Rows as the preview shows them (errors with their column header, price lines, messages switch, places picked from the address). */
   private async rowItems(job: ImportJob, rows: ImportRow[]) {
     const headerOf = this.headerOf(job);
-    // Categories with SMS and email off: their rows (the row's category, else its product's) are booked with no
-    // SMS or email, whatever the modal ticks.
+    // Products with SMS and email off: their rows are booked with no SMS or email, whatever the window ticks.
     const segment = productSegmentOf(kindKeyOf(job.kind));
-    const categories = await this.prisma.productCategory.findMany({ where: { segment }, select: { id: true, name: true, notifySms: true, notifyEmail: true } });
-    const products = await this.prisma.parcelProduct.findMany({ where: { segment }, select: { name: true, categoryId: true } });
-    const silentCategory = new Set(categories.filter(c => !c.notifySms && !c.notifyEmail).flatMap(c => [c.id, c.name.toLowerCase()]));
-    const categoryOfProduct = new Map(products.map(p => [p.name.toLowerCase(), p.categoryId ?? ""]));
+    const silent = new Set((await this.prisma.parcelProduct.findMany({ where: { segment, notifySms: false, notifyEmail: false }, select: { name: true } })).map(p => p.name.toLowerCase()));
     const messagesOff = (cells: unknown) => {
-      const c = (cells ?? {}) as Record<string, unknown>;
-      const named = String(c.category ?? "").trim().toLowerCase();
-      if (named) return silentCategory.has(named);
-      const product = productNameOfCell(String(c.product_type ?? ""));
-      return !!product && silentCategory.has(categoryOfProduct.get(product) ?? "");
+      const product = productNameOfCell(String(((cells ?? {}) as Record<string, unknown>).product_type ?? ""));
+      return !!product && silent.has(product);
     };
     return rows.map(r => {
       const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
@@ -737,9 +728,9 @@ export class ImportJobsService implements OnApplicationBootstrap {
         charge: r.charge == null ? null : Number(r.charge),
         lines: r.priceLines ? displayPriceLines(r.priceLines as { code: string; label: string; amount: number }[], segmentOf(kindKeyOf(job.kind))) : null,
         trackingId: r.trackingId,
-        /** The row's category (or its product's) sends no SMS or email, whatever the modal ticks. */
+        /** The row's product sends no SMS or email, whatever the window ticks. */
         messagesOff: messagesOff(r.cells),
-        messagesNote: messagesOff(r.cells) ? "This category doesn't send SMS or email" : null,
+        messagesNote: messagesOff(r.cells) ? "This product doesn't send SMS or email" : null,
       };
     });
   }
@@ -815,6 +806,63 @@ export class ImportJobsService implements OnApplicationBootstrap {
     });
     const [item] = await this.rowItems(updated.fresh, [updated.saved]);
     return { row: item, job: await this.view(updated.fresh) };
+  }
+
+  /**
+   * The import window's second screen: the delivery type, priority and messages for the whole file, changed after it
+   * was checked. Every row is checked and priced again; the file's counts follow.
+   */
+  async updateOptions(actor: Actor, id: string, input: { speed?: string; priority?: string; notifications?: string[] }, meta: RequestMeta) {
+    const job = await this.load(actor, id);
+    this.scopeFor(actor, job.merchantId ?? undefined);
+    if (job.status !== "VALIDATED") throw new AppError("NOT_EDITABLE", "Only a checked file that is not submitted yet can be changed", HttpStatus.CONFLICT);
+    const kind = kindKeyOf(job.kind);
+    const live = await this.config.settings();
+    const stored = job.settings as unknown as ImportSettings & { services?: ImportServiceOptions };
+    const services: ImportServiceOptions = { ...(stored.services ?? {}) };
+    if (input.notifications) services.notifications = input.notifications;
+    if (input.priority) services.priority = input.priority;
+    if (input.speed) services.speed = input.speed;
+    // Messages: only what the package offers (SERVICE_NOT_IN_PACKAGE otherwise).
+    if (input.notifications) await this.checkServices(job.merchantId, kind, { ...services, speed: undefined });
+    const settings = { ...live, templates: { ...live.templates, ...(stored.templates ?? {}) }, defaultDestination: stored.defaultDestination ?? live.defaultDestination };
+    const ctx = await this.engine.context({ kind, settings, merchantId: job.merchantId, dropOffHubId: job.dropOffHubId, services });
+    if (input.speed) {
+      const type = findDeliveryType(input.speed, deliveryTypesFor(ctx.pkg.segment, ctx.deliveryTypes));
+      if (!type) throw new AppError("UNKNOWN_DELIVERY_TYPE", `"${input.speed}" is not a delivery type here (choose ${ctx.lists.speeds.join(", ")})`, 422);
+      services.speed = ctx.services.speed = type.code;
+    }
+    if (input.priority && !ctx.priorities.some(p => p.id === input.priority)) throw new AppError("UNKNOWN_PRIORITY", "Choose a priority from the list", 422);
+    const rows = await this.prisma.importRow.findMany({ where: { jobId: job.id }, orderBy: { rowNumber: "asc" }, select: { id: true, rowNumber: true, cells: true } });
+    const results = await this.engine.validate(ctx, rows.map(r => ({ rowNumber: r.rowNumber, cells: { ...(r.cells as Cells) } })));
+    const idOf = new Map(rows.map(r => [r.rowNumber, r.id]));
+    const fresh = await this.prisma.$transaction(
+      async tx => {
+        for (const r of results)
+          await tx.importRow.update({
+            where: { id: idOf.get(r.rowNumber)! },
+            data: {
+              status: r.status,
+              cells: r.cells as Prisma.InputJsonObject,
+              errors: r.errors.length ? (r.errors as unknown as Prisma.InputJsonArray) : Prisma.DbNull,
+              missing: r.missing,
+              merchantId: r.merchantId,
+              dedupeKey: r.dedupeKey,
+              charge: r.charge,
+              priceLines: r.lines ? (r.lines as unknown as Prisma.InputJsonArray) : Prisma.DbNull,
+            },
+          });
+        const count = (status: ImportRowStatus) => results.filter(r => r.status === status).length;
+        const updated = await tx.importJob.update({
+          where: { id: job.id },
+          data: { validRows: count("VALID"), incompleteRows: count("INCOMPLETE"), errorRows: count("ERROR"), settings: { ...(job.settings as object), services } as unknown as Prisma.InputJsonObject },
+        });
+        await this.audit.record(actor, { action: "import.options", entityType: "import", entityId: job.id, data: { number: job.number, speed: services.speed ?? null, priority: services.priority ?? null, notifications: services.notifications?.length ?? null } }, meta, tx);
+        return updated;
+      },
+      { timeout: 120_000 },
+    );
+    return { ...(await this.view(fresh)), rows: await this.rowsPage(fresh, { filter: "all", page: 1, pageSize: 50 }) };
   }
 
   async list(actor: Actor, query: z.infer<typeof listImportsQuerySchema>) {

@@ -21,10 +21,10 @@ export class ParcelProductsService {
     const segment: Segment | undefined = query.segment === "CUSTOMER" ? "ECOMMERCE" : query.segment;
     const rows = await this.prisma.parcelProduct.findMany({
       where: { segment, ...(query.includeInactive ? {} : { active: true }) },
-      include: { _count: { select: { parcels: true } }, category: { select: { id: true, name: true, sortOrder: true } } },
-      orderBy: [{ segment: "asc" }, { category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
+      include: { _count: { select: { parcels: true } } },
+      orderBy: [{ segment: "asc" }, { name: "asc" }],
     });
-    return rows.map(({ _count, category, ...p }) => ({ ...p, categoryName: category?.name ?? null, parcels: _count.parcels }));
+    return rows.map(({ _count, ...p }) => ({ ...p, parcels: _count.parcels }));
   }
 
   private async assertNameFree(segment: Segment, name: string, exceptId?: string) {
@@ -32,16 +32,8 @@ export class ParcelProductsService {
     if (clash) throw conflict("PRODUCT_NAME_TAKEN", `There is already a product called ${clash.name}`);
   }
 
-  /** The category must be one of the product's list. */
-  private async assertCategory(segment: Segment, categoryId: string) {
-    const category = await this.prisma.productCategory.findUnique({ where: { id: categoryId }, select: { segment: true } });
-    if (!category || category.segment !== segment)
-      throw new AppError("UNKNOWN_CATEGORY", "Choose a category of this list", HttpStatus.UNPROCESSABLE_ENTITY, [{ path: "categoryId", code: "UNKNOWN_CATEGORY", message: "Choose a category of this list" }]);
-  }
-
   async create(actor: Actor, input: z.infer<typeof productSchema>, meta: RequestMeta) {
     await this.assertNameFree(input.segment, input.name);
-    await this.assertCategory(input.segment, input.categoryId);
     return this.prisma.$transaction(async tx => {
       const product = await tx.parcelProduct.create({ data: input });
       await this.audit.record(actor, { action: "parcel_product.create", entityType: "parcel_product", entityId: product.id, data: input }, meta, tx);
@@ -57,9 +49,13 @@ export class ParcelProductsService {
     );
     if (query.sort) rows.sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }) * (query.sort === "asc" ? 1 : -1));
     const TYPE: Record<string, string> = { REGULAR: "Regular", DOCUMENT: "Document", BOOKS: "Books" };
-    const header = ["Category", "Product", "Type", "Status", "Parcels"];
-    const cells: Cell[][] = [header.map(value => ({ value, style: STYLE.headerOptional })), ...rows.map(p => [p.categoryName ?? "", p.name, TYPE[p.type] ?? p.type, p.active ? "Active" : "Inactive", p.parcels])];
-    const buffer = writeXlsx({ title: "Products", sheets: [{ name: "Products", rows: cells, widths: [30, 36, 14, 12, 10], freezeHeader: true, autoFilter: true }] });
+    const header = ["Product", "Type", "SMS", "Email", "Push", "Status", "Parcels"];
+    const yes = (v: boolean) => (v ? "On" : "Off");
+    const cells: Cell[][] = [
+      header.map(value => ({ value, style: STYLE.headerOptional })),
+      ...rows.map(p => [p.name, TYPE[p.type] ?? p.type, yes(p.notifySms), yes(p.notifyEmail), yes(p.notifyPush), p.active ? "Active" : "Inactive", p.parcels]),
+    ];
+    const buffer = writeXlsx({ title: "Products", sheets: [{ name: "Products", rows: cells, widths: [36, 14, 8, 8, 8, 12, 10], freezeHeader: true, autoFilter: true }] });
     return { buffer, fileName: `products-${query.segment === "BANKING_FINANCIAL" ? "banking-financial" : "customer-ecommerce"}.xlsx` };
   }
 
@@ -67,7 +63,6 @@ export class ParcelProductsService {
     const product = await this.prisma.parcelProduct.findUnique({ where: { id } });
     if (!product) throw notFound("Product");
     if (input.name) await this.assertNameFree(product.segment, input.name, id);
-    if (input.categoryId) await this.assertCategory(product.segment, input.categoryId);
     return this.prisma.$transaction(async tx => {
       const updated = await tx.parcelProduct.update({ where: { id }, data: input });
       await this.audit.record(actor, { action: "parcel_product.update", entityType: "parcel_product", entityId: id, data: input }, meta, tx);

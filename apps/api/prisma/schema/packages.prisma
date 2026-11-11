@@ -99,6 +99,10 @@ model ParcelProduct {
   sortOrder          Int      @default(0)
   /// Created by the AI import (Operational settings › AI import): the merchant's name for a product not in the list.
   aiCreated          Boolean  @default(false)
+  /// Where its parcels' messages go (SMS, email, push): off sends nothing on that channel for its parcels.
+  notifySms          Boolean  @default(true)
+  notifyEmail        Boolean  @default(true)
+  notifyPush         Boolean  @default(true)
   /// DEPRECATED (2026-10-17, replaced by `sendMessages`): no longer read or written. Kept only because
   /// the schema lock refuses data-dropping migrations; drop it with a reviewed migration.
   mutedNotifications String[] @default([])

@@ -17,6 +17,8 @@ export interface LabelData {
   isDocument: boolean;
   service: string;
   deliveryMode: string;
+  /** The priority tag (General, Security, Online Product…). */
+  priority: string | null;
   product: string | null;
   /** E-commerce / customer parcels: the product's type, "Regular", "Document" or "Books" (prices the parcel). */
   productType: string;
@@ -119,7 +121,9 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   // Sender / merchant
   pdf.text("FROM", ix, cy, { size: 6.5, bold: true, color: COLOR.faint });
   cy += 9;
-  cy += pdf.text(`${l.merchant}${l.merchantCode ? ` (${l.merchantCode})` : ""} · ${l.sender.phone}`, ix, cy, { size: 8, bold: true, width: iw, maxLines: 1 });
+  // A long name goes on to a second line (smaller), never cut in half.
+  const from = `${l.merchant}${l.merchantCode ? ` (${l.merchantCode})` : ""} · ${l.sender.phone}`;
+  cy += pdf.text(from, ix, cy, { size: from.length > 60 ? 7.2 : 8, bold: true, width: iw, maxLines: 2 });
   const origin = l.intake === "DROP_OFF" ? `Dropped off at ${l.originHub?.name ?? "hub"}` : l.originHub ? `Origin hub: ${l.originHub.code} · ${l.originHub.name}` : "Rider pickup";
   cy += pdf.text(origin, ix, cy, { size: 7.5, color: COLOR.muted, width: iw, maxLines: 1 });
   cy += 3;
@@ -131,31 +135,38 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   const cells: [string, string, number][] = l.isDocument
     ? [
         ["Service", l.service, 1],
+        ["Priority", l.priority ?? "—", 1],
         ["Delivery", l.deliveryMode, 1],
-        ["Booked", fmtDate(l.bookedAt), 1],
         ["Reference", l.orderRef ?? "—", 2],
-        ["Document type", l.product ?? "Document", 1],
+        ["Booked", fmtDate(l.bookedAt), 1],
+        ["Document type", l.product ?? "Document", 3],
       ]
     : [
+        ["Service", l.service, 1],
+        ["Priority", l.priority ?? "—", 1],
         ["Weight", `${l.weightKg} kg`, 1],
-        ["Delivery", l.deliveryMode, 1],
-        ["Booked", fmtDate(l.bookedAt), 1],
         ["Order ref", l.orderRef ?? "—", 2],
-        ["Product type", l.productType, 1],
+        ["Delivery", l.deliveryMode, 1],
+        ["Product", [l.product, l.productType].filter(Boolean).join(" · "), 3],
       ];
+  // Rows as tall as their longest value: a long value goes on to the next line instead of being cut.
   const colW = iw / 3;
   let col = 0;
-  let row = 0;
+  let rowTop = cy;
+  let rowH = 0;
   for (const [k, v, span] of cells) {
-    if (col + span > 3) (col = 0), row++;
+    if (col + span > 3) {
+      rowTop += 8 + Math.max(rowH, 9) + 2;
+      rowH = 0;
+      col = 0;
+    }
     const cx = ix + col * colW;
-    const ry = cy + row * 23;
     const w = colW * span - 4;
-    pdf.text(k.toUpperCase(), cx, ry, { size: 6, bold: true, color: COLOR.faint, width: w });
-    pdf.text(v, cx, ry + 8, { size: v.length > 22 && span > 1 ? 7 : 8, bold: true, width: w, maxLines: 1 });
+    pdf.text(k.toUpperCase(), cx, rowTop, { size: 6, bold: true, color: COLOR.faint, width: w, maxLines: 1 });
+    rowH = Math.max(rowH, pdf.text(v, cx, rowTop + 8, { size: v.length > 22 ? 7 : 8, bold: true, width: w, maxLines: 3 }));
     col += span;
   }
-  cy += 48;
+  cy = rowTop + 8 + Math.max(rowH, 9) + 2;
 
   // Note + QR at the bottom
   const qr = 60;
@@ -168,8 +179,8 @@ export function drawLabel(pdf: PdfWriter, brand: Brand, l: LabelData, x: number,
   // Received by: filled in by hand at the door (above the footer lines, left of the QR code).
   const rsize = 6.5;
   const rh = rsize * 2.3 * 3;
-  const rTop = bottom - 22 - rh;
-  const receiver = cy + 4 <= rTop;
+  const rTop = Math.max(bottom - 22 - rh, Math.min(cy + 2, bottom - 18 - rh));
+  const receiver = true;
   if (receiver) {
     const row = rsize * 2.3;
     const fill = (label: string, fx: number, fy: number, fw: number) => {

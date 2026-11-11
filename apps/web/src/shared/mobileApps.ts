@@ -5,8 +5,8 @@
  */
 export const MOBILE_APPS = {
   merchant: { href: "/downloads/merchant.apk", fileName: "Merchant-1.4.1.apk", version: "1.4.1", sizeMb: 69 },
-  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.4.0.apk", version: "1.4.0", sizeMb: 68 },
-  operations: { href: "/downloads/operations.apk", fileName: "Operations-1.2.0.apk", version: "1.2.0", sizeMb: 70 },
+  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.5.0.apk", version: "1.5.0", sizeMb: 68 },
+  operations: { href: "/downloads/operations.apk", fileName: "Operations-1.3.0.apk", version: "1.3.0", sizeMb: 70 },
 } as const;
 
 export type MobileApp = keyof typeof MOBILE_APPS;

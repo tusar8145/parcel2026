@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.39.1 — 2026-11-12
+- Fix: the app download page shows the versions you actually download (Rider 1.5.0, Operations 1.3.0), with matching file names.
+
 ## 1.39.0 — 2026-11-12
 - Admin users & roles › Invite administrator: choose "Send an invitation" (the exact SMS is shown first) or "Set a password now" (the account is ready at once, no invitation is sent). A Hub Manager's hub is picked from a grouped list.
 - Admin users & roles: the administrator directory is grouped by role, with a role filter.

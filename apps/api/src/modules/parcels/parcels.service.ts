@@ -20,7 +20,7 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
 import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
-import { assertRiderAssignable, opsHubScope } from "./ops-scope";
+import { assertRiderAssignable, hubManagerForHubIds, opsHubScope } from "./ops-scope";
 import { dateRangeWhere, failureWhere, forHubsWhere, merchantFiltersWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
 import type { parcelNoteSchema, updateParcelDetailsSchema } from "./parcels.schemas";
 import type { Parcel, ParcelChannel, Prisma, ScanSource, Segment } from "../../generated/prisma/client";
@@ -427,6 +427,8 @@ export class ParcelsService {
   /** The parcels a list's filters match, within the actor's scope (GET /parcels and its Excel export). */
   async listWhere(actor: Actor, query: Omit<z.infer<typeof listParcelsQuerySchema>, "cursor" | "limit"> & Partial<z.infer<typeof stageFilterSchema>>): Promise<Prisma.ParcelWhereInput> {
     const q = query.q?.trim();
+    // A Hub Manager's lists hold their own hub's parcels only.
+    query = { ...query, forHubIds: hubManagerForHubIds(actor, query.forHubIds) };
     return {
       AND: [
         this.scope(actor),

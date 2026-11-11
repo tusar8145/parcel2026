@@ -316,7 +316,7 @@ test("a button that starts slow work shows it until the work ends, through every
   expect(errors).toEqual([]);
 });
 
-test("hub operators see their own hub's parcels by default and can switch to all hubs", async ({ browser }) => {
+test("hub managers see only their own hub's parcels", async ({ browser }) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   const ops = await signedIn(browser, OPS, errors);
@@ -334,14 +334,11 @@ test("hub operators see their own hub's parcels by default and can switch to all
   await expect(page.locator(`#shipmentBody tr[data-shipment-id="${near}"]`)).toBeVisible({ timeout: 20_000 });
   await page.fill("#shipmentSearch", far);
   await expect(page.locator('[data-list="new-orders"] [data-list-empty]')).toHaveText("No parcels match the search or filters.", { timeout: 20_000 });
-  // All hubs: the other hub's order too (the API lets hub operators read every parcel; only the default changes).
+  // Hub Managers see their own hub only: asking for all hubs still leaves out the other hub's order (the API holds them to it).
   await page.selectOption('[data-list="new-orders"] [data-ops-scope]', "all");
   await page.fill("#shipmentSearch", far);
-  await expect(page.locator(`#shipmentBody tr[data-shipment-id="${far}"]`)).toBeVisible({ timeout: 20_000 });
-  // The choice is remembered on this browser and applies to every list (All parcels too).
+  await expect(page.locator('[data-list="new-orders"] [data-list-empty]')).toHaveText("No parcels match the search or filters.", { timeout: 20_000 });
   await opsNav(page, "allParcels");
-  await expect(page.locator('[data-list="all-All"] [data-ops-scope]')).toHaveValue("all");
-  await page.selectOption('[data-list="all-All"] [data-ops-scope]', "mine");
   await page.fill("#shipmentSearch", far);
   await expect(page.locator('[data-list="all-All"] [data-list-empty]')).toHaveText("No parcels match the search or filters.", { timeout: 20_000 });
   expect(errors).toEqual([]);

@@ -171,6 +171,10 @@ export class UsersService {
       const owner = await this.prisma.user.findUnique({ where: { email: input.email }, select: { id: true } });
       if (owner && owner.id !== id) throw emailInUse();
     }
+    if (input.phone) {
+      const owner = await this.prisma.user.findUnique({ where: { phone: input.phone }, select: { id: true } });
+      if (owner && owner.id !== id) throw conflict("PHONE_IN_USE", "Another account uses this mobile number");
+    }
 
     try {
       await this.prisma.$transaction(async tx => {
@@ -181,6 +185,7 @@ export class UsersService {
       });
     } catch (error) {
       if (isUniqueViolation(error, "email")) throw emailInUse();
+      if (isUniqueViolation(error, "phone")) throw conflict("PHONE_IN_USE", "Another account uses this mobile number");
       throw error;
     }
     // After commit: the guard trusts access tokens, so revoked sessions must be denylisted now, not in 15 minutes.
@@ -234,6 +239,22 @@ export class UsersService {
    * Turns off another user's two-step verification (lost device). Their sessions end; roles
    * that require it set it up again at the next sign-in. Super admins only; audited.
    */
+  /**
+   * A new password for someone else, set by a super admin and shared by hand (your own: Change password). They are
+   * signed out everywhere; a lock from failed sign-ins is lifted.
+   */
+  async setPassword(actor: Actor, userId: string, password: string, meta: RequestMeta) {
+    if (!hasRole(actor, "SUPER_ADMIN")) throw forbidden("Only a super admin can set another person's password");
+    if (actor.kind === "user" && actor.userId === userId) throw unprocessable("OWN_PASSWORD", "Change your own password from your profile (Change password)");
+    if (!(await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) throw notFound("User");
+    await this.prisma.$transaction(async tx => {
+      await tx.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password), failedLoginCount: 0, lockedUntil: null } });
+      await this.audit.record(actor, { action: "user.password_set", entityType: "user", entityId: userId, data: {} }, meta, tx);
+    });
+    await this.sessions.revokeAllForUser(userId, "password_reset");
+    return this.get(userId);
+  }
+
   async resetMfa(actor: Actor, userId: string, meta: RequestMeta) {
     if (!hasRole(actor, "SUPER_ADMIN")) throw forbidden("Only a super admin can reset two-step verification");
     if (actor.kind === "user" && actor.userId === userId)

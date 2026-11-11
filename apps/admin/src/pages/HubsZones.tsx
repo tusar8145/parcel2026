@@ -306,8 +306,8 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
             {rows.map((h, i) => (
               <Fragment key={h.id}>
                 {i === 0 || hubGroup(rows[i - 1]) !== hubGroup(h) ? (
-                  <tr>
-                    <td colSpan={7} style={{ background: "var(--surface-2, #f4f6fa)", fontWeight: 700 }}>
+                  <tr className="group-row">
+                    <td colSpan={7}>
                       {`${HUB_GROUPS.find(([g]) => g === hubGroup(h))?.[1] ?? ""} · ${num(groupCount(h))} hub${groupCount(h) === 1 ? "" : "s"}`}
                     </td>
                   </tr>

@@ -14,6 +14,7 @@ import {
   roleGrantSchema,
   updateAddressSchema,
   updateUserSchema,
+  setUserPasswordSchema,
 } from "./accounts.schemas";
 import { ProfileService } from "./profile.service";
 import { UsersService } from "./users.service";
@@ -99,6 +100,15 @@ export class UsersController {
   @ApiZodBody(roleGrantSchema)
   addRole(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(roleGrantSchema) body: z.infer<typeof roleGrantSchema>, @ReqMeta() meta: RequestMeta) {
     return this.users.addRole(actor, id, body, meta);
+  }
+
+  /** A new password for someone else (super admins only; shared by hand). They are signed out everywhere. */
+  @RequirePermissions("user:manage")
+  @Post(":id/password")
+  @HttpCode(200)
+  @ApiZodBody(setUserPasswordSchema)
+  setPassword(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(setUserPasswordSchema) body: z.infer<typeof setUserPasswordSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.users.setPassword(actor, id, body.password, meta);
   }
 
   /** Turns off a user's two-step verification (lost device). Super admins only; the user is signed out and notified. */

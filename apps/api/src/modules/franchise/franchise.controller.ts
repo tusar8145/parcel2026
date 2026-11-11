@@ -9,6 +9,7 @@ import { DocumentsService } from "../documents/documents.service";
 import { FranchiseAdminService } from "./franchise-admin.service";
 import { FranchisePanelService } from "./franchise-panel.service";
 import { FranchiseMoneyService } from "./franchise-money.service";
+import { riderPasswordSchema } from "../network/network.schemas";
 import {
   createFranchiseSchema,
   franchiseAccountSchema,
@@ -163,6 +164,14 @@ export class FranchisePanelController {
   @ApiZodBody(franchiseRiderSchema)
   createRider(@CurrentActor() actor: Actor, @ZBody(franchiseRiderSchema) body: z.infer<typeof franchiseRiderSchema>, @ReqMeta() meta: RequestMeta) {
     return this.panel.createRider(actor, body, meta);
+  }
+
+  /** A new password for one of the franchise's riders. */
+  @Post("riders/:id/password")
+  @HttpCode(200)
+  @ApiZodBody(riderPasswordSchema)
+  riderPassword(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(riderPasswordSchema) body: z.infer<typeof riderPasswordSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.panel.setRiderPassword(actor, id, body.password, meta);
   }
 
   @Patch("riders/:id")

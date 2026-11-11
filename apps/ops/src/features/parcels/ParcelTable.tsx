@@ -85,13 +85,7 @@ export default function ParcelTable({ list, options }: { list: ParcelListState; 
   const tools = (
     <>
       {ops.scope.available && list.cfg.scoped !== false ? (
-        <label className="row" style={{ gap: 6, fontSize: 12.5 }}>
-          Show
-          <Select className="select sm" value={ops.scope.value} onChange={e => ops.scope.set(e.target.value as "mine" | "all")} aria-label="Which hubs' parcels to show">
-            <option value="mine">{ops.scope.label}</option>
-            <option value="all">All hubs</option>
-          </Select>
-        </label>
+        <span className="pill" title="Hub Managers see their own hub's parcels">{`${ops.scope.label}: ${(ops.myHubs ?? []).map(h => h.name).join(", ") || "—"}`}</span>
       ) : null}
       {options.bulkAccept && ops.can("dispatch") && list.ticked.size ? (
         <Button size="sm" variant="primary" onClick={async () => (await actions.bulkAccept(list.tickedParcels())) && list.clearTicked()}>

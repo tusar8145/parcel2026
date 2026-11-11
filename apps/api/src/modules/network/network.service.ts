@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { merchantsInZone, rederiveMerchantHubs } from "../merchants/merchant-hubs";
 import { hashPassword } from "../../common/crypto";
 import { nextCounter } from "../../common/counters";
-import { AppError, conflict, notFound } from "../../common/errors";
+import { AppError, conflict, forbidden, notFound } from "../../common/errors";
 import { PricingService } from "../pricing/pricing.service";
 import { RealtimeService } from "../../common/realtime.service";
 import { GEO_META_KEY, listed, lockGeography, readMeta, same } from "../geography/geo-catalog";
@@ -13,8 +13,10 @@ import { describeUsage, hubUsage } from "../geography/geo-usage";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import type { RequestMeta } from "../../common/auth/decorators";
 import type { ParcelStatus, Prisma } from "../../generated/prisma/client";
-import type { createRiderSchema, hubSchema, listRidersQuerySchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
-import { opsHubScope } from "../parcels/ops-scope";
+import type { appRiderSchema, createRiderSchema, hubSchema, listRidersQuerySchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
+import { hubManagerHubIds, opsHubScope } from "../parcels/ops-scope";
+import { SessionService } from "../auth/session.service";
+import { env } from "../../config/env";
 import { NotifyService } from "../notifications/notify.service";
 import { inviteMessage } from "../notifications/account-invite";
 import { nearestOf } from "./nearest-hub";
@@ -76,6 +78,7 @@ export class NetworkService {
   /** Hub changes are announced to operations (property injection keeps the constructor stable for parallel edits). */
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
   @Inject(NotifyService) private readonly notify!: NotifyService;
+  @Inject(SessionService) private readonly sessions!: SessionService;
 
   // ── hubs ──
   /**
@@ -207,12 +210,18 @@ export class NetworkService {
   async listRiders(query: z.infer<typeof listRidersQuerySchema>, actor?: Actor) {
     // Hub staff don't see other hubs' franchise riders (they work only for their franchise); operations managers do.
     const scope = actor ? opsHubScope(actor) : null;
+    // A Hub Manager sees only their own hubs' riders.
+    const managerHubs = actor ? hubManagerHubIds(actor) : null;
     const riders = await this.prisma.rider.findMany({
       where: {
         // A hub's riders: those at it now and those who also work for it.
         ...(query.hubId ? { OR: [{ hubId: query.hubId }, { hubs: { some: { hubId: query.hubId } } }] } : {}),
         ...(query.company ? { NOT: { hub: { type: "FRANCHISE" } } } : {}),
-        ...(scope ? { AND: [{ OR: [{ hubId: null }, { hub: { type: "COMPANY" } }, { hubId: { in: scope } }, { hubs: { some: { hubId: { in: scope } } } }] }] } : {}),
+        ...(managerHubs
+          ? { AND: [{ OR: [{ hubId: { in: managerHubs } }, { hubs: { some: { hubId: { in: managerHubs } } } }] }] }
+          : scope
+            ? { AND: [{ OR: [{ hubId: null }, { hub: { type: "COMPANY" } }, { hubId: { in: scope } }, { hubs: { some: { hubId: { in: scope } } } }] }] }
+            : {}),
         status: query.status,
         active: query.active,
         ...(query.q
@@ -264,6 +273,54 @@ export class NetworkService {
       messageSent = (await this.notify.notifyNow({ event, to: { userId: rider.userId, phone: rider.user.phone, email: rider.user.email, name: rider.user.name }, vars }).catch(() => [])).length > 0;
     }
     return { ...riderView(rider), messageSent };
+  }
+
+  /**
+   * Which hubs the actor may add riders to and reset riders' passwords at, from the operations app: null = any
+   * (operations managers, super admins: rider:manage); a Hub Manager: their own hubs. Anyone else is refused.
+   */
+  private riderHubsFor(actor: Actor): string[] | null {
+    if (actor.permissions.has("rider:manage")) return null;
+    const mine = hubManagerHubIds(actor);
+    if (mine) return mine;
+    throw forbidden("Only operations managers and Hub Managers can add riders here");
+  }
+
+  /** The rider app download link, to share with a new rider. */
+  riderAppLink() {
+    return `${env().APP_URL.replace(/\/+$/, "")}/downloads/rider.apk`;
+  }
+
+  /** Operations app: a new rider with a password; nothing is sent (the sign-in details are shared by hand). */
+  async createAppRider(actor: Actor, input: z.infer<typeof appRiderSchema>, meta: RequestMeta) {
+    const allowed = this.riderHubsFor(actor);
+    const hubId = input.hubId ?? allowed?.[0];
+    if (!hubId) throw new AppError("HUB_REQUIRED", "Choose the rider's hub", HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
+    if (allowed && !allowed.includes(hubId)) throw forbidden("You can add riders only to your own hub");
+    const existing = await this.prisma.user.findUnique({ where: { phone: input.phone }, select: { id: true } });
+    const rider = await this.createRider(actor, { name: input.name, phone: input.phone, email: input.email, password: input.password, hubIds: [hubId], vehicle: input.vehicle, zone: input.zone, sendSms: false }, meta);
+    // A number that already had an account keeps its own password (the one typed here isn't applied).
+    return { ...rider, passwordSet: !existing, appLink: this.riderAppLink() };
+  }
+
+  /** Operations app: a new password for a rider; they are signed out everywhere. Accounts with other access are refused. */
+  async setRiderPassword(actor: Actor, id: string, password: string, meta: RequestMeta) {
+    return this.resetRiderPassword(actor, id, password, meta, this.riderHubsFor(actor));
+  }
+
+  /** A rider's new password, when the rider works at one of `allowed` (null = any hub). Also the franchise panel's. */
+  async resetRiderPassword(actor: Actor, id: string, password: string, meta: RequestMeta, allowed: string[] | null) {
+    const rider = await this.prisma.rider.findUnique({ where: { id }, select: { id: true, code: true, userId: true, hubId: true, hubs: { select: { hubId: true } }, user: { select: { phone: true, email: true, roles: { select: { role: true } } } } } });
+    if (!rider) throw notFound("Rider");
+    if (allowed && ![rider.hubId, ...rider.hubs.map(h => h.hubId)].some(h => h && allowed.includes(h))) throw notFound("Rider");
+    if (rider.user.roles.some(r => !["RIDER", "CUSTOMER", "APPLICANT"].includes(r.role)))
+      throw new AppError("OTHER_ACCESS", "This account has other access too: its password is changed in the super admin panel", HttpStatus.UNPROCESSABLE_ENTITY);
+    await this.prisma.$transaction(async tx => {
+      await tx.user.update({ where: { id: rider.userId }, data: { passwordHash: await hashPassword(password), failedLoginCount: 0, lockedUntil: null } });
+      await this.audit.record(actor, { action: "rider.password_reset", entityType: "rider", entityId: id, data: { code: rider.code } }, meta, tx);
+    });
+    await this.sessions.revokeAllForUser(rider.userId, "password_reset").catch(() => undefined);
+    return { id: rider.id, code: rider.code, phone: rider.user.phone, email: rider.user.email, appLink: this.riderAppLink() };
   }
 
   /** Hubs a rider is given: existing and operating. */

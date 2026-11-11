@@ -10,7 +10,7 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import { AuditService } from "../../common/audit.service";
 import { Prisma } from "../../generated/prisma/client";
 import { ParcelsService, type BookingOptions } from "../parcels/parcels.service";
-import { addDays, dhakaDateRange, dhakaDayStart, dhakaMonthStart, opsHubScope } from "../parcels/ops-scope";
+import { addDays, dhakaDateRange, dhakaDayStart, dhakaMonthStart, hubManagerHubIds, opsHubScope } from "../parcels/ops-scope";
 import { PricingService } from "../pricing/pricing.service";
 import { PackagesService } from "../packages/packages.service";
 import { zoneForArea } from "../parcels/places";
@@ -72,6 +72,8 @@ export class OpsService {
       ]);
     };
     const hubScope = opsHubScope(actor);
+    // A Hub Manager's hub list (the app's hub picker, the hub table) holds only their hubs.
+    const managerHubs = hubManagerHubIds(actor);
     const seesCash = actor.permissions.has("cod:receive") || (actor.permissions.has("finance:read") && isFinanceStaff(actor));
     const cashScope = seesCash ? cashHubScope(actor) : [];
 
@@ -171,7 +173,7 @@ export class OpsService {
     const busy = new Set([...busyDelivery.map(r => r.deliveryRiderId), ...busyPickup.map(r => r.pickupRiderId)]);
 
     const countFor = (rows: { hub_id: string | null; n: number }[], hubId: string) => rows.filter(r => r.hub_id === hubId).reduce((n, r) => n + r.n, 0);
-    const hubRows = hubs.map(h => {
+    const hubRows = hubs.filter(h => !managerHubs || managerHubs.includes(h.id)).map(h => {
       const load = (s: ParcelStatus) => hubLoad.find(r => r.currentHubId === h.id && r.status === s)?._count._all ?? 0;
       return { ...h, atHub: load("AT_HUB"), inbound: load("IN_TRANSIT"), awaitingDispatch: load("ASSIGNED"), inboundToday: countFor(inbound, h.id), outboundToday: countFor(outbound, h.id) };
     });

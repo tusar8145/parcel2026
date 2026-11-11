@@ -218,8 +218,8 @@ function Administrators() {
                   </tr>
                 ) : null}
                 {groups.flatMap(g => [
-                  <tr key={`group-${g.role}`}>
-                    <td colSpan={6} style={{ background: "var(--surface-2)", fontWeight: 700 }}>
+                  <tr key={`group-${g.role}`} className="group-row">
+                    <td colSpan={6}>
                       {`${g.role ? ROLE_LABEL[g.role] : "Other"} · ${g.users.length} ${g.users.length === 1 ? "person" : "people"}`}
                     </td>
                   </tr>,
@@ -327,12 +327,17 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
       close={close}
       foot={
         self ? (
-          <p className="faint" style={{ margin: 0 }}>
-            You can't suspend your own account.
-          </p>
+          <>
+            <p className="faint" style={{ margin: 0, marginRight: "auto" }}>
+              You can't suspend your own account. Your password: Change password in your profile.
+            </p>
+            <Button onClick={() => (close(), void editStaff(u))}>Edit details</Button>
+          </>
         ) : (
           <>
             <Button onClick={close}>Close</Button>
+            <Button onClick={() => (close(), void editStaff(u))}>Edit details</Button>
+            <Button onClick={() => (close(), void setStaffPassword(u))}>Set new password</Button>
             {u.status === "ACTIVE" ? (
               <Button variant="danger" disabled={busy} onClick={() => void set("SUSPENDED")}>
                 Suspend account
@@ -359,6 +364,54 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
       </p>
     </DialogFrame>
   );
+}
+
+const staffChanged = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "staff"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] }), queryClient.invalidateQueries({ queryKey: ["admin", "network"] })]);
+
+/** Name, sign-in mobile and email (PATCH /users/:id). */
+async function editStaff(u: Staff) {
+  await openForm({
+    title: `Edit ${u.name}`,
+    submit: "Save",
+    fields: [
+      { id: "name", label: "Name", required: true, full: true, maxLength: 120, value: u.name },
+      { id: "phone", label: "Mobile number", type: "phone", required: true, value: localPhone(u.phone || ""), placeholder: "01XXXXXXXXX" },
+      { id: "email", label: "Email", type: "email", value: u.email ?? "" },
+    ],
+    onSubmit: async v => {
+      await api(`/users/${u.id}`, { method: "PATCH", body: { name: v.name.trim(), phone: v.phone, email: v.email.trim() || null } });
+      await staffChanged();
+      return `${v.name.trim()} saved.`;
+    },
+  });
+}
+
+/** A new password for someone else (POST /users/:id/password): shared by hand, they are signed out everywhere. */
+async function setStaffPassword(u: Staff) {
+  await openForm({
+    title: `New password for ${u.name}`,
+    description: "Share it with them yourself; it isn't sent. They are signed out everywhere and sign in with their mobile number (or email) and this password.",
+    submit: "Set password",
+    fields: [
+      { id: "password", label: "New password", required: true, full: true, maxLength: 128, placeholder: "At least 10 characters, a letter and a number" },
+      {
+        id: "passwordTools",
+        label: "",
+        type: "static",
+        live: (_v, set) => (
+          <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
+            Generate a password
+          </button>
+        ),
+      },
+    ],
+    validate: { password: v => passwordProblem(v) },
+    onSubmit: async v => {
+      await api(`/users/${u.id}/password`, { method: "POST", body: { password: v.password } });
+      await staffChanged();
+      return `New password set for ${u.name}. Share it: they sign in with ${localPhone(u.phone || "")} and it.`;
+    },
+  });
 }
 
 async function inviteAdmin() {

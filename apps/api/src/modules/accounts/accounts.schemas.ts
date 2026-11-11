@@ -81,9 +81,14 @@ export const updateUserSchema = z
   .object({
     name: z.string().trim().min(2, "Name must be at least 2 characters").max(120, "Name must be at most 120 characters").optional(),
     email: emailSchema.nullable().optional(),
+    /** The sign-in mobile number (another account may not use it). */
+    phone: phoneSchema.optional(),
     status: userStatus.optional(),
   })
-  .refine(v => v.name !== undefined || v.email !== undefined || v.status !== undefined, "Send at least one field to change");
+  .refine(v => v.name !== undefined || v.email !== undefined || v.phone !== undefined || v.status !== undefined, "Send at least one field to change");
+
+/** A new password set by a super admin for someone else (shared by hand). */
+export const setUserPasswordSchema = z.object({ password: passwordSchema });
 
 export const listUsersQuerySchema = pageQuerySchema.extend({
   q: z.string().trim().max(80, "Search must be at most 80 characters").optional().transform(v => v || undefined),

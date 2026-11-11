@@ -5,7 +5,7 @@ import { CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMet
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { forbidden } from "../../common/errors";
-import { createRiderSchema, hubSchema, listRidersQuerySchema, locateHubsSchema, riderStatusSchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
+import { appRiderSchema, createRiderSchema, hubSchema, riderPasswordSchema, listRidersQuerySchema, locateHubsSchema, riderStatusSchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
 import { HubLocateService } from "./hub-locate.service";
 import { NetworkService } from "./network.service";
 
@@ -79,6 +79,23 @@ export class NetworkController {
   @ApiZodBody(createRiderSchema)
   createRider(@CurrentActor() actor: Actor, @ZBody(createRiderSchema) body: z.infer<typeof createRiderSchema>, @ReqMeta() meta: RequestMeta) {
     return this.network.createRider(actor, body, meta);
+  }
+
+  /** Operations app: add a rider with a password (operations managers anywhere, Hub Managers at their hub); no invitation. */
+  @RequirePermissions("rider:read")
+  @Post("riders/app")
+  @ApiZodBody(appRiderSchema)
+  createAppRider(@CurrentActor() actor: Actor, @ZBody(appRiderSchema) body: z.infer<typeof appRiderSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.network.createAppRider(actor, body, meta);
+  }
+
+  /** Operations app: a new password for a rider of the actor's hubs (operations managers: any rider). */
+  @RequirePermissions("rider:read")
+  @Post("riders/:id/password")
+  @HttpCode(200)
+  @ApiZodBody(riderPasswordSchema)
+  setRiderPassword(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(riderPasswordSchema) body: z.infer<typeof riderPasswordSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.network.setRiderPassword(actor, id, body.password, meta);
   }
 
   @RequirePermissions("rider:manage")

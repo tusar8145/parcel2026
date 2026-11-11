@@ -15,6 +15,7 @@ import {
 import { OpsService } from "./ops.service";
 import { StageCountsService } from "./stage-counts.service";
 import { stageCountsQuerySchema } from "../parcels/parcel-stages";
+import { hubManagerForHubIds } from "../parcels/ops-scope";
 import { periodQueryShape, periodChecks, periodQuerySchema, type PeriodQuery } from "../../common/period";
 
 /** Only parcels booked on or after this time (the Operations console's "Last 30 days…" choice); none = every parcel. */
@@ -50,8 +51,9 @@ export class OpsController {
   @RequirePermissions("parcel:read:any")
   @Get("stage-counts")
   @ApiZodQuery(opsStageCountsQuerySchema)
-  stageCounts(@Query(new ZodPipe(opsStageCountsQuerySchema)) query: z.infer<typeof opsStageCountsQuerySchema>) {
-    return this.stages.counts(query);
+  stageCounts(@CurrentActor() actor: Actor, @Query(new ZodPipe(opsStageCountsQuerySchema)) query: z.infer<typeof opsStageCountsQuerySchema>) {
+    // A Hub Manager counts their own hub only.
+    return this.stages.counts({ ...query, forHubIds: hubManagerForHubIds(actor, query.forHubIds) });
   }
 
   /** Assignment queue size and each rider's workload today (hub operators: their hub). */

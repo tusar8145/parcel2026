@@ -7,6 +7,14 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.40.0 — 2026-11-12
+- Hubs & zones and Admin users & roles: each group (Inside Dhaka…, or a role) has its own light-coloured heading row.
+- Admin users & roles › Manage: "Edit details" (name, mobile, email) and "Set new password" for another administrator (they are signed out everywhere).
+- Hub Managers see only their own hub: Courier Operations lists, counts and riders show that hub (no "All hubs"), and the hub's name is shown next to their role.
+- Operations app: a Hub Manager's hub list holds only their own hub.
+- Operations app › More › Riders (operations managers and Hub Managers; franchise hubs in their Riders tab): add a rider with a password (no invitation is sent), then copy the mobile, email, password and the rider app's download link; set a rider's new password.
+- Franchise panel: adding a rider with a password no longer sends an invitation.
+
 ## 1.39.1 — 2026-11-12
 - Fix: the app download page shows the versions you actually download (Rider 1.5.0, Operations 1.3.0), with matching file names.
 

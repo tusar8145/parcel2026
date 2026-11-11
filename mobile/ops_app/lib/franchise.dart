@@ -1,6 +1,7 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
+import 'riders.dart';
 import 'scan.dart';
 import 'signature_pad.dart';
 
@@ -656,43 +657,8 @@ class _RidersTab extends StatelessWidget {
   const _RidersTab();
 
   Future<void> _add(BuildContext context) async {
-    final name = TextEditingController();
-    final phone = TextEditingController();
-    final password = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add a rider'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
-            TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile (01XXXXXXXXX)')),
-            TextField(controller: password, decoration: const InputDecoration(labelText: 'Password', helperText: '10+ characters, a letter and a number')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add')),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    final pw = password.text;
-    if (pw.length < 10 || !RegExp(r'[A-Za-z]').hasMatch(pw) || !RegExp(r'\d').hasMatch(pw)) {
-      snack(context, 'Use a password of at least 10 characters with a letter and a number.');
-      return;
-    }
-    try {
-      final made = await Api.post('/franchise/riders', {'name': name.text.trim(), 'phone': normalizePhone(phone.text.trim()), 'password': pw});
-      final kept = made is Map && made['passwordSet'] == false;
-      if (context.mounted) {
-        snack(context, kept ? '${name.text.trim()} added. This number already had an account: they sign in with their own password.' : '${name.text.trim()} added. They sign in to the rider app with their mobile number and this password.');
-      }
-      franchiseChanged.value++;
-    } on ApiError catch (e) {
-      if (context.mounted) snack(context, e.message);
-    }
+    final added = await addRiderVia(context, path: '/franchise/riders', note: 'They work only for your hub. No message is sent: share the sign-in details shown next.');
+    if (added) franchiseChanged.value++;
   }
 
   @override
@@ -726,6 +692,11 @@ class _RidersTab extends StatelessWidget {
                       Text('${count(r['outForDelivery'])} out · cash ${taka(r['cashWithRider'])} · unpaid ${taka(r['unpaid'])}', style: const TextStyle(color: muted)),
                       if (toNum(r['cashWithRider']) > 0)
                         TextButton.icon(onPressed: () => takeRiderCash(context, '${r['id']}'), icon: const Icon(Icons.payments_outlined), label: Text('Take ${taka(r['cashWithRider'])}')),
+                      TextButton.icon(
+                        onPressed: () => resetRiderPasswordVia(context, path: '/franchise/riders/${r['id']}/password', rider: r),
+                        icon: const Icon(Icons.lock_reset),
+                        label: const Text('New password'),
+                      ),
                     ],
                   ),
                 ),

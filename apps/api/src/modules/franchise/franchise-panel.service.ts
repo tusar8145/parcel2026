@@ -462,15 +462,23 @@ export class FranchisePanelService {
     const existing = await this.prisma.user.findUnique({ where: { phone: input.phone }, select: { id: true, rider: { select: { id: true } } } });
     if (existing?.rider) throw new AppError("ALREADY_RIDER", "This phone number already belongs to a rider", HttpStatus.CONFLICT);
     const rider = await this.network.createRider(actor, { name: input.name, phone: input.phone, email: input.email, hubId: f.hubId, vehicle: input.vehicle, zone: input.zone, password: input.password } as never, meta);
-    await this.notify
-      .notifyNow({
-        event: "account.invite",
-        to: { phone: input.phone, email: input.email, name: input.name },
-        vars: { inviter: f.name, role: `a rider for ${f.name}`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
-      })
-      .catch(() => undefined);
+    // With a password no invitation is sent (the franchise shares the sign-in details); older apps without one still invite.
+    if (!input.password)
+      await this.notify
+        .notifyNow({
+          event: "account.invite",
+          to: { phone: input.phone, email: input.email, name: input.name },
+          vars: { inviter: f.name, role: `a rider for ${f.name}`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
+        })
+        .catch(() => undefined);
     // A number that already had an account keeps its own sign-in; the password typed here applies to new accounts only.
-    return { ...rider, passwordSet: !!input.password && !existing };
+    return { ...rider, passwordSet: !!input.password && !existing, appLink: this.network.riderAppLink() };
+  }
+
+  /** A new password for one of this franchise's riders (shared by hand); they are signed out everywhere. */
+  async setRiderPassword(actor: Actor, id: string, password: string, meta: RequestMeta) {
+    const f = await this.context(actor);
+    return this.network.resetRiderPassword(actor, id, password, meta, [f.hubId]);
   }
 
   async updateRider(actor: Actor, id: string, input: z.infer<typeof updateFranchiseRiderSchema>, meta: RequestMeta) {

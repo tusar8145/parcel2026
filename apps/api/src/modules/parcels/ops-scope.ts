@@ -52,6 +52,25 @@ export function opsHubScope(actor: Actor): string[] | null {
 }
 
 /**
+ * The hubs a Hub Manager (HUB_OPERATOR) runs, when that is all they run: their lists, counts, hub picker and riders
+ * show only these hubs, whatever the app asks for. null = not limited (operations managers, super admins, other staff,
+ * and franchise accounts, which have their own scope).
+ */
+export function hubManagerHubIds(actor: Actor): string[] | null {
+  if (actor.kind !== "user" || !actor.roles.some(r => r.role === "HUB_OPERATOR") || actor.roles.some(r => r.role === "FRANCHISE")) return null;
+  const scope = opsHubScope(actor);
+  return scope?.length ? scope : null;
+}
+
+/** "For these hubs" filter of a list a Hub Manager asks for: within their hubs (all of them when none or others were asked). */
+export function hubManagerForHubIds(actor: Actor, requested?: string[] | null): string[] | undefined {
+  const mine = hubManagerHubIds(actor);
+  if (!mine) return requested?.length ? requested : undefined;
+  const wanted = (requested ?? []).filter(id => mine.includes(id));
+  return wanted.length ? wanted : mine;
+}
+
+/**
  * Franchise riders work only for their franchise hub: a franchise may pick only its own riders, and staff of other
  * hubs can't pick a franchise's riders. With the parcel's hub (`atHubId`), nobody can give a franchise rider a parcel of
  * another hub.

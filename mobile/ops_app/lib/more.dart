@@ -5,8 +5,9 @@ import 'assign.dart';
 import 'home.dart';
 import 'ops.dart';
 import 'parcels.dart';
+import 'riders.dart';
 
-/// More: assign riders, problems, find a parcel, hub, support, password, sign out.
+/// More: assign riders, riders (add, new password), problems, find a parcel, hub, support, password, sign out.
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
 
@@ -61,6 +62,7 @@ class MorePage extends StatelessWidget {
           _item(context, Icons.fiber_new_outlined, 'Assign pickup riders', 'New orders and pickup requests', () => _open(context, const AssignPage(mode: AssignMode.pickup))),
           _item(context, Icons.person_search_outlined, 'Assign delivery riders', 'Parcels at the hub waiting for a rider', () => _open(context, const AssignPage(mode: AssignMode.delivery))),
         ],
+        if (Ops.addsRiders) _item(context, Icons.two_wheeler, 'Riders', 'Add a rider, set a new password', () => _open(context, const RidersPage())),
         _item(context, Icons.error_outline, 'Problems', 'Exceptions, failed deliveries, needs info, late-risk', () => _open(context, const ProblemsPage())),
         _item(context, Icons.search, 'Find a parcel', 'Scan or type the tracking ID', () => findParcel(context)),
         _item(context, Icons.warehouse_outlined, 'Change hub', 'The hub this phone works at', () => pickHub(context).then((ok) => ok ? opsChanged.value++ : null)),

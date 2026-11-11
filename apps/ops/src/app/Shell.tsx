@@ -125,7 +125,7 @@ function Sidebar() {
     <aside className="sidebar" aria-label="Main menu">
       <div className="brand">
         <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Delivery Fast" width={528} height={100} />
-        <small>Operations console</small>
+        <small>{ops.myHubs?.length ? `Operations console · ${ops.myHubs.map(h => h.name).join(", ")}` : "Operations console"}</small>
       </div>
       <nav className="nav" ref={nav}>
         {groups.map(g => (
@@ -187,7 +187,7 @@ function Sidebar() {
             <span className="avatar">{initials}</span>
             <span className="profile-meta">
               <strong>{user?.name}</strong>
-              <small>{ops.roleName}</small>
+              <small>{ops.myHubs?.length ? `${ops.roleName} · ${ops.myHubs.map(h => h.name).join(", ")}` : ops.roleName}</small>
             </span>
           </button>
           <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={signOut}>

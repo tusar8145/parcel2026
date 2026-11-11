@@ -58,7 +58,7 @@ interface OpsApi {
   refreshAll: () => void;
 }
 
-const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "Super admin", OPS_MANAGER: "Operations manager", HUB_OPERATOR: "Hub operator", FINANCE: "Finance", SUPPORT_AGENT: "Support agent" };
+const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "Super admin", OPS_MANAGER: "Operations manager", HUB_OPERATOR: "Hub Manager", FINANCE: "Finance", SUPPORT_AGENT: "Support agent" };
 const OpsContext = createContext<OpsApi | null>(null);
 
 export function OpsProvider({ children }: { children: ReactNode }) {
@@ -88,8 +88,9 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
+  // Hub Managers (me.hubIds) see their own hubs only; the API holds them to it as well.
   const scopeAvailable = !!me?.hubIds?.length;
-  const scopeHubIds = scopeAvailable && scopeValue !== "all" ? me!.hubIds : null;
+  const scopeHubIds = scopeAvailable ? me!.hubIds : null;
   const stageCounts = useQuery({
     queryKey: ["ops", "stage-counts", scopeHubIds?.join(",") ?? "all", since ?? "all"],
     queryFn: () => api<StageCounts>(`/ops/stage-counts?${[scopeHubIds ? `forHubIds=${scopeHubIds.join(",")}` : "", sinceQuery].filter(Boolean).join("&")}`),
@@ -127,7 +128,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       },
       roleName,
       period: { value: periodValue, set: setPeriod, since, label: PARCEL_PERIODS.find(p => p.value === periodValue)!.label },
-      scope: { available: scopeAvailable, value: scopeValue, set: setScope, hubIds: scopeHubIds, label: me?.hubIds?.length === 1 ? "My hub" : "My hubs" },
+      scope: { available: scopeAvailable, value: scopeAvailable ? "mine" : scopeValue, set: setScope, hubIds: scopeHubIds, label: me?.hubIds?.length === 1 ? "My hub" : "My hubs" },
       hubById: id => hubList.find(h => h.id === id),
       myHubs,
       menu: { roles: new Set(user?.roles ?? []), me, centralHubId: accountsConfig.data?.centralHub?.id ?? null },

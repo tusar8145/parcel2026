@@ -19,7 +19,7 @@ Future<void> main() async {
 void configureRiderApp() {
   AppConfig.role = 'Rider';
   AppConfig.appName = 'Rider';
-  AppConfig.version = '1.4.0';
+  AppConfig.version = '1.5.0';
   AppConfig.allows = (user) => user['rider'] != null;
   AppConfig.notAllowed = 'This app is for riders. Your account is not a rider account.';
   AppConfig.home = () => RiderShell(key: riderShell);

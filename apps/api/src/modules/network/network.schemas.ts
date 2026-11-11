@@ -41,6 +41,24 @@ export const createRiderSchema = z.object({
   sendSms: z.boolean().default(false),
 });
 
+/**
+ * A rider added from the operations app (operations managers anywhere, Hub Managers at their own hub): the password is
+ * set here and shared by hand; no invitation is sent.
+ */
+export const appRiderSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  phone: phoneSchema,
+  email: emailSchema.optional(),
+  password: passwordSchema,
+  /** Where the rider works; a Hub Manager's own hub when left out. */
+  hubId: z.uuid().optional(),
+  vehicle: vehicle.default("MOTORBIKE"),
+  zone: z.string().trim().max(80).optional(),
+});
+
+/** A new password for a rider (shared by hand). */
+export const riderPasswordSchema = z.object({ password: passwordSchema });
+
 export const updateRiderSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   phone: phoneSchema.optional(),

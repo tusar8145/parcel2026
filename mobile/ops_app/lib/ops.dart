@@ -16,11 +16,14 @@ class Ops {
   static Map<String, dynamic> get can => (_me['can'] as Map?)?.cast<String, dynamic>() ?? {};
   static bool allowed(String what) => can[what] == true;
 
-  /// The hubs this person works at (all hubs for operations managers).
-  static List<Map<String, dynamic>> get hubs => ((overview?['hubs'] as List?) ?? []).cast<Map<String, dynamic>>();
+  /// The hubs this person works at: a Hub Manager's own hubs (me.hubs), all hubs for operations managers.
+  static List<Map<String, dynamic>> get hubs => ((_me['hubs'] as List?) ?? (overview?['hubs'] as List?) ?? []).cast<Map<String, dynamic>>();
   static String? get hubId => hub.value?['id'] as String?;
   static String get hubName => '${hub.value?['name'] ?? 'Choose a hub'}';
   static bool get isManager => ((_me['roles'] as List?) ?? []).contains('OPS_MANAGER');
+
+  /// Operations managers, super admins and Hub Managers add riders and set their passwords here (Riders).
+  static bool get addsRiders => allowed('manageRiders') || ((_me['roles'] as List?) ?? []).contains('HUB_OPERATOR');
 
   static Future<void> load() async {
     overview = (await Api.get('/ops/overview') as Map).cast<String, dynamic>();

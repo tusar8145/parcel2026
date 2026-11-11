@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { messagePlanOf } from "./parcel-messages.service";
 import { InboxService } from "../notifications/inbox.service";
 import { notifyRider } from "../notifications/new-work";
 import { notifyNewWork } from "../notifications/new-work";
@@ -499,6 +500,8 @@ export class ParcelsService {
       ...parcelView(parcel, { internal: staff }),
       ...(staff ? { deliveryHub: (await deliveryHubsOf(this.prisma, [parcel])).get(parcel.id) ?? null } : {}),
       liveDelivery: await this.liveDelivery(parcel),
+      /** The ticked messages: channels, sent / waiting, done of total, SMS and emails sent. */
+      messagePlan: await messagePlanOf(this.prisma, parcel),
     };
     const isAssignedRider = actor.kind === "user" && !!actor.riderId && parcel.deliveryRiderId === actor.riderId;
     return isAssignedRider ? { ...view, deliveryCodeSent: Boolean(parcel.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(parcel) } : view;

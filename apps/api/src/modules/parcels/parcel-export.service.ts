@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { chargesOffOf } from "./parcel.views";
 import { parcelStatusLabel, SERVICE_LEVEL_LABEL, type ParcelStatus } from "@delivery-fast/shared";
 import type { z } from "zod";
 import { addressText } from "../../common/address";
@@ -47,6 +48,12 @@ const SELECT = {
   serviceLevel: true,
   weightKg: true,
   contents: true,
+  productName: true,
+  productLabel: true,
+  deliveryTypeName: true,
+  speedOption: true,
+  priorityName: true,
+  pricingSnapshot: true,
   originBranchCode: true,
   totalCharge: true,
   slaState: true,
@@ -102,6 +109,11 @@ const BASE: Column[] = [
   { header: "District", width: 16, value: p => p.deliveryDistrict ?? "" },
   { header: "Zone", width: 18, value: p => p.deliveryZone ?? "" },
   { header: "Service", width: 12, value: p => SERVICE_LEVEL_LABEL[p.serviceLevel] },
+  { header: "Delivery type", width: 16, value: p => p.deliveryTypeName ?? p.speedOption ?? "" },
+  { header: "Priority", width: 14, value: p => p.priorityName ?? "" },
+  // The product as the merchant's file / form wrote it, and the system product it was matched to.
+  { header: "Product", width: 24, value: p => p.productLabel ?? p.productName ?? p.contents ?? "" },
+  { header: "System product", width: 20, value: p => p.productName ?? "" },
   { header: "Weight (kg)", width: 11, value: p => num(p.weightKg) },
   { header: "Current hub", width: 20, value: p => p.currentHub?.name ?? "" },
   { header: "Pickup rider", width: 24, value: p => rider(p.pickupRider) },
@@ -130,17 +142,19 @@ const COD: Column = { header: "COD (BDT)", width: 12, value: p => num(p.codAmoun
 const COD_COLLECTED: Column = { header: "COD collected (BDT)", width: 12, value: p => num(p.codCollectedAmount ?? p.codCollection?.amount) };
 
 const column = (header: string) => BASE.find(c => c.header === header)!;
-const CHARGE: Column = { header: "Delivery charge (BDT)", width: 13, value: p => num(p.totalCharge) };
+// A package with its charges off: no charge is shown (empty, not 0).
+const CHARGE: Column = { header: "Delivery charge (BDT)", width: 13, value: p => (chargesOffOf(p) ? "" : num(p.totalCharge)) };
 const RETURN_CHARGE = RETURNED.find(c => c.header === "Return charge (BDT)")!;
 
 /** A merchant's file: its own parcels, by merchant type and status, nothing internal. */
 export function merchantExportColumns(opts: { statuses?: readonly string[]; ecommerce: boolean; owner: boolean }): Column[] {
   const delivered = !!opts.statuses?.includes("DELIVERED");
   const returned = !!opts.statuses?.some(s => s === "RETURNED" || s === "RETURN_SCHEDULED");
-  const place = ["Recipient", "Recipient phone", "Address", "District", "Zone", "Service"].map(column);
+  const place = ["Recipient", "Recipient phone", "Address", "District", "Zone", "Service", "Delivery type", "Priority"].map(column);
+  // The merchant's own product name (never the system product it was matched to).
   const kind: Column[] = opts.ecommerce
-    ? [{ header: "Product", width: 24, value: p => p.contents ?? "" }, column("Weight (kg)"), COD]
-    : [{ header: "Document", width: 26, value: p => p.contents ?? "" }, { header: "Origin branch", width: 16, value: p => p.originBranchCode ?? "" }];
+    ? [{ header: "Product", width: 24, value: p => p.productLabel ?? p.productName ?? p.contents ?? "" }, column("Weight (kg)"), COD]
+    : [{ header: "Document", width: 26, value: p => p.contents || p.productLabel || p.productName || "" }, { header: "Origin branch", width: 16, value: p => p.originBranchCode ?? "" }];
   return [
     ...["Date (first status)", "Tracking ID", "Reference no", "Status", "Status update date"].map(column),
     ...place,

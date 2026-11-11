@@ -59,6 +59,8 @@ interface PackageView {
 interface Quote {
   lines?: { label: string; amount: number }[];
   totalCharge: number;
+  /** false: the package charges nothing (no price is shown). */
+  chargesOn?: boolean;
   returnCharge?: number;
   package?: { name: string } | null;
   collectHub?: { name: string; address?: string | null } | null;
@@ -626,7 +628,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
             </div>,
           )}
           <div className="full" aria-live="polite" style={{ fontSize: 13, color: "#637083" }}>
-            {!view ? null : quote?.q?.lines ? (
+            {!view || quote?.q?.chargesOn === false ? null : quote?.q?.lines ? (
               <div style={{ display: "grid", gap: 3 }}>
                 {quote.q.lines.map((l, i) => (
                   <div key={i} className="row" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>

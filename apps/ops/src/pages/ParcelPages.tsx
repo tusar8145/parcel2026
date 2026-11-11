@@ -18,10 +18,17 @@ import { SlaAlerts } from "./Reports";
 import { BulkUpdateButton, ImportButtons } from "@/features/imports/ImportButtons";
 import type { ListFilters } from "@/features/parcels/useParcelList";
 import { parseParcelStatus } from "@delivery-fast/shared/dist/parcel-status.js";
+import { pinName, useImportPin } from "@/features/imports/importPin";
 
 export function NewOrders() {
   const view = viewById("New orders")!;
-  const list = useParcelList({ id: "new-orders", params: { stage: "new" }, noun: "order", empty: "No orders are waiting for operations." });
+  // A pinned import (Import history › Pin): only its parcels, whatever their status or date.
+  const pin = useImportPin();
+  const list = useParcelList(
+    pin
+      ? { id: `new-orders-pin-${pin.batchId}`, params: { batchId: pin.batchId }, allTime: true, noun: "order", empty: "This import has no parcels you can see." }
+      : { id: "new-orders", params: { stage: "new" }, noun: "order", empty: "No orders are waiting for operations." },
+  );
   const ops = useOps();
   const importConfig = useImportConfig("document", ["document", "ecommerce", "customer"]);
   return (
@@ -52,8 +59,8 @@ export function NewOrders() {
       <ParcelTable
         list={list}
         options={{
-          title: "Orders waiting for operations",
-          subtitle: "Newest first · 100 a page · tick orders to accept and assign them together",
+          title: pin ? `Pinned import ${pinName(pin)}` : "Orders waiting for operations",
+          subtitle: pin ? "Only this import's parcels, whatever their status (this device; unpin to see every new order)" : "Newest first · 100 a page · tick orders to accept and assign them together",
           lines: true,
           merchants: true,
           dates: true,

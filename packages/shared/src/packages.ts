@@ -287,6 +287,8 @@ export const INCLUDED_WEIGHT_KG = 0.5;
 
 /** A package version's prices (৳, VAT-inclusive). Fields a category doesn't use are ignored. Defaults: the owner's initial values. */
 export const packagePricesSchema = z.object({
+  /** Off: the package charges nothing (no delivery charge, COD fee, re-attempt or return charge) and screens show no charge. */
+  chargesOn: z.boolean().default(true),
   dhakaSuburban: money.default(100),
   sameDistrict: money.default(70),
   differentDistrict: money.default(130),
@@ -312,7 +314,7 @@ export const DEFAULT_PACKAGE_PRICES: PackagePrices = packagePricesSchema.parse({
 
 export type PriceUnit = "৳" | "%" | "count";
 /** Price fields per category, in the editor's groups and order. `sign` marks subtracted / added adjustments. */
-export const PRICE_FIELDS: readonly { key: Exclude<keyof PackagePrices, "deliveryFees">; group: string; label: string; unit: PriceUnit; segments: readonly PackageSegment[]; sign?: "-" | "+"; signed?: boolean }[] = [
+export const PRICE_FIELDS: readonly { key: Exclude<keyof PackagePrices, "deliveryFees" | "chargesOn">; group: string; label: string; unit: PriceUnit; segments: readonly PackageSegment[]; sign?: "-" | "+"; signed?: boolean }[] = [
   { key: "dhakaSuburban", group: "Route", label: "Dhaka ↔ Sub-urban", unit: "৳", segments: ALL },
   { key: "sameDistrict", group: "Route", label: "Inside same district", unit: "৳", segments: ALL },
   { key: "differentDistrict", group: "Route", label: "Different district", unit: "৳", segments: ALL },
@@ -508,7 +510,7 @@ export interface PriceBreakdown {
 
 const whole = (n: number) => Math.round(n + 1e-9);
 /** The flat ৳ / % / count price fields (not the delivery type fees). */
-type NumericPrice = Exclude<keyof PackagePrices, "deliveryFees">;
+type NumericPrice = Exclude<keyof PackagePrices, "deliveryFees" | "chargesOn">;
 const PRODUCT_FEE: Record<ProductType, NumericPrice> = { REGULAR: "typeRegular", DOCUMENT: "typeDocument", BOOKS: "typeBooks" };
 const ROUTE_FEE: Record<RouteTier, NumericPrice> = { DHAKA_SUBURBAN: "dhakaSuburban", SAME_DISTRICT: "sameDistrict", DIFFERENT_DISTRICT: "differentDistrict" };
 
@@ -519,6 +521,9 @@ const ROUTE_FEE: Record<RouteTier, NumericPrice> = { DHAKA_SUBURBAN: "dhakaSubur
  * delivery charge (never below 0) → COD fee. VAT-inclusive; every line whole taka (COD rounds up).
  */
 export function priceParcel(prices: PackagePrices, input: PriceInput): PriceBreakdown {
+  // Charges off (the package's switch): nothing to pay, no price lines.
+  if (prices.chargesOn === false)
+    return { tier: input.tier, lines: [], deliveryCharge: 0, codFee: 0, totalCharge: 0, columns: { baseCharge: 0, weightCharge: 0, serviceCharge: 0, codFee: 0, discount: 0 } };
   const s = input.selection;
   const banking = isBanking(input.segment);
   const lines: PriceLine[] = [];
@@ -573,7 +578,8 @@ export function displayPriceLines<L extends { code: string; label: string; amoun
 }
 
 /** Re-attempt fee for the n-th failed attempt (1-based): free for the first `freeReattempts`. */
-export function reattemptFeeFor(prices: Pick<PackagePrices, "freeReattempts" | "reattemptFee">, failedAttempts: number): number {
+export function reattemptFeeFor(prices: Pick<PackagePrices, "freeReattempts" | "reattemptFee"> & { chargesOn?: boolean }, failedAttempts: number): number {
+  if (prices.chargesOn === false) return 0;
   return failedAttempts > prices.freeReattempts ? whole(prices.reattemptFee) : 0;
 }
 

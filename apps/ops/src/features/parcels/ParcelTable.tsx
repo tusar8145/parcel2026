@@ -237,7 +237,7 @@ function Row({ p, list, options }: { p: Parcel; list: ParcelListState; options: 
   const next = a.next(p);
   const line = lineOf(p);
   const sub = [lineLabel(p), serviceOf(p), when(p.createdAt)].filter(Boolean).join(" · ");
-  const customer = line === "CUSTOMER" ? ` · Sender pays ৳${Number(p.charges?.total) || 0}${Number(p.codAmount) ? ` · COD ৳${Number(p.codAmount)}` : ""}` : "";
+  const customer = line === "CUSTOMER" ? `${p.chargesOff ? "" : ` · Sender pays ৳${Number(p.charges?.total) || 0}`}${Number(p.codAmount) ? ` · COD ৳${Number(p.codAmount)}` : ""}` : "";
   const merchant = p.merchant?.name || p.sender?.name || "Merchant not set";
   const recipient = p.recipient?.name || "Recipient not set";
   const destination = p.delivery?.label || "Address not set";

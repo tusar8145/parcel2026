@@ -17,6 +17,8 @@ export interface ShipmentDoc extends LabelData {
   declaredValue: number | null;
   /** Price lines frozen at booking (or base / weight / service / COD fee / discount). */
   chargeLines: { label: string; amount: number }[];
+  /** The parcel's package charges nothing: no charge lines, totals or VAT are printed. */
+  chargesOff?: boolean;
   total: number;
   vat: number;
   taxable: number;
@@ -173,7 +175,7 @@ function fullInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, meta: DocMeta
   y += 4;
 
   // Charges with VAT (left out when Invoice settings › "Show delivery charge on invoice" is off)
-  const charge = brand.showDeliveryCharge !== false;
+  const charge = brand.showDeliveryCharge !== false && !s.chargesOff;
   const newPage = () => compactHeader(pdf, brand, m);
   if (charge) y = table(pdf, {
     y,
@@ -248,7 +250,7 @@ const detailItems = (s: ShipmentDoc): [string, string][] =>
  * hubs, the shipment details, the price lines and totals, the "Received by" lines and the tracking QR.
  */
 function quarterInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y: number, w: number, h: number) {
-  const charge = brand.showDeliveryCharge !== false;
+  const charge = brand.showDeliveryCharge !== false && !s.chargesOff;
   const pad = 10;
   const ix = x + pad;
   const iw = w - pad * 2;
@@ -359,7 +361,7 @@ function quarterInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number,
 
 /** 8 per A4 page: a compact slip in a grid cell (the dense layout). */
 function cellInvoice(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, x: number, y: number, w: number, h: number, dense: boolean) {
-  const charge = brand.showDeliveryCharge !== false;
+  const charge = brand.showDeliveryCharge !== false && !s.chargesOff;
   const pad = dense ? 6 : 9;
   const ix = x + pad;
   const iw = w - pad * 2;
@@ -448,7 +450,7 @@ const POS_W = 80 * MM;
 
 /** Height of a POS receipt (measured with the same rules it is drawn with). */
 function posReceipt(pdf: PdfWriter, brand: Brand, s: ShipmentDoc, draw: boolean): number {
-  const charge = brand.showDeliveryCharge !== false;
+  const charge = brand.showDeliveryCharge !== false && !s.chargesOff;
   const pad = 10;
   const iw = POS_W - pad * 2;
   let y = pad;

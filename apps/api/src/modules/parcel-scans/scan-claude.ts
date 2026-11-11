@@ -14,7 +14,13 @@ export interface ScanLists {
   speeds: readonly string[];
   categories: readonly string[];
   priorities: readonly string[];
+  /** AI import is on: with no product name written, Claude names the item from the photo (`product_seen`). */
+  guessProduct?: boolean;
 }
+
+/** The extra field Claude fills when no product name is written (AI import on). */
+const PRODUCT_SEEN =
+  "Only when no product / item name is written: what the item is, from what the photo shows (the parcel's contents, its packaging or a picture on it), as a short generic product name (e.g. Shoes, Mobile phone cover, Cheque book, Saree). Empty when a product name is written, or when the photo doesn't show what the item is (never guess it from the shop name).";
 
 /** What each import column means on a label (the model reads every column of the kind's template). */
 const HINTS: Record<Exclude<ColumnKey, "service_level" | "category" | "priority">, string> = {
@@ -73,11 +79,13 @@ export class ScanClaudeService {
   async extract(input: { image: Buffer; kind: ImportKindKey; places: Places; lists: ScanLists }): Promise<ClaudeRead | null> {
     if (!this.enabled()) return null;
     this.client ??= new Anthropic({ apiKey: env().ANTHROPIC_API_KEY, timeout: 120_000, maxRetries: 2 });
-    const keys = COLUMNS[input.kind].map(c => c.key);
+    const keys: string[] = COLUMNS[input.kind].map(c => c.key);
+    const guess = !!input.lists.guessProduct && keys.includes("product_type");
+    if (guess) keys.push("product_seen");
     const schema = {
       type: "object",
       // Plain strings ("" = not on the photo): the API allows at most 16 nullable (union) fields; a customer parcel has 20.
-      properties: Object.fromEntries(keys.map(k => [k, { type: "string", description: hintOf(k, input.lists) }])),
+      properties: Object.fromEntries(keys.map(k => [k, { type: "string", description: k === "product_seen" ? PRODUCT_SEEN : hintOf(k as ColumnKey, input.lists) }])),
       required: keys,
       additionalProperties: false,
     };
@@ -175,6 +183,9 @@ export function fromClaude(values: Values, kind: ImportKindKey, places: Places, 
     const v = str(key);
     if (v && v.length <= max && !/^(?:n\/?a|none|null|not provided)$/i.test(v)) out[key] = v;
   }
+  // No product name written: the item as the photo shows it (AI import on); the import matches or creates the product.
+  const seen = typeof (values as Record<string, unknown>).product_seen === "string" ? String((values as Record<string, unknown>).product_seen).trim() : "";
+  if (!out.product_type && lists.guessProduct && seen && seen.length <= 80 && !/^(?:n\/?a|none|null|unknown|not provided|parcel|package|box|item)$/i.test(seen)) out.product_type = seen;
   for (const [key, max] of [["cod_amount", 1_000_000], ["declared_value", 1_000_000]] as const) {
     const digits = str(key).replace(/[,\s]/g, "").replace(/[^\d.]/g, "");
     const n = Number(digits);

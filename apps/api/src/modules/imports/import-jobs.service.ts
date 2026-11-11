@@ -619,7 +619,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
     return (key: string) => cols.find(c => c.key === key)?.header ?? other[key] ?? key;
   }
 
-  async view(job: ImportJob) {
+  /** `withChoices`: the lists a preview row can take (one file; the history list leaves them out). */
+  async view(job: ImportJob, withChoices = true) {
     const [merchant, hub, batch, createdBy] = await Promise.all([
       job.merchantId ? this.prisma.merchant.findUnique({ where: { id: job.merchantId }, select: { id: true, code: true, name: true } }) : null,
       job.dropOffHubId ? this.prisma.hub.findUnique({ where: { id: job.dropOffHubId }, select: { id: true, name: true } }) : null,
@@ -678,7 +679,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       },
       totals: { rows: totals._count._all, charge: Number(totals._sum.charge ?? 0) },
       /** What a preview row can be changed to (a checked file not submitted yet). */
-      choices: job.status === "VALIDATED" && !job.rowsPurgedAt ? await this.choices(job, settings) : null,
+      choices: withChoices && job.status === "VALIDATED" && !job.rowsPurgedAt ? await this.choices(job, settings) : null,
       rowsAvailable: !job.rowsPurgedAt,
       downloads: {
         failedRows: job.errorRows + job.failedCount > 0 && !job.rowsPurgedAt ? `/api/v1/imports/${job.id}/failed-rows` : null,
@@ -704,6 +705,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       products: ctx.columns.some(c => c.key === "product_type") ? ctx.products.map(p => p.name) : [],
       deliveryTypes: deliveryTypesFor(ctx.pkg.segment, ctx.deliveryTypes).map(t => t.name),
       priorities: ctx.priorities.map(p => p.name),
+      /** The file's package charges nothing: the preview shows no charge. */
+      chargesOff: ctx.pkg.prices.chargesOn === false,
     };
   }
 
@@ -916,7 +919,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
       ...pageArgs(query),
     });
     const page = toPage(rows, query.limit);
-    return { items: await Promise.all(page.items.map(j => this.view(j))), nextCursor: page.nextCursor };
+    return { items: await Promise.all(page.items.map(j => this.view(j, false))), nextCursor: page.nextCursor };
   }
 
   /** Tracking IDs booked by the import (labels). */

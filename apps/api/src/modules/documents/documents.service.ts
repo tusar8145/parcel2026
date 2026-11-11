@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { chargesOffOf } from "../parcels/parcel.views";
 import { addressText } from "../../common/address";
 import type { Readable } from "node:stream";
 import type { z } from "zod";
@@ -367,6 +368,7 @@ export class DocumentsService {
         contents: p.contents,
         declaredValue: p.declaredValue == null ? null : num(p.declaredValue),
         chargeLines,
+        chargesOff: chargesOffOf(p),
         total,
         vat: Number(split.vat),
         taxable: Number(split.taxable),

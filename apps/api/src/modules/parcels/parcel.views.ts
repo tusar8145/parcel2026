@@ -57,13 +57,16 @@ export function pickupWindowOf(p: { pickupWindowStart: Date | null; pickupWindow
   };
 }
 
-type Snapshot = { engine?: string; segment?: string; packageName?: string; version?: number; lines?: { code: string; label: string; amount: number }[]; tier?: string; deliveryCharge?: number } | null;
+type Snapshot = { engine?: string; segment?: string; packageName?: string; version?: number; lines?: { code: string; label: string; amount: number }[]; tier?: string; deliveryCharge?: number; prices?: { chargesOn?: boolean } } | null;
+
+/** The parcel's package charges nothing (its "Charges" switch was off at booking): screens show no charge. */
+export const chargesOffOf = (p: { pricingSnapshot: unknown }) => (p.pricingSnapshot as Snapshot)?.prices?.chargesOn === false;
 
 /**
  * The service package side of a parcel (null for parcels booked before packages): the choices made
  * at booking, the proof methods the rider may use and the frozen price lines.
  */
-export function serviceView(p: ParcelWithRelations) {
+export function serviceView(p: ParcelWithRelations, internal = true) {
   if (!p.packageVersionId) return null;
   const snap = p.pricingSnapshot as Snapshot;
   const has = new Set(p.services);
@@ -78,14 +81,17 @@ export function serviceView(p: ParcelWithRelations) {
     priority: p.priorityName,
     openBox: p.openBox,
     onDemand: p.onDemand,
-    /** The product as the merchant wrote it (Excel), else the system product; `systemProduct`: the matched one. */
+    /** The product as the merchant wrote it (Excel), else the system product; `systemProduct`: the matched one (staff only). */
     product: p.productLabel ?? p.productName,
-    systemProduct: p.productName,
+    systemProduct: internal ? p.productName : undefined,
     notifications: p.notifications,
+    /** The product's message channels at booking (sms, email, push). */
+    channels: p.notifyChannels,
     /** The stored messages by name, e.g. "Out for delivery (recipient)" (what the merchant parcel drawer lists). */
     messages: PARCEL_NOTIFICATIONS.filter(n => p.notifications.includes(n.code)).map(n => `${n.label} (${n.audience})`),
     tier: snap?.tier ?? null,
-    lines: snap?.lines ?? [],
+    lines: chargesOffOf(p) ? [] : (snap?.lines ?? []),
+    chargesOff: chargesOffOf(p),
     tracking: { liveLocation: has.has("tracking.live_location"), riderPhone: has.has("tracking.rider_phone") },
   };
 }
@@ -205,13 +211,19 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
       /** Itemised price frozen at booking (service packages). */
       lines: (p.pricingSnapshot as Snapshot)?.lines ? displayPriceLines((p.pricingSnapshot as Snapshot)!.lines!, (p.pricingSnapshot as Snapshot)?.segment) : null,
     },
+    /** The package charged nothing (its charges were off): no charge is shown. */
+    chargesOff: chargesOffOf(p),
     /** Service package choices (null: booked before packages). */
-    service: serviceView(p),
+    service: serviceView(p, opts.internal),
     proofMethods: proofMethodsOf(p),
     openBox: p.openBox,
     onDemand: p.onDemand,
     product: p.productLabel ?? p.productName,
-    systemProduct: p.productName,
+    /** The system product the file's / form's name was matched to: staff only (merchants see their own name). */
+    systemProduct: opts.internal ? p.productName : undefined,
+    priority: p.priorityName,
+    deliveryType: p.deliveryTypeName ?? p.speedOption ?? null,
+    notifyChannels: p.notifyChannels,
     collect: collectView(p),
     codAmount: num(p.codAmount),
     cod: p.codCollection ? { amount: num(p.codCollection.amount), state: p.codCollection.state, collectedAt: p.codCollection.collectedAt } : null,

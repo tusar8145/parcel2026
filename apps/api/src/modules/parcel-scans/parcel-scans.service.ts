@@ -21,6 +21,7 @@ import { readFields, ScanReaderService } from "./scan-reader";
 import { mergeAi, mergeVision, ScanAiService } from "./scan-ai";
 import { forClaude, forModel, upright } from "./scan-image";
 import { ScanClaudeService, type ClaudeRead, type ScanLists } from "./scan-claude";
+import { ImportAiService } from "../imports/import-ai.service";
 import { CatalogService, listOf } from "../packages/catalog.service";
 import { deliveryTypesFor } from "@delivery-fast/shared";
 import { segmentOf } from "../imports/columns";
@@ -63,17 +64,18 @@ export class ParcelScansService implements OnApplicationBootstrap {
     private readonly ai: ScanAiService,
     private readonly claude: ScanClaudeService,
     private readonly catalogs: CatalogService,
+    private readonly importAi: ImportAiService,
   ) {}
 
-  /** The kind's delivery types, categories and priorities (Claude chooses from them). */
+  /** The kind's delivery types and priorities (Claude chooses from them); with AI import on, Claude names unnamed products. */
   private async lists(kind: ImportKindKey): Promise<ScanLists> {
     const segment = segmentOf(kind);
-    const [types, categories, priorities] = await Promise.all([
+    const [types, priorities, guessProduct] = await Promise.all([
       this.catalogs.deliveryTypes(),
-      this.prisma.productCategory.findMany({ where: { segment: listOf(segment), active: true }, orderBy: { sortOrder: "asc" }, select: { name: true } }),
       this.prisma.parcelPriority.findMany({ where: { segment: listOf(segment), active: true }, orderBy: { sortOrder: "asc" }, select: { name: true } }),
+      this.importAi.active(),
     ]);
-    return { speeds: deliveryTypesFor(segment, types).map(t => t.name), categories: categories.map(c => c.name), priorities: priorities.map(p => p.name) };
+    return { speeds: deliveryTypesFor(segment, types).map(t => t.name), categories: [], priorities: priorities.map(p => p.name), guessProduct };
   }
 
   onApplicationBootstrap() {

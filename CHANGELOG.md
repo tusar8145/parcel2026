@@ -7,6 +7,13 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.36.0 — 2026-11-12
+- Scan with phone: with AI import on, a photo whose label doesn't name the product gets one from what the photo shows; the import then matches it to a listed product or creates it.
+- Courier Operations › Import history: "Pin" on an import shows only that import's parcels in New orders, whatever their status, also after moving to other pages. An "Unpin" button with the import and batch number sits next to Import history. The pin is kept on this device only and ends by itself after 6 hours.
+- Service plans & pricing: each package has a "Charges" switch. On: the price form shows as before. Off: its parcels get no delivery charge, COD fee, re-attempt or return charge, and no charge is shown in booking forms, the import preview, parcel details, invoices and labels, or the merchant's plan page.
+- Parcel details (operations and merchants): delivery type, priority and product (the merchant's own name; operations also see the system product in small text), the product's SMS / email / push, each message ticked at booking with whether its SMS / email went, how many are done and which SMS and emails were sent. Merchants never see the system product name.
+- Excel exports (All parcels, New orders, merchants' orders): Delivery type, Priority and Product columns (operations also System product).
+
 ## 1.35.0 — 2026-11-12
 - Excel import preview: the delivery address is a two-line box, so the whole address shows (and can be corrected).
 - Excel import preview: each row's product, delivery type and priority can be changed from a dropdown; the row is checked and priced again. A row's own delivery type or priority stays when the messages change, until a delivery type or priority is applied to every row. Changing the product keeps the file's name on the parcel and its prints.

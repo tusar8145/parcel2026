@@ -68,6 +68,14 @@ export interface Parcel {
   productType: string;
   productName?: string | null;
   product?: string | null;
+  /** The system product the file's / form's name was matched to (staff). */
+  systemProduct?: string | null;
+  priority?: string | null;
+  deliveryType?: string | null;
+  /** The package charged nothing: no price is shown. */
+  chargesOff?: boolean;
+  service?: { speedLabel?: string | null } | null;
+  messagePlan?: import("@panel/ui/MessagePlan").MessagePlan;
   charges: { base?: number; weight?: number; service?: number; codFee?: number; discount?: number; reattempt?: number; total?: number; lines?: { label: string; amount: number }[] | null };
   codAmount: number | null;
   cod: { amount: number; state: string; collectedAt?: string | null } | null;

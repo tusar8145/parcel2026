@@ -18,6 +18,7 @@ import { useMerchant } from "@/lib/merchant";
 import { cancelParcel, confirmReturnReceived, printLabel, requestReturn } from "./actions";
 import { completeDetails } from "./complete";
 import { EDITABLE_INCOMPLETE, type Parcel } from "./model";
+import { MessagePlanView, type MessagePlan } from "@panel/ui/MessagePlan";
 
 const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
@@ -45,6 +46,11 @@ interface Full extends Parcel {
   missingLabels?: string[];
   liveDelivery?: { locationStatus?: string | null; staleAfterMinutes?: number; rider?: { name?: string; phone?: string | null } | null; location?: { lat: number; lng: number; ageSeconds?: number } | null } | null;
   service?: { speedLabel?: string; firstMileLabel?: string; lastMileLabel?: string; messages?: string[] } | null;
+  priority?: string | null;
+  deliveryType?: string | null;
+  /** The package charged nothing: no price is shown. */
+  chargesOff?: boolean;
+  messagePlan?: MessagePlan;
   charges: Parcel["charges"] & { reattempt?: number; lines?: { label: string; amount: number }[] };
   returnInfo?: { reason?: string | null; requestedAt?: string | null; charge?: number | null; receivedAt?: string | null; onReturnRun?: boolean } | null;
   proof?: { method: string; receivedBy?: string | null; recordedAt?: string | null } | null;
@@ -227,7 +233,8 @@ function Content({ id, close, closeRef }: { id: string; close: () => void; close
               ["Type", TYPE_LABEL[p.type] || p.type],
               ["Weight", !doc && p.weightKg != null ? `${p.weightKg} kg` : ""],
               ["Packaging", p.packaging],
-              ["Service", p.service?.speedLabel || p.serviceLevelLabel],
+              ["Delivery type", p.deliveryType || p.service?.speedLabel || p.serviceLevelLabel],
+              ["Priority", p.priority],
               ["First mile", p.intake === "DROP_OFF" && p.dropOffHub ? `${firstMile} · ${p.dropOffHub.name}` : firstMile],
               ["Last mile", p.service?.lastMileLabel || (p.collect ? "Hub Pickup" : "Home delivery")],
               ["Open box", p.openBox ? "Allowed" : ""],
@@ -241,6 +248,7 @@ function Content({ id, close, closeRef }: { id: string; close: () => void; close
             ]}
           />
         </Section>
+        {p.chargesOff ? null : (
         <Section title="Price">
           <div className="price-lines">
             {lines.map(l => (
@@ -255,6 +263,7 @@ function Content({ id, close, closeRef }: { id: string; close: () => void; close
             </div>
           </div>
         </Section>
+        )}
         {p.collect ? (
           <Section title="Hub Pickup">
             <KV
@@ -275,29 +284,15 @@ function Content({ id, close, closeRef }: { id: string; close: () => void; close
                 ["Status", <Pill key="s">{returnStage}</Pill>],
                 ["Reason", info?.reason],
                 ["Requested", when(info?.requestedAt)],
-                ["Return charge", info?.charge != null ? money(info.charge) : ""],
+                ["Return charge", info?.charge != null && !p.chargesOff ? money(info.charge) : ""],
                 ["Received", when(info?.receivedAt)],
               ]}
             />
           </Section>
         ) : null}
         <Proof p={p} />
-        <Section title="Messages set to send">
-          {!p.service ? (
-            <p className="faint" style={{ margin: 0 }}>
-              Booked before service packages: the account's standard delivery messages.
-            </p>
-          ) : p.service.messages?.length ? (
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-              {p.service.messages.map(msg => (
-                <li key={msg}>{msg}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="faint" style={{ margin: 0 }}>
-              No SMS or email messages for this parcel.
-            </p>
-          )}
+        <Section title="Messages (SMS · email · push)">
+          <MessagePlanView plan={p.messagePlan} booked={!!p.service} />
         </Section>
         <Section title="Support">
           <Button

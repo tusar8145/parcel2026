@@ -922,5 +922,7 @@ export function quoteResponse(q: PackageQuote) {
     ...(q.origin ? { origin: q.origin } : {}),
     returnPercent: q.returnPercent,
     returnCharge: Math.ceil((q.totalCharge * q.returnPercent) / 100),
+    /** false: the package charges nothing (forms show no charge). */
+    chargesOn: q.prices.chargesOn !== false,
   };
 }

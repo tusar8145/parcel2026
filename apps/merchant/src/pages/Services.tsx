@@ -42,6 +42,8 @@ interface Plan {
   package: { name: string; version: number; effectiveFrom?: string | null };
   scheduled: { name: string; effectiveFrom: string }[];
   summary: { included: number; notIncluded: number };
+  /** false: the plan charges nothing (no prices are shown). */
+  chargesOn?: boolean;
   services: { title: string; hint: string; items: { code: string; label: string; detail: string; price?: string; included: boolean; always?: boolean }[] }[];
   messages: { stages: string[]; parcel: Msg[]; support: Msg[]; account: Msg[]; productsWithoutMessages: string[] };
   prices: {
@@ -128,12 +130,18 @@ export default function Services() {
           <section className="dfp-stats" aria-label="At a glance">
             <Stat label="Services in your plan" value={String(d.summary.included)} foot={d.summary.notIncluded ? `${d.summary.notIncluded} more available on request` : "Everything available"} />
             <Stat label="Parcel messages on" value={String(parcelOn)} foot="SMS or email, to you or your customer" />
-            <Stat label="Delivery from" value={tk(from)} foot={d.prices.includedWeightKg ? `per parcel, up to ${d.prices.includedWeightKg} kg` : "per parcel"} />
-            <Stat
-              label={d.prices.cod.length ? "COD fee" : "Returns"}
-              value={d.prices.cod.length ? d.prices.cod[0].value.replace(" of the cash collected", "") : (d.prices.failed[1]?.value ?? "").replace(" of the delivery charge", "")}
-              foot={d.prices.cod.length ? "of the cash collected" : "of the delivery charge"}
-            />
+            {d.chargesOn === false ? (
+              <Stat label="Delivery charge" value="None" foot="Your plan has no delivery charges" />
+            ) : (
+              <>
+                <Stat label="Delivery from" value={tk(from)} foot={d.prices.includedWeightKg ? `per parcel, up to ${d.prices.includedWeightKg} kg` : "per parcel"} />
+                <Stat
+                  label={d.prices.cod.length ? "COD fee" : "Returns"}
+                  value={d.prices.cod.length ? d.prices.cod[0].value.replace(" of the cash collected", "") : (d.prices.failed[1]?.value ?? "").replace(" of the delivery charge", "")}
+                  foot={d.prices.cod.length ? "of the cash collected" : "of the delivery charge"}
+                />
+              </>
+            )}
           </section>
         </div>
         <div className="seg-tabs" role="tablist" aria-label="Plan details" style={{ justifySelf: "start" }}>
@@ -143,7 +151,9 @@ export default function Services() {
               ["messages", "SMS & email"],
               ["pricing", "Pricing"],
             ] as const
-          ).map(([k, l]) => (
+          )
+            .filter(([k]) => k !== "pricing" || d.chargesOn !== false)
+            .map(([k, l]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
               {l}
             </button>

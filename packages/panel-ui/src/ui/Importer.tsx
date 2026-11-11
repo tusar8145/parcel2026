@@ -99,6 +99,8 @@ export interface ImportConfig {
   file?: File;
   printLabels?: (ids: string[]) => void;
   onDone?: () => void;
+  /** Import history › Pin (Courier Operations): show only this import's parcels in New orders. */
+  onPin?: (job: { id: string; number: string; batch: { id: string; number: string } }) => void;
   // bulk
   bulkKind?: string;
   bulkAction?: string;
@@ -121,7 +123,7 @@ interface Job {
   services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: string[] | null; speed?: string | null; speedLabel?: string | null; productTypeLabel?: string | null; priority?: string | null; priorityLabel?: string | null };
   intake?: string;
   dropOffHub?: { name: string } | null;
-  batch?: { number: string } | null;
+  batch?: { id: string; number: string } | null;
   totals?: { charge: number } | null;
   ignoredColumns?: string[];
   skippedLines?: { count: number; rows: number[] } | null;
@@ -138,7 +140,7 @@ interface Job {
   merchant?: { name: string } | null;
   downloads?: { failedRows?: boolean };
   /** What a preview row can be changed to (names): a checked file not submitted yet. */
-  choices?: { products: string[]; deliveryTypes: string[]; priorities: string[] } | null;
+  choices?: { products: string[]; deliveryTypes: string[]; priorities: string[]; chargesOff?: boolean } | null;
 }
 export interface TransferResult {
   bags: { number: string; label?: string; originHub: string; destHub: string; parcels: number; status: string; trip?: string | null }[];
@@ -1216,7 +1218,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               [`${num(c.valid)} valid`, "good"],
               [`${num(c.incomplete)} needs info`, "warn"],
               [`${num(c.errors)} with errors`, "bad"],
-              ...(job.totals && toBook ? ([[`Total ৳${Number(job.totals.charge).toLocaleString("en-BD")} for ${count(toBook)}`, "info"]] as [string, Tone][]) : []),
+              ...(job.totals && toBook && !job.choices?.chargesOff ? ([[`Total ৳${Number(job.totals.charge).toLocaleString("en-BD")} for ${count(toBook)}`, "info"]] as [string, Tone][]) : []),
             ])}
             {notes.length ? <p className="muted" style={{ margin: "10px 0 0" }}>{notes.join(" ")}</p> : null}
             {filterBar([
@@ -1454,6 +1456,19 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                               {bulk ? "Not applied (.xlsx)" : "Not created (.xlsx)"}
                             </button>
                           ) : null}
+                          {!bulk && cfg.onPin && j.batch && j.result.created ? (
+                            <button
+                              type="button"
+                              className="button sm"
+                              title="Show only this import's parcels in New orders (this device, for 6 hours)"
+                              onClick={() => {
+                                cfg.onPin!({ id: j.id, number: j.number, batch: j.batch! });
+                                close();
+                              }}
+                            >
+                              Pin
+                            </button>
+                          ) : null}
                           {!bulk && j.result.created && cfg.forOps ? (
                             <PrintImport jobId={j.id} number={j.number} kind={j.kind} size="sm" />
                           ) : !bulk && j.result.created && cfg.printLabels ? (
@@ -1620,7 +1635,7 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
                 {c.required ? " *" : ""}
               </th>
             ))}
-            <th>Charge</th>
+            {job.choices?.chargesOff ? null : <th>Charge</th>}
             <th>Problems</th>
           </tr>
         </thead>
@@ -1662,6 +1677,7 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
                       </td>
                     );
                   })}
+                  {job.choices?.chargesOff ? null : (
                   <td className="nowrap">
                     {r.lines?.length ? (
                       <details>
@@ -1676,6 +1692,7 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
                       taka(r.charge)
                     )}
                   </td>
+                  )}
                   <td style={{ minWidth: 260, fontSize: 12 }}>
                     {r.errors?.length ? r.errors.map((e, i) => <div key={i}>{e.text}</div>) : r.status === "INCOMPLETE" ? <span style={{ color: "var(--warn)" }}>{`Needs ${(r.missing || []).map(m => MISSING[m] || m).join(", ")} before delivery`}</span> : r.trackingId ? <span className="tracking">{r.trackingId}</span> : null}
                     {r.messagesOff && r.status !== "ERROR" ? <div className="muted">{r.messagesNote || "This product doesn't send messages"}</div> : null}
@@ -1685,7 +1702,7 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
             })
           ) : (
             <tr>
-              <td colSpan={shown.length + 4} className="empty">
+              <td colSpan={shown.length + (job.choices?.chargesOff ? 3 : 4)} className="empty">
                 No rows match this filter.
               </td>
             </tr>

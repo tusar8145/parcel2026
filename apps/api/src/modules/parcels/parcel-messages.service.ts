@@ -5,6 +5,49 @@ import type { Actor } from "../../common/auth/actor";
 import { notFound } from "../../common/errors";
 import { definitionOf } from "../notifications/catalog";
 import { opsHubScope } from "./ops-scope";
+import { PARCEL_NOTIFICATIONS } from "@delivery-fast/shared";
+
+/**
+ * The messages a parcel was booked with (parcel details, staff and its owner): its channels, each ticked message
+ * with its SMS / email state (null: not sent yet, e.g. the event hasn't happened), how many are done, and the SMS
+ * and emails sent (no text: owners see when and what, not the body).
+ */
+export async function messagePlanOf(
+  prisma: PrismaService,
+  parcel: { trackingId: string; createdAt: Date; notifications: string[]; notifyChannels: string[] },
+) {
+  const until = new Date(parcel.createdAt.getTime() + LEGACY_WINDOW_DAYS * 86_400_000);
+  const rows = await prisma.outboxMessage.findMany({
+    where: {
+      OR: [
+        { trackingId: parcel.trackingId },
+        { trackingId: null, createdAt: { gte: parcel.createdAt, lte: until }, body: { contains: parcel.trackingId } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    take: LIMIT,
+    select: { channel: true, template: true, state: true, sentAt: true, createdAt: true },
+  });
+  const channels = new Set(parcel.notifyChannels);
+  const rank = { SENT: 3, PENDING: 2, FAILED: 1 } as const;
+  const stateOf = (events: readonly string[], channel: "SMS" | "EMAIL") => {
+    let best: keyof typeof rank | null = null;
+    for (const r of rows) if (r.channel === channel && events.includes(r.template) && (!best || rank[r.state] > rank[best])) best = r.state;
+    return best;
+  };
+  const items = PARCEL_NOTIFICATIONS.filter(n => parcel.notifications.includes(n.code)).map(n => {
+    const sms = channels.has("sms") ? stateOf(n.events, "SMS") : null;
+    const email = channels.has("email") ? stateOf(n.events, "EMAIL") : null;
+    return { code: n.code, label: n.label, audience: n.audience, sms, email, done: sms === "SENT" || email === "SENT" };
+  });
+  return {
+    channels: { sms: channels.has("sms"), email: channels.has("email"), push: channels.has("push") },
+    items,
+    done: items.filter(i => i.done).length,
+    total: items.length,
+    sent: rows.map(r => ({ channel: r.channel, event: r.template, eventLabel: definitionOf(r.template)?.label ?? r.template, state: r.state, at: r.sentAt ?? r.createdAt })).reverse(),
+  };
+}
 
 /** Messages per parcel in the log (newest first). */
 const LIMIT = 100;

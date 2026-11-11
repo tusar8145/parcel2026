@@ -83,7 +83,10 @@ export class MerchantPlanService {
       package: { name: view.package.name, version: view.package.version, isDefault: view.package.isDefault, effectiveFrom: view.package.effectiveFrom },
       scheduled: assignment.scheduled.map(s => ({ name: s.package?.name ?? `${view.segmentLabel} default package`, effectiveFrom: s.effectiveFrom })),
       summary: planSummary(segment, services),
-      services: serviceSections(segment, services, prices, types),
+      /** false: the plan charges nothing (the panel shows no prices). */
+      chargesOn: prices.chargesOn !== false,
+      // Charges off: the services without their prices.
+      services: serviceSections(segment, services, prices, types).map(sec => (prices.chargesOn === false ? { ...sec, items: sec.items.map(i => ({ ...i, price: undefined })) } : sec)),
       messages: {
         stages: MESSAGE_STAGES,
         parcel: await Promise.all(

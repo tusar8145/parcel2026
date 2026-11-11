@@ -17,7 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
 import { confirm } from "@panel/ui/dialogs";
-import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
+import { Button, Loading, PageHeading, Panel, Pill, Switch } from "@panel/ui/kit";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog } from "@/lib/admin";
@@ -29,7 +29,7 @@ const outcome = (result: { status?: string } | null | undefined, applied: string
 const localInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 /** Package prices as edited: flat fields, and `deliveryFees` (delivery type code → + charge). */
-type Prices = Record<string, number | Record<string, number>> & { deliveryFees?: Record<string, number> };
+type Prices = Record<string, number | boolean | Record<string, number>> & { deliveryFees?: Record<string, number>; chargesOn?: boolean };
 interface Draft {
   name: string;
   description: string;
@@ -705,9 +705,20 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
               );
             })}
           </div>
-          <h3 id="pkgSecPrices" style={{ margin: "18px 0 8px", fontSize: 14 }}>
+          <h3 id="pkgSecPrices" className="row" style={{ margin: "18px 0 8px", fontSize: 14, justifyContent: "space-between" }}>
             Prices
+            <Switch
+              checked={draft.prices.chargesOn !== false}
+              label={draft.prices.chargesOn !== false ? "Charges on" : "Charges off"}
+              onChange={on => set({ prices: { ...draft.prices, chargesOn: on } })}
+            />
           </h3>
+          {draft.prices.chargesOn === false ? (
+            <p className="callout" style={{ margin: "0 0 8px" }}>
+              Charges off: this package's parcels get no delivery charge, COD fee, re-attempt or return charge, and no charge is shown anywhere (booking forms, imports, parcel details, invoices). Turn it on to set the prices.
+            </p>
+          ) : (
+          <>
           <p className="faint" style={{ margin: "0 0 8px" }}>
             Prices depend on the districts only. Every line rounded to whole taka. “−” adjustments are subtracted; the delivery charge never goes below ৳0.
           </p>
@@ -748,6 +759,8 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
               </details>
             ))}
           </div>
+          </>
+          )}
           <div className="row" style={{ gap: 8, justifyContent: "flex-end", position: "sticky", bottom: 0, background: "var(--surface, #fff)", padding: "11px 0 0", marginTop: 14, borderTop: "1px solid var(--line)" }}>
             <Button onClick={close}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={busy}>

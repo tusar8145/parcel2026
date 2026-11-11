@@ -16,6 +16,9 @@ import { printLabels, PDF_LIMITS, refreshParcels } from "@/features/parcels/acti
 import { openDocument } from "@/features/parcels/actions";
 import { num } from "@panel/lib/format";
 import { openBulk, openBulkHistory, openImport, openImportHistory, type BulkFilters, type ImportConfig, type MerchantRef, type TransferResult } from "@panel/ui/Importer";
+import { useNavigate } from "react-router";
+import { pathFor } from "@/app/nav";
+import { pinImport, pinName, unpinImport, useImportPin, PIN_HOURS } from "./importPin";
 
 const PAGE_OF: Record<string, string> = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", transfers: "Transfers", all: "All parcels" };
 export const bulkLabel = (kind: string) => `Bulk update ${PAGE_OF[kind] || "All parcels"} by Excel`;
@@ -33,6 +36,7 @@ export function useBulkKinds() {
 export function useImportConfig(kind: "customer" | "ecommerce" | "document", kinds?: string[]) {
   const ops = useOps();
   const merchants = useMerchants();
+  const navigate = useNavigate();
   return async (): Promise<ImportConfig> => {
     const list = merchants.data ?? (await api<(MerchantRef & { status?: string; pickupHub?: { id: string } | null })[]>("/ops/merchants").catch(() => []));
     return {
@@ -47,8 +51,26 @@ export function useImportConfig(kind: "customer" | "ecommerce" | "document", kin
         void printLabels(ids.slice(0, PDF_LIMITS.labels));
       },
       onDone: () => refreshParcels(),
+      // Pin: New orders shows only this import's parcels (this browser, 6 hours).
+      onPin: job => {
+        pinImport({ batchId: job.batch.id, batch: job.batch.number, number: job.number });
+        toast(`New orders shows only ${pinName({ number: job.number, batch: job.batch.number })} on this device for ${PIN_HOURS} hours, or until you unpin it.`, "good");
+        navigate(pathFor("New orders"));
+      },
     };
   };
+}
+
+/** New orders: the pinned import's Unpin button (with its number). */
+export function UnpinButton() {
+  const pin = useImportPin();
+  if (!pin) return null;
+  const left = Math.max(1, Math.round((pin.pinnedAt + PIN_HOURS * 3600_000 - Date.now()) / 60_000));
+  return (
+    <Button icon="pin" variant="primary" title={`Pinned on this device; ends by itself in ${left >= 60 ? `${Math.floor(left / 60)} h ${left % 60} min` : `${left} min`}`} onClick={() => (unpinImport(), toast("Unpinned: New orders shows every new order again."))}>
+      {`Unpin ${pinName(pin)}`}
+    </Button>
+  );
 }
 
 export function ImportButtons({ kind, kinds }: { kind: "customer" | "ecommerce" | "document"; kinds?: string[] }) {
@@ -61,6 +83,7 @@ export function ImportButtons({ kind, kinds }: { kind: "customer" | "ecommerce" 
         Import Excel
       </Button>
       <Button icon="history" onClick={async () => void openImportHistory(await config())}>Import history</Button>
+      <UnpinButton />
     </>
   );
 }

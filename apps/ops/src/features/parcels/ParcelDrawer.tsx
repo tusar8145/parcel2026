@@ -16,6 +16,7 @@ import { toast } from "@panel/ui/toast";
 import { changeProductType, changeReturnCharge, printLabels, refreshParcels } from "./actions";
 import { CLOSED, PICKUP_STAGE, awaitingDropOff, failedDelivery, failureBadge, failureText, riderOf, slaOf, type Parcel } from "./model";
 import { useParcelActions } from "./useParcelActions";
+import { MessagePlanView } from "@panel/ui/MessagePlan";
 
 const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
@@ -127,6 +128,21 @@ function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: 
                   ["Deliver to", p.delivery?.label || "—"],
                   ["Pickup from", p.intake === "DROP_OFF" ? `Drop-off at ${p.dropOffHub?.name || "hub"}` : p.pickup?.label || "—"],
                   ["Service", [p.serviceLevelLabel, p.type === "DOCUMENT" ? "Document" : "Parcel", p.weightKg != null ? `${p.weightKg} kg` : ""].filter(Boolean).join(" · ")],
+                  ["Delivery type", p.deliveryType || p.service?.speedLabel || ""],
+                  ["Priority", p.priority || ""],
+                  [
+                    "Product",
+                    p.product ? (
+                      <span key="product">
+                        {p.product}
+                        {p.systemProduct && p.systemProduct.toLowerCase() !== p.product.toLowerCase() ? (
+                          <small className="faint" style={{ display: "block", fontSize: 11 }} title="The system product this name was matched to">{`System product: ${p.systemProduct}`}</small>
+                        ) : null}
+                      </span>
+                    ) : (
+                      ""
+                    ),
+                  ],
                   ["Rider", riderOf(p)],
                   ["Hub", p.currentHub?.name || "—"],
                   ["Order ref", p.merchantOrderRef || ""],
@@ -137,9 +153,15 @@ function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: 
                 ]}
               />
             </section>
+            {p.chargesOff ? null : (
+              <section>
+                <h3 className="section-title">Price</h3>
+                <Price p={p} />
+              </section>
+            )}
             <section>
-              <h3 className="section-title">Price</h3>
-              <Price p={p} />
+              <h3 className="section-title">Messages (SMS · email · push)</h3>
+              <MessagePlanView plan={p.messagePlan} />
             </section>
             <section>
               <h3 className="section-title">Proof of delivery</h3>

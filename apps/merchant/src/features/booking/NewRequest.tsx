@@ -37,6 +37,8 @@ interface PackageView {
 interface Quote {
   lines?: { label: string; amount: number }[];
   totalCharge: number;
+  /** false: the package charges nothing (no price is shown). */
+  chargesOn?: boolean;
   returnCharge?: number;
   returnPercent?: number;
   package?: { name: string } | null;
@@ -543,7 +545,7 @@ function NewRequestDialog({ close, onDone }: { close: () => void; onDone: (track
           {field("cn", "Pre-printed CN (optional)", <input id="nr_cn" className="input" placeholder="Label from your CN stock" value={req.cn} aria-invalid={errors.cn ? true : undefined} onChange={e => setReq(r => ({ ...r, cn: e.target.value }))} />)}
         </div>
 
-        <div className="callout" style={{ marginTop: 14 }} aria-live="polite">
+        <div className="callout" style={{ marginTop: 14, ...(quote?.q?.chargesOn === false ? { display: "none" } : {}) }} aria-live="polite">
           {quote?.q?.lines ? (
             <div style={{ display: "grid", gap: 3, fontSize: 13, flex: 1 }}>
               {quote.q.lines.map(l => (

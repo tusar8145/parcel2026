@@ -115,6 +115,30 @@ describe("riders on several hubs, account messages and passwords, hub locations"
     expect((await ctx.api("POST", "/merchants/invites", { token: admin.token, body: { name: "Mail Only", email: "m@example.com", type: "ECOMMERCE", password: PASSWORD } })).status).toBe(422);
   });
 
+  it("onboards a merchant directly: active at once, the owner signs in with the password, no message unless asked", async () => {
+    const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+    const preview = await ctx.api("POST", "/accounts/invite-preview", { token: admin.token, body: { kind: "merchant_onboard", businessName: "Rahim Fashion" } });
+    expect(preview.body).toMatchObject({ event: "merchant.approved" });
+    expect(preview.body.sms).toContain("Rahim Fashion");
+    const catalog = (await ctx.api("GET", "/catalog")).body as { areasByZone: Record<string, string[]> };
+    const area = catalog.areasByZone.Gulshan?.[0];
+    const body = { type: "ECOMMERCE", name: "Rahim Fashion", contactName: "Rahim", contactPhone: "01913000041", business: { district: "Dhaka North", zone: "Gulshan", ...(area ? { area } : {}), street: "House 5, Road 2, Gulshan" }, password: PASSWORD };
+    const made = await ctx.api("POST", "/merchants/onboard", { token: admin.token, body });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body).toMatchObject({ messageSent: false, accountCreated: true, passwordSet: true, merchant: { name: "Rahim Fashion", status: "ACTIVE" } });
+    expect(await invites("+8801913000041")).toBe(0);
+    expect(await ctx.prisma.outboxMessage.count({ where: { template: "merchant.approved", to: "+8801913000041" } })).toBe(0);
+    const owner = await login("+8801913000041", PASSWORD);
+    expect(owner.status, JSON.stringify(owner.body)).toBe(200);
+    expect(owner.body.user).toMatchObject({ panel: "/ecommerce-merchant" });
+    // The same mobile can't own a second merchant.
+    expect((await ctx.api("POST", "/merchants/onboard", { token: admin.token, body: { ...body, name: "Another" } })).body.error.code).toBe("ALREADY_MERCHANT_OWNER");
+    // An invitation's account (with a password) is a customer account: it has a page to open (no redirect loop).
+    await ctx.api("POST", "/merchants/invites", { token: admin.token, body: { name: "Lina", phone: "01913000042", type: "ECOMMERCE", password: PASSWORD } });
+    const invited = await login("+8801913000042", PASSWORD);
+    expect(invited.body.user).toMatchObject({ roles: ["CUSTOMER"], panel: "/account" });
+  });
+
   it("finds hub locations: the geocoder, else the zone's centre", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     const a = await hub(ctx, "HUB-L1");

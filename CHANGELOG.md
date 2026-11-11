@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.38.0 — 2026-11-12
+- Invite a merchant › "Onboard directly": the merchant and the owner's sign-in account are made at once, active, with no invitation link or application (business address, an optional password to share yourself, and the "approved, sign in" SMS off by default with its text shown first). KYC still unlocks COD payouts and API keys.
+- Fix: signing in with an account that has no panel (e.g. made by a merchant invitation with a password) no longer reloads /account again and again: it opens the home page with a note. Such invited accounts are now customer accounts, like a website sign-up.
+
 ## 1.37.0 — 2026-11-12
 - Super admin › Rider setup › Riders: the company's riders (franchise riders are under Franchises › Riders). Add a rider, and edit name, mobile, email, hubs, vehicle, zone, stops a day, active, and set a new password.
 - A rider can work for several hubs: parcels of any of them can be assigned to them, and the rider app works at the hub nearest to the phone (when it opens, and from its location while on shift). Cash is handed over at that hub.

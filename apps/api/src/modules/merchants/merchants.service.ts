@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { hashPassword } from "../../common/crypto";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -28,6 +29,7 @@ import type {
   adminUpdateMerchantSchema,
   listMerchantsQuerySchema,
   merchantApplicationSchema,
+  merchantOnboardSchema,
   pageWithSelectorSchema,
   updateMyMerchantSchema,
 } from "./merchants.schemas";
@@ -265,6 +267,68 @@ export class MerchantsService {
     await this.outbox.flush(outbox);
     this.publish(merchant.id, { status: merchant.status });
     return { merchant: merchantView(merchant), message: ROLES_REFRESH_MESSAGE };
+  }
+
+  /**
+   * Super admin onboards a merchant directly: the owner's account (found by mobile, else made with the password),
+   * the merchant, active at once. The "approved, sign in" message only when asked for.
+   */
+  async onboard(actor: Actor, input: z.infer<typeof merchantOnboardSchema>, meta: RequestMeta) {
+    const outbox: string[] = [];
+    const result = await this.prisma.$transaction(async tx => {
+      let user = await tx.user.findUnique({ where: { phone: input.contactPhone }, include: { roles: { where: { role: "MERCHANT_OWNER" }, select: { id: true } } } });
+      let accountCreated = false;
+      if (user?.roles.length) throw conflict("ALREADY_MERCHANT_OWNER", "This mobile number already owns a merchant account");
+      if (user && user.status !== "ACTIVE") throw new AppError("USER_INACTIVE", "This person's account is suspended or deactivated", HttpStatus.UNPROCESSABLE_ENTITY);
+      if (!user) {
+        if (input.contactEmail && (await tx.user.findUnique({ where: { email: input.contactEmail }, select: { id: true } })))
+          throw conflict("EMAIL_IN_USE", "This email address is already used by another account");
+        user = await tx.user.create({
+          data: { name: input.contactName, phone: input.contactPhone, email: input.contactEmail, ...(input.password ? { passwordHash: await hashPassword(input.password) } : {}) },
+          include: { roles: { where: { role: "MERCHANT_OWNER" }, select: { id: true } } },
+        });
+        accountCreated = true;
+      }
+      const address = await this.addressData(tx, { business: input.business, pickupSameAsBusiness: true, pickupContactName: input.contactName, pickupContactPhone: input.contactPhone, pickupTime: input.pickupTime, handover: input.handover }, null);
+      const code = await this.nextMerchantCode(tx, input.type);
+      const created = await tx.merchant.create({
+        data: {
+          ...address.data,
+          type: input.type,
+          name: input.name,
+          contactName: input.contactName,
+          contactPhone: input.contactPhone,
+          contactEmail: input.contactEmail,
+          code,
+          status: "ACTIVE",
+          members: { create: { userId: user.id, role: "MERCHANT_OWNER" } },
+        } as Prisma.MerchantUncheckedCreateInput,
+        include: { plan: true, ...pickupHubInclude },
+      });
+      await tx.merchantNote.create({
+        data: { merchantId: created.id, kind: "STATUS_CHANGE", internal: true, body: "Onboarded directly by super admin (no application)", authorId: actor.kind === "user" ? actor.userId : null, authorName: actorLabel(actor) },
+      });
+      if (input.sendSms)
+        outbox.push(
+          ...(await this.notify.notify(tx, {
+            event: "merchant.approved",
+            to: { userId: user.id, phone: created.contactPhone, email: created.contactEmail, name: created.contactName },
+            vars: { businessName: `${created.name} (${created.code})`, link: loginLink() },
+          })),
+        );
+      await this.audit.record(
+        actor,
+        { action: "merchant.onboard", entityType: "merchant", entityId: created.id, data: { code, type: input.type, name: input.name, accountCreated, password: accountCreated && !!input.password, sms: input.sendSms, pickupHubId: created.pickupHubId } },
+        meta,
+        tx,
+      );
+      return { created, userId: user.id, accountCreated };
+    });
+    await this.outbox.flush(outbox);
+    // An existing account's sessions carry their roles: the next sign-in opens the merchant panel.
+    if (!result.accountCreated) await this.sessions.revokeAllForUser(result.userId, "role_change").catch(() => undefined);
+    this.publish(result.created.id, { status: "ACTIVE" });
+    return { merchant: merchantView(result.created), messageSent: outbox.length > 0, accountCreated: result.accountCreated, passwordSet: result.accountCreated && !!input.password };
   }
 
   /** An unexpired, unused invitation for this link token (or a clear error). */

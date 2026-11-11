@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { MerchantsService } from "./merchants.service";
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
@@ -9,6 +10,7 @@ import { AppError } from "../../common/errors";
 import {
   applicantResponseSchema,
   inviteMerchantSchema,
+  merchantOnboardSchema,
   kycPolicySchema,
   kycReviewSchema,
   listInvitesQuerySchema,
@@ -31,6 +33,7 @@ export class MerchantAdminController {
   constructor(
     private readonly review: MerchantReviewService,
     private readonly kyc: MerchantKycService,
+    private readonly merchants: MerchantsService,
   ) {}
 
   // ── invitations (static paths win over merchants/:id) ──
@@ -40,6 +43,14 @@ export class MerchantAdminController {
   @ApiZodQuery(listInvitesQuerySchema)
   invites(@ZQuery(listInvitesQuerySchema) query: z.infer<typeof listInvitesQuerySchema>) {
     return this.review.listInvites(query);
+  }
+
+  /** "Onboard directly": the merchant and its owner's account now, active (no invitation link). */
+  @RequirePermissions("merchant:manage")
+  @Post("onboard")
+  @ApiZodBody(merchantOnboardSchema)
+  onboard(@CurrentActor() actor: Actor, @ZBody(merchantOnboardSchema) body: z.infer<typeof merchantOnboardSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.merchants.onboard(actor, body, meta);
   }
 
   /** Sends an SMS/email with a one-time sign-up link (account.invite). */

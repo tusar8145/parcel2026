@@ -347,3 +347,22 @@ export const reportQuerySchema = merchantSelectorSchema.extend({
   to: z.coerce.date("Enter a valid end date").optional(),
   format: z.enum(["csv", "json", "xlsx"]).default("csv"),
 });
+
+/**
+ * Super admin › Invite a merchant › "Onboard directly": the merchant and its owner's sign-in account are made now,
+ * active (no application, no link). KYC still unlocks COD payouts and API keys.
+ */
+export const merchantOnboardSchema = z.object({
+  type: merchantTypeSchema,
+  name: text(2, 120),
+  contactName: contactFields.contactName,
+  contactPhone: contactFields.contactPhone,
+  contactEmail: contactFields.contactEmail.optional(),
+  business: merchantPlaceSchema,
+  pickupTime: pickupTimeSchema.default("MIDDAY"),
+  handover: handoverSchema.default("RIDER_PICKUP"),
+  /** The owner's password (shared by hand); an existing account keeps its own. */
+  password: passwordSchema.optional(),
+  /** Send the "approved, sign in" SMS / email (default: none). */
+  sendSms: z.boolean().default(false),
+});

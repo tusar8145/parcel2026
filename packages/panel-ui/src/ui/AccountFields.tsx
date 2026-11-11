@@ -9,7 +9,7 @@ import { api } from "../lib/api";
 import type { FormField, FormValues } from "./dialogs";
 
 export interface PreviewInput {
-  kind: "rider" | "franchise" | "merchant";
+  kind: "rider" | "franchise" | "merchant" | "merchant_onboard";
   name?: string;
   hubId?: string;
   code?: string;

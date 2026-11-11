@@ -86,8 +86,11 @@
     }
     if (leaving || !user || isCustomer() || !CUSTOMER_ONLY_ROUTES.includes(route)) return false;
     leaving = true;
-    showToast(`The customer area is for customers. Opening your ${user.merchant ? "merchant panel" : "workspace"}…`);
-    setTimeout(() => location.replace(DF.auth.destination()), 400);
+    // An account with no panel of its own would be sent back here again and again: the home page instead.
+    const next = DF.auth.destination();
+    const nowhere = /^\/account\/?(?:[?#].*)?$/.test(next);
+    showToast(nowhere ? "This account has no panel yet. If you were invited as a merchant, open your invitation link to send the application." : `The customer area is for customers. Opening your ${user.merchant ? "merchant panel" : "workspace"}…`);
+    setTimeout(() => location.replace(nowhere ? "/" : next), nowhere ? 2500 : 400);
     return true;
   }
 

@@ -10,7 +10,7 @@ import { inviteMessage } from "./account-invite";
 import { smsSegments } from "./render";
 
 export const invitePreviewSchema = z.object({
-  kind: z.enum(["rider", "franchise", "merchant"]),
+  kind: z.enum(["rider", "franchise", "merchant", "merchant_onboard"]),
   name: z.string().trim().max(120).optional(),
   hubId: z.uuid().optional(),
   code: z.string().trim().max(20).optional(),

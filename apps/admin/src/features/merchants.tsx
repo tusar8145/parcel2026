@@ -428,28 +428,74 @@ interface Invite {
 
 export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
   let sent: Invite | null = null;
+  type Onboarded = { merchant: { name: string; code: string }; messageSent: boolean; accountCreated: boolean; passwordSet: boolean };
+  let onboarded: Onboarded | null = null;
+  const catalog = await api<{ districts: string[]; zonesByDistrict: Record<string, string[]>; areasByZone: Record<string, string[]> }>("/catalog").catch(() => ({
+    districts: [],
+    zonesByDistrict: {} as Record<string, string[]>,
+    areasByZone: {} as Record<string, string[]>,
+  }));
+  const areasOf = (v: Record<string, string>) => catalog.areasByZone[v.zone] ?? [];
+  const direct = (v: Record<string, string>) => v.onboard === "true";
   await openForm({
     title: "Invite a merchant",
-    description: "A one-time sign-up link (expires in 14 days) to share yourself, or to send by SMS / email. With a password, their sign-in account is made now: they sign in with the mobile and that password and complete the application.",
-    submit: "Create invitation",
+    description: "A one-time sign-up link (expires in 14 days) to share yourself, or to send by SMS / email. Or tick “Onboard directly”: the merchant is made now, active, with no link or application.",
+    submit: "Save",
     wide: true,
     fields: [
+      { id: "onboard", label: "Onboard directly (no invitation link: the merchant and their sign-in account are made now, active)", type: "checkbox", value: false, full: true },
       { id: "businessName", label: "Business name", placeholder: "Registered business name" },
       { id: "name", label: "Primary contact", required: true, placeholder: "Contact name" },
       { id: "email", label: "Business email", type: "email", full: true, placeholder: "name@company.example (optional if a mobile number is given)" },
       { id: "phone", label: "Mobile number", type: "phone" },
       { id: "type", label: "Merchant type", type: "select", required: true, value: type, options: INVITE_TYPES.map(([value, label]) => ({ value, label })) },
-      { id: "message", label: "Personal message", type: "textarea", full: true, maxLength: 500, placeholder: "Shown on the invitation" },
-      ...accountFields(v => ({ kind: "merchant", name: v.name, businessName: v.businessName, merchantType: v.type }), {
-        passwordHint: "Makes the sign-in account now (needs the mobile number). Share it yourself; it isn't sent. Empty: they create their account from the link.",
+      { id: "message", label: "Personal message", type: "textarea", full: true, maxLength: 500, placeholder: "Shown on the invitation", show: v => !direct(v) },
+      { id: "district", label: "Business district", type: "select", required: true, show: direct, options: [{ value: "", label: "Choose" }, ...catalog.districts.map(d => ({ value: d, label: d }))] },
+      { id: "zone", label: "Thana / upazila", type: "select", required: true, show: direct, options: v => [{ value: "", label: "Choose" }, ...(catalog.zonesByDistrict[v.district] ?? []).map(z => ({ value: z, label: z }))] },
+      {
+        id: "area",
+        label: "Area",
+        type: "select",
+        required: true,
+        show: v => direct(v) && areasOf(v).length > 0,
+        options: v => [{ value: "", label: "Choose" }, ...areasOf(v).map(a => ({ value: a, label: a })), { value: "__other", label: "Other (type it)" }],
+      },
+      { id: "otherArea", label: "Area (not listed)", required: true, maxLength: 80, show: v => direct(v) && v.area === "__other" },
+      { id: "street", label: "Business address (pickups are from here)", required: true, full: true, maxLength: 300, show: direct, placeholder: "House, road, area" },
+      ...accountFields(v => (direct(v) ? { kind: "merchant_onboard", name: v.name, businessName: v.businessName } : { kind: "merchant", name: v.name, businessName: v.businessName, merchantType: v.type }), {
+        passwordHint: "Makes the sign-in account now (needs the mobile number). Share it yourself; it isn't sent. Empty: they sign in with a code sent to their mobile (onboarded) or create their account from the link.",
       }),
     ],
     validate: {
       password: (v, all) => passwordProblem(v) || (v && !all.phone?.trim() ? "Enter the mobile number to make the account with a password." : ""),
+      phone: (v, all) => (direct(all) && !v.trim() ? "Enter the owner's mobile number (they sign in with it)." : ""),
+      businessName: (v, all) => (direct(all) && v.trim().length < 2 ? "Enter the business name." : ""),
+      street: (v, all) => (direct(all) && v.trim().length < 5 ? "Enter the business address (at least 5 characters)." : ""),
       name: v => (v.trim().length < 2 ? "Enter the primary contact's name." : /^[+\d\s()-]{7,}$/.test(v.trim()) ? "Enter the primary contact's name. The mobile number goes in its own field." : ""),
       email: (v, all) => (!v.trim() && !all.phone?.trim() ? "Enter a mobile number or an email address." : ""),
     },
     onSubmit: async v => {
+      if (direct(v)) {
+        onboarded = await api<Onboarded>("/merchants/onboard", {
+          method: "POST",
+          body: {
+            type: v.type,
+            name: v.businessName.trim(),
+            contactName: v.name.trim(),
+            contactPhone: v.phone,
+            contactEmail: v.email.trim() || undefined,
+            business: {
+              district: v.district,
+              zone: v.zone,
+              ...(v.area === "__other" ? { otherArea: v.otherArea.trim() } : v.area && areasOf(v).length ? { area: v.area } : {}),
+              street: v.street.trim(),
+            },
+            password: v.password || undefined,
+            sendSms: v.sendSms === "true",
+          },
+        });
+        return;
+      }
       sent = await api<Invite>("/merchants/invites", {
         method: "POST",
         body: {
@@ -465,6 +511,15 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
       });
     },
   });
+  const made = onboarded as Onboarded | null;
+  if (made) {
+    toast(
+      `${made.merchant.name} (${made.merchant.code}) is onboarded and active.${made.messageSent ? " The sign-in message was sent." : ` No message was sent: share the sign-in details yourself${made.passwordSet ? " (mobile and the password you set)" : made.accountCreated ? " (they sign in with a code sent to their mobile)" : " (their existing account signs in as before)"}.`}`,
+      "good",
+    );
+    void queryClient.invalidateQueries({ queryKey: ["admin", "merchants"] });
+    return;
+  }
   const invite = sent as Invite | null;
   if (!invite) return;
   void openCustom(close => (

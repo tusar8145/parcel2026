@@ -196,7 +196,8 @@ export class MerchantReviewService {
       if (input.password && input.phone) {
         const taken = await tx.user.findFirst({ where: { OR: [{ phone: input.phone }, ...(input.email ? [{ email: input.email }] : [])] }, select: { id: true } });
         if (taken) throw conflict("ACCOUNT_EXISTS", "An account with this mobile number or email already exists: send the invitation without a password; they sign in with their own.");
-        await tx.user.create({ data: { name: input.name, phone: input.phone, email: input.email, passwordHash: await hashPassword(input.password) } });
+        // A customer account like a website sign-up (an account with no role has no page to open).
+        await tx.user.create({ data: { name: input.name, phone: input.phone, email: input.email, passwordHash: await hashPassword(input.password), roles: { create: { role: "CUSTOMER" } } } });
       }
       // The message only when the form asked for it (it shows the text first).
       if (input.sendSms) {

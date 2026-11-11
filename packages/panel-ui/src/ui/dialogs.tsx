@@ -45,6 +45,8 @@ export interface FormField {
   accept?: string;
   show?: (values: FormValues) => boolean;
   render?: ReactNode;
+  /** A static field drawn from the form's current values (a message preview, a "Generate" button that fills a field). */
+  live?: (values: FormValues, set: (id: string, value: string) => void) => ReactNode;
   /** Typed text with suggestions (a datalist). */
   suggestions?: string[];
 }
@@ -224,7 +226,7 @@ function FormDialog({ config, done }: { config: FormConfig; done: (v: unknown) =
         ) : (
           <div className="form-grid">
             {config.fields.filter(visible).map(f => (
-              <Field key={f.id} field={typeof f.options === "function" ? { ...f, options: f.options(values) } : f} value={values[f.id] ?? ""} error={errors[f.id]} onChange={v => set(f.id, v)} onFile={file => setFiles(x => ({ ...x, [f.id]: file }))} onBlur={() => setErrors(e => ({ ...e, [f.id]: check(f) }))} />
+              <Field key={f.id} field={typeof f.options === "function" ? { ...f, options: f.options(values) } : f.live ? { ...f, render: f.live(values, set) } : f} value={values[f.id] ?? ""} error={errors[f.id]} onChange={v => set(f.id, v)} onFile={file => setFiles(x => ({ ...x, [f.id]: file }))} onBlur={() => setErrors(e => ({ ...e, [f.id]: check(f) }))} />
             ))}
           </div>
         )}

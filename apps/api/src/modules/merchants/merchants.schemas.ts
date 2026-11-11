@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emailSchema, isBdMobile, normalizeBdPhone, phoneSchema } from "@delivery-fast/shared";
+import { emailSchema, isBdMobile, normalizeBdPhone, phoneSchema, passwordSchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { WEBHOOK_EVENTS } from "../notifications/webhooks.service";
 import { apiKeyScopesSchema } from "./api-key-scopes";
@@ -256,7 +256,12 @@ export const inviteMerchantSchema = z
     message: text(2, 500).optional(),
     /** How long the link works, 1–30 days (default 14). */
     expiresInDays: z.number().int().min(1).max(30).default(14),
+    /** Send the invitation SMS / email (default: none; share the link yourself). */
+    sendSms: z.boolean().default(false),
+    /** Create the sign-in account now with this password (shared by hand): they sign in and complete the application. Needs the mobile number. */
+    password: passwordSchema.optional(),
   })
+  .refine(v => !v.password || v.phone, { message: "Enter the mobile number to create the account with a password", path: ["phone"] })
   .refine(v => v.phone || v.email, { message: "Enter a mobile number or an email address", path: ["phone"] });
 
 export const listInvitesQuerySchema = pageQuerySchema.extend({ status: z.enum(["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]).optional() });

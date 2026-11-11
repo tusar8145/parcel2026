@@ -12,6 +12,7 @@ import { confirm, openForm, type FormField } from "@panel/ui/dialogs";
 import { Button, Loading, Metric, PageHeading, Panel, Pill, Tabs } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog, type Catalog } from "@/lib/admin";
+import { accountFields, passwordProblem } from "@panel/ui/AccountFields";
 
 interface Rates {
   pickupPercent: number;
@@ -31,7 +32,7 @@ interface Franchise {
   riders: number;
   unsettledCommission: number;
   rates: Rates;
-  hub: { name: string; code: string; district: string };
+  hub: { id: string; name: string; code: string; district: string };
 }
 interface Application {
   id: string;
@@ -184,6 +185,9 @@ export default function Franchises() {
                     <Pill tone={f.status === "ACTIVE" ? "good" : "bad"}>{f.status === "ACTIVE" ? "Active" : "Suspended"}</Pill>
                   </td>
                   <td className="nowrap">
+                    <Button size="sm" onClick={() => void openRiders(f)}>
+                      {`Riders (${f.riders})`}
+                    </Button>
                     <Button size="sm" onClick={() => void openEdit(f, reload)}>
                       Rates
                     </Button>{" "}
@@ -287,7 +291,7 @@ async function openCreate(application: Application | null, catalog: Catalog | un
     title: application ? `Create franchise · ${application.number}` : "Add franchise",
     description: application
       ? `${application.applicant?.name || "The applicant"}'s account becomes the franchise account; they sign in as before and land in the franchise panel.`
-      : "Tag an existing hub as a franchise hub, or open a new one, with its account (an existing user keeps their sign-in; a new one gets an SMS to sign in).",
+      : "Tag an existing hub as a franchise hub, or open a new one, with its account (an existing user keeps their sign-in; a new one signs in with this mobile: a code by SMS, or the password you set).",
     submit: "Save",
     wide: true,
     fields: [
@@ -322,9 +326,15 @@ async function openCreate(application: Application | null, catalog: Catalog | un
       { id: "zone", label: "Area (thana)", type: "select", show: isNew, options: v => [{ value: "", label: "Choose" }, ...(catalog?.zonesByDistrict?.[v.district] ?? []).map(z => ({ value: z, label: z }))] },
       { id: "address", label: "Address", required: true, maxLength: 300, full: true, show: isNew, value: d.location || "" },
       ...rateFields(),
+      { id: "accountHead", label: "Sign-in", type: "static", render: null },
+      ...accountFields(v => ({ kind: "franchise", name: v.contactName, franchiseName: v.name, hubId: isNew(v) ? undefined : v.hubId }), {
+        password: !application,
+        passwordHint: "For a new account only (an existing account keeps its own). Share it yourself; it isn't sent. Empty: they sign in with a code sent to their mobile.",
+      }),
     ],
+    validate: { password: passwordProblem },
     onSubmit: async v => {
-      const f = await api<Franchise>("/franchises", {
+      const f = await api<Franchise & { messageSent?: boolean; newAccount?: boolean; passwordSet?: boolean }>("/franchises", {
         method: "POST",
         body: {
           applicationId: application?.id || undefined,
@@ -334,11 +344,60 @@ async function openCreate(application: Application | null, catalog: Catalog | un
           email: v.email?.trim() || undefined,
           ...(isNew(v) ? { hub: { name: v.hubName.trim(), district: v.district, zone: v.zone || undefined, address: v.address.trim() } } : { hubId: v.hubId }),
           rates: readRates(v),
+          sendSms: v.sendSms === "true",
+          password: v.password || undefined,
         },
       });
       await reload();
-      return isNew(v) ? `${f.name} (${f.code}) created with hub ${f.hub.name}.` : `${f.hub.name} is now the franchise hub of ${f.name} (${f.code}).`;
+      const done = isNew(v) ? `${f.name} (${f.code}) created with hub ${f.hub.name}.` : `${f.hub.name} is now the franchise hub of ${f.name} (${f.code}).`;
+      const account = f.messageSent
+        ? " The sign-in message was sent."
+        : ` No message was sent: share the sign-in details yourself${f.passwordSet ? " (mobile and the password you set)" : v.password && !f.newAccount ? "; the existing account kept its own password" : ""}.`;
+      return done + account;
     },
+  });
+}
+
+/** The franchise's riders (they work only for its hub; super admin › Riders lists the company's). */
+async function openRiders(f: Franchise) {
+  const riders = await api<{ id: string; code: string; name: string; phone: string; vehicle: string; status: string; active: boolean; openTasks?: number }[]>(`/riders?hubId=${f.hub.id}`).catch(() => []);
+  await openForm({
+    title: `Riders · ${f.name}`,
+    description: `${f.hub.name} (${f.hub.code}). The franchise adds and manages its riders in its own panel.`,
+    submit: "Close",
+    fields: [
+      {
+        id: "list",
+        label: `${riders.length} rider${riders.length === 1 ? "" : "s"}`,
+        type: "static",
+        render: riders.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Rider</th>
+                  <th>Mobile</th>
+                  <th>Status</th>
+                  <th className="num">Open tasks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riders.map(r => (
+                  <tr key={r.id}>
+                    <td className="strong">{`${r.code} · ${r.name}`}</td>
+                    <td>{localPhone(r.phone)}</td>
+                    <td>{r.active ? <Pill tone={r.status === "ONLINE" ? "good" : "info"}>{r.status === "ONLINE" ? "Online" : r.status === "ON_BREAK" ? "On break" : "Offline"}</Pill> : <Pill tone="warn">Inactive</Pill>}</td>
+                    <td className="num">{r.openTasks ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <span className="faint">No riders yet.</span>
+        ),
+      },
+    ],
   });
 }
 

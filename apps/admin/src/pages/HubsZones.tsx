@@ -124,6 +124,46 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
   const sorted = [...data.hubs].sort((a, b) => Number(b.id === data.central) - Number(a.id === data.central));
   const { rows, pager } = usePaged(sorted, 25);
 
+  /** Hubs without a location get one (POST /hubs/locate: address → zone → zone centre); the result to check on the map. */
+  async function locate(missing: number) {
+    if (!missing) return toast("Every hub has a location. Edit a hub to change its latitude and longitude.");
+    if (!(await confirm({ title: `Find the location of ${missing} hub${missing === 1 ? "" : "s"}?`, message: "From each hub's address (else its zone). It takes about a second per hub. Check the result and correct any hub by editing it.", ok: "Find locations" }))) return;
+    try {
+      const r = await api<{ checked: number; located: number; hubs: { name: string; code: string; lat: number | null; lng: number | null; source: string | null; match: string | null }[] }>("/hubs/locate", { method: "POST", body: {} });
+      await reload();
+      await alertDialog({
+        title: `${r.located} of ${r.checked} hubs located`,
+        message: (
+          <div className="table-wrap" style={{ maxHeight: 360 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Hub</th>
+                  <th>Found from</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.hubs.map(h => (
+                  <tr key={h.code}>
+                    <td>
+                      {h.name}
+                      <span className="sub">{h.code}</span>
+                    </td>
+                    <td>{h.source ? <Pill tone={h.source === "address" ? "good" : "warn"}>{h.source}</Pill> : <Pill tone="bad">not found</Pill>}<span className="sub">{h.match ?? ""}</span></td>
+                    <td className="mono">{h.lat != null && h.lng != null ? <a href={`https://www.openstreetmap.org/?mlat=${h.lat}&mlon=${h.lng}#map=16/${h.lat}/${h.lng}`} target="_blank" rel="noreferrer">{`${h.lat.toFixed(5)}, ${h.lng.toFixed(5)}`}</a> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ),
+      });
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
   async function edit(h: Hub | null) {
     const zonesOf = (d: string) => (catalog?.zonesByDistrict?.[d] ?? []).map(z => ({ value: z, label: z }));
     await openForm({
@@ -224,9 +264,17 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
         </>
       }
       tools={
-        <Button variant="primary" onClick={() => void edit(null)}>
-          Add hub
-        </Button>
+        <div className="row" style={{ gap: 8 }}>
+          <Button
+            title="Hubs without a map location get one from their address (else their zone). Riders and staff on several hubs work at the nearest one."
+            onClick={() => void locate(data.hubs.filter(h => h.lat == null || h.lng == null).length)}
+          >
+            {`Find hub locations (${data.hubs.filter(h => h.lat == null || h.lng == null).length} missing)`}
+          </Button>
+          <Button variant="primary" onClick={() => void edit(null)}>
+            Add hub
+          </Button>
+        </div>
       }
     >
       <div className="table-wrap">

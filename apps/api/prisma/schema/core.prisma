@@ -341,6 +341,7 @@ model Hub {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   riders            Rider[]
+  riderHubs         RiderHub[]
   staff             UserRole[]
   parcels           Parcel[]              @relation("ParcelCurrentHub")
   handovers         CashHandover[]
@@ -408,6 +409,8 @@ model Rider {
   // rider app (rider.prisma)
   location         RiderLocation?
   locationPoints   RiderLocationPoint[]
+  /// Every hub the rider works for (riders on several hubs): `hubId` is the one they work at now (nearest).
+  hubs             RiderHub[]
   payPlans         RiderPayPlan[]
   earnings         RiderEarning[]
   payouts          RiderPayout[]

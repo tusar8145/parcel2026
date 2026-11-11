@@ -29,6 +29,9 @@ export const locationPointSchema = z.object({
   at: isoDate,
 });
 
+/** The rider app at start: where the phone is (the nearest of the rider's hubs). */
+export const nearestHubSchema = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
+
 export const locationBatchSchema = z.object({
   points: z.array(locationPointSchema).min(1).max(500),
 });

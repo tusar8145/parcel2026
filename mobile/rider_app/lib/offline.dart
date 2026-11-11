@@ -73,6 +73,22 @@ Future<dynamic> cachedGet(String path, [Map<String, Object?>? query]) async {
   }
 }
 
+/// A rider on several hubs works at the nearest one: at app start the phone's position goes to the server, which
+/// makes it their hub (cash and hand-overs go there). Riders on one hub are never asked for their location here.
+Future<void> workAtNearestHub() async {
+  try {
+    final me = await Api.get('/rider/me') as Map;
+    if (((me['hubs'] as List?) ?? const []).length < 2) return;
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
+    final p = await Geolocator.getLastKnownPosition() ?? await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 15)));
+    await Api.post('/rider/me/nearest-hub', {'lat': p.latitude, 'lng': p.longitude});
+  } catch (_) {
+    // Offline or no position: the hub stays as it was.
+  }
+}
+
 /// One rider action (pickup, start delivery, delivery outcome, handover, return) waiting to be sent.
 class Pending {
   Pending({required this.id, required this.path, required this.body, required this.label, required this.trackingId, required this.kind, required this.createdAt, this.error});

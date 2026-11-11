@@ -18,6 +18,7 @@ import { toast, toastError } from "@panel/ui/toast";
 import { queryClient } from "@panel/lib/queryClient";
 import { addressText } from "@panel/lib/format";
 import { editMerchantAddress } from "./merchantAddress";
+import { accountFields, passwordProblem } from "@panel/ui/AccountFields";
 import { DialogFrame, Facts, packageLabel, phoneText, STATUS_LABEL, TYPE_LABEL, whenFull, dateOf, type Merchant, type MerchantType, type Place } from "@/lib/admin";
 
 const reload = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "merchants"] }), queryClient.invalidateQueries({ queryKey: ["admin", "overview"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] })]);
@@ -421,14 +422,17 @@ interface Invite {
   expiresAt: string;
   status: "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
   link?: string;
+  messageSent?: boolean;
+  accountCreated?: boolean;
 }
 
 export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
   let sent: Invite | null = null;
   await openForm({
     title: "Invite a merchant",
-    description: "Sends a one-time sign-up link by SMS and/or email. It expires in 14 days.",
-    submit: "Send invitation",
+    description: "A one-time sign-up link (expires in 14 days) to share yourself, or to send by SMS / email. With a password, their sign-in account is made now: they sign in with the mobile and that password and complete the application.",
+    submit: "Create invitation",
+    wide: true,
     fields: [
       { id: "businessName", label: "Business name", placeholder: "Registered business name" },
       { id: "name", label: "Primary contact", required: true, placeholder: "Contact name" },
@@ -436,15 +440,28 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
       { id: "phone", label: "Mobile number", type: "phone" },
       { id: "type", label: "Merchant type", type: "select", required: true, value: type, options: INVITE_TYPES.map(([value, label]) => ({ value, label })) },
       { id: "message", label: "Personal message", type: "textarea", full: true, maxLength: 500, placeholder: "Shown on the invitation" },
+      ...accountFields(v => ({ kind: "merchant", name: v.name, businessName: v.businessName, merchantType: v.type }), {
+        passwordHint: "Makes the sign-in account now (needs the mobile number). Share it yourself; it isn't sent. Empty: they create their account from the link.",
+      }),
     ],
     validate: {
+      password: (v, all) => passwordProblem(v) || (v && !all.phone?.trim() ? "Enter the mobile number to make the account with a password." : ""),
       name: v => (v.trim().length < 2 ? "Enter the primary contact's name." : /^[+\d\s()-]{7,}$/.test(v.trim()) ? "Enter the primary contact's name. The mobile number goes in its own field." : ""),
       email: (v, all) => (!v.trim() && !all.phone?.trim() ? "Enter a mobile number or an email address." : ""),
     },
     onSubmit: async v => {
       sent = await api<Invite>("/merchants/invites", {
         method: "POST",
-        body: { name: v.name.trim(), businessName: v.businessName.trim() || undefined, phone: v.phone || undefined, email: v.email.trim() || undefined, type: v.type, message: v.message.trim() || undefined },
+        body: {
+          name: v.name.trim(),
+          businessName: v.businessName.trim() || undefined,
+          phone: v.phone || undefined,
+          email: v.email.trim() || undefined,
+          type: v.type,
+          message: v.message.trim() || undefined,
+          sendSms: v.sendSms === "true",
+          password: v.password || undefined,
+        },
       });
     },
   });
@@ -452,7 +469,7 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
   if (!invite) return;
   void openCustom(close => (
     <DialogFrame
-      title="Invitation sent"
+      title={invite.messageSent ? "Invitation sent" : "Invitation created"}
       subtitle={`${invite.name}${invite.businessName ? ` · ${invite.businessName}` : ""} · expires ${whenFull(invite.expiresAt)}`}
       close={() => close()}
       foot={
@@ -466,7 +483,12 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
         </>
       }
     >
-      <p style={{ fontSize: 13 }}>We sent the link by {[invite.phone && "SMS", invite.email && "email"].filter(Boolean).join(" and ")}. You can also share it yourself; it works once.</p>
+      <p style={{ fontSize: 13 }}>
+        {invite.messageSent
+          ? `We sent the link by ${[invite.phone && "SMS", invite.email && "email"].filter(Boolean).join(" and ")}. You can also share it yourself; it works once.`
+          : "No message was sent: share this link yourself; it works once."}
+        {invite.accountCreated ? " Their sign-in account is ready: share the mobile number and the password you set; they sign in and complete the application." : ""}
+      </p>
       <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", background: "var(--surface-2)", padding: 10, borderRadius: 8, fontSize: 12 }}>{invite.link}</pre>
     </DialogFrame>
   ));

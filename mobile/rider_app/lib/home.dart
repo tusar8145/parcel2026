@@ -110,6 +110,8 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
     Outbox.load().then((_) => Outbox.flush());
     Tasks.load();
     refreshUnread();
+    // Several hubs: work at the nearest one.
+    unawaited(workAtNearestHub());
     // Pushes: new work reloads the lists; a tapped one opens it.
     Push.onReceive = (_) {
       refreshUnread();

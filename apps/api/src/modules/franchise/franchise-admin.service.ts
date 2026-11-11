@@ -1,4 +1,6 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { hashPassword } from "../../common/crypto";
+import { inviteMessage } from "../notifications/account-invite";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -106,7 +108,9 @@ export class FranchiseAdminService {
         else {
           if (input.email && (await tx.user.findUnique({ where: { email: input.email }, select: { id: true } })))
             throw conflict("EMAIL_IN_USE", "This email address is already used by another account");
-          ownerId = (await tx.user.create({ data: { name: input.contactName, phone: input.phone, email: input.email }, select: { id: true } })).id;
+          ownerId = (
+            await tx.user.create({ data: { name: input.contactName, phone: input.phone, email: input.email, ...(input.password ? { passwordHash: await hashPassword(input.password) } : {}) }, select: { id: true } })
+          ).id;
           invited = true;
         }
       }
@@ -160,14 +164,13 @@ export class FranchiseAdminService {
     });
     // The account's sessions carry their roles: end them so the next sign-in opens the franchise panel.
     await this.sessions.revokeAllForUser(outcome.owner.id, "role_change").catch(() => undefined);
-    await this.notify
-      .notifyNow({
-        event: "account.invite",
-        to: { userId: outcome.owner.id, phone: outcome.owner.phone, email: outcome.owner.email, name: outcome.owner.name },
-        vars: { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", role: `franchise partner (${outcome.franchise.name}, ${outcome.franchise.hub.name})`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
-      })
-      .catch(() => undefined);
-    return franchiseView(outcome.franchise);
+    // The sign-in message only when the form asked for it (it shows the text first).
+    let messageSent = false;
+    if (input.sendSms) {
+      const { event, vars } = inviteMessage("franchise", { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", name: outcome.owner.name ?? input.contactName, franchiseName: outcome.franchise.name, hubName: outcome.franchise.hub.name });
+      messageSent = (await this.notify.notifyNow({ event, to: { userId: outcome.owner.id, phone: outcome.owner.phone, email: outcome.owner.email, name: outcome.owner.name }, vars }).catch(() => [])).length > 0;
+    }
+    return { ...franchiseView(outcome.franchise), messageSent, newAccount: outcome.invited, passwordSet: outcome.invited && !!input.password };
   }
 
   async update(actor: Actor, id: string, input: z.infer<typeof updateFranchiseSchema>, meta: RequestMeta) {

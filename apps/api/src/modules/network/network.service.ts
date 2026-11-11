@@ -15,6 +15,9 @@ import type { RequestMeta } from "../../common/auth/decorators";
 import type { ParcelStatus, Prisma } from "../../generated/prisma/client";
 import type { createRiderSchema, hubSchema, listRidersQuerySchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
 import { opsHubScope } from "../parcels/ops-scope";
+import { NotifyService } from "../notifications/notify.service";
+import { inviteMessage } from "../notifications/account-invite";
+import { nearestOf } from "./nearest-hub";
 
 const OPEN_DELIVERY_STATUSES: ParcelStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"];
 
@@ -27,7 +30,8 @@ export const riderView = (r: {
   active: boolean;
   dailyCapacity?: number | null;
   hub: { id: string; name: string; code: string; type?: string } | null;
-  user: { name: string; phone: string };
+  hubs?: { hub: { id: string; name: string; code: string; type?: string } }[];
+  user: { name: string; phone: string; email?: string | null };
   _count?: { pickups: number; deliveries: number };
 }) => ({
   id: r.id,
@@ -41,13 +45,18 @@ export const riderView = (r: {
   status: r.status,
   active: r.active,
   dailyCapacity: r.dailyCapacity ?? null,
+  email: r.user.email ?? null,
+  /** The hub the rider works at now (cash goes there; with several hubs, the nearest). */
   hub: r.hub,
+  /** Every hub the rider works for. */
+  hubs: r.hubs?.length ? r.hubs.map(h => h.hub) : r.hub ? [r.hub] : [],
   openTasks: r._count ? r._count.pickups + r._count.deliveries : undefined,
 });
 
 const riderInclude = {
-  user: { select: { name: true, phone: true } },
+  user: { select: { name: true, phone: true, email: true } },
   hub: { select: { id: true, name: true, code: true, type: true } },
+  hubs: { select: { hub: { select: { id: true, name: true, code: true, type: true } } }, orderBy: { createdAt: "asc" } },
   _count: {
     select: {
       pickups: { where: { status: { in: ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] as ParcelStatus[] } } },
@@ -66,6 +75,7 @@ export class NetworkService {
 
   /** Hub changes are announced to operations (property injection keeps the constructor stable for parallel edits). */
   @Inject(RealtimeService) private readonly realtime!: RealtimeService;
+  @Inject(NotifyService) private readonly notify!: NotifyService;
 
   // ── hubs ──
   /**
@@ -180,8 +190,10 @@ export class NetworkService {
     const scope = actor ? opsHubScope(actor) : null;
     const riders = await this.prisma.rider.findMany({
       where: {
-        hubId: query.hubId,
-        ...(scope ? { OR: [{ hubId: null }, { hub: { type: "COMPANY" } }, { hubId: { in: scope } }] } : {}),
+        // A hub's riders: those at it now and those who also work for it.
+        ...(query.hubId ? { OR: [{ hubId: query.hubId }, { hubs: { some: { hubId: query.hubId } } }] } : {}),
+        ...(query.company ? { NOT: { hub: { type: "FRANCHISE" } } } : {}),
+        ...(scope ? { AND: [{ OR: [{ hubId: null }, { hub: { type: "COMPANY" } }, { hubId: { in: scope } }, { hubs: { some: { hubId: { in: scope } } } }] }] } : {}),
         status: query.status,
         active: query.active,
         ...(query.q
@@ -201,6 +213,8 @@ export class NetworkService {
   }
 
   async createRider(actor: Actor, input: z.infer<typeof createRiderSchema>, meta: RequestMeta) {
+    const hubIds = [...new Set([...(input.hubId ? [input.hubId] : []), ...(input.hubIds ?? [])])];
+    await this.checkHubs(hubIds);
     const rider = await this.prisma.$transaction(async tx => {
       const code = input.code ?? `R-${await nextCounter(tx, "rider-code", 2100)}`;
       if (await tx.rider.findUnique({ where: { code } })) throw conflict("RIDER_CODE_TAKEN", `Rider code ${code} is already used`);
@@ -218,20 +232,70 @@ export class NetworkService {
         }));
       await tx.userRole.create({ data: { userId: user.id, role: "RIDER" } });
       const created = await tx.rider.create({
-        data: { userId: user.id, code, hubId: input.hubId, vehicle: input.vehicle, zone: input.zone, dailyCapacity: input.dailyCapacity },
+        data: { userId: user.id, code, hubId: hubIds[0], vehicle: input.vehicle, zone: input.zone, dailyCapacity: input.dailyCapacity, hubs: { create: hubIds.map(hubId => ({ hubId })) } },
         include: riderInclude,
       });
-      await this.audit.record(actor, { action: "rider.create", entityType: "rider", entityId: created.id, data: { code, phone: input.phone } }, meta, tx);
+      await this.audit.record(actor, { action: "rider.create", entityType: "rider", entityId: created.id, data: { code, phone: input.phone, hubIds, sms: input.sendSms, password: !!input.password } }, meta, tx);
       return created;
+    });
+    // The sign-in message only when asked for (the form shows it first).
+    let messageSent = false;
+    if (input.sendSms) {
+      const { event, vars } = inviteMessage("rider", { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", name: rider.user.name, code: rider.code, hubName: rider.hub?.name });
+      messageSent = (await this.notify.notifyNow({ event, to: { userId: rider.userId, phone: rider.user.phone, email: rider.user.email, name: rider.user.name }, vars }).catch(() => [])).length > 0;
+    }
+    return { ...riderView(rider), messageSent };
+  }
+
+  /** Hubs a rider is given: existing and operating. */
+  private async checkHubs(ids: string[]) {
+    if (!ids.length) return;
+    const found = await this.prisma.hub.findMany({ where: { id: { in: ids }, active: true }, select: { id: true } });
+    if (found.length !== ids.length) throw new AppError("HUB_UNKNOWN", "Choose operating hubs", HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubIds" });
+  }
+
+  async updateRider(actor: Actor, id: string, input: z.infer<typeof updateRiderSchema>, meta: RequestMeta) {
+    const before = await this.prisma.rider.findUnique({ where: { id }, include: { hubs: true } });
+    if (!before) throw notFound("Rider");
+    const { name, phone, email, password, hubIds: wanted, ...riderData } = input;
+    const hubIds = wanted ? [...new Set(wanted)] : null;
+    if (hubIds) await this.checkHubs(hubIds);
+    if (phone && (await this.prisma.user.findFirst({ where: { phone, id: { not: before.userId } }, select: { id: true } }))) throw conflict("PHONE_IN_USE", "Another account uses this mobile number");
+    if (email && (await this.prisma.user.findFirst({ where: { email, id: { not: before.userId } }, select: { id: true } }))) throw conflict("EMAIL_IN_USE", "Another account uses this email address");
+    const rider = await this.prisma.$transaction(async tx => {
+      if (name !== undefined || phone !== undefined || email !== undefined || password)
+        await tx.user.update({ where: { id: before.userId }, data: { name, phone, email, ...(password ? { passwordHash: await hashPassword(password) } : {}) } });
+      if (hubIds) {
+        await tx.riderHub.deleteMany({ where: { riderId: id, hubId: { notIn: hubIds } } });
+        await tx.riderHub.createMany({ data: hubIds.map(hubId => ({ riderId: id, hubId })), skipDuplicates: true });
+        // The current hub stays when it's still one of them; else the first.
+        const current = riderData.hubId !== undefined ? riderData.hubId : before.hubId;
+        riderData.hubId = current && hubIds.includes(current) ? current : hubIds[0];
+      } else if (riderData.hubId) await tx.riderHub.createMany({ data: [{ riderId: id, hubId: riderData.hubId }], skipDuplicates: true });
+      const updated = await tx.rider.update({ where: { id }, data: riderData, include: riderInclude });
+      await this.audit.record(
+        actor,
+        { action: "rider.update", entityType: "rider", entityId: id, data: { ...riderData, hubIds: hubIds ?? undefined, name, phone, email, password: password ? "changed" : undefined } },
+        meta,
+        tx,
+      );
+      return updated;
     });
     return riderView(rider);
   }
 
-  async updateRider(actor: Actor, id: string, input: z.infer<typeof updateRiderSchema>, meta: RequestMeta) {
-    await this.getRider(id);
-    const rider = await this.prisma.rider.update({ where: { id }, data: input, include: riderInclude });
-    await this.audit.record(actor, { action: "rider.update", entityType: "rider", entityId: id, data: input }, meta);
-    return riderView(rider);
+  /**
+   * A rider on several hubs works at the nearest one (from the app's location): their current hub (cash, hand-overs)
+   * moves there. Hubs without a location are skipped. Returns the hub when it changed.
+   */
+  async moveToNearestHub(riderId: string, lat: number, lng: number) {
+    const rider = await this.prisma.rider.findUnique({ where: { id: riderId }, select: { hubId: true, hubs: { select: { hub: { select: { id: true, lat: true, lng: true, active: true } } } } } });
+    const hubs = (rider?.hubs ?? []).map(h => h.hub).filter(h => h.active && h.lat != null && h.lng != null);
+    if (!rider || hubs.length < 2) return null;
+    const nearest = nearestOf(hubs as { id: string; lat: number; lng: number }[], lat, lng);
+    if (!nearest || nearest.id === rider.hubId) return null;
+    await this.prisma.rider.update({ where: { id: riderId }, data: { hubId: nearest.id } });
+    return nearest.id;
   }
 
   async myRiderProfile(actor: UserActor) {

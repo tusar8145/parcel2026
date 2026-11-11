@@ -1,6 +1,7 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:geolocator/geolocator.dart';
 
 /// Who is signed in and where they work: GET /ops/overview (what they may do, their hubs, the day's numbers)
 /// and the hub chosen on this phone (kept for the next start).
@@ -24,6 +25,9 @@ class Ops {
   static Future<void> load() async {
     overview = (await Api.get('/ops/overview') as Map).cast<String, dynamic>();
     if (hubId != null && hubs.any((h) => h['id'] == hubId)) return;
+    // Several hubs: the nearest one to the phone (still changeable from the hub button).
+    final nearest = await _nearestHub();
+    if (nearest != null) return choose(nearest);
     String? saved;
     try {
       saved = await _storage.read(key: 'ops.hub');
@@ -33,6 +37,31 @@ class Ops {
       hub.value = match.first;
     } else if (hubs.length == 1) {
       hub.value = hubs.first;
+    }
+  }
+
+  /// The person's hub nearest to the phone (hubs with a map location), or null (one hub, no position, no permission).
+  static Future<Map<String, dynamic>?> _nearestHub() async {
+    final placed = hubs.where((h) => h['lat'] is num && h['lng'] is num).toList();
+    if (hubs.length < 2 || placed.isEmpty) return null;
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return null;
+      final p = await Geolocator.getLastKnownPosition() ??
+          await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 10)));
+      Map<String, dynamic>? best;
+      double? bestMeters;
+      for (final h in placed) {
+        final m = Geolocator.distanceBetween(p.latitude, p.longitude, (h['lat'] as num).toDouble(), (h['lng'] as num).toDouble());
+        if (bestMeters == null || m < bestMeters) {
+          best = h;
+          bestMeters = m;
+        }
+      }
+      return best;
+    } catch (_) {
+      return null;
     }
   }
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addressPartsSchema, createParcelSchema, emailSchema, phoneSchema, quoteRequestSchema } from "@delivery-fast/shared";
+import { addressPartsSchema, createParcelSchema, emailSchema, phoneSchema, quoteRequestSchema, passwordSchema } from "@delivery-fast/shared";
 import { franchiseConfigSchema } from "./franchise-config";
 
 const money = z.coerce.number().min(0, "Can't be negative").max(1_000_000, "Too large");
@@ -42,6 +42,10 @@ export const createFranchiseSchema = z
     })
     .optional(),
   rates: commissionRatesSchema.default({ pickupPercent: 0, pickupMin: 0, deliveryPercent: 0, deliveryMin: 0, returnPercent: 0, returnMin: 0 }),
+  /** Send the sign-in SMS / email (default: none; share the details yourself). */
+  sendSms: z.boolean().default(false),
+  /** A password for a new account (shared by hand); an existing account keeps its own. */
+  password: passwordSchema.optional(),
   })
   .refine(v => !!v.hubId !== !!v.hub, { message: "Choose an existing hub or enter a new hub", path: ["hubId"] });
 

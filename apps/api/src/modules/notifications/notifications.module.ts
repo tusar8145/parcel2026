@@ -1,4 +1,5 @@
 import { Global, Module } from "@nestjs/common";
+import { AccountInviteController } from "./account-invite.controller";
 import { OutboxService } from "./outbox.service";
 import { MessageBroadcastService } from "./message-broadcast.service";
 import { MessagingController } from "./messaging.controller";
@@ -22,7 +23,7 @@ import { PushAdminController, PushDevicesController } from "./push.controller";
  */
 @Global()
 @Module({
-  controllers: [NotificationsAdminController, NotificationPreferencesController, InboxController, PushDevicesController, PushAdminController, MessagingController],
+  controllers: [NotificationsAdminController, NotificationPreferencesController, InboxController, PushDevicesController, PushAdminController, MessagingController, AccountInviteController],
   providers: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, GatewaysService, SmsRateLimiter, PreferencesService, InboxService, PushService, PushBroadcastService, MessageBroadcastService],
   exports: [OutboxService, WebhooksService, WorkersService, NotifyService, NotificationSettingsService, InboxService, PushService],
 })

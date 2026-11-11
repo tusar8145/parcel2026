@@ -221,3 +221,17 @@ model RiderKycDocument {
   @@index([riderId, type])
   @@map("rider_kyc_documents")
 }
+
+/// A hub a rider works for. A rider on several hubs works at the nearest one (Rider.hubId, set from their location):
+/// parcels of any of them can be assigned to them; cash goes to the hub they are at.
+model RiderHub {
+  riderId   String   @db.Uuid
+  hubId     String   @db.Uuid
+  createdAt DateTime @default(now())
+  rider     Rider    @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  hub       Hub      @relation(fields: [hubId], references: [id], onDelete: Cascade)
+
+  @@id([riderId, hubId])
+  @@index([hubId])
+  @@map("rider_hubs")
+}

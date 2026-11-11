@@ -31,13 +31,24 @@ export const createRiderSchema = z.object({
   password: passwordSchema.optional(),
   code: z.string().trim().toUpperCase().regex(/^R-\d{3,6}$/, "Rider codes look like R-2048").optional(),
   hubId: z.uuid().optional(),
+  /** Every hub the rider works for (several: the app works at the nearest); `hubId` (or the first) is where they start. */
+  hubIds: z.array(z.uuid()).max(30).optional(),
   vehicle: vehicle.default("MOTORBIKE"),
   zone: z.string().trim().max(80).optional(),
   /** Most stops a day (assignment suggestions); empty = network default. */
   dailyCapacity: z.number().int().min(1).max(500).optional(),
+  /** Send the sign-in SMS / email now (default: no message; share the details yourself). */
+  sendSms: z.boolean().default(false),
 });
 
 export const updateRiderSchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  phone: phoneSchema.optional(),
+  email: emailSchema.nullable().optional(),
+  /** A new password (shared with the rider by hand). */
+  password: passwordSchema.optional(),
+  /** Every hub the rider works for; the current hub moves to the first one when it isn't among them. */
+  hubIds: z.array(z.uuid()).min(1).max(30).optional(),
   hubId: z.uuid().nullable().optional(),
   vehicle: vehicle.optional(),
   zone: z.string().trim().max(80).nullable().optional(),
@@ -49,7 +60,12 @@ export const riderStatusSchema = z.object({ status: z.enum(["OFFLINE", "ONLINE",
 
 export const listRidersQuerySchema = z.object({
   hubId: z.uuid().optional(),
+  /** true: leave out franchise hubs' riders (super admin › Riders; they are under Franchises). */
+  company: z.enum(["true", "false"]).transform(v => v === "true").optional(),
   status: z.enum(["OFFLINE", "ONLINE", "ON_BREAK"]).optional(),
   active: z.enum(["true", "false"]).transform(v => v === "true").optional(),
   q: z.string().trim().max(80).optional(),
 });
+
+/** Super admin › Hubs & zones › Find hub locations. */
+export const locateHubsSchema = z.object({ overwrite: z.boolean().default(false), hubIds: z.array(z.uuid()).max(500).optional() });

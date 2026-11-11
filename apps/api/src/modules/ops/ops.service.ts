@@ -112,7 +112,7 @@ export class OpsService {
       db.rider.groupBy({ by: ["status"], where: { active: true }, _count: { _all: true } }),
       db.parcel.groupBy({ by: ["deliveryRiderId"], where: { deliveryRiderId: { not: null }, status: { in: DELIVERY_OPEN } } }),
       db.parcel.groupBy({ by: ["pickupRiderId"], where: { pickupRiderId: { not: null }, status: { in: PICKUP_OPEN } } }),
-      db.hub.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, district: true } }),
+      db.hub.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, code: true, name: true, district: true, lat: true, lng: true } }),
       db.parcel.groupBy({ by: ["currentHubId", "status"], where: { currentHubId: { not: null }, status: { in: ["AT_HUB", "IN_TRANSIT", "ASSIGNED"] } }, _count: { _all: true } }),
       // Arrivals today: AT_HUB events (hub id in metadata; older events only name the hub).
       db.$queryRaw<{ hub_id: string | null; n: number }[]>`

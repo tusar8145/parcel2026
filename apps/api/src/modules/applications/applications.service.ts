@@ -248,7 +248,7 @@ export class ApplicationsService {
     try {
       const rider = await this.network.createRider(
         actor,
-        { name: applicant.name ?? d.name ?? "Rider", phone: applicant.phone, email: applicant.email ?? undefined, hubId: input.hubId, vehicle: RIDER_VEHICLE[d.vehicle ?? ""] ?? "MOTORBIKE", zone: input.zone ?? d.area },
+        { name: applicant.name ?? d.name ?? "Rider", phone: applicant.phone, email: applicant.email ?? undefined, hubId: input.hubId, vehicle: RIDER_VEHICLE[d.vehicle ?? ""] ?? "MOTORBIKE", zone: input.zone ?? d.area, sendSms: false },
         meta,
       );
       return (rider as { id: string }).id;

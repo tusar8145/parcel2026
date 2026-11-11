@@ -8,7 +8,8 @@ import { ApiZodBody, ZBody } from "../../common/zod";
 import { RiderLocationService } from "./location.service";
 import { RiderPayService } from "./pay.service";
 import { RiderKycService } from "./kyc.service";
-import { kycUploadSchema, locationBatchSchema, locationPointSchema } from "./rider.schemas";
+import { kycUploadSchema, locationBatchSchema, locationPointSchema, nearestHubSchema } from "./rider.schemas";
+import { NetworkService } from "../network/network.service";
 
 /** The signed-in rider's own data (rider app). */
 @ApiTags("rider")
@@ -19,6 +20,7 @@ export class RiderAppController {
     private readonly locations: RiderLocationService,
     private readonly pay: RiderPayService,
     private readonly kyc: RiderKycService,
+    private readonly network: NetworkService,
   ) {}
 
   /** Live position while on shift (the app sends one after a move of the configured distance, else every 2 / 5 / 10 minutes: GET /settings/location). */
@@ -26,8 +28,26 @@ export class RiderAppController {
   @Post("location")
   @HttpCode(202)
   @ApiZodBody(locationPointSchema)
-  location(@CurrentUser() actor: UserActor, @ZBody(locationPointSchema) body: z.infer<typeof locationPointSchema>) {
-    return this.locations.record(actor, body);
+  async location(@CurrentUser() actor: UserActor, @ZBody(locationPointSchema) body: z.infer<typeof locationPointSchema>) {
+    const recorded = await this.locations.record(actor, body);
+    // A rider on several hubs works at the nearest one (cash and hand-overs go there).
+    if (actor.riderId) await this.network.moveToNearestHub(actor.riderId, body.lat, body.lng).catch(() => null);
+    return recorded;
+  }
+
+  /**
+   * App start: a rider on several hubs works at the nearest one (cash and hand-overs go there). Not a tracking point.
+   * Returns the hub they work at now.
+   */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post("me/nearest-hub")
+  @HttpCode(200)
+  @ApiZodBody(nearestHubSchema)
+  async nearestHub(@CurrentUser() actor: UserActor, @ZBody(nearestHubSchema) body: z.infer<typeof nearestHubSchema>) {
+    if (!actor.riderId) return { hub: null, changed: false };
+    const changed = await this.network.moveToNearestHub(actor.riderId, body.lat, body.lng);
+    const me = await this.network.getRider(actor.riderId);
+    return { hub: me.hub, hubs: me.hubs, changed: !!changed };
   }
 
   /** The rider's last position on record (status line: "Location sharing: On · last sent 1 min ago"). */

@@ -7,6 +7,14 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.37.0 — 2026-11-12
+- Super admin › Rider setup › Riders: the company's riders (franchise riders are under Franchises › Riders). Add a rider, and edit name, mobile, email, hubs, vehicle, zone, stops a day, active, and set a new password.
+- A rider can work for several hubs: parcels of any of them can be assigned to them, and the rider app works at the hub nearest to the phone (when it opens, and from its location while on shift). Cash is handed over at that hub.
+- Adding a rider, a franchise or inviting a merchant: the sign-in SMS is off by default and the form shows its exact text; tick "Send the sign-in message now" to send it. A password can be typed or generated to share yourself (a merchant invitation with a password makes their sign-in account now; they sign in and complete the application).
+- Franchises: a "Riders" button lists each franchise's riders.
+- Hubs & zones: "Find hub locations" gives hubs without a map location one from their address (else their zone), with the result to check.
+- Courier Operations app 1.3.0: with several hubs, the hub nearest to the phone is chosen when the app opens. Rider app 1.5.0: works at the nearest of the rider's hubs.
+
 ## 1.36.0 — 2026-11-12
 - Scan with phone: with AI import on, a photo whose label doesn't name the product gets one from what the photo shows; the import then matches it to a listed product or creates it.
 - Courier Operations › Import history: "Pin" on an import shows only that import's parcels in New orders, whatever their status, also after moving to other pages. An "Unpin" button with the import and batch number sits next to Import history. The pin is kept on this device only and ends by itself after 6 hours.

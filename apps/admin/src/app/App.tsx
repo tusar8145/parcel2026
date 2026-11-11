@@ -27,6 +27,7 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   "Banking & Financial merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.BankingMerchants }))),
   Franchises: lazy(() => import("@/pages/Franchises")),
   "Service plans": lazy(() => import("@/pages/ServicePlans")),
+  Riders: lazy(() => import("@/pages/Riders")),
   "Rider plans": lazy(() => import("@/pages/RiderPlans")),
   "Audit log": lazy(() => import("@/pages/AuditLog")),
   "Platform activity": lazy(() => import("@/pages/PlatformActivity")),

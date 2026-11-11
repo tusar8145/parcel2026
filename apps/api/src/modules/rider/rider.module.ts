@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { NetworkModule } from "../network/network.module";
 import { ParcelsModule } from "../parcels/parcels.module";
 import { RiderAppController } from "./rider-app.controller";
 import { RiderAdminController } from "./rider-admin.controller";
@@ -13,7 +14,7 @@ import { RiderKycService } from "./kyc.service";
  * contract for the applications module (docs/architecture-contracts.md).
  */
 @Module({
-  imports: [ParcelsModule],
+  imports: [ParcelsModule, NetworkModule],
   controllers: [RiderAppController, RiderAdminController],
   providers: [RiderLocationService, ProofService, RiderPayService, RiderKycService],
   exports: [RiderKycService, RiderLocationService],

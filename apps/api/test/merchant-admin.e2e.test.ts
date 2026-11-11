@@ -154,7 +154,7 @@ describe("merchant administration", () => {
 
     it("invites a merchant with a one-time link that prefills and is used up by the application", async () => {
       const sa = await admin();
-      const invited = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Karim Store", businessName: "Karim Gadgets", phone: "01912345678", type: "ECOMMERCE" } });
+      const invited = await ctx.api("POST", "/merchants/invites", { token: sa.token, body: { name: "Karim Store", businessName: "Karim Gadgets", phone: "01912345678", type: "ECOMMERCE", sendSms: true } });
       expect(invited.status, JSON.stringify(invited.body)).toBe(201);
       expect(invited.body.status).toBe("PENDING");
       const token = new URL(invited.body.link.replace("#/", "")).searchParams.get("invite")!;

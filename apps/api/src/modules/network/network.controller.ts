@@ -1,17 +1,21 @@
 import type { z } from "zod";
-import { Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { CurrentActor, CurrentUser, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor, UserActor } from "../../common/auth/actor";
 import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
 import { forbidden } from "../../common/errors";
-import { createRiderSchema, hubSchema, listRidersQuerySchema, riderStatusSchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
+import { createRiderSchema, hubSchema, listRidersQuerySchema, locateHubsSchema, riderStatusSchema, updateHubSchema, updateRiderSchema } from "./network.schemas";
+import { HubLocateService } from "./hub-locate.service";
 import { NetworkService } from "./network.service";
 
 @ApiTags("network")
 @Controller()
 export class NetworkController {
-  constructor(private readonly network: NetworkService) {}
+  constructor(
+    private readonly network: NetworkService,
+    private readonly hubLocate: HubLocateService,
+  ) {}
 
   /** Active hubs; any signed-in user (riders pick a hub when handing parcels over). */
   @Get("hubs")
@@ -25,6 +29,15 @@ export class NetworkController {
   @ApiZodBody(hubSchema)
   createHub(@CurrentActor() actor: Actor, @ZBody(hubSchema) body: z.infer<typeof hubSchema>, @ReqMeta() meta: RequestMeta) {
     return this.network.createHub(actor, body, meta);
+  }
+
+  /** Hubs without a map location get one (address → zone → zone centre); `overwrite`: every hub again. */
+  @RequirePermissions("hub:manage")
+  @Post("hubs/locate")
+  @HttpCode(200)
+  @ApiZodBody(locateHubsSchema)
+  locateHubs(@CurrentActor() actor: Actor, @ZBody(locateHubsSchema) body: z.infer<typeof locateHubsSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.hubLocate.locate(actor, body, meta);
   }
 
   @RequirePermissions("hub:manage")

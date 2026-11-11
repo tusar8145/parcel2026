@@ -1,8 +1,9 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { inviteMessage, merchantInviteLink } from "../notifications/account-invite";
 import type { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { randomToken, sha256 } from "../../common/crypto";
+import { hashPassword, randomToken, sha256 } from "../../common/crypto";
 import { AppError, conflict, notFound } from "../../common/errors";
 import { pageArgs, toPage } from "../../common/pagination";
 import { actorLabel, type Actor } from "../../common/auth/actor";
@@ -165,7 +166,7 @@ export class MerchantReviewService {
 
   async invite(actor: Actor, input: z.infer<typeof inviteMerchantSchema>, meta: RequestMeta) {
     const token = randomToken(24);
-    const link = `${env().APP_URL.replace(/\/$/, "")}/merchant?invite=${encodeURIComponent(token)}`; // the website's merchant application form
+    const link = merchantInviteLink(token); // the website's merchant application form
     const outbox: string[] = [];
     const invite = await this.prisma.$transaction(async tx => {
       const open = await tx.merchantInvite.findFirst({
@@ -191,19 +192,31 @@ export class MerchantReviewService {
           expiresAt: new Date(Date.now() + input.expiresInDays * 86_400_000),
         },
       });
-      outbox.push(
-        ...(await this.notify.notify(tx, {
-          event: "merchant.invite",
-          to: { phone: input.phone, email: input.email, name: input.name },
-          vars: { role: `${input.type === "BANKING_FINANCIAL" ? "a Banking & Financial" : "an E-commerce"} merchant${input.businessName ? ` (${input.businessName})` : ""}`, link },
-        })),
-      );
+      // The sign-in account now, with the password super admin set (they sign in and complete the application).
+      if (input.password && input.phone) {
+        const taken = await tx.user.findFirst({ where: { OR: [{ phone: input.phone }, ...(input.email ? [{ email: input.email }] : [])] }, select: { id: true } });
+        if (taken) throw conflict("ACCOUNT_EXISTS", "An account with this mobile number or email already exists: send the invitation without a password; they sign in with their own.");
+        await tx.user.create({ data: { name: input.name, phone: input.phone, email: input.email, passwordHash: await hashPassword(input.password) } });
+      }
+      // The message only when the form asked for it (it shows the text first).
+      if (input.sendSms) {
+        const { event, vars } = inviteMessage("merchant", { inviter: actorLabel(actor), name: input.name, businessName: input.businessName, merchantType: input.type, link });
+        outbox.push(...(await this.notify.notify(tx, { event, to: { phone: input.phone, email: input.email, name: input.name }, vars })));
+      }
       await this.audit.record(actor, { action: "merchant.invite", entityType: "merchant_invite", entityId: created.id, data: { name: input.name, type: input.type, phone: input.phone ?? null, email: input.email ?? null } }, meta, tx);
       return created;
     });
     await this.outbox.flush(outbox);
     // The link is returned once so staff can share it another way too.
-    return { ...inviteView(invite), link, message: "Invitation sent. The link works once and expires on the date shown." };
+    return {
+      ...inviteView(invite),
+      link,
+      messageSent: outbox.length > 0,
+      accountCreated: !!input.password,
+      message: outbox.length
+        ? "Invitation sent. The link works once and expires on the date shown."
+        : "Invitation created without a message: share the link (and the password, if you set one) yourself. The link works once and expires on the date shown.",
+    };
   }
 
   async listInvites(query: z.infer<typeof listInvitesQuerySchema>) {

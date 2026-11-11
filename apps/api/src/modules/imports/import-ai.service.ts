@@ -11,7 +11,7 @@ import { costUsd } from "../parcel-scans/scan-claude";
 import { GeographyService } from "../geography/geography.service";
 import { resolvePlace } from "../parcels/places";
 import { listOf } from "../packages/catalog.service";
-import { productNameOfCell, type Cells, type EngineContext } from "./import-engine.service";
+import { productNameOfCell, type Cells, type EngineContext, setMark } from "./import-engine.service";
 import { matchProduct, productKey } from "./product-match";
 
 export { productKey } from "./product-match";
@@ -238,10 +238,12 @@ export class ImportAiService {
     const out = rows.map(r => ({ rowNumber: r.rowNumber, cells: { ...r.cells } }));
     const known = new Map(ctx.products.map(p => [norm(p.name), p.name]));
     // The file's own name is kept (`__label`) when the cell becomes a system product.
-    const use = (c: Cells, product: string) => {
+    // `ai`: the AI decided it (now or remembered from an earlier file): the preview tags the cell.
+    const use = (c: Cells, product: string, ai = false) => {
       if (norm(product) === norm(productNameOfCell(c.product_type ?? ""))) return;
       c.__label = c.__label || (c.product_type ?? "").trim();
       c.product_type = product;
+      if (ai) setMark(c, "__ai", ["product_type"]);
     };
 
     // ── what the lists don't match ──
@@ -262,7 +264,7 @@ export class ImportAiService {
         if (similar) use(c, similar.product.name);
         else if (!known.has(norm(name))) {
           const alias = productAliases.get(norm(name));
-          if (alias && known.has(norm(alias))) use(c, known.get(norm(alias))!);
+          if (alias && known.has(norm(alias))) use(c, known.get(norm(alias))!, true);
           else {
             const e = unknownProducts.get(norm(name)) ?? { raw: raw.replace(/\s+/g, " ").slice(0, 120), rows: [] };
             e.rows.push(idx);
@@ -278,6 +280,7 @@ export class ImportAiService {
           const hit = zoneAlias.get(`${norm(place.district)}|${norm(c.zone)}`);
           if (hit && (ctx.catalog.zonesByDistrict[place.district] ?? []).includes(hit)) {
             c.zone = hit;
+            setMark(c, "__ai", ["zone"]);
             return;
           }
         }
@@ -358,7 +361,7 @@ export class ImportAiService {
         }
       }
       if (!name) continue;
-      for (const i of item.rows) use(out[i].cells, name);
+      for (const i of item.rows) use(out[i].cells, name, true);
       await this.remember("PRODUCT", list, item.key, name);
     }
     let catalog = ctx.catalog;
@@ -390,6 +393,7 @@ export class ImportAiService {
       cells.district = district;
       cells.zone = zone;
       cells.__auto = [...new Set([...(cells.__auto ?? "").split(",").filter(Boolean), "district", "zone"])].join(",");
+      setMark(cells, "__ai", ["district", "zone"]);
     }
     if (counts.productsCreated || counts.categoriesCreated || counts.zonesCreated) result.created = true;
 

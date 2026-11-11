@@ -82,7 +82,13 @@ describe("AI import", () => {
     expect(calls[0]).not.toContain("Tshirt");
     expect(calls[0]).toContain("Drone propeller set");
     // The file's own names are kept for the parcels (prints show them).
-    expect([at(2).cells.__label, at(3).cells.__label]).toEqual(["Tshirt men XL", "Drone propeller set"]);
+    const items = first.rows.items as unknown as { rowNumber: number; productLabel: string | null; aiFilled: string[]; cells: Record<string, string> }[];
+    const item = (n: number) => items.find(r => r.rowNumber === n)!;
+    expect([item(2).productLabel, item(3).productLabel]).toEqual(["Tshirt men XL", "Drone propeller set"]);
+    // What the AI decided is tagged (the system's own match isn't); the markers aren't cells.
+    expect(item(3).aiFilled).toEqual(expect.arrayContaining(["product_type", "district", "zone"]));
+    expect(item(2).aiFilled).not.toContain("product_type");
+    expect(Object.keys(item(3).cells).filter(k => k.startsWith("__"))).toEqual([]);
     // Created at once, tagged; its channels from the rule.
     expect(await ctx.prisma.parcelProduct.findFirstOrThrow({ where: { name: "Drone Parts" } })).toMatchObject({ aiCreated: true, segment: "ECOMMERCE", notifySms: false, notifyEmail: true, notifyPush: true });
     const catalog = (await ctx.api("GET", "/catalog")).body as { zonesByDistrict: Record<string, string[]> };
@@ -151,6 +157,36 @@ describe("AI import", () => {
     expect(detail).toMatchObject({ product: "Blue cotton shirt x2", systemProduct: "Shirt" });
     // Not after it was submitted.
     expect((await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { speed: "REGULAR" } })).status).toBe(409);
+  });
+
+  it("a preview row's own product, delivery type and priority; applying the file's choice to every row replaces them", async () => {
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const merchant = await shop();
+    await ctx.api("GET", "/packages/effective?segment=ECOMMERCE", { token: ops.token });
+    const checked = await validate(ops.token, merchant.id, [
+      row(1, { address: "House 9, Dhanmondi", district: "Dhaka Central", zone: "Dhanmondi", product_type: "Blue cotton shirt x2" }),
+      row(2, { address: "House 4, Dhanmondi", district: "Dhaka Central", zone: "Dhanmondi", product_type: "Honey" }),
+    ]);
+    // The lists a row can take.
+    const job = (await ctx.api("GET", `/imports/${checked.id}`, { token: ops.token })).body as { choices: { products: string[]; deliveryTypes: string[]; priorities: string[] } };
+    expect(job.choices.products).toEqual(expect.arrayContaining(["Shirt", "Books"]));
+    expect(job.choices.deliveryTypes).toEqual(expect.arrayContaining(["Regular", "Express"]));
+    expect(job.choices.priorities).toContain("Fragile");
+    const edit = await ctx.api("PATCH", `/imports/${checked.id}/rows/2`, { token: ops.token, body: { cells: { product_type: "Books", service_level: "Express", priority: "Fragile" } } });
+    expect(edit.status, JSON.stringify(edit.body)).toBe(200);
+    expect(edit.body.row).toMatchObject({ status: "VALID", productLabel: "Blue cotton shirt x2", cells: { product_type: "Books", service_level: "Express", priority: "Fragile" } });
+    // The file's messages change: the row keeps its own delivery type and priority.
+    const kept = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { notifications: ["notify.delivered"] } });
+    expect(kept.status, JSON.stringify(kept.body)).toBe(200);
+    const cellsOf = (b: { rows: { items: { rowNumber: number; cells: Record<string, string> }[] } }, n: number) => b.rows.items.find(r => r.rowNumber === n)!.cells;
+    expect(cellsOf(kept.body, 2)).toMatchObject({ service_level: "Express", priority: "Fragile" });
+    expect(cellsOf(kept.body, 3).service_level).not.toBe("Express");
+    // Applying a delivery type to every row replaces the row's own (its priority stays).
+    const applied = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { speed: "REGULAR" } });
+    expect(cellsOf(applied.body, 2)).toMatchObject({ service_level: "Regular", priority: "Fragile" });
+    expect((await ctx.api("POST", `/imports/${checked.id}/commit`, { token: ops.token })).body).toMatchObject({ status: "COMPLETED" });
+    const parcel = await ctx.prisma.parcel.findFirstOrThrow({ where: { merchantId: merchant.id, productLabel: "Blue cotton shirt x2" } });
+    expect(parcel).toMatchObject({ speedOption: "REGULAR", priorityName: "Fragile", productName: "Books" });
   });
 
   it("a merchant's own import uses it too", async () => {

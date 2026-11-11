@@ -23,7 +23,7 @@ import { OutboxService } from "../notifications/outbox.service";
 import { readCsv, writeCsv } from "./csv";
 import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, merchantTypeOf, segmentOf, type ColumnKey, type ImportKindKey } from "./columns";
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
-import { ImportEngineService, productNameOfCell, productSegmentOf, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
+import { ImportEngineService, markKeys, productNameOfCell, productSegmentOf, setMark, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
 import { deliveryTypesFor, displayPriceLines, findDeliveryType, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
@@ -677,6 +677,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
         productTypeLabel: services.productType ? PRODUCT_TYPE_LABEL[services.productType] : null,
       },
       totals: { rows: totals._count._all, charge: Number(totals._sum.charge ?? 0) },
+      /** What a preview row can be changed to (a checked file not submitted yet). */
+      choices: job.status === "VALIDATED" && !job.rowsPurgedAt ? await this.choices(job, settings) : null,
       rowsAvailable: !job.rowsPurgedAt,
       downloads: {
         failedRows: job.errorRows + job.failedCount > 0 && !job.rowsPurgedAt ? `/api/v1/imports/${job.id}/failed-rows` : null,
@@ -686,6 +688,23 @@ export class ImportJobsService implements OnApplicationBootstrap {
 
   async get(actor: Actor, id: string) {
     return this.view(await this.load(actor, id));
+  }
+
+  /** The products, delivery types and priorities a preview row can take (names, as the cells hold them). */
+  private async choices(job: ImportJob, stored: ImportSettings & { services?: ImportServiceOptions }) {
+    const live = await this.config.settings();
+    const ctx = await this.engine.context({
+      kind: kindKeyOf(job.kind),
+      settings: { ...live, templates: { ...live.templates, ...(stored.templates ?? {}) }, defaultDestination: stored.defaultDestination ?? live.defaultDestination },
+      merchantId: job.merchantId,
+      dropOffHubId: job.dropOffHubId,
+      services: stored.services,
+    });
+    return {
+      products: ctx.columns.some(c => c.key === "product_type") ? ctx.products.map(p => p.name) : [],
+      deliveryTypes: deliveryTypesFor(ctx.pkg.segment, ctx.deliveryTypes).map(t => t.name),
+      priorities: ctx.priorities.map(p => p.name),
+    };
   }
 
   private async rowsPage(job: ImportJob, query: z.infer<typeof rowsQuerySchema>) {
@@ -716,13 +735,17 @@ export class ImportJobsService implements OnApplicationBootstrap {
     };
     return rows.map(r => {
       const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
-      const { __auto: _auto, ...cells } = (r.cells ?? {}) as Cells;
+      const { __auto: _auto, __ai: _ai, __own: _own, __label: label, ...cells } = (r.cells ?? {}) as Cells;
       return {
         rowNumber: r.rowNumber,
         status: r.status,
         cells,
         /** Place columns picked from the address (not written in the file). */
         autoFilled: [...autoKeys(r.cells as Cells)],
+        /** Columns the AI import decided (the preview tags them). */
+        aiFilled: [...markKeys(r.cells as Cells, "__ai")],
+        /** The product as the file wrote it (parcels and prints keep it). */
+        productLabel: label ?? null,
         errors: errors.map(e => ({ ...e, header: headerOf(e.column), text: `Row ${r.rowNumber} · ${headerOf(e.column)}: ${e.message}` })),
         missing: r.missing,
         charge: r.charge == null ? null : Number(r.charge),
@@ -760,9 +783,14 @@ export class ImportJobsService implements OnApplicationBootstrap {
     const auto = autoKeys(cells);
     for (const [key, value] of Object.entries(input.cells) as [ColumnKey, string | null][]) {
       const v = (value ?? "").trim();
+      // Another product: the file's own name stays the parcel's (prints show it).
+      if (key === "product_type" && !cells.__label && cells.product_type?.trim() && v !== cells.product_type) cells.__label = cells.product_type.trim();
       if (v) cells[key] = v;
       else delete cells[key];
       auto.delete(key); // typed or chosen by the user now
+      setMark(cells, "__ai", [], [key]);
+      // This row's own delivery type / priority: the file's choice no longer overwrites it.
+      if (key === "service_level" || key === "priority") setMark(cells, "__own", v ? [key] : [], v ? [] : [key]);
     }
     // A new address: its places are picked again (the ones the user chooses in the same edit stay).
     if (input.detect)
@@ -834,7 +862,16 @@ export class ImportJobsService implements OnApplicationBootstrap {
     }
     if (input.priority && !ctx.priorities.some(p => p.id === input.priority)) throw new AppError("UNKNOWN_PRIORITY", "Choose a priority from the list", 422);
     const rows = await this.prisma.importRow.findMany({ where: { jobId: job.id }, orderBy: { rowNumber: "asc" }, select: { id: true, rowNumber: true, cells: true } });
-    const results = await this.engine.validate(ctx, rows.map(r => ({ rowNumber: r.rowNumber, cells: { ...(r.cells as Cells) } })));
+    // "Apply to every row": rows changed one by one in the preview take the file's choice again.
+    const applied = [...(input.speed ? ["service_level"] : []), ...(input.priority ? ["priority"] : [])];
+    const results = await this.engine.validate(
+      ctx,
+      rows.map(r => {
+        const cells = { ...(r.cells as Cells) };
+        setMark(cells, "__own", [], applied);
+        return { rowNumber: r.rowNumber, cells };
+      }),
+    );
     const idOf = new Map(rows.map(r => [r.rowNumber, r.id]));
     const fresh = await this.prisma.$transaction(
       async tx => {

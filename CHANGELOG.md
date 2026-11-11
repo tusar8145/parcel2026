@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.35.0 — 2026-11-12
+- Excel import preview: the delivery address is a two-line box, so the whole address shows (and can be corrected).
+- Excel import preview: each row's product, delivery type and priority can be changed from a dropdown; the row is checked and priced again. A row's own delivery type or priority stays when the messages change, until a delivery type or priority is applied to every row. Changing the product keeps the file's name on the parcel and its prints.
+- Excel import preview: what AI import decided (product, district, zone) has a small "AI" tag.
+
 ## 1.34.0 — 2026-11-12
 - Product categories are gone from everywhere (menu, products, booking forms, Excel templates, the import window and the AI). Each product now has its own SMS, email and push switches (Operational settings › Products: in Add / Edit, or click SMS / Email / Push in the list); every product took its old category's settings.
 - Excel import, the product: the system matches the file's product name to its own (the same product under another spelling, size or colour, else the most similar one). Nothing close: the parcel is booked with the file's name. The parcel keeps both: the system's product and the name the file wrote; prints and screens show the file's name.

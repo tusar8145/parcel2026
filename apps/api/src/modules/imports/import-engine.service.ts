@@ -39,8 +39,24 @@ import type { ImportSettings } from "./import-config.service";
  * `__scan`: the Scan ID of a "Scan with phone" row (parcel-scans); the booked parcel keeps its photo.
  * `__auto`: place columns picked from the address (import-places.ts), comma-separated.
  */
-/** `__label`: the product as the file wrote it, when the AI import replaced the cell with the system product. */
-export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label", string>>;
+/**
+ * `__label`: the product as the file wrote it, when the cell became a system product (AI import or a preview edit).
+ * `__ai`: columns the AI import decided (product, district, zone), comma-separated; the preview tags them.
+ * `__own`: delivery type / priority chosen for this row in the preview: the window's choice for the file doesn't
+ * overwrite them (until "Apply to every row").
+ */
+export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label" | "__ai" | "__own", string>>;
+
+/** The keys listed in a marker cell (`__auto`, `__ai`, `__own`). */
+export const markKeys = (cells: Cells, marker: "__auto" | "__ai" | "__own") => new Set((cells[marker] ?? "").split(",").filter(Boolean));
+/** Adds (or removes) keys of a marker cell. */
+export function setMark(cells: Cells, marker: "__auto" | "__ai" | "__own", add: string[], remove: string[] = []) {
+  const keys = markKeys(cells, marker);
+  for (const k of add) keys.add(k);
+  for (const k of remove) keys.delete(k);
+  if (keys.size) cells[marker] = [...keys].join(",");
+  else delete cells[marker];
+}
 export interface CellError {
   column: string;
   message: string;
@@ -373,8 +389,10 @@ export class ImportEngineService {
     const customer = ctx.kind === "customer";
     const banking = isBanking(ctx.pkg.segment);
     // The modal's delivery type, category and priority, when chosen, overwrite the file's columns (the preview shows them).
-    if (ctx.services.speed) cells.service_level = ctx.deliveryTypes.find(t => t.code === ctx.services.speed)?.name ?? ctx.services.speed;
-    if (ctx.services.priority) cells.priority = ctx.priorities.find(p => p.id === ctx.services.priority)?.name ?? cells.priority;
+    // A row's own choice (changed in the preview) stays.
+    const own = markKeys(cells, "__own");
+    if (ctx.services.speed && !own.has("service_level")) cells.service_level = ctx.deliveryTypes.find(t => t.code === ctx.services.speed)?.name ?? ctx.services.speed;
+    if (ctx.services.priority && !own.has("priority")) cells.priority = ctx.priorities.find(p => p.id === ctx.services.priority)?.name ?? cells.priority;
     const raw = (key: ColumnKey) => (cells[key] ?? "").trim();
     // Required columns (super admin), then defaults for empty cells.
     for (const col of ctx.columns) if (settings[col.key]?.required && !raw(col.key)) err(col.key, "required");
@@ -477,7 +495,13 @@ export class ImportEngineService {
     const written = (cells.__label ?? "").trim() || value("product_type").replace(/\s+/g, " ").slice(0, 120);
     if (value("product_type")) {
       const wanted = productNameOfCell(value("product_type"));
-      const hit = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type"))) ?? matchProduct(wanted, ctx.products)?.product;
+      const exact = ctx.products.find(p => lower(p.name) === wanted || lower(productLabel(p)) === lower(value("product_type")));
+      const hit = exact ?? matchProduct(wanted, ctx.products)?.product;
+      // A similar product: the cell shows it (the preview's dropdown), the file's name stays the parcel's.
+      if (hit && !exact && raw("product_type")) {
+        cells.__label = written;
+        cells.product_type = hit.name;
+      }
       if (hit) product = hit.name;
       else freeProduct = value("product_type").replace(/\s+/g, " ").slice(0, 120);
     }

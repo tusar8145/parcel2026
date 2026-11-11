@@ -137,6 +137,8 @@ interface Job {
   createdBy?: string;
   merchant?: { name: string } | null;
   downloads?: { failedRows?: boolean };
+  /** What a preview row can be changed to (names): a checked file not submitted yet. */
+  choices?: { products: string[]; deliveryTypes: string[]; priorities: string[] } | null;
 }
 export interface TransferResult {
   bags: { number: string; label?: string; originHub: string; destHub: string; parcels: number; status: string; trip?: string | null }[];
@@ -157,6 +159,10 @@ interface Row {
   warnings: { column: string; message: string; text: string }[];
   missing?: string[];
   autoFilled?: string[];
+  /** Columns the AI import decided (tagged "AI"). */
+  aiFilled?: string[];
+  /** The product as the file wrote it (kept on the parcel and its prints). */
+  productLabel?: string | null;
   trackingId?: string;
   charge?: number;
   lines?: { label: string; amount: number }[];
@@ -1199,7 +1205,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             ? `${num(job.skippedLines.count)} line${job.skippedLines.count === 1 ? "" : "s"} that ${job.skippedLines.count === 1 ? "isn't an order was" : "aren't orders were"} skipped (row${job.skippedLines.count === 1 ? "" : "s"} ${job.skippedLines.rows.slice(0, 12).join(", ")}${job.skippedLines.count > 12 ? ", …" : ""}).`
             : "",
           c.errors ? "Rows with errors are skipped: correct the address and places below, or fix them in your file and upload it again (download them with the reason for each)." : "",
-          catalog && job.status === "VALIDATED" ? "District, zone and area left out of the file are picked from the address (green). Change any address or place below: the row is checked and priced again." : "",
+          catalog && job.status === "VALIDATED" ? "District, zone and area left out of the file are picked from the address (green). Change any address, place, product, delivery type or priority below: the row is checked and priced again. A delivery type or priority changed in a row stays when the file's choice above changes, until you apply it to every row." : "",
+          rows?.items.some(r => r.aiFilled?.length) ? "AI: chosen by AI import (product, district or zone); you can change it." : "",
         ].filter(Boolean);
         body = (
           <>
@@ -1574,12 +1581,16 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
   const always = ["recipient_name", "recipient_phone", "address", "district", "zone", ...(canEdit ? ["area", "pickup_address", "pickup_district", "pickup_zone"] : [])];
   const shown = job.columns.filter(c => present.has(c.key) || c.required || always.includes(c.key));
   const missingCol: Record<string, string> = { recipientName: "recipient_name", recipientPhone: "recipient_phone", address: "address", district: "district", zone: "zone" };
+  // Product, delivery type and priority: a dropdown of the file's lists (a checked file not submitted yet).
+  const listOf: Record<string, string[] | undefined> = canEdit && job.choices ? { product_type: job.choices.products.length ? job.choices.products : undefined, service_level: job.choices.deliveryTypes, priority: job.choices.priorities } : {};
 
   async function save(r: Row, key: string, value: string) {
-    const f = familyOf(key)!;
+    const f = familyOf(key);
     const cells: Record<string, string | null> = { [key]: value || null };
     let detect = false;
-    if (key === f.address) detect = true;
+    if (!f) {
+      // product, delivery type, priority
+    } else if (key === f.address) detect = true;
     else if (key === f.district) Object.assign(cells, { [f.zone]: null, [f.area]: null });
     else if (key === f.zone) {
       const owner = Object.keys(catalog!.zonesByDistrict).find(d => catalog!.zonesByDistrict[d].includes(value));
@@ -1620,6 +1631,7 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
               const bad = new Map((r.errors || []).map(e => [e.column, e.message]));
               const missing = new Set((r.missing || []).map(m => missingCol[m]));
               const auto = new Set(r.autoFilled || []);
+              const ai = new Set(r.aiFilled || []);
               return (
                 <tr key={r.rowNumber} data-status={r.status}>
                   <td>{r.rowNumber}</td>
@@ -1629,7 +1641,8 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
                   {shown.map(c => {
                     const value = r.cells?.[c.key] ?? "";
                     const problem = bad.get(c.key) || (r.status === "INCOMPLETE" && missing.has(c.key) ? "needed before delivery" : "");
-                    if (canEdit && familyOf(c.key)) return <EditCell key={c.key} r={r} c={c} value={value} problem={problem} auto={auto.has(c.key)} catalog={catalog!} onSave={v => save(r, c.key, v)} />;
+                    if (canEdit && familyOf(c.key)) return <EditCell key={c.key} r={r} c={c} value={value} problem={problem} auto={auto.has(c.key)} ai={ai.has(c.key)} catalog={catalog!} onSave={v => save(r, c.key, v)} />;
+                    if (listOf[c.key]) return <ChoiceCell key={c.key} r={r} c={c} value={value} problem={problem} ai={ai.has(c.key)} list={listOf[c.key]!} onSave={v => save(r, c.key, v)} />;
                     if (bad.has(c.key))
                       return (
                         <td key={c.key} title={`${c.header}: ${bad.get(c.key)}`} style={{ background: "var(--bad-soft)", color: "var(--bad)", fontWeight: 600 }}>
@@ -1642,7 +1655,12 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
                           —
                         </td>
                       );
-                    return <td key={c.key}>{value}</td>;
+                    return (
+                      <td key={c.key} style={c.key === "address" ? { minWidth: 220, whiteSpace: "normal" } : undefined}>
+                        {value}
+                        {ai.has(c.key) ? <AiTag /> : null}
+                      </td>
+                    );
                   })}
                   <td className="nowrap">
                     {r.lines?.length ? (
@@ -1678,11 +1696,59 @@ function ImportRowsTable({ job, rows, statuses, catalog, onSaved }: { job: Job; 
   );
 }
 
-function EditCell({ r, c, value, problem, auto, catalog, onSave }: { r: Row; c: { key: string; header: string }; value: string; problem: string; auto: boolean; catalog: Catalog; onSave: (v: string) => Promise<void> }) {
+/** "AI": the AI import chose this cell. */
+function AiTag() {
+  return (
+    <span title="Chosen by AI import" style={{ display: "inline-block", marginLeft: 4, padding: "0 4px", borderRadius: 4, fontSize: 9, fontWeight: 700, lineHeight: "14px", letterSpacing: 0.3, verticalAlign: "middle", color: "#6d28d9", background: "#ede9fe", border: "1px solid #c4b5fd" }}>
+      AI
+    </span>
+  );
+}
+
+/** Product, delivery type or priority of one row: a dropdown of the file's list. */
+function ChoiceCell({ r, c, value, problem, ai, list, onSave }: { r: Row; c: { key: string; header: string }; value: string; problem: string; ai: boolean; list: string[]; onSave: (v: string) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const unknown = value && !list.some(o => o.toLowerCase() === value.toLowerCase());
+  const shown = list.find(o => o.toLowerCase() === value.toLowerCase()) ?? value;
+  const product = c.key === "product_type";
+  const label = product && r.productLabel && r.productLabel.toLowerCase() !== value.toLowerCase() ? r.productLabel : "";
+  return (
+    <td style={{ whiteSpace: "nowrap" }}>
+      <Select
+        className="select sm"
+        value={shown}
+        title={problem ? `${c.header}: ${problem}` : ai ? `${c.header}: chosen by AI import (you can change it)` : c.header}
+        aria-label={`${c.header}, row ${r.rowNumber}`}
+        disabled={busy}
+        style={{ width: product ? 170 : 120, ...(problem ? { borderColor: "#f3b4ad", background: "var(--bad-soft)" } : {}) }}
+        onChange={async e => {
+          if (e.target.value === shown) return;
+          setBusy(true);
+          await onSave(e.target.value);
+          setBusy(false);
+        }}
+      >
+        {product ? <option value="">No product</option> : null}
+        {unknown ? <option value={value}>{product ? `${value} (not listed)` : `${value} (not in the list)`}</option> : null}
+        {list.map(o => (
+          <option key={o}>{o}</option>
+        ))}
+      </Select>
+      {ai ? <AiTag /> : null}
+      {label ? (
+        <div className="muted" title="The file's name: the parcel and its prints keep it" style={{ fontSize: 11, maxWidth: 190, whiteSpace: "normal", marginTop: 2 }}>
+          {`File: ${label}`}
+        </div>
+      ) : null}
+    </td>
+  );
+}
+
+function EditCell({ r, c, value, problem, auto, ai, catalog, onSave }: { r: Row; c: { key: string; header: string }; value: string; problem: string; auto: boolean; ai: boolean; catalog: Catalog; onSave: (v: string) => Promise<void> }) {
   const f = familyOf(c.key)!;
   const [busy, setBusy] = useState(false);
   const style = { ...(problem ? { borderColor: "#f3b4ad", background: "var(--bad-soft)" } : auto ? { background: "var(--good-soft)" } : {}) };
-  const title = problem ? `${c.header}: ${problem}` : auto ? `${c.header}: picked from the address (you can change it)` : c.header;
+  const title = problem ? `${c.header}: ${problem}` : ai ? `${c.header}: chosen by AI import (you can change it)` : auto ? `${c.header}: picked from the address (you can change it)` : c.header;
   const save = async (v: string) => {
     if (v === value) return;
     setBusy(true);
@@ -1692,7 +1758,17 @@ function EditCell({ r, c, value, problem, auto, catalog, onSave }: { r: Row; c: 
   if (c.key === f.address)
     return (
       <td>
-        <input className="input sm" defaultValue={value} title={title} aria-label={`${c.header}, row ${r.rowNumber}`} disabled={busy} style={{ width: 230, ...style }} onBlur={e => void save(e.target.value)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()} />
+        <textarea
+          className="input sm"
+          rows={Math.min(4, Math.max(2, Math.ceil(value.length / 36)))}
+          defaultValue={value}
+          title={title}
+          aria-label={`${c.header}, row ${r.rowNumber}`}
+          disabled={busy}
+          style={{ width: 260, minHeight: 44, resize: "vertical", lineHeight: 1.35, paddingTop: 4, paddingBottom: 4, fontFamily: "inherit", ...style }}
+          onBlur={e => void save(e.target.value.replace(/\s*\n\s*/g, " "))}
+          onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), e.currentTarget.blur())}
+        />
       </td>
     );
   const cells = r.cells || {};
@@ -1716,6 +1792,7 @@ function EditCell({ r, c, value, problem, auto, catalog, onSave }: { r: Row; c: 
           <option key={o}>{o}</option>
         ))}
       </Select>
+      {ai ? <AiTag /> : null}
     </td>
   );
 }

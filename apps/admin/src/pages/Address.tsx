@@ -1,5 +1,5 @@
 /**
- * Address (Location settings; bridge-geo.js): the delivery address hierarchy offered on every booking form, template
+ * Address (Hub settings; bridge-geo.js): the delivery address hierarchy offered on every booking form, template
  * and import — districts → zones → areas, with search.
  *   Drill-down, search                         GET /geography, GET /geography/counts
  *   Add district / zone (optional serving hub)  POST /geography/districts, /geography/zones
@@ -346,7 +346,7 @@ export default function Address() {
   const inactive = t ? t.totals.inactive.districts + t.totals.inactive.zones + t.totals.inactive.areas : 0;
   return (
     <>
-      <PageHeading eyebrow="Location settings" title="Address" subtitle="Districts, zones and areas. Every address form follows this list." />
+      <PageHeading eyebrow="Hub settings" title="Address" subtitle="Districts, zones and areas. Every address form follows this list." />
       <Panel title="Delivery address hierarchy" subtitle="Districts, zones and areas offered on every booking form, template and import. Renames update every record; places in use can only be deactivated.">
         <div className="panel-body">
           {!t ? (

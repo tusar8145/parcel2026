@@ -100,10 +100,29 @@ export class NetworkService {
     if (clash) throw new AppError("HUB_NAME_TAKEN", `Hub ${clash.code} already has the name ${name.trim()}`, HttpStatus.CONFLICT, { field: "name" });
   }
 
-  /** Every signed-in user lists hubs; the in-charge's name and phone are only for those who manage them. */
+  /**
+   * Every signed-in user lists hubs. Those who manage them also get the in-charge's name and phone, the hub's
+   * sign-in people (Hub Managers: `managers`) and, for a franchise hub, its franchise and the franchise's account.
+   */
   async listHubs(includeInactive: boolean, canManage = false) {
-    const hubs = await this.prisma.hub.findMany({ where: includeInactive ? {} : { active: true }, orderBy: { name: "asc" } });
-    return canManage ? hubs : hubs.map(({ inChargeName: _name, inChargePhone: _phone, ...hub }) => hub);
+    if (!canManage) {
+      const hubs = await this.prisma.hub.findMany({ where: includeInactive ? {} : { active: true }, orderBy: { name: "asc" } });
+      return hubs.map(({ inChargeName: _name, inChargePhone: _phone, ...hub }) => hub);
+    }
+    const person = { select: { id: true, name: true, phone: true, email: true, status: true } } as const;
+    const hubs = await this.prisma.hub.findMany({
+      where: includeInactive ? {} : { active: true },
+      orderBy: { name: "asc" },
+      include: {
+        staff: { where: { role: "HUB_OPERATOR", user: { status: { not: "DEACTIVATED" } } }, select: { user: person }, orderBy: { createdAt: "asc" } },
+        franchise: { select: { id: true, code: true, name: true, status: true, owner: person } },
+      },
+    });
+    return hubs.map(({ staff, franchise, ...hub }) => ({
+      ...hub,
+      managers: [...new Map(staff.map(s => [s.user.id, s.user])).values()],
+      franchise: franchise ? { id: franchise.id, code: franchise.code, name: franchise.name, status: franchise.status, account: franchise.owner } : null,
+    }));
   }
 
   async createHub(actor: Actor, input: z.infer<typeof hubSchema>, meta: RequestMeta) {

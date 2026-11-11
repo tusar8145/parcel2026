@@ -12,6 +12,7 @@ import { SessionService } from "../auth/session.service";
 import { MfaService, mfaRequiredFor } from "../auth/mfa.service";
 import { PermissionService } from "../../common/auth/permissions.service";
 import { NotifyService } from "../notifications/notify.service";
+import { inviteMessage } from "../notifications/account-invite";
 import { emailInUse, isUniqueViolation } from "./profile.service";
 import { env } from "../../config/env";
 import type { createUserSchema, listUsersQuerySchema, RoleGrantInput, updateUserSchema } from "./accounts.schemas";
@@ -141,16 +142,16 @@ export class UsersService {
         return created;
       });
       // Staff accounts: tell the new person they have an account, as what, and where to sign in
-      // ("Account invitation", SMS + email; without a password they sign in with an SMS code).
+      // ("Account invitation", SMS + email; without a password they sign in with an SMS code). Not when the form
+      // says so (sendSms: false: the password was set and is shared by hand). The text is the form's preview
+      // (POST /accounts/invite-preview, kind staff).
       const staff = [...new Set(input.roles.map(g => STAFF_ROLE_LABEL[g.role as Role]).filter(Boolean))];
-      if (staff.length)
-        await this.notify
-          .notifyNow({
-            event: "account.invite",
-            to: { userId: user.id, phone: input.phone, email: input.email, name: input.name },
-            vars: { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", role: staff.join(" and "), link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
-          })
-          .catch(() => undefined);
+      if (staff.length && input.sendSms !== false) {
+        const hubId = input.roles.find(g => g.role === "HUB_OPERATOR" && g.hubId)?.hubId;
+        const hub = hubId ? await this.prisma.hub.findUnique({ where: { id: hubId }, select: { name: true } }) : null;
+        const { event, vars } = inviteMessage("staff", { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", name: input.name, staffRole: staff.join(" and "), hubName: hub?.name ?? null });
+        await this.notify.notifyNow({ event, to: { userId: user.id, phone: input.phone, email: input.email, name: input.name }, vars }).catch(() => undefined);
+      }
       return this.get(user.id);
     } catch (error) {
       if (isUniqueViolation(error, "phone")) throw conflict("PHONE_IN_USE", "This phone number already has an account");

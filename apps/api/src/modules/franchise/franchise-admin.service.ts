@@ -13,9 +13,12 @@ import { Prisma } from "../../generated/prisma/client";
 import { SessionService } from "../auth/session.service";
 import { NotifyService } from "../notifications/notify.service";
 import { FRANCHISE_CONFIG_KEY, readFranchiseConfig } from "./franchise-config";
-import type { createFranchiseSchema, franchiseStatusSchema, updateFranchiseConfigSchema, updateFranchiseSchema } from "./franchise.schemas";
+import type { createFranchiseSchema, franchiseAccountSchema, franchiseStatusSchema, updateFranchiseConfigSchema, updateFranchiseSchema } from "./franchise.schemas";
 import { releaseApplicant } from "../applications/applicant-role";
 import { centralHubId } from "../money/accounts-config";
+
+/** Roles whose account is managed in Admin users & roles, not from a franchise. */
+const STAFF_ROLES = new Set<string>(["SUPER_ADMIN", "OPS_MANAGER", "HUB_OPERATOR", "FINANCE", "SUPPORT_AGENT"]);
 
 const n = (v: Prisma.Decimal | number | null | undefined) => (v == null ? 0 : Number(v));
 
@@ -186,6 +189,44 @@ export class FranchiseAdminService {
       return f;
     });
     return franchiseView(updated);
+  }
+
+  /**
+   * The franchise's sign-in account: name, mobile, email (the franchise's contact details follow) and a new password.
+   * A new password or mobile signs the account out everywhere. An account that also has staff access is changed in
+   * Admin users & roles instead.
+   */
+  async updateAccount(actor: Actor, id: string, input: z.infer<typeof franchiseAccountSchema>, meta: RequestMeta) {
+    const { franchise, signOut } = await this.prisma.$transaction(async tx => {
+      const f = await tx.franchise.findUnique({ where: { id }, select: { id: true, ownerId: true, owner: { select: { phone: true, email: true, roles: { select: { role: true } } } } } });
+      if (!f) throw notFound("Franchise");
+      if (f.owner.roles.some(r => STAFF_ROLES.has(r.role)))
+        throw new AppError("STAFF_ACCOUNT", "This account also has staff access: change it in Admin users & roles", HttpStatus.UNPROCESSABLE_ENTITY);
+      const phone = input.phone && input.phone !== f.owner.phone ? input.phone : undefined;
+      const email = input.email !== undefined && input.email !== f.owner.email ? input.email : undefined;
+      if (phone && (await tx.user.findUnique({ where: { phone }, select: { id: true } }))) throw conflict("PHONE_IN_USE", "Another account uses this mobile number");
+      if (email && (await tx.user.findUnique({ where: { email }, select: { id: true } }))) throw conflict("EMAIL_IN_USE", "Another account uses this email address");
+      await tx.user.update({
+        where: { id: f.ownerId },
+        data: {
+          name: input.name,
+          phone,
+          email,
+          ...(phone ? { phoneVerifiedAt: null } : {}),
+          ...(input.password ? { passwordHash: await hashPassword(input.password), failedLoginCount: 0, lockedUntil: null } : {}),
+        },
+      });
+      const updated = await tx.franchise.update({
+        where: { id },
+        data: { contactName: input.name, contactPhone: phone, contactEmail: email },
+        include: franchiseInclude,
+      });
+      // Never the password itself in the log.
+      await this.audit.record(actor, { action: "franchise.account_update", entityType: "franchise", entityId: id, data: { userId: f.ownerId, name: input.name, phone, email, newPassword: !!input.password } }, meta, tx);
+      return { franchise: updated, signOut: !!input.password || !!phone };
+    });
+    if (signOut) await this.sessions.revokeAllForUser(franchise.ownerId, input.password ? "password_reset" : "phone_changed").catch(() => undefined);
+    return franchiseView(franchise);
   }
 
   /**

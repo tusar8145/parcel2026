@@ -2,14 +2,14 @@
  * Riders (03.js Riders & fleet, bridge-pages.js rider report, bridge-network.js Add rider, bridge-shifts.js,
  * bridge-rider-kyc.js, bridge-login-as.js):
  *   Riders               rider pickup & status report for pickup dates (GET /ops/rider-report), run sheets (PDF),
- *                        assigned shipment list, CSV export, Add rider (POST /riders), Log in as
+ *                        assigned shipment list, CSV export, Log in as (riders are added in the super admin panel)
  *   Shifts & attendance  today's roster, recurring shift schedules, attendance report (CSV), recent check-ins with
  *                        corrections (GET/POST/PATCH /shifts/…)
  *   Verification         rider KYC documents: approve / reject each, then approve the rider or ask for changes
  */
 import { Select } from "@panel/ui/Select";
 import { Icon } from "@panel/ui/Icon";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
@@ -21,7 +21,6 @@ import { Button, Empty, Loading, Metric, PageHeading, Panel, Pill } from "@panel
 import { confirm, openCustom, openForm, prompt } from "@panel/ui/dialogs";
 import { toast, toastError } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
-import { useCatalog } from "@/features/parcels/search";
 import { loginAs } from "@/features/support/loginAs";
 import { openDocument } from "@/features/parcels/actions";
 
@@ -68,8 +67,6 @@ const statusLabel = (r: ReportRider) => (!r.active ? "Inactive" : r.status === "
 
 function RiderList({ tabs }: { tabs: React.ReactNode }) {
   const ops = useOps();
-  const qc = useQueryClient();
-  const zones = useRiderZones();
   const [, setParams] = useSearchParams();
   // The parcel drawer (?parcel=, ParcelDrawer.tsx) opens over the page.
   const openParcel = (code: string) => setParams(p => (p.set("parcel", code), p));
@@ -118,11 +115,6 @@ function RiderList({ tabs }: { tabs: React.ReactNode }) {
             <Button icon="download" onClick={exportReport}>
               Export rider report
             </Button>
-            {ops.can("manageRiders") ? (
-              <Button variant="primary" icon="plus" onClick={() => void addRider(ops, zones, () => void qc.invalidateQueries({ queryKey: ["riders"] }))}>
-                Add rider
-              </Button>
-            ) : null}
           </>
         }
       />
@@ -270,52 +262,6 @@ function RiderList({ tabs }: { tabs: React.ReactNode }) {
       </Panel>
     </>
   );
-}
-
-async function addRider(ops: ReturnType<typeof useOps>, zones: string[], done: () => void) {
-  if (!ops.require("manageRiders", "add riders")) return;
-  const hubs = (ops.myHubs ?? ops.hubs).filter(h => h.active !== false);
-  await openForm({
-    title: "Add rider",
-    description: "Creates the rider's account. They sign in to the rider app with this phone number (SMS code).",
-    submit: "Add rider",
-    fields: [
-      { id: "name", label: "Rider name", required: true, maxLength: 120, placeholder: "Full name" },
-      { id: "phone", label: "Phone number", type: "phone", required: true },
-      { id: "email", label: "Email", type: "email", maxLength: 120 },
-      { id: "hubId", label: "Hub", type: "select", value: ops.myHubs?.[0]?.id ?? "", options: hubs.map(h => ({ value: h.id, label: h.name })), hint: "No hub yet if left empty." },
-      { id: "vehicle", label: "Vehicle", type: "select", required: true, value: "MOTORBIKE", options: Object.entries(VEHICLE).map(([value, label]) => ({ value, label })) },
-      {
-        id: "zone",
-        label: "Service zone",
-        maxLength: 80,
-        placeholder: "e.g. Gulshan",
-        suggestions: zones,
-      },
-      { id: "dailyCapacity", label: "Daily capacity (stops)", type: "number", min: 1, max: 500, step: 1, placeholder: "Network default: 40" },
-    ],
-    validate: {
-      name: v => (v.length < 2 ? "Enter the rider's full name" : ""),
-      email: v => (v && !/^\S+@\S+\.\S+$/.test(v) ? "Enter a valid email or leave it empty" : ""),
-      dailyCapacity: v => (v && (Number(v) < 1 || Number(v) > 500 || !Number.isInteger(Number(v))) ? "Use a whole number from 1 to 500" : ""),
-    },
-    onSubmit: async v => {
-      const rider = await api<{ label: string; phone: string; hub?: { name: string } | null }>("/riders", {
-        method: "POST",
-        body: {
-          name: v.name,
-          phone: v.phone,
-          email: v.email || undefined,
-          hubId: v.hubId || undefined,
-          vehicle: v.vehicle,
-          zone: v.zone || undefined,
-          dailyCapacity: v.dailyCapacity ? Number(v.dailyCapacity) : undefined,
-        },
-      });
-      done();
-      return `${rider.label} added${rider.hub ? ` at ${rider.hub.name}` : ""}. They can sign in to the rider app with ${localPhone(rider.phone)}.`;
-    },
-  });
 }
 
 // ───────────── Shifts & attendance ─────────────
@@ -840,10 +786,4 @@ function KycDialog({ first, changed, close }: { first: KycDetail; changed: () =>
       </div>
     </>
   );
-}
-
-/** Zone names from the service catalog, for the Add rider suggestions. */
-function useRiderZones() {
-  const c = useCatalog();
-  return useMemo(() => (c ? [...new Set(Object.values(c.zonesByDistrict).flat())].sort() : []), [c]);
 }

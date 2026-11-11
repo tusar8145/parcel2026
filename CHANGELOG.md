@@ -7,6 +7,16 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.39.0 — 2026-11-12
+- Admin users & roles › Invite administrator: choose "Send an invitation" (the exact SMS is shown first) or "Set a password now" (the account is ready at once, no invitation is sent). A Hub Manager's hub is picked from a grouped list.
+- Admin users & roles: the administrator directory is grouped by role, with a role filter.
+- Hubs & zones: hubs are grouped as Inside Dhaka, Dhaka sub-urban, Outside Dhaka and Franchise hubs, with a new column showing each hub's Hub Manager (or the franchise and its account): name, mobile and email.
+- Super admin menu: "Location settings" is now "Hub settings", and Franchises moved there, after Hubs & zones.
+- Franchises › Account: change a franchise's sign-in name, mobile and email, and set a new password.
+- Franchise panel › Add a rider: set the rider's password; the rider signs in to the rider app with the mobile number and that password.
+- Super admin › Riders › Add rider: hubs are grouped (Inside Dhaka, Dhaka sub-urban, Outside Dhaka) with a search box; franchise hubs are not listed.
+- Courier Operations: "Add rider" is removed; riders are added in super admin › Riders.
+
 ## 1.38.0 — 2026-11-12
 - Invite a merchant › "Onboard directly": the merchant and the owner's sign-in account are made at once, active, with no invitation link or application (business address, an optional password to share yourself, and the "approved, sign in" SMS off by default with its text shown first). KYC still unlocks COD payouts and API keys.
 - Fix: signing in with an account that has no panel (e.g. made by a merchant invitation with a password) no longer reloads /account again and again: it opens the home page with a note. Such invited accounts are now customer accounts, like a website sign-up.

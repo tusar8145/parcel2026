@@ -326,7 +326,7 @@
   const baseRiders = Ops.enhance.Riders;
   Ops.enhance.Riders = page => {
     baseRiders?.(page);
-    if (Ops.can("manageRiders")) headingButton("rider", "Add rider");
+    // Riders are added in the super admin panel (Riders), not in Courier Operations.
   };
 
   // ───────────── Two-step verification (shared/mfa.js) ─────────────

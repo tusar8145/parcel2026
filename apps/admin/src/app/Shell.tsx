@@ -1,6 +1,6 @@
 /**
  * The frame of every page: the classic super admin menu (groups and the collapsible Notification / Operational /
- * Location settings), the top bar (merchant search, notifications) and the signed-in person; the Operations
+ * Hub settings), the top bar (merchant search, notifications) and the signed-in person; the Operations
  * console is one click away at the bottom of the menu, as in the classic panel.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -98,7 +98,7 @@ function Sidebar() {
                 return (
                   <div key={sub} className="nav-sub">
                     <button type="button" className={`nav-item nav-sub-toggle${children.some(c => `/${c.slug}` === pathname) ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [sub]: !isOpen }))}>
-                      <Icon name={sub === "Location settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Messaging" ? "message" : "settings"} />
+                      <Icon name={sub === "Hub settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Messaging" ? "message" : "settings"} />
                       <span>{sub}</span>
                       <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={14} />
                     </button>

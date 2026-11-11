@@ -11,7 +11,7 @@ export interface PageDef {
   icon: IconName;
   group: "governance" | "merchants" | "riders" | "monitoring" | "platform";
   /** A collapsible sub-menu inside Platform control. */
-  sub?: "Notification settings" | "Messaging" | "Operational settings" | "Location settings";
+  sub?: "Notification settings" | "Messaging" | "Operational settings" | "Hub settings";
   /** Other classic ?page= values that open this page. */
   legacy?: string[];
 }
@@ -22,7 +22,6 @@ export const PAGES: PageDef[] = [
   { id: "Approvals", label: "Approval center", slug: "approval-center", icon: "check", group: "governance", legacy: ["approvals"] },
   { id: "E-commerce merchants", label: "E-commerce merchants", slug: "e-commerce-merchants", icon: "box", group: "merchants", legacy: ["ecommerce-merchants"] },
   { id: "Banking & Financial merchants", label: "Banking & Financial merchants", slug: "banking-and-financial-merchants", icon: "file", group: "merchants", legacy: ["banking-financial-merchants", "document-merchants"] },
-  { id: "Franchises", label: "Franchises", slug: "franchises", icon: "share", group: "merchants" },
   { id: "Service plans", label: "Service plans & pricing", slug: "service-plans", icon: "sheet", group: "merchants", legacy: ["service-plans-and-pricing"] },
   { id: "Riders", label: "Riders", slug: "riders", icon: "truck", group: "riders" },
   { id: "Rider plans", label: "Rider earning plans", slug: "rider-plans", icon: "truck", group: "riders", legacy: ["rider-earning-plans"] },
@@ -45,8 +44,9 @@ export const PAGES: PageDef[] = [
   { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", group: "platform", sub: "Operational settings", legacy: ["import-template-settings"] },
   { id: "Scan usage", label: "Scan with phone usage", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
   { id: "AI import", label: "AI import", slug: "ai-import", icon: "sheet", group: "platform", sub: "Operational settings" },
-  { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Location settings" },
-  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Location settings" },
+  { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Hub settings" },
+  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Hub settings" },
+  { id: "Franchises", label: "Franchises", slug: "franchises", icon: "share", group: "platform", sub: "Hub settings" },
   { id: "Integration settings", label: "Integration settings", slug: "integration-settings", icon: "settings", group: "platform", legacy: ["channels-and-limits", "channel-and-limits"] },
   { id: "System guide", label: "System guide", slug: "system-guide", icon: "help", group: "platform" },
 ];

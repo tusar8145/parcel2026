@@ -1,5 +1,5 @@
 /**
- * Hubs & zones (Location settings; bridge-hubs-admin.js), in tabs:
+ * Hubs & zones (Hub settings; bridge-hubs-admin.js), in tabs:
  *   Hubs            the hub register: add, edit (place, address, in-charge, capacity, map point), deactivate /
  *                   activate, delete when unused (else deactivate instead); the central hub first and highlighted,
  *                   "Make central hub" (GET / PUT /accounts/config)
@@ -7,7 +7,7 @@
  *                   zones are added in Address. ?zone=<name> opens this tab searched for it.
  *   Routes          a hub's delivery routes with a default rider (GET / POST / PATCH /routes)
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useSearchParams } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
@@ -16,7 +16,7 @@ import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/
 import { Pager, usePaged } from "@panel/ui/Pager";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { useCatalog, type Catalog } from "@/lib/admin";
+import { groupHubs, HUB_GROUPS, hubGroup, phoneText, useCatalog, type Catalog } from "@/lib/admin";
 
 interface Hub {
   id: string;
@@ -32,6 +32,16 @@ interface Hub {
   capacity?: number | null;
   lat?: number | null;
   lng?: number | null;
+  /** Sign-in people of the hub (Hub Managers); only for those who manage hubs. */
+  managers?: Person[];
+  franchise?: { id: string; code: string; name: string; status: string; account?: Person | null } | null;
+}
+interface Person {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  status?: string;
 }
 interface Route {
   id: string;
@@ -121,8 +131,10 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
   const qc = useQueryClient();
   const reload = () => Promise.all([qc.invalidateQueries({ queryKey: ["admin", "network"] }), qc.invalidateQueries({ queryKey: ["admin", "hubs"] })]);
   const central = data.hubs.find(h => h.id === data.central);
-  const sorted = [...data.hubs].sort((a, b) => Number(b.id === data.central) - Number(a.id === data.central));
+  // Inside Dhaka, Dhaka sub-urban, Outside Dhaka, Franchise hubs; the central hub first in its group.
+  const sorted = groupHubs(data.hubs).flatMap(g => [...g.hubs].sort((a, b) => Number(b.id === data.central) - Number(a.id === data.central)));
   const { rows, pager } = usePaged(sorted, 25);
+  const groupCount = (h: Hub) => sorted.filter(x => hubGroup(x) === hubGroup(h)).length;
 
   /** Hubs without a location get one (POST /hubs/locate: address → zone → zone centre); the result to check on the map. */
   async function locate(missing: number) {
@@ -284,14 +296,23 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
               <th>Hub</th>
               <th>Place</th>
               <th>In-charge</th>
+              <th>Hub manager / Franchise</th>
               <th className="num">Capacity</th>
               <th>Status</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {rows.map(h => (
-              <tr key={h.id} style={h.id === data.central ? { background: "#eff4ff", boxShadow: "inset 3px 0 0 var(--primary)" } : undefined}>
+            {rows.map((h, i) => (
+              <Fragment key={h.id}>
+                {i === 0 || hubGroup(rows[i - 1]) !== hubGroup(h) ? (
+                  <tr>
+                    <td colSpan={7} style={{ background: "var(--surface-2, #f4f6fa)", fontWeight: 700 }}>
+                      {`${HUB_GROUPS.find(([g]) => g === hubGroup(h))?.[1] ?? ""} · ${num(groupCount(h))} hub${groupCount(h) === 1 ? "" : "s"}`}
+                    </td>
+                  </tr>
+                ) : null}
+              <tr style={h.id === data.central ? { background: "#eff4ff", boxShadow: "inset 3px 0 0 var(--primary)" } : undefined}>
                 <td>
                   <span className="strong">{h.name}</span> {h.type === "FRANCHISE" ? <Pill>Franchise</Pill> : null}{" "}
                   {h.id === data.central ? (
@@ -314,6 +335,9 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
                   ) : (
                     "—"
                   )}
+                </td>
+                <td>
+                  <HubPeople hub={h} />
                 </td>
                 <td className="num">{h.capacity ? num(h.capacity) : "—"}</td>
                 <td>
@@ -338,10 +362,11 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
                   </Button>
                 </td>
               </tr>
+              </Fragment>
             ))}
             {!rows.length ? (
               <tr>
-                <td colSpan={6} className="faint" style={{ textAlign: "center" }}>
+                <td colSpan={7} className="faint" style={{ textAlign: "center" }}>
                   No hubs yet.
                 </td>
               </tr>
@@ -351,6 +376,31 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
       </div>
       <Pager {...pager} noun="hub" />
     </Panel>
+  );
+}
+
+/** Who runs the hub: its franchise (and the franchise's account), else its Hub Managers; nothing when nobody signs in for it. */
+function HubPeople({ hub }: { hub: Hub }) {
+  const line = (p: Person) => [p.phone ? phoneText(p.phone) : "", p.email || ""].filter(Boolean).join(" · ");
+  if (hub.franchise) {
+    const a = hub.franchise.account;
+    return (
+      <>
+        <span className="strong">{hub.franchise.name}</span> {hub.franchise.status !== "ACTIVE" ? <Pill tone="bad">Suspended</Pill> : null}
+        {a ? <span className="sub">{[a.name, line(a)].filter(Boolean).join(" · ")}</span> : null}
+      </>
+    );
+  }
+  if (!hub.managers?.length) return null;
+  return (
+    <>
+      {hub.managers.map(p => (
+        <div key={p.id}>
+          {p.name} {p.status === "SUSPENDED" ? <Pill tone="bad">Suspended</Pill> : null}
+          <span className="sub">{line(p)}</span>
+        </div>
+      ))}
+    </>
   );
 }
 

@@ -11,6 +11,7 @@ import { FranchisePanelService } from "./franchise-panel.service";
 import { FranchiseMoneyService } from "./franchise-money.service";
 import {
   createFranchiseSchema,
+  franchiseAccountSchema,
   franchiseAssignScanSchema,
   franchiseAssignSchema,
   franchiseDirectDeliverySchema,
@@ -274,6 +275,13 @@ export class FranchiseAdminController {
   @Get(":id")
   get(@Param("id", ParseUUIDPipe) id: string) {
     return this.admin.get(id);
+  }
+
+  @RequirePermissions("franchise:manage")
+  @Patch(":id/account")
+  @ApiZodBody(franchiseAccountSchema)
+  updateAccount(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(franchiseAccountSchema) body: z.infer<typeof franchiseAccountSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.admin.updateAccount(actor, id, body, meta);
   }
 
   @RequirePermissions("franchise:manage")

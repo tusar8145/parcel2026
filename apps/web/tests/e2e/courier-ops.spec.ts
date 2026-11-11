@@ -45,9 +45,8 @@ test("operations pages added for linehaul, CN stock, reports, SLA, shifts and ma
   await expect(page.locator("#rpCompliance .panel-title")).toHaveText("Scan compliance");
 
   await opsNav(page, "riders");
-  await page.click('#mainContent [data-action="rider"]');
-  await expect(page.locator("#modalTitle")).toHaveText("Add rider");
-  await page.click("#modalCancel");
+  // Riders are added in super admin › Riders, not here.
+  await expect(page.locator('#mainContent [data-action="rider"]')).toHaveCount(0);
   await expect(page.locator("#shiftPanels")).toContainText("Today's shift roster");
 
   await opsNav(page, "delivery");

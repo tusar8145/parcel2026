@@ -9,7 +9,9 @@ import { api } from "../lib/api";
 import type { FormField, FormValues } from "./dialogs";
 
 export interface PreviewInput {
-  kind: "rider" | "franchise" | "merchant" | "merchant_onboard";
+  kind: "rider" | "franchise" | "merchant" | "merchant_onboard" | "staff";
+  /** kind staff: the role as the message names it ("Hub Manager"). */
+  staffRole?: string;
   name?: string;
   hubId?: string;
   code?: string;
@@ -28,7 +30,8 @@ export function generatePassword() {
   return chars.sort(() => crypto.getRandomValues(new Uint8Array(1))[0] - 128).join("");
 }
 
-function Preview({ input }: { input: PreviewInput }) {
+/** The exact SMS (and email subject) the new account would get. */
+export function InvitePreview({ input }: { input: PreviewInput }) {
   // Typing settles first.
   const [settled, setSettled] = useState(input);
   const key = JSON.stringify(input);
@@ -90,7 +93,7 @@ export function accountFields(preview: (values: FormValues) => PreviewInput, opt
       live: (values: FormValues) => (
         <div style={{ display: "grid", gap: 4 }}>
           <small className="faint">{values.sendSms === "true" ? "This goes out when you save:" : "Not sent (switch above is off). This is what it would say:"}</small>
-          <Preview input={preview(values)} />
+          <InvitePreview input={preview(values)} />
         </div>
       ),
     },

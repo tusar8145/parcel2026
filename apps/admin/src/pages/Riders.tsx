@@ -12,6 +12,7 @@ import { openForm, type FormField, type FormValues } from "@panel/ui/dialogs";
 import { accountFields, generatePassword, passwordProblem } from "@panel/ui/AccountFields";
 import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { toastError } from "@panel/ui/toast";
+import { groupHubs } from "@/lib/admin";
 
 interface HubRef {
   id: string;
@@ -59,7 +60,8 @@ function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider): FormF
       type: "checks",
       required: true,
       value: r ? r.hubs.map(h => h.id).join(",") : "",
-      options: hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code})` })),
+      // Inside Dhaka, Dhaka sub-urban, Outside Dhaka (franchise hubs are left out; one a rider is already on shows last).
+      options: groupHubs(hubs).flatMap(g => g.hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code})`, group: g.label }))),
       hint: "Several hubs: the rider app works at the nearest one (cash is handed over there); parcels of any of them can be assigned to the rider.",
     },
     { id: "vehicle", label: "Vehicle", type: "select", required: true, value: r?.vehicle ?? "MOTORBIKE", options: VEHICLES.map(([value, label]) => ({ value, label })) },

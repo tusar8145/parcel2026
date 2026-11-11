@@ -14,13 +14,14 @@ import { queryClient } from "@panel/lib/queryClient";
 import { useAuth } from "@panel/lib/auth";
 import { useLive } from "@panel/lib/events";
 import { localPhone } from "@panel/lib/format";
-import { confirm, openCustom, openForm, prompt } from "@panel/ui/dialogs";
+import { confirm, openCustom, openForm, prompt, type FormValues } from "@panel/ui/dialogs";
+import { generatePassword, InvitePreview, passwordProblem } from "@panel/ui/AccountFields";
 import { Icon } from "@panel/ui/Icon";
 import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
 import { manageMfa } from "@panel/ui/Mfa";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { DialogFrame, Facts, phoneText, ROLE_LABEL, ROLE_SCOPE, STAFF_ROLES, when, useStaff, type Staff } from "@/lib/admin";
+import { DialogFrame, Facts, groupHubs, phoneText, ROLE_LABEL, ROLE_SCOPE, STAFF_ROLES, when, useStaff, type Staff } from "@/lib/admin";
 import { startSupportAccess } from "@/lib/support";
 
 type Tab = "admins" | "approvals" | "roles" | "support";
@@ -149,12 +150,21 @@ function Administrators() {
   const { user } = useAuth();
   const staff = useStaff();
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
   const list = staff.data ?? [];
   const active = list.filter(u => u.status === "ACTIVE");
   const supers = active.filter(u => u.roles.some(r => r.role === "SUPER_ADMIN"));
   const on = (l: Staff[]) => l.filter(u => u.mfa?.enabled).length;
   const q = search.trim().toLowerCase();
-  const rows = list.filter(u => !q || [u.name, u.email, u.phone, ...u.roles.map(r => ROLE_LABEL[r.role])].some(v => String(v ?? "").toLowerCase().includes(q)));
+  const staffRoles = (u: Staff) => u.roles.filter(r => (STAFF_ROLES as readonly string[]).includes(r.role)).sort((a, b) => STAFF_ROLES.indexOf(a.role as never) - STAFF_ROLES.indexOf(b.role as never));
+  const rows = list.filter(
+    u =>
+      (!roleFilter || u.roles.some(r => r.role === roleFilter)) &&
+      (!q || [u.name, u.email, u.phone, ...u.roles.map(r => ROLE_LABEL[r.role]), ...u.roles.map(r => r.hub?.name)].some(v => String(v ?? "").toLowerCase().includes(q))),
+  );
+  // Grouped by role (STAFF_ROLES order). Someone with several roles shows under the first, or under the filtered one.
+  const groupOf = (u: Staff) => roleFilter || staffRoles(u)[0]?.role || "";
+  const groups = [...STAFF_ROLES, ""].map(role => ({ role, users: rows.filter(u => groupOf(u) === role).sort((a, b) => a.name.localeCompare(b.name)) })).filter(g => g.users.length);
   const count = (role: string) => active.filter(u => u.roles.some(r => r.role === role)).length;
   const mine = list.find(u => u.id === user?.id)?.mfa?.enabled;
   const CARDS: [string, string, string][] = [
@@ -172,7 +182,17 @@ function Administrators() {
       <Panel
         title="Platform administrator directory"
         subtitle={`${list.length} administrators · ${on(list)} with two-step verification`}
-        tools={<input className="input sm" type="search" placeholder="Search administrator..." aria-label="Search administrators" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />}
+        tools={
+          <>
+            <Select className="select sm" aria-label="Role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+              <option value="">All roles</option>
+              {STAFF_ROLES.map(r => (
+                <option key={r} value={r}>{`${ROLE_LABEL[r]} (${list.filter(u => u.roles.some(x => x.role === r)).length})`}</option>
+              ))}
+            </Select>
+            <input className="input sm" type="search" placeholder="Search administrator..." aria-label="Search administrators" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
+          </>
+        }
       >
         {staff.isLoading ? (
           <Loading rows={5} />
@@ -190,8 +210,21 @@ function Administrators() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(u => {
-                  const roles = u.roles.filter(r => (STAFF_ROLES as readonly string[]).includes(r.role)).sort((a, b) => STAFF_ROLES.indexOf(a.role as never) - STAFF_ROLES.indexOf(b.role as never));
+                {!groups.length ? (
+                  <tr>
+                    <td colSpan={6} className="faint" style={{ textAlign: "center" }}>
+                      No administrators match.
+                    </td>
+                  </tr>
+                ) : null}
+                {groups.flatMap(g => [
+                  <tr key={`group-${g.role}`}>
+                    <td colSpan={6} style={{ background: "var(--surface-2)", fontWeight: 700 }}>
+                      {`${g.role ? ROLE_LABEL[g.role] : "Other"} · ${g.users.length} ${g.users.length === 1 ? "person" : "people"}`}
+                    </td>
+                  </tr>,
+                  ...g.users.map(u => {
+                  const roles = staffRoles(u);
                   const status = u.status === "ACTIVE" ? (u.lastLoginAt ? "Active" : "Invited") : u.status === "SUSPENDED" ? "Suspended" : "Disabled";
                   return (
                     <tr key={u.id}>
@@ -218,7 +251,8 @@ function Administrators() {
                       </td>
                     </tr>
                   );
-                })}
+                  }),
+                ])}
               </tbody>
             </table>
           </div>
@@ -328,24 +362,74 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
 }
 
 async function inviteAdmin() {
-  const hubs = await queryClient.fetchQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<{ id: string; name: string; active: boolean }[]>("/hubs?includeInactive=true"), staleTime: 60_000 }).catch(() => []);
+  const hubs = await queryClient.fetchQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<{ id: string; name: string; active: boolean; type?: string; district?: string }[]>("/hubs?includeInactive=true"), staleTime: 60_000 }).catch(() => []);
+  const isHub = (v: FormValues) => INVITE_ROLE[v.role] === "HUB_OPERATOR";
   await openForm({
     title: "Invite platform administrator",
-    description: "Create a scoped admin invitation; elevated access is audited.",
-    submit: "Prepare invitation",
+    description: "Send an invitation (the SMS text is shown below), or set a password and finish the account now. Elevated access is audited.",
+    submit: "Create account",
+    wide: true,
     fields: [
       { id: "name", label: "Administrator name", required: true, full: true, placeholder: "Full name" },
-      { id: "email", label: "Work email", type: "email", required: true, full: true, placeholder: "name@company.example" },
-      { id: "phone", label: "Mobile number", type: "phone", required: true, full: true, placeholder: "01XXXXXXXXX" },
+      { id: "email", label: "Work email", type: "email", required: true, placeholder: "name@company.example" },
+      { id: "phone", label: "Mobile number", type: "phone", required: true, placeholder: "01XXXXXXXXX" },
       { id: "role", label: "Role", type: "select", required: true, value: "Operations Administrator", options: Object.keys(INVITE_ROLE).map(v => ({ value: v, label: v })) },
-      { id: "hubId", label: "Initial scope", type: "select", value: "", options: [{ value: "", label: "Not hub-specific" }, ...hubs.filter(h => h.active).map(h => ({ value: h.id, label: h.name }))] },
+      // Hub Manager: the hub they run, grouped (franchise hubs have their own account, so they are left out).
+      { id: "hubId", label: "Hub", type: "select", value: "", show: isHub, options: [{ value: "", label: "Choose the hub" }, ...groupHubs(hubs.filter(h => h.active && h.type !== "FRANCHISE")).flatMap(g => g.hubs.map(h => ({ value: h.id, label: h.name, group: g.label })))] },
+      {
+        id: "setup",
+        label: "How the account is finished",
+        type: "select",
+        required: true,
+        full: true,
+        value: "invite",
+        options: [
+          { value: "invite", label: "Send an invitation (SMS, and email): they sign in with a code sent to their mobile" },
+          { value: "password", label: "Set a password now (no invitation is sent): share it yourself" },
+        ],
+      },
+      { id: "password", label: "Password", maxLength: 128, show: v => v.setup === "password", placeholder: "At least 10 characters, a letter and a number", hint: "They sign in with this mobile number (or email) and this password." },
+      {
+        id: "passwordTools",
+        label: "",
+        type: "static",
+        show: v => v.setup === "password",
+        live: (_v, set) => (
+          <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
+            Generate a password
+          </button>
+        ),
+      },
+      {
+        id: "smsPreview",
+        label: "The invitation they get",
+        type: "static",
+        full: true,
+        show: v => v.setup !== "password",
+        live: v => <InvitePreview input={{ kind: "staff", name: v.name, staffRole: v.role, hubId: isHub(v) && v.hubId ? v.hubId : undefined }} />,
+      },
     ],
-    validate: { hubId: (v, all) => (INVITE_ROLE[all.role] === "HUB_OPERATOR" && !v ? "Choose the hub this Hub Manager runs." : "") },
+    validate: {
+      hubId: (v, all) => (isHub(all) && !v ? "Choose the hub this Hub Manager runs." : ""),
+      password: (v, all) => (all.setup !== "password" ? "" : !v ? "Enter a password or generate one." : passwordProblem(v)),
+    },
     onSubmit: async v => {
       const role = INVITE_ROLE[v.role];
-      await api("/users", { method: "POST", body: { name: v.name.trim(), phone: v.phone, email: v.email.trim(), roles: [role === "HUB_OPERATOR" ? { role, hubId: v.hubId } : { role }] } });
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "staff"] }), queryClient.invalidateQueries({ queryKey: ["admin", "overview"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] })]);
-      return `${v.name.trim()} can now sign in with an SMS code sent to ${localPhone(v.phone)}.`;
+      const withPassword = v.setup === "password";
+      await api("/users", {
+        method: "POST",
+        body: {
+          name: v.name.trim(),
+          phone: v.phone,
+          email: v.email.trim(),
+          roles: [role === "HUB_OPERATOR" ? { role, hubId: v.hubId } : { role }],
+          ...(withPassword ? { password: v.password, sendSms: false } : { sendSms: true }),
+        },
+      });
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "staff"] }), queryClient.invalidateQueries({ queryKey: ["admin", "overview"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] }), queryClient.invalidateQueries({ queryKey: ["admin", "network"] })]);
+      return withPassword
+        ? `${v.name.trim()}'s account is ready. Share the password: they sign in with ${localPhone(v.phone)} and it. No invitation was sent.`
+        : `Invitation sent to ${v.name.trim()}. They sign in with an SMS code sent to ${localPhone(v.phone)}.`;
     },
   });
 }

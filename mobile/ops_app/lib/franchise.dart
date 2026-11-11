@@ -658,6 +658,7 @@ class _RidersTab extends StatelessWidget {
   Future<void> _add(BuildContext context) async {
     final name = TextEditingController();
     final phone = TextEditingController();
+    final password = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -667,6 +668,7 @@ class _RidersTab extends StatelessWidget {
           children: [
             TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
             TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile (01XXXXXXXXX)')),
+            TextField(controller: password, decoration: const InputDecoration(labelText: 'Password', helperText: '10+ characters, a letter and a number')),
           ],
         ),
         actions: [
@@ -676,9 +678,17 @@ class _RidersTab extends StatelessWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
+    final pw = password.text;
+    if (pw.length < 10 || !RegExp(r'[A-Za-z]').hasMatch(pw) || !RegExp(r'\d').hasMatch(pw)) {
+      snack(context, 'Use a password of at least 10 characters with a letter and a number.');
+      return;
+    }
     try {
-      await Api.post('/franchise/riders', {'name': name.text.trim(), 'phone': normalizePhone(phone.text.trim())});
-      if (context.mounted) snack(context, '${name.text.trim()} added. They sign in to the rider app with their mobile number.');
+      final made = await Api.post('/franchise/riders', {'name': name.text.trim(), 'phone': normalizePhone(phone.text.trim()), 'password': pw});
+      final kept = made is Map && made['passwordSet'] == false;
+      if (context.mounted) {
+        snack(context, kept ? '${name.text.trim()} added. This number already had an account: they sign in with their own password.' : '${name.text.trim()} added. They sign in to the rider app with their mobile number and this password.');
+      }
       franchiseChanged.value++;
     } on ApiError catch (e) {
       if (context.mounted) snack(context, e.message);

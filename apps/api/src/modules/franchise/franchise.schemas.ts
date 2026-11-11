@@ -53,6 +53,11 @@ export const updateFranchiseSchema = z
   .object({ name: text(120).optional(), contactName: text(120).optional(), contactEmail: emailSchema.nullable().optional(), rates: commissionRatesSchema.partial().optional() })
   .refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
 
+/** The franchise's sign-in account (super admin): name, mobile, email and a new password (shared by hand). */
+export const franchiseAccountSchema = z
+  .object({ name: text(120).optional(), phone: phoneSchema.optional(), email: emailSchema.nullable().optional(), password: passwordSchema.optional() })
+  .refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
+
 export const franchiseStatusSchema = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"], "Choose ACTIVE or SUSPENDED"), reason: optionalText(300) });
 
 export const updateFranchiseConfigSchema = franchiseConfigSchema.partial();
@@ -100,6 +105,8 @@ export const franchiseRiderSchema = z.object({
   email: emailSchema.optional(),
   vehicle: z.enum(["MOTORBIKE", "BICYCLE", "VAN", "ON_FOOT"]).default("MOTORBIKE"),
   zone: optionalText(80),
+  /** The rider signs in to the rider app with the mobile number and this password (the franchise shares it by hand). */
+  password: passwordSchema.optional(),
 });
 export const updateFranchiseRiderSchema = z
   .object({ active: z.boolean().optional(), vehicle: z.enum(["MOTORBIKE", "BICYCLE", "VAN", "ON_FOOT"]).optional(), zone: z.string().trim().max(80).nullable().optional() })

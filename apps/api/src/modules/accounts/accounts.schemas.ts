@@ -68,6 +68,8 @@ export const createUserSchema = z.object({
   email: emailSchema.optional(),
   /** Optional: without one the user signs in with an SMS code. */
   password: passwordSchema.optional(),
+  /** Staff accounts: send the sign-in invitation (SMS, and email when given). Left out: sent, as before. */
+  sendSms: z.boolean().optional(),
   roles: z
     .array(roleGrantSchema)
     .min(1, "Give the user at least one role")

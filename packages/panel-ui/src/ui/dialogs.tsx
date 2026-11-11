@@ -263,29 +263,8 @@ function Field({ field: f, value, error, onChange, onFile, onBlur }: { field: Fo
       </Select>
     );
   else if (f.type === "textarea") control = <textarea {...common} className="textarea" rows={f.rows || 3} value={value} placeholder={f.placeholder} maxLength={f.maxLength} onChange={e => onChange(e.target.value)} />;
-  else if (f.type === "checks") {
-    // Several ticks in one row (e.g. the days of a shift); the value is the ticked option values, comma separated.
-    const on = new Set(value ? value.split(",") : []);
-    control = (
-      <div className="row" style={{ gap: "6px 14px" }} role="group" aria-label={f.label}>
-        {((f.options as FieldOption[] | undefined) || []).map(o => (
-          <label key={o.value} className="check" style={{ fontWeight: 500 }}>
-            <input
-              type="checkbox"
-              checked={on.has(o.value)}
-              onChange={e => {
-                const next = new Set(on);
-                if (e.target.checked) next.add(o.value);
-                else next.delete(o.value);
-                onChange(((f.options as FieldOption[] | undefined) || []).map(x => x.value).filter(v => next.has(v)).join(","));
-              }}
-            />{" "}
-            {o.label}
-          </label>
-        ))}
-      </div>
-    );
-  } else if (f.type === "checkbox")
+  else if (f.type === "checks") control = <Checks label={f.label} options={(f.options as FieldOption[] | undefined) || []} value={value} onChange={onChange} />;
+  else if (f.type === "checkbox")
     control = (
       <label className="check">
         <input id={id} type="checkbox" checked={value === "true"} onChange={e => onChange(e.target.checked ? "true" : "")} />
@@ -335,6 +314,59 @@ function Field({ field: f, value, error, onChange, onFile, onBlur }: { field: Fo
           {error}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Several ticks (e.g. the days of a shift); the value is the ticked option values, comma separated. Options with a
+ * `group` show under its heading; a long list (over 10) gets a search box, and ticked options stay ticked while hidden.
+ */
+function Checks({ label, options, value, onChange }: { label: string; options: FieldOption[]; value: string; onChange: (v: string) => void }) {
+  const [q, setQ] = useState("");
+  const on = new Set(value ? value.split(",") : []);
+  const term = q.trim().toLowerCase();
+  const shown = term ? options.filter(o => o.label.toLowerCase().includes(term) || (o.group ?? "").toLowerCase().includes(term)) : options;
+  const box = (o: FieldOption) => (
+    <label key={o.value} className="check" style={{ fontWeight: 500 }}>
+      <input
+        type="checkbox"
+        checked={on.has(o.value)}
+        disabled={o.disabled}
+        onChange={e => {
+          const next = new Set(on);
+          if (e.target.checked) next.add(o.value);
+          else next.delete(o.value);
+          onChange(options.map(x => x.value).filter(v => next.has(v)).join(","));
+        }}
+      />{" "}
+      {o.label}
+    </label>
+  );
+  const groups = [...new Set(shown.map(o => o.group).filter(Boolean))] as string[];
+  const row = (items: FieldOption[]) => (
+    <div className="row" style={{ gap: "6px 14px" }}>
+      {items.map(box)}
+    </div>
+  );
+  return (
+    <div role="group" aria-label={label} style={{ display: "grid", gap: 8 }}>
+      {options.length > 10 ? (
+        <div className="row" style={{ gap: 8 }}>
+          <input className="input sm" type="search" placeholder={`Search ${label.toLowerCase()}…`} aria-label={`Search ${label.toLowerCase()}`} value={q} onChange={e => setQ(e.target.value)} style={{ flex: "1 1 200px" }} />
+          {on.size ? <span className="faint">{`${on.size} chosen`}</span> : null}
+        </div>
+      ) : null}
+      <div style={options.length > 10 ? { maxHeight: 260, overflowY: "auto", display: "grid", gap: 8, paddingRight: 4 } : { display: "grid", gap: 8 }}>
+        {!shown.length ? <span className="faint">Nothing matches.</span> : null}
+        {shown.some(o => !o.group) ? row(shown.filter(o => !o.group)) : null}
+        {groups.map(g => (
+          <div key={g} style={{ display: "grid", gap: 4 }}>
+            <div className="faint" style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: ".05em", textTransform: "uppercase" }}>{g}</div>
+            {row(shown.filter(o => o.group === g))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

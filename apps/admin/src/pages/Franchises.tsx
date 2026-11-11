@@ -12,7 +12,7 @@ import { confirm, openForm, type FormField } from "@panel/ui/dialogs";
 import { Button, Loading, Metric, PageHeading, Panel, Pill, Tabs } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog, type Catalog } from "@/lib/admin";
-import { accountFields, passwordProblem } from "@panel/ui/AccountFields";
+import { accountFields, generatePassword, passwordProblem } from "@panel/ui/AccountFields";
 
 interface Rates {
   pickupPercent: number;
@@ -28,6 +28,9 @@ interface Franchise {
   name: string;
   contactName: string;
   contactPhone: string;
+  contactEmail?: string | null;
+  /** The franchise's sign-in account. */
+  owner?: { id: string; name: string; phone: string; email: string | null; status: string; lastLoginAt: string | null } | null;
   status: "ACTIVE" | "SUSPENDED";
   riders: number;
   unsettledCommission: number;
@@ -85,7 +88,7 @@ export default function Franchises() {
   return (
     <>
       <PageHeading
-        eyebrow="Merchant management · Franchise hubs"
+        eyebrow="Hub settings · Franchise hubs"
         title="Franchises"
         subtitle="Partner-run hubs: each is a hub of the network (tagged Franchise) with its own riders and one account. Commission is a percent of the delivery charge, with a minimum."
         actions={
@@ -173,7 +176,7 @@ export default function Franchises() {
                   </td>
                   <td>
                     {f.contactName}
-                    <span className="sub">{localPhone(f.contactPhone)}</span>
+                    <span className="sub">{[localPhone(f.owner?.phone || f.contactPhone), f.owner?.email || f.contactEmail || ""].filter(Boolean).join(" · ")}</span>
                   </td>
                   <td>
                     {rateText(f.rates.pickupPercent, f.rates.pickupMin)}
@@ -190,6 +193,9 @@ export default function Franchises() {
                     </Button>
                     <Button size="sm" onClick={() => void openEdit(f, reload)}>
                       Rates
+                    </Button>{" "}
+                    <Button size="sm" title="The franchise's sign-in: name, mobile, email, a new password" onClick={() => void openAccount(f, reload)}>
+                      Account
                     </Button>{" "}
                     <Button size="sm" onClick={() => void toggleStatus(f)}>
                       {f.status === "ACTIVE" ? "Suspend" : "Reactivate"}
@@ -212,7 +218,7 @@ export default function Franchises() {
   );
 }
 
-const heading = <PageHeading eyebrow="Merchant management · Franchise hubs" title="Franchises" subtitle="Loading…" />;
+const heading = <PageHeading eyebrow="Hub settings · Franchise hubs" title="Franchises" subtitle="Loading…" />;
 
 function Settlement({ config, onSaved }: { config: Config; onSaved: (c: Config) => void }) {
   const [mode, setMode] = useState(config.settlementMode);
@@ -398,6 +404,42 @@ async function openRiders(f: Franchise) {
         ),
       },
     ],
+  });
+}
+
+/** The franchise's sign-in account (PATCH /franchises/:id/account): name, mobile, email, a new password. */
+async function openAccount(f: Franchise, reload: () => Promise<unknown>) {
+  const o = f.owner;
+  await openForm({
+    title: `Account · ${f.name}`,
+    description: `The sign-in of ${f.hub.name} (${f.code})${o?.lastLoginAt ? "" : ", not signed in yet"}. A new password or mobile number signs them out everywhere.`,
+    submit: "Save",
+    wide: true,
+    fields: [
+      { id: "name", label: "Name", required: true, maxLength: 120, value: o?.name ?? f.contactName },
+      { id: "phone", label: "Mobile", type: "phone", required: true, value: localPhone(o?.phone || f.contactPhone), placeholder: "01XXXXXXXXX" },
+      { id: "email", label: "Email", type: "email", value: o?.email ?? f.contactEmail ?? "" },
+      { id: "password", label: "New password", maxLength: 128, placeholder: "Leave empty to keep the current one", hint: "Share it with them yourself; it isn't sent." },
+      {
+        id: "passwordTools",
+        label: "",
+        type: "static",
+        live: (_v, set) => (
+          <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
+            Generate a password
+          </button>
+        ),
+      },
+    ],
+    validate: { password: passwordProblem },
+    onSubmit: async v => {
+      await api(`/franchises/${f.id}/account`, {
+        method: "PATCH",
+        body: { name: v.name.trim(), phone: v.phone, email: v.email.trim() || null, ...(v.password ? { password: v.password } : {}) },
+      });
+      await reload();
+      return v.password ? `Saved. Share the new password: they sign in with ${localPhone(v.phone)} and it.` : "Account saved.";
+    },
   });
 }
 

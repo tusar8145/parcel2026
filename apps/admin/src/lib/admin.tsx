@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@panel/lib/api";
 import { queryClient } from "@panel/lib/queryClient";
 import { localPhone } from "@panel/lib/format";
+import { DHAKA_SUBURBAN_DISTRICTS, normalizeDistrict } from "@delivery-fast/shared/dist/packages.js";
 import { Icon } from "@panel/ui/Icon";
 
 // ───────────── formatting (Asia/Dhaka, as the classic panel) ─────────────
@@ -193,6 +194,25 @@ export interface Hub {
 }
 export function useHubs() {
   return useQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<Hub[]>("/hubs?includeInactive=true"), staleTime: 60_000 });
+}
+
+/** Where a hub stands, for grouped hub lists: Dhaka city, Dhaka's sub-urban districts, the rest, and franchise hubs. */
+export type HubGroup = "INSIDE_DHAKA" | "DHAKA_SUBURBAN" | "OUTSIDE_DHAKA" | "FRANCHISE";
+export const HUB_GROUPS: [HubGroup, string][] = [
+  ["INSIDE_DHAKA", "Inside Dhaka"],
+  ["DHAKA_SUBURBAN", "Dhaka sub-urban"],
+  ["OUTSIDE_DHAKA", "Outside Dhaka"],
+  ["FRANCHISE", "Franchise hubs"],
+];
+export function hubGroup(h: { type?: unknown; district?: unknown }): HubGroup {
+  if (h.type === "FRANCHISE") return "FRANCHISE";
+  const d = normalizeDistrict(typeof h.district === "string" ? h.district : "");
+  if (d === "Dhaka") return "INSIDE_DHAKA";
+  return DHAKA_SUBURBAN_DISTRICTS.some(s => s.toLowerCase() === d.toLowerCase()) ? "DHAKA_SUBURBAN" : "OUTSIDE_DHAKA";
+}
+/** Hubs in HUB_GROUPS order (name order inside a group), each with its group. */
+export function groupHubs<T extends { type?: unknown; district?: unknown; name: string }>(hubs: T[]): { group: HubGroup; label: string; hubs: T[] }[] {
+  return HUB_GROUPS.map(([group, label]) => ({ group, label, hubs: hubs.filter(h => hubGroup(h) === group).sort((a, b) => a.name.localeCompare(b.name)) })).filter(g => g.hubs.length);
 }
 
 // ───────────── audit wording (bridge.js) ─────────────

@@ -143,25 +143,45 @@ export default function Riders({ me, onRatesSaved }: { me: Me; onRatesSaved: () 
   );
 }
 
+/** 12 letters and digits (no look-alikes such as 0/O, 1/l), always with both. */
+function newPassword() {
+  const letters = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  const pick = (set: string) => set[crypto.getRandomValues(new Uint32Array(1))[0] % set.length];
+  const chars = [pick(letters), pick(digits), ...Array.from({ length: 10 }, () => pick(letters + digits))];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
 function AddRider({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: () => void }) {
   const { busy, run } = useAction();
-  const [f, setF] = useState({ name: "", phone: "", email: "", vehicle: "MOTORBIKE", zone: "" });
-  const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
+  const [f, setF] = useState({ name: "", phone: "", email: "", vehicle: "MOTORBIKE", zone: "", password: "" });
+  const [errors, setErrors] = useState<{ name?: string; phone?: string; password?: string }>({});
+  const [shown, setShown] = useState(false);
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const err: typeof errors = {};
     if (f.name.trim().length < 2) err.name = "Enter the rider's name";
     if (!/^(?:\+?880|0)?1[3-9]\d{8}$/.test(f.phone.replace(/[\s-]/g, ""))) err.phone = "Enter a valid mobile number";
+    if (f.password.length < 10) err.password = "Use at least 10 characters";
+    else if (f.password.length > 128) err.password = "Use at most 128 characters";
+    else if (!/[A-Za-z]/.test(f.password) || !/\d/.test(f.password)) err.password = "Use at least one letter and one number";
     setErrors(err);
     if (Object.keys(err).length) return;
     void run(
       "add",
-      () => api("/franchise/riders", { method: "POST", body: { name: f.name.trim(), phone: f.phone.trim(), email: f.email.trim() || undefined, vehicle: f.vehicle, zone: f.zone.trim() || undefined } }),
-      `${f.name.trim()} added. They get an SMS to sign in to the rider app.`,
+      () => api("/franchise/riders", { method: "POST", body: { name: f.name.trim(), phone: f.phone.trim(), email: f.email.trim() || undefined, vehicle: f.vehicle, zone: f.zone.trim() || undefined, password: f.password } }),
+      r =>
+        (r as { passwordSet?: boolean }).passwordSet === false
+          ? `${f.name.trim()} added. This number already had an account: they sign in to the rider app with their own password.`
+          : `${f.name.trim()} added. Share the password: they sign in to the rider app with ${f.phone.trim()} and this password.`,
     ).then(r => r !== undefined && onDone());
   };
   return (
-    <Dialog title="Add a rider" subtitle={`They work only for ${me.hub.name} and sign in to the rider app with an SMS code.`} onClose={onClose}>
+    <Dialog title="Add a rider" subtitle={`They work only for ${me.hub.name} and sign in to the rider app with their mobile number and the password you set here.`} onClose={onClose}>
       <form className="fr-form" onSubmit={submit} noValidate id="frAddRiderForm">
         <Field label="Name" htmlFor="arName" error={errors.name} full>
           <input id="arName" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} autoComplete="off" />
@@ -171,6 +191,24 @@ function AddRider({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone
         </Field>
         <Field label="Email (optional)" htmlFor="arEmail">
           <input id="arEmail" type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} autoComplete="off" />
+        </Field>
+        <Field label="Password" htmlFor="arPassword" error={errors.password} full>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input id="arPassword" type={shown ? "text" : "password"} value={f.password} onChange={e => setF({ ...f, password: e.target.value })} autoComplete="new-password" placeholder="At least 10 characters, a letter and a number" style={{ flex: 1, minWidth: 0 }} />
+            <button type="button" className="fr-btn" onClick={() => setShown(!shown)}>
+              {shown ? "Hide" : "Show"}
+            </button>
+            <button
+              type="button"
+              className="fr-btn"
+              onClick={() => {
+                setF({ ...f, password: newPassword() });
+                setShown(true);
+              }}
+            >
+              {"Generate"}
+            </button>
+          </div>
         </Field>
         <Field label="Vehicle" htmlFor="arVehicle">
           <select id="arVehicle" value={f.vehicle} onChange={e => setF({ ...f, vehicle: e.target.value })}>

@@ -456,12 +456,12 @@ export class FranchisePanelService {
     }));
   }
 
-  /** A rider of this franchise: works only for its hub, signs in to the rider app (SMS code), paid by the franchise. */
+  /** A rider of this franchise: works only for its hub, signs in to the rider app (mobile + the password set here), paid by the franchise. */
   async createRider(actor: Actor, input: z.infer<typeof franchiseRiderSchema>, meta: RequestMeta) {
     const f = await this.context(actor);
     const existing = await this.prisma.user.findUnique({ where: { phone: input.phone }, select: { id: true, rider: { select: { id: true } } } });
     if (existing?.rider) throw new AppError("ALREADY_RIDER", "This phone number already belongs to a rider", HttpStatus.CONFLICT);
-    const rider = await this.network.createRider(actor, { name: input.name, phone: input.phone, email: input.email, hubId: f.hubId, vehicle: input.vehicle, zone: input.zone } as never, meta);
+    const rider = await this.network.createRider(actor, { name: input.name, phone: input.phone, email: input.email, hubId: f.hubId, vehicle: input.vehicle, zone: input.zone, password: input.password } as never, meta);
     await this.notify
       .notifyNow({
         event: "account.invite",
@@ -469,7 +469,8 @@ export class FranchisePanelService {
         vars: { inviter: f.name, role: `a rider for ${f.name}`, link: `${env().APP_URL.replace(/\/+$/, "")}/login` },
       })
       .catch(() => undefined);
-    return rider;
+    // A number that already had an account keeps its own sign-in; the password typed here applies to new accounts only.
+    return { ...rider, passwordSet: !!input.password && !existing };
   }
 
   async updateRider(actor: Actor, id: string, input: z.infer<typeof updateFranchiseRiderSchema>, meta: RequestMeta) {

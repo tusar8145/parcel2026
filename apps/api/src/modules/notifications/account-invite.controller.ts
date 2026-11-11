@@ -10,7 +10,9 @@ import { inviteMessage } from "./account-invite";
 import { smsSegments } from "./render";
 
 export const invitePreviewSchema = z.object({
-  kind: z.enum(["rider", "franchise", "merchant", "merchant_onboard"]),
+  kind: z.enum(["rider", "franchise", "merchant", "merchant_onboard", "staff"]),
+  /** kind staff: the role names as the message says them ("Hub Manager"). */
+  staffRole: z.string().trim().max(120).optional(),
   name: z.string().trim().max(120).optional(),
   hubId: z.uuid().optional(),
   code: z.string().trim().max(20).optional(),

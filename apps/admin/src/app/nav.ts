@@ -45,6 +45,7 @@ export const PAGES: PageDef[] = [
   { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", group: "platform", sub: "Operational settings", legacy: ["import-template-settings"] },
   { id: "Scan usage", label: "Scan with phone usage", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
   { id: "AI import", label: "AI import", slug: "ai-import", icon: "sheet", group: "platform", sub: "Operational settings" },
+  { id: "AI address reading", label: "AI address reading", slug: "ai-address-reading", icon: "pin", group: "platform", sub: "Operational settings" },
   { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Hub settings" },
   { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Hub settings" },
   { id: "Franchises", label: "Franchises", slug: "franchises", icon: "share", group: "platform", sub: "Hub settings" },

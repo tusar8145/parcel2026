@@ -52,6 +52,7 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   "Import settings": lazy(() => import("@/pages/ImportSettings")),
   "Scan usage": lazy(() => import("@/pages/ScanUsage")),
   "AI import": lazy(() => import("@/pages/AiImport")),
+  "AI address reading": lazy(() => import("@/pages/AddressAi")),
   "System guide": lazy(() => import("@/pages/SystemGuide")),
 };
 

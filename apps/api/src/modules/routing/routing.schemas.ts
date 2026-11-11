@@ -17,6 +17,9 @@ export const optimizeSchema = z
     geocodeMissing: z.boolean().default(true),
   });
 
+/** Rider app › Best route: where the rider is now (the phone's position; else their last known one, else the hub). */
+export const riderRouteSchema = z.object({ lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional() });
+
 const day = z.iso.date();
 export const plansQuerySchema = z.object({ hubId: z.uuid().optional(), riderId: z.uuid().optional(), date: day.optional() });
 

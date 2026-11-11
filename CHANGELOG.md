@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.42.0 — 2026-11-12
+- Rider app 1.6.0 › Deliveries: "Best route" puts the open deliveries in the best order from where the rider is (stop numbers on each parcel), and "Google Maps" navigates through the next stops. The list follows today's plan, also when the plan was made in Courier Operations › Route planner.
+- Super admin › Operational settings › AI address reading: when an address can't be found on the map as written, AI rewrites it (area, road, landmark) and searches again, so route plans place the parcel at its address instead of the zone centre. On / off, a monthly USD limit and a daily limit, this month's and today's use, the last 30 days and recent addresses. Off or at a limit, everything works as before.
+- Rider app has its own icon (a motorbike), so it is easy to tell apart from the Operations and Merchant apps.
+
 ## 1.41.0 — 2026-11-12
 - Forced app updates: super admin › Mobile apps sets the lowest version of the Operations, Rider and Merchant apps that may still be used. An older app stops working and shows an "Update the app" page with the download link.
 - New apps: Operations 1.4.0 (Riders: add a rider with a password, copy the sign-in details, set a new password), Rider 1.5.1 and Merchant 1.4.2. From these versions on, an update can be forced; apps installed before keep working.

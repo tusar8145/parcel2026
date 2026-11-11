@@ -10,12 +10,13 @@ import { AppError, forbidden, notFound } from "../../common/errors";
 import { env } from "../../config/env";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
 import { GeoService } from "../geo/geo.service";
+import { AddressAiService } from "./address-ai.service";
 import { ParcelsService } from "../parcels/parcels.service";
 import { opsHubScope } from "../parcels/ops-scope";
 import { describeMissing, missingFor } from "../parcels/incomplete";
 import { resolveZone } from "../network/zone-resolver";
 import { codeVariants, dhakaDay, haversineMeters, NEEDS_PICKUP_RIDER } from "../ops/ops-common";
-import type { acceptSuggestionsSchema, geocodeSchema, mapQuerySchema, optimizeSchema, plansQuerySchema, suggestionsQuerySchema } from "./routing.schemas";
+import type { acceptSuggestionsSchema, geocodeSchema, mapQuerySchema, optimizeSchema, plansQuerySchema, riderRouteSchema, suggestionsQuerySchema } from "./routing.schemas";
 
 type LatLng = { lat: number; lng: number };
 export interface Stop {
@@ -55,6 +56,7 @@ export class RoutingService {
     private readonly audit: AuditService,
     private readonly geo: GeoService,
     private readonly parcels: ParcelsService,
+    private readonly addressAi: AddressAiService,
   ) {}
 
   // ───────────── geocoding ─────────────
@@ -84,8 +86,11 @@ export class RoutingService {
     return { processed: results.length, located: results.filter(r => r.status === "OK").length, approximate: results.filter(r => r.status === "ZONE").length, results, remaining };
   }
 
-  /** Geocodes one parcel's delivery address and stores the pin (OK), the zone centre (ZONE) or FAILED. */
-  private async locate(db: Db, p: { id: string; deliveryStreet: string | null; deliveryArea: string | null; deliveryZone: string | null; deliveryDistrict: string | null }) {
+  /**
+   * Geocodes one parcel's delivery address and stores the pin: found as written (OK), found after the AI rewrote the
+   * address (AI; Operational settings › AI address reading, optional), the zone centre (ZONE) or FAILED.
+   */
+  private async locate(db: Db, p: { id: string; trackingId: string; deliveryStreet: string | null; deliveryArea: string | null; deliveryZone: string | null; deliveryDistrict: string | null }) {
     let pin: LatLng | null = null;
     let status = "FAILED";
     // Incomplete orders (imports) may not have an address yet: nothing to locate until it is completed.
@@ -99,6 +104,24 @@ export class RoutingService {
       } catch (error) {
         this.logger.warn(`Geocoding failed: ${error instanceof Error ? error.message : error}`);
       }
+    }
+    // Not found as written: the AI rewrites the address (when on and within its limits) and the search runs again.
+    if (!pin && env().NODE_ENV !== "test" && p.deliveryStreet && p.deliveryDistrict) {
+      const ai = await this.addressAi.queries({ trackingId: p.trackingId, street: p.deliveryStreet, area: p.deliveryArea, zone: p.deliveryZone, district: p.deliveryDistrict });
+      for (const q of ai.queries) {
+        try {
+          const place = await this.geo.geocode(q);
+          if (place && inBangladesh(place)) {
+            pin = { lat: place.lat, lng: place.lng };
+            status = "AI";
+            break;
+          }
+        } catch (error) {
+          this.logger.warn(`Geocoding (AI query) failed: ${error instanceof Error ? error.message : error}`);
+          break;
+        }
+      }
+      if (ai.queries.length) await ai.done(status === "AI");
     }
     if (!pin && p.deliveryDistrict && p.deliveryZone) {
       const zone = await resolveZone(db, { district: p.deliveryDistrict, zone: p.deliveryZone, area: p.deliveryArea });
@@ -272,6 +295,33 @@ export class RoutingService {
     const latest = new Map<string, (typeof rows)[number]>();
     for (const r of rows) if (!latest.has(r.riderId)) latest.set(r.riderId, r);
     return [...latest.values()].map(({ rider, ...plan }) => ({ ...plan, rider: { id: rider.id, label: `${rider.code} · ${rider.user.name}` } }));
+  }
+
+  // ───────────── the rider's own route (rider app › Best route) ─────────────
+
+  private async riderOf(userId: string) {
+    const rider = await this.prisma.rider.findUnique({ where: { userId }, select: { id: true } });
+    if (!rider) throw notFound("Rider");
+    return rider;
+  }
+
+  /** Today's latest plan for the signed-in rider (stops in order), or null. */
+  async riderPlan(userId: string) {
+    const rider = await this.riderOf(userId);
+    const plan = await this.prisma.routePlan.findFirst({ where: { riderId: rider.id, workDate: new Date(`${dhakaDay()}T00:00:00Z`) }, orderBy: { createdAt: "desc" } });
+    return { plan: plan ? { id: plan.id, createdAt: plan.createdAt, engine: plan.engine, stops: plan.stops, distanceMeters: plan.distanceMeters, durationSeconds: plan.durationSeconds } : null };
+  }
+
+  /** The signed-in rider's open stops in the best order from where they are now (saved as today's plan). */
+  async riderOptimize(actor: Actor, userId: string, input: z.infer<typeof riderRouteSchema>, meta: RequestMeta) {
+    const rider = await this.riderOf(userId);
+    const start = input.lat != null && input.lng != null ? { lat: input.lat, lng: input.lng } : undefined;
+    const r = await this.optimize(actor, { riderId: rider.id, includePickups: true, start, geocodeMissing: true }, meta);
+    return {
+      plan: r.plan ? { id: r.plan.id, createdAt: r.plan.createdAt, engine: r.plan.engine, stops: r.plan.stops, distanceMeters: r.plan.distanceMeters, durationSeconds: r.plan.durationSeconds, startSource: r.plan.startSource } : null,
+      unlocated: r.unlocated,
+      message: "message" in r ? r.message : undefined,
+    };
   }
 
   // ───────────── map ─────────────

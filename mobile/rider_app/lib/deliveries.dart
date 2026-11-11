@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'home.dart';
 import 'offline.dart';
 import 'phone.dart';
+import 'route.dart';
 import 'signature_pad.dart';
 
 /// Why a delivery failed (the API's FAILURE_REASONS).
@@ -59,6 +60,8 @@ class DeliveriesPage extends StatelessWidget {
     return ValueListenableBuilder<List<Pending>>(
       valueListenable: Outbox.items,
       builder: (context, _, _) => ValueListenableBuilder<Map<String, dynamic>?>(
+        valueListenable: RoutePlan.data,
+        builder: (context, _, _) => ValueListenableBuilder<Map<String, dynamic>?>(
         valueListenable: Tasks.data,
         builder: (context, data, _) {
           if (data == null) {
@@ -67,8 +70,11 @@ class DeliveriesPage extends StatelessWidget {
               builder: (_, e, _) => e == null ? const Center(child: CircularProgressIndicator()) : ErrorView(message: e, onRetry: Tasks.load),
             );
           }
-          final all = Tasks.list('deliveries');
-          final open = all.where((p) => localStatus(p) != 'DELIVERED').toList();
+          // Open deliveries in the best-route order (today's plan), then the delivered ones.
+          final open = RoutePlan.sorted(Tasks.list('deliveries').where((p) => localStatus(p) != 'DELIVERED').toList());
+          final all = [...open, ...Tasks.list('deliveries').where((p) => localStatus(p) == 'DELIVERED')];
+          final order = RoutePlan.seq;
+          final planned = open.where((p) => order.containsKey('${p['trackingId']}')).length;
           final cod = open.fold<num>(0, (a, p) => a + toNum(p['codAmount']));
           return RefreshIndicator(
             onRefresh: Tasks.load,
@@ -84,21 +90,57 @@ class DeliveriesPage extends StatelessWidget {
                     FilledButton.tonalIcon(onPressed: () => _scan(context), icon: const Icon(Icons.qr_code_scanner, size: 18), label: const Text('Scan')),
                   ],
                 ),
+                if (open.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => planBestRoute(context),
+                          icon: const Icon(Icons.route, size: 18),
+                          label: Text(planned > 0 ? 'Best route again' : 'Best route'),
+                        ),
+                      ),
+                      if (planned > 0) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => openRouteInMaps(context, open.map((p) => '${p['trackingId']}').toList()),
+                            icon: const Icon(Icons.map_outlined, size: 18),
+                            label: const Text('Google Maps'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (planned > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'In best-route order ($planned of ${open.length} stops planned). New parcels come last until you plan again.',
+                        style: const TextStyle(color: muted, fontSize: 12),
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 10),
                 if (all.isEmpty) const EmptyView(icon: Icons.local_shipping_outlined, text: 'No deliveries assigned to you right now.'),
-                for (final p in all) _DeliveryCard(parcel: p),
+                for (final p in all) _DeliveryCard(parcel: p, stop: order['${p['trackingId']}']),
               ],
             ),
           );
         },
+        ),
       ),
     );
   }
 }
 
 class _DeliveryCard extends StatelessWidget {
-  const _DeliveryCard({required this.parcel});
+  const _DeliveryCard({required this.parcel, this.stop});
   final Map<String, dynamic> parcel;
+
+  /// The parcel's stop number in today's best route (null: not planned).
+  final int? stop;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +167,13 @@ class _DeliveryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (stop != null && status != 'DELIVERED')
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: brand, borderRadius: BorderRadius.circular(12)),
+                      child: Text('Stop $stop', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+                    ),
                   Expanded(
                     child: Text('${p['trackingId']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                   ),

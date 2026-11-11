@@ -9,6 +9,7 @@ import 'deliveries.dart';
 import 'offline.dart';
 import 'pickups.dart';
 import 'returns.dart';
+import 'route.dart';
 import 'scan.dart';
 
 /// The rider's tasks (GET /rider/tasks: pickups, deliveries, parcels carried), shared by the tabs and
@@ -24,6 +25,8 @@ class Tasks {
     try {
       data.value = (await cachedGet('/rider/tasks') as Map).cast<String, dynamic>();
       error.value = null;
+      // Today's best-route plan: the delivery list follows its order.
+      unawaited(RoutePlan.load());
     } catch (e) {
       error.value = errorText(e);
     }

@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.33.0 — 2026-11-11
+- Excel import: Delivery type and Priority are chosen in the import window for the whole file (the first one is selected when it opens; there is no "From the file" any more). The Excel templates no longer have Delivery type and Priority columns.
+- AI import on: the import window has no Category choice and the template has no Category column. In the preview each row's Category shows before its Product: the product's category, or the one the AI chose (new products and categories are added to the system).
+- No duplicate products: the same thing under another name (T-Shirt, T Shirts, tshirt XL black, Cheque Book / Cheque Books) is matched to the existing product, without the AI and without creating a new one.
+- Fix: saving one AI import setting (for example the monthly limit) no longer switches the AI off or clears the channel rule.
+
 ## 1.32.0 — 2026-11-11
 - Operational settings › AI import (new): Excel imports (merchant panel and Operations console) send the product names and addresses the lists don't match to AI (Claude Haiku). A name that is the same as a listed product (spelling, size, colour variants) gets that product; a new one becomes a new product in the right category, or a new category when none fits. An address in a thana that isn't listed becomes a new zone of its district, served at once by the nearest zone's hub. Everything it creates is tagged "AI created" (Products, Product categories).
 - The super admin writes the channel rule for new categories (which get SMS, email, push); the AI sets each new category's switches from it.

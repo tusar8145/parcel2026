@@ -27,6 +27,9 @@ import {
 } from "./imports.schemas";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/** Chosen in the import window for the whole file (the first one preselected), not columns of the template. */
+const MODAL_ONLY = new Set<string>(["service_level", "priority"]);
+
 const attachment = (name: string) => `attachment; filename="${name.replace(/["\\\r\n]/g, "_")}"`;
 
 /**
@@ -72,7 +75,7 @@ export class ImportsController {
   @RequireApiKeyScope("parcels:write", "parcels:read")
   @Get("config")
   async getConfig() {
-    return this.configView(await this.config.settings());
+    return this.configView(await this.config.settings(), await this.ai.active());
   }
 
   /** Super admin: required columns and defaults per template, default destination, limits (up to the hard ceilings). Audited. */
@@ -81,7 +84,7 @@ export class ImportsController {
   @ApiZodBody(importConfigSchema)
   async putConfig(@CurrentActor() actor: Actor, @ZBody(importConfigSchema) body: z.infer<typeof importConfigSchema>, @ReqMeta() meta: RequestMeta) {
     const saved = await this.config.save(actor, body, meta, settings => this.checkDefaults(settings));
-    return this.configView(saved);
+    return this.configView(saved, await this.ai.active());
   }
 
   /** The limits shown before an upload ("Max 5,000 rows per file"). */
@@ -270,8 +273,10 @@ export class ImportsController {
     return this.jobs.trackingIds(actor, id);
   }
 
-  private configView(settings: ImportSettings) {
+  private configView(settings: ImportSettings, ai = false) {
     return {
+      /** AI import on: the category comes from the product (no Category column, no category choice in the modal). */
+      ai,
       templates: Object.fromEntries(
         IMPORT_KINDS.map(kind => [
           kind,
@@ -288,7 +293,7 @@ export class ImportsController {
             /** Only in the template when the package offers it (COD, open box). */
             packageOnly: c.needs ?? null,
             /** false: not in the blank template (district / zone / area are found from the full address). */
-            inTemplate: c.inTemplate !== false,
+            inTemplate: c.inTemplate !== false && !MODAL_ONLY.has(c.key) && !(ai && c.key === "category"),
           })),
         ]),
       ),

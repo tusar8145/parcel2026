@@ -23,10 +23,33 @@ export const aiImportSettingsSchema = z.object({
   channelPrompt: z.string().trim().max(4000).default(""),
 });
 export type AiImportSettings = z.infer<typeof aiImportSettingsSchema>;
-export const updateAiImportSettingsSchema = aiImportSettingsSchema.partial();
+/** Only the fields sent change (no defaults here: a partial save never resets the others). */
+export const updateAiImportSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  monthlyLimitUsd: z.coerce.number().min(0).max(10_000).optional(),
+  channelPrompt: z.string().trim().max(4000).optional(),
+});
 export const aiUsageQuerySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) });
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+/** Words that don't change what a product is (sizes, colours, packing). */
+const NOISE = new Set(["xs", "s", "m", "l", "xl", "xxl", "xxxl", "2xl", "3xl", "free", "size", "pcs", "pc", "piece", "pieces", "set", "pack", "black", "white", "red", "blue", "green", "yellow", "pink", "grey", "gray", "brown", "navy", "new", "original"]);
+/**
+ * A product's matching key: lower case, "&" = "and", punctuation and spaces dropped, plurals made singular, sizes /
+ * colours / quantities left out ("T-Shirts", "t shirt", "Tshirt XL Black" → "tshirt"). Two names with the same key
+ * are the same product: the system never creates the second one.
+ */
+export function productKey(name: string) {
+  const words = name
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\(.*?\)/g, " ")
+    .replace(/\b\d+(\.\d+)?\s*(ml|l|ltr|g|gm|gram|kg|pcs|pc|inch|in|cm|mm)\b/g, " ")
+    .split(/[^a-z0-9\u0980-\u09ff]+/)
+    .filter(w => w && !NOISE.has(w) && !/^\d+$/.test(w))
+    .map(w => (w.length > 4 && w.endsWith("ies") ? `${w.slice(0, -3)}y` : w.length > 4 && /(ches|shes|xes|sses)$/.test(w) ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w));
+  return words.join("");
+}
 const CHUNK = 60;
 const PARALLEL = 4;
 
@@ -222,6 +245,23 @@ export class ImportAiService {
    * aren't listed. Never throws: anything wrong leaves the rows as they were (with a note).
    */
   async enrich(ctx: EngineContext, rows: { rowNumber: number; cells: Cells }[], actor: Actor, meta: RequestMeta, merchantId: string | null): Promise<AiImportResult> {
+    const result = await this.enrichRows(ctx, rows, actor, meta, merchantId);
+    if (!(await this.active()) || !ctx.columns.some(c => c.key === "category")) return result;
+    // Every row shows its category (before Product): its product's, unless the file named one.
+    const products = await this.prisma.parcelProduct.findMany({ where: { segment: listOf(ctx.pkg.segment) }, select: { name: true, category: { select: { name: true, active: true } } } });
+    const categoryOf = new Map(products.flatMap(p => (p.category?.active ? [[norm(p.name), p.category.name] as const] : [])));
+    for (const r of result.rows) {
+      const c = r.cells;
+      if ((c.category ?? "").trim() || !(c.product_type ?? "").trim()) continue;
+      const cat = categoryOf.get(norm(productNameOfCell(c.product_type!)));
+      if (!cat) continue;
+      c.category = cat;
+      c.__auto = [...new Set([...(c.__auto ?? "").split(",").filter(Boolean), "category"])].join(",");
+    }
+    return result;
+  }
+
+  private async enrichRows(ctx: EngineContext, rows: { rowNumber: number; cells: Cells }[], actor: Actor, meta: RequestMeta, merchantId: string | null): Promise<AiImportResult> {
     const result: AiImportResult = { rows, created: false, usageId: null, note: null };
     if (!(await this.active())) return result;
     const settings = await this.settings();
@@ -229,6 +269,7 @@ export class ImportAiService {
     const columns = new Set(ctx.columns.map(c => c.key));
     const out = rows.map(r => ({ rowNumber: r.rowNumber, cells: { ...r.cells } }));
     const known = new Map(ctx.products.map(p => [norm(p.name), p.name]));
+    const knownByKey = new Map(ctx.products.map(p => [productKey(p.name), p.name] as const).filter(([k]) => k));
     const categoryByName = new Map(ctx.categories.map(c => [norm(c.name), c]));
 
     // ── what the lists don't match ──
@@ -244,7 +285,9 @@ export class ImportAiService {
       const raw = (c.product_type ?? "").trim();
       if (raw && columns.has("product_type")) {
         const name = productNameOfCell(raw);
-        if (!known.has(norm(name))) {
+        const sameKey = knownByKey.get(productKey(name));
+        if (!known.has(norm(name)) && sameKey) c.product_type = sameKey;
+        else if (!known.has(norm(name))) {
           const alias = productAliases.get(norm(name));
           if (alias && known.has(norm(alias))) c.product_type = known.get(norm(alias))!;
           else {
@@ -444,7 +487,7 @@ Products (P items): for each name, if a listed product is the same thing (a spel
 
 Places (A items): give the listed district and its listed thana / upazila ("zone") the address is in; an area, road or neighbourhood name points to its thana. Only when the address is clearly in a real thana / upazila of that district that is not listed, give its proper name with newZone true and the nearest listed zone of the district as "nearZone". Never invent places: leave "" when unsure.
 
-Answer every item. Use the exact spelling of listed names.
+Never make a new product that is a listed product under another name (no duplicates); P items that are the same thing get the same newProduct name. Answer every item. Use the exact spelling of listed names.
 
 Channel rule for new categories (the super admin's): ${settings.channelPrompt.trim() || "SMS, email and push on."}
 
@@ -495,7 +538,9 @@ ${places}`;
   /** The product (created when new, tagged AI created); its name, or null. */
   private async createProduct(list: "ECOMMERCE" | "BANKING_FINANCIAL", name: string, categoryId: string | null): Promise<string | null> {
     if (name.length < 2) return null;
-    const existing = await this.prisma.parcelProduct.findFirst({ where: { segment: list, name: { equals: name, mode: "insensitive" } }, select: { name: true, active: true, id: true } });
+    const key = productKey(name);
+    const all = await this.prisma.parcelProduct.findMany({ where: { segment: list }, select: { name: true, active: true, id: true } });
+    const existing = all.find(p => norm(p.name) === norm(name)) ?? (key ? all.find(p => productKey(p.name) === key) : undefined);
     if (existing) {
       if (!existing.active) await this.prisma.parcelProduct.update({ where: { id: existing.id }, data: { active: true } });
       return existing.name;

@@ -206,8 +206,10 @@ export class ImportJobsService implements OnApplicationBootstrap {
     await this.checkSubject(scope, kind, { merchantRequired: false });
     const settings = await this.config.settings();
     const ctx = await this.engine.context({ kind, settings, merchantId: scope.merchantId });
-    // AI import on: the product alone decides the category (no Category column).
-    if (await this.ai.active()) ctx.columns = ctx.columns.filter(c => c.key !== "category");
+    // Delivery type and priority are chosen in the import window for the whole file; with AI import on the product
+    // alone decides the category (no Category column).
+    const ai = await this.ai.active();
+    ctx.columns = ctx.columns.filter(c => c.key !== "service_level" && c.key !== "priority" && !(ai && c.key === "category"));
     const limits = this.limitsFor(settings, scope.forOps);
     return { buffer: buildTemplate(ctx, { maxRows: limits.maxRows, maxFileMb: limits.maxFileMb }), fileName: TEMPLATE_FILE[kind] };
   }

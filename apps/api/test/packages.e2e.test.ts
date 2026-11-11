@@ -192,9 +192,9 @@ describe("service packages", () => {
       const { readZip } = await import("../src/modules/imports/xlsx/zip");
       const sheet = readZip(tpl.rawPayload, { maxBytes: 50_000_000 }).get("xl/worksheets/sheet1.xml")!.toString();
       expect(sheet).toContain("<t>Open box</t>");
-      expect(sheet).toContain("<t>Delivery type</t>");
+      expect(sheet).not.toContain("<t>Delivery type</t>"); // chosen in the import window
       expect(sheet).toContain("<t>Category</t>");
-      expect(sheet).toContain("<t>Priority</t>");
+      expect(sheet).not.toContain("<t>Priority</t>");
       expect(sheet).not.toContain("<t>COD amount (৳)</t>");
       expect(sheet).not.toContain("<t>Cash on delivery</t>");
       // A category with SMS, email and push off: its rows are booked with no channel, whatever the modal ticks.

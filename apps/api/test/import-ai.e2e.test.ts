@@ -80,6 +80,9 @@ describe("AI import", () => {
     expect(at(2).cells).toMatchObject({ product_type: "T-Shirt", district: "Dhaka Central", zone: "Mirpur" });
     expect(at(3).cells).toMatchObject({ product_type: "Drone Parts", district: "Dhaka North", zone: "Notunbazar" });
     expect(at(2).status).toBe("VALID");
+    // The Category column is filled from each row's product (shown before Product in the preview).
+    expect(at(3).cells.category).toBe("Drones & Gadgets");
+    expect(at(2).cells.category).toBeTruthy();
     expect(at(3).status).toBe("VALID");
     // Created at once, tagged; the category's channels from the rule.
     expect(await ctx.prisma.productCategory.findFirstOrThrow({ where: { name: "Drones & Gadgets" } })).toMatchObject({ aiCreated: true, notifySms: false, notifyEmail: true, notifyPush: true });
@@ -100,16 +103,28 @@ describe("AI import", () => {
     const log = (await ctx.api("GET", "/imports/ai/usage", { token: admin.token })).body;
     expect(log.items[0]).toMatchObject({ productsMatched: 1, productsCreated: 1, zonesCreated: 1, importNumber: expect.stringMatching(/^IMP-/), user: "Ops" });
 
+    // A partial save keeps the other settings.
+    expect((await ai.settings()).channelPrompt).toBe("Gadgets: no SMS, email and push on.");
     // Over the monthly limit: no AI, the file is still checked.
     await ctx.api("PUT", "/imports/ai", { token: admin.token, body: { monthlyLimitUsd: 0 } });
     const limited = await validate(ops.token, merchant.id, [row(5, { address: "House 3, Shahjadpur Lane", district: "Dhaka North", product_type: "Mystery item" })]);
     expect(calls).toHaveLength(1);
     expect(limited.rows.items[0].cells.product_type).toBe("Mystery item");
 
-    // The template has no Category column while the AI is on.
+    // The template has no Category column while the AI is on, and never Delivery type / Priority (chosen in the window).
     await ctx.api("PUT", "/imports/ai", { token: admin.token, body: { monthlyLimitUsd: 5 } });
     const tpl = await ctx.app.inject({ method: "GET", url: `/api/v1/imports/templates/ecommerce?merchantId=${merchant.id}`, headers: { authorization: `Bearer ${ops.token}` } });
     expect(tpl.statusCode).toBe(200);
+    const config = (await ctx.api("GET", "/imports/config", { token: ops.token })).body as { ai: boolean; templates: Record<string, { key: string; inTemplate: boolean }[]> };
+    expect(config.ai).toBe(true);
+    const inTemplate = (key: string) => config.templates.ecommerce.find(c => c.key === key)?.inTemplate;
+    expect([inTemplate("category"), inTemplate("service_level"), inTemplate("priority"), inTemplate("product_type")]).toEqual([false, false, false, true]);
+
+    // No duplicates: the same thing under another name is the existing product (no AI, nothing created).
+    const before = await ctx.prisma.parcelProduct.count();
+    const dup = await validate(ops.token, merchant.id, [row(6, { address: "House 3, Kalabagan", district: "Dhaka Central", zone: "Dhanmondi", product_type: "T Shirts" })]);
+    expect(dup.rows.items[0].cells.product_type).toBe("T-Shirt");
+    expect(await ctx.prisma.parcelProduct.count()).toBe(before);
   });
 
   it("a merchant's own import uses it too", async () => {

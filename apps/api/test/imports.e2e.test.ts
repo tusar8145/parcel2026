@@ -141,7 +141,7 @@ describe("imports", () => {
       expect(t.workbook).not.toContain('<definedName name="L_districts">');
       expect(t.workbook).not.toMatch(/<definedName name="ZN_1">/);
       // Exactly the E-commerce columns (the default package has COD and open box); the phone is optional by default.
-      expect(t.header).toEqual(["Customer name", "Customer phone", "Delivery address", "Category", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Delivery type", "Priority", "Open box", "Order ID", "Delivery instructions"]);
+      expect(t.header).toEqual(["Customer name", "Customer phone", "Delivery address", "Category", "Product", "COD amount (৳)", "Product value (৳)", "Weight (kg)", "Open box", "Order ID", "Delivery instructions"]);
       for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
       // Optional by default (a super admin can make it required): the plain header style, no "*".
       expect(t.sheet).toContain('<c r="B1" s="2" t="inlineStr"><is><t>Customer phone</t></is></c>');
@@ -149,7 +149,7 @@ describe("imports", () => {
       // Dropdowns: products, services, yes/no.
       expect(t.sheet).not.toContain("L_districts");
       expect(t.sheet).toContain("<formula1>L_products</formula1>");
-      expect(t.sheet).toContain("<formula1>L_speeds</formula1>");
+      expect(t.sheet).not.toContain("<formula1>L_speeds</formula1>"); // the delivery type is chosen in the import window
       expect(t.sheet).toContain("<formula1>L_yesNo</formula1>");
       expect(t.sheet).toMatch(new RegExp(`type="decimal"[^>]*sqref="${letterOf(t.header, "COD amount (৳)")}2:`));
       expect(t.sheet).toMatch(/type="textLength"[^>]*sqref="B2:B5001"/);
@@ -159,9 +159,9 @@ describe("imports", () => {
       expect(products.indexOf("Papers & Documents (Document)")).toBeGreaterThan(products.indexOf("Books (Books)"));
       expect(products.indexOf("Gifts & Crafts (Regular)")).toBeGreaterThan(products.indexOf("Warranty Documents (Document)"));
       expect(products.some(p => /Credit Card/.test(p))).toBe(false);
-      expect(t.listOf("Delivery type")).toEqual(["Regular", "Express", "4 Hour Delivery", "Same Day Delivery"]);
+      expect(t.listOf("Delivery type")).toEqual([]); // chosen in the import window
       expect(t.listOf("Categories")[0]).toBe("Fashion & Clothing");
-      expect(t.listOf("Priorities")).toEqual(["Online Product", "Fragile"]);
+      expect(t.listOf("Priorities")).toEqual([]); // chosen in the import window
       // Instructions for this category: phone required, upload-screen choices, pricing by district, Express same day.
       const text = t.help.join("\n");
       expect(text).toContain("at most 5,000 rows");
@@ -177,7 +177,7 @@ describe("imports", () => {
       expect(text).toContain("Write the FULL address in the address column: house, road, area, thana and district");
       expect(t.help.find(l => l.startsWith("Delivery address | No |"))).toContain("The full address: house, road, area, thana and district");
       expect(t.help.find(l => l.startsWith("District |"))).toBeUndefined();
-      expect(t.help.find(l => l.startsWith("Delivery type | No | Regular, Express, 4 Hour Delivery, Same Day Delivery (the delivery types; their + charge is in Shop "))).toBeTruthy();
+      expect(t.help.find(l => l.startsWith("Delivery type |"))).toBeUndefined(); // chosen in the import window
       // Examples come from live data (the first active product).
       expect(t.help.find(l => l.startsWith("Product | No |"))).toContain("| Saree (Regular) |");
 
@@ -192,15 +192,15 @@ describe("imports", () => {
         const t = await template(bank.owner.token, url);
         expect(String(t.res.headers["content-disposition"])).toContain("delivery-fast-banking-financial-template.xlsx");
         expect(t.workbook).toContain('<sheet name="Consignments"');
-        expect(t.header).toEqual(["Recipient name", "Recipient phone", "Delivery address", "Category", "Product", "Delivery type", "Priority", "Reference no.", "Delivery instructions"]);
+        expect(t.header).toEqual(["Recipient name", "Recipient phone", "Delivery address", "Category", "Product", "Reference no.", "Delivery instructions"]);
         for (const gone of REMOVED) expect(t.header.join("|")).not.toContain(gone);
         expect(t.sheet).not.toContain("Weight");
         expect(t.sheet).not.toContain("COD");
         expect(t.listOf("Products")[0]).toBe("Debit Card (Regular)");
         expect(t.listOf("Products")).not.toContain("Saree (Regular)");
-        expect(t.listOf("Delivery type")).toEqual(["Regular", "Express", "4 Hour Delivery", "Same Day Delivery"]);
+        expect(t.listOf("Delivery type")).toEqual([]); // chosen in the import window
         expect(t.listOf("Categories")[0]).toBe("Cards & PIN");
-        expect(t.listOf("Priorities")).toEqual(["General", "Security"]);
+        expect(t.listOf("Priorities")).toEqual([]); // chosen in the import window
         const text = t.help.join("\n");
         expect(text).not.toMatch(/weight and service defaults|Weight \(kg\)|Express is same-day/);
         expect(text).toContain("no weight, no cash on delivery and no product-type charge");
@@ -223,12 +223,12 @@ describe("imports", () => {
       const fourHour = (await ctx.prisma.deliveryType.findUniqueOrThrow({ where: { code: "FOUR_HOUR" } })).id;
       await catalog.updateDeliveryType("system", fourHour, { active: false }, {} as never);
       const chosen = await template(ops.token, `/imports/templates/document?merchantId=${bank.m.id}`);
-      expect(chosen.listOf("Delivery type")).toEqual(["Regular", "Express", "Same Day Delivery"]);
+      expect(chosen.listOf("Delivery type")).toEqual([]); // chosen in the import window
       expect(chosen.help.join("\n")).toContain(`For ${bank.m.name} (${bank.m.code})`);
       expect(chosen.header).not.toContain("Merchant");
       expect(chosen.sheet).toContain("sqref=\"F2:F10001\""); // operations: 10,000 rows
       // Without a merchant: the category's default package.
-      expect((await template(ops.token, "/imports/templates/document")).listOf("Delivery type")).toContain("Express");
+      expect((await template(ops.token, "/imports/templates/document")).header).not.toContain("Delivery type");
       // An e-commerce merchant for the Banking & Financial template is refused.
       const shop = await merchant();
       expect((await download(ops.token, `/imports/templates/document?merchantId=${shop.m.id}`)).json().error.code).toBe("WRONG_TEMPLATE");
@@ -261,15 +261,13 @@ describe("imports", () => {
         "COD amount (৳)",
         "Product value (৳)",
         "Weight (kg)",
-        "Delivery type",
-        "Priority",
         "Reference no.",
         "Delivery instructions",
       ]);
       // Pickup and delivery places are found from the two full addresses: no place columns or lists.
       expect(t.sheet).not.toContain("L_zones");
       expect(t.help.join("\n")).toContain("(the sender's too, from the pickup address)");
-      expect(t.listOf("Delivery type")).toEqual(["Regular", "Express", "4 Hour Delivery", "Same Day Delivery"]);
+      expect(t.listOf("Delivery type")).toEqual([]); // chosen in the import window
       expect(t.listOf("Products")[0]).toBe("Saree (Regular)");
       expect(t.help.join("\n")).toContain("Customer parcels booked by operations (walk-in or website customers): no merchant.");
       // A merchant can't use it.
@@ -665,7 +663,7 @@ describe("imports", () => {
       // District isn't a template column (found from the address); the required setting still applies to files that have it or not.
       expect(t.header).not.toContain("District *");
       expect(t.header).toContain("Customer name");
-      expect(t.help.find(l => l.startsWith("Delivery type | No | Regular, Express, 4 Hour Delivery, Same Day Delivery (the delivery types; their + charge is in Shop ") && l.includes("'s service package) | Express | Regular |"))).toBeTruthy();
+      expect(t.help.some(l => l.startsWith("Delivery type |"))).toBe(false); // chosen in the import window
       const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
       expect((await template(ops.token, "/imports/templates/customer")).header).toContain("Recipient name *");
     });

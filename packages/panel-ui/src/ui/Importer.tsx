@@ -227,7 +227,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const [step, setStep] = useState<Step>("loading");
   const [message, setMessage] = useState("");
   const [limits, setLimits] = useState<{ maxRows: number; maxFileMb: number } | null>(null);
-  const [config, setConfig] = useState<{ templates: Record<string, { key: string; header: string; required?: boolean; inTemplate?: boolean; packageOnly?: string }[]> } | null>(null);
+  const [config, setConfig] = useState<{ ai?: boolean; templates: Record<string, { key: string; header: string; required?: boolean; inTemplate?: boolean; packageOnly?: string }[]> } | null>(null);
   const [kinds, setKinds] = useState<KindDef[]>([]);
   const [pkg, setPkg] = useState<Pkg | null>(null);
   const [merchantId, setMerchantId] = useState(initial.forOps && initial.merchantId && !bulk ? initial.merchantId : "");
@@ -305,9 +305,10 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     const o = p.options;
     setFirstMile(f => (o.firstMiles.includes(f) ? f : o.defaultFirstMile || "RIDER_PICKUP"));
     setLastMile(l => (o.lastMiles.includes(l) ? l : o.defaultLastMile || "DOORSTEP"));
-    setSpeed(v => (v && (o.speeds ?? []).includes(v) ? v : ""));
+    // Delivery type and priority: for the whole file, the first (default) preselected.
+    setSpeed(v => (v && (o.speeds ?? []).includes(v) ? v : (o.speeds ?? [])[0] || ""));
     setCategory(v => (v && (p.categories ?? []).some(c => c.id === v) ? v : ""));
-    setPriority(v => (v && (p.priorities ?? []).some(x => x.id === v) ? v : ((p.priorities ?? []).find(x => x.isDefault)?.id ?? "")));
+    setPriority(v => (v && (p.priorities ?? []).some(x => x.id === v) ? v : ((p.priorities ?? []).find(x => x.isDefault)?.id ?? (p.priorities ?? [])[0]?.id ?? "")));
     setNotifications(new Set(p.notifications.map(n => n.code).filter(c => !unticked.current.has(c))));
   }
 
@@ -434,7 +435,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       if (pkg && lastMile) form.append("lastMile", lastMile);
       if (speed) form.append("speed", speed);
       if (productType && cfg.kind !== "document") form.append("productType", productType);
-      if (category) form.append("category", category);
+      if (category && !config?.ai) form.append("category", category);
       if (priority) form.append("priority", priority);
       if (pkg?.notifications?.length && notifications.size !== pkg.notifications.length) form.append("notifications", notifications.size ? [...notifications].join(",") : "none");
       if (mapsColumns && l) form.append("mapping", JSON.stringify({ headerRow: l.headerRow, columns: l.columns.map(c => c.key || null) }));
@@ -848,7 +849,6 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             <label className="field">
               <span>Delivery type</span>
               <Select className="select" value={speed} onChange={e => setSpeed(e.target.value)}>
-                <option value="">From the file</option>
                 {pkg.options.speeds!.map(v => (
                   <option key={v} value={v}>
                     {typeName(v)}
@@ -857,7 +857,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               </Select>
             </label>
           ) : null}
-          {pkg?.categories?.length ? (
+          {pkg?.categories?.length && !config?.ai ? (
             <label className="field">
               <span>Category</span>
               <Select className="select" value={category} onChange={e => setCategory(e.target.value)}>
@@ -874,7 +874,6 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             <label className="field">
               <span>Priority</span>
               <Select className="select" value={priority} onChange={e => setPriority(e.target.value)}>
-                <option value="">From the file</option>
                 {pkg.priorities.map(x => (
                   <option key={x.id} value={x.id}>
                     {x.name}
@@ -902,12 +901,12 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           const chosen = [
             speed ? `delivery type ${typeName(speed)}` : "",
             productType && cfg.kind !== "document" ? `product type ${PRODUCT_TYPE.find(([v]) => v === productType)?.[1]}` : "",
-            category ? `category ${pkg?.categories?.find(c => c.id === category)?.name}` : "",
+            category && !config?.ai ? `category ${pkg?.categories?.find(c => c.id === category)?.name}` : "",
             priority ? `priority ${pkg?.priorities?.find(x => x.id === priority)?.name}` : "",
           ].filter(Boolean);
           return chosen.length ? (
             <p className="muted" style={{ margin: 0 }}>
-              {`${chosen.join(", ").replace(/^./, c => c.toUpperCase())} ${chosen.length > 1 ? "replace" : "replaces"} the file's values on every row (the price follows the delivery and product type).`}
+              {`${chosen.join(", ").replace(/^./, c => c.toUpperCase())}: for every row (the price follows the delivery and product type).`}
             </p>
           ) : null;
         })()}

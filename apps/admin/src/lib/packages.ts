@@ -19,8 +19,8 @@ export interface ServiceCatalog {
   labels: { speed: Record<string, string>; firstMile: Record<string, string>; lastMile: Record<string, string> };
   productTypes: { code: string; label: string }[];
   /** Package messages and the events behind them (to match Global notifications). */
-  notifications?: { code: string; events: string[] }[];
-  supportNotifications?: { code: string; events: string[] }[];
+  notifications?: { code: string; label?: string; audience?: string; events: string[] }[];
+  supportNotifications?: { code: string; label?: string; events: string[] }[];
 }
 export interface PackageVersion {
   version: number;

@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.46.1 — 2026-11-12
+- Service plans & pricing: Parcel notifications and Support notifications are now a table like Global notifications (message, recipient, SMS, Email, Push). Hover a message to see its text (view only). Channels switched off in Global notifications are clearly greyed out and marked "Off in Global notifications"; a message not in the plan greys out its channels.
+
 ## 1.46.0 — 2026-11-12
 - Service plans & pricing: each parcel and support message now has its own SMS, Email and Push ticks. A channel switched off in Global notifications shows greyed out and unticked, and a message switched off on all three there is not listed.
 - A channel unticked in a service plan is not sent for that message on the plan's parcels (kept on each parcel as booked). With the Delivery code SMS unticked, OTP proof is not offered.

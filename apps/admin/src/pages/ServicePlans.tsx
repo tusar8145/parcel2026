@@ -11,7 +11,7 @@
  *   Hub Pickup       the hold period and the reminder (GET / PUT /packages/settings)
  * The segment (?tab=customer|e-commerce|banking) and the section (?section=) stay in the address.
  */
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
@@ -21,6 +21,7 @@ import { Button, Loading, PageHeading, Panel, Pill, Switch } from "@panel/ui/kit
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog } from "@/lib/admin";
+import { TemplateCard, type EventView } from "@/pages/NotificationMessages";
 import { fmtDate, money, PENDING, SEGMENTS, segLabel, useAssignments, useDeliveryTypes, usePackages, useProducts, useServiceCatalog, type Package, type Product, type Segment, type ServiceCatalog } from "@/lib/packages";
 
 const TAB_OF: Record<string, Segment> = { customer: "CUSTOMER", "e-commerce": "ECOMMERCE", ecommerce: "ECOMMERCE", banking: "BANKING_FINANCIAL", document: "BANKING_FINANCIAL" };
@@ -596,7 +597,7 @@ const MESSAGE_CHANNELS: [MessageChannel, string][] = [
   ["push", "Push"],
 ];
 interface GlobalEvents {
-  events: { event: string; channels: Partial<Record<MessageChannel, { enabledByAdmin: boolean; locked?: boolean }>> }[];
+  events: EventView[];
 }
 
 function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: { seg: Segment; catalog: ServiceCatalog; pkg: Package | null; draft: Draft; setDraft: (d: Draft) => void; products: Product[]; close: () => void; saved: () => Promise<unknown> }) {
@@ -612,6 +613,114 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
     return globalEvents.data.events.some(e => events.includes(e.event) && !!e.channels[ch] && (e.channels[ch]!.enabledByAdmin || !!e.channels[ch]!.locked));
   };
   const allOff = (code: string) => !!globalEvents.data && eventsOf.has(code) && MESSAGE_CHANNELS.every(([ch]) => !channelOnGlobally(code, ch));
+  /** The message's event in Global notifications (its texts for the hover card, its recipient). */
+  const eventOf = (code: string) => globalEvents.data?.events.find(e => (eventsOf.get(code) ?? []).includes(e.event));
+  const hasChannel = (code: string, ch: MessageChannel) => !globalEvents.data || globalEvents.data.events.some(e => (eventsOf.get(code) ?? []).includes(e.event) && !!e.channels[ch]);
+  const [hover, setHover] = useState<{ e: EventView; rect: DOMRect } | null>(null);
+  const dimmed = { opacity: 0.45, cursor: "not-allowed" } as const;
+  /** Package messages as in Global notifications (Parcel): message, recipient, then SMS / Email / Push ticks for this plan. */
+  const messageTable = (items: ServiceCatalog["services"]) => {
+    const info = new Map([...(catalog.notifications ?? []), ...(catalog.supportNotifications ?? [])].map(n => [n.code, n as { code: string; label?: string; audience?: string }]));
+    const cell = (code: string, ch: MessageChannel, name: string) => {
+      if (!hasChannel(code, ch)) return <td className="faint">{`No ${name.toLowerCase()}`}</td>;
+      if (!channelOnGlobally(code, ch))
+        return (
+          <td style={{ background: "var(--surface-2)" }} title={`${name} is switched off for this message in Global notifications`}>
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              <label className="check" style={{ whiteSpace: "nowrap", ...dimmed }}>
+                <input type="checkbox" checked={false} disabled aria-label={`${name}: switched off in Global notifications`} /> Off
+              </label>
+              <Pill tone="warn">Off in Global notifications</Pill>
+            </div>
+          </td>
+        );
+      const on = draft.services.has(code);
+      const key = `${code}:${ch}`;
+      const ticked = on && !draft.channelsOff.has(key);
+      return (
+        <td style={on ? undefined : { background: "var(--surface-2)" }} title={on ? "" : "Tick the message first"}>
+          <label className="check" style={{ whiteSpace: "nowrap", ...(on ? {} : dimmed) }}>
+            <input
+              type="checkbox"
+              aria-label={name}
+              checked={ticked}
+              disabled={!on}
+              onChange={e => {
+                const next = new Set(draft.channelsOff);
+                if (e.target.checked) next.delete(key);
+                else next.add(key);
+                set({ channelsOff: next });
+              }}
+            />{" "}
+            {on ? (ticked ? "On" : "Off") : "Message off"}
+          </label>
+        </td>
+      );
+    };
+    return (
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Message</th>
+              <th>Recipient</th>
+              <th>SMS</th>
+              <th>Email</th>
+              <th>Push</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(s => {
+              const n = info.get(s.code);
+              const ev = eventOf(s.code);
+              const label = n?.label ?? ev?.label ?? s.label;
+              const on = draft.services.has(s.code);
+              return (
+                <tr key={s.code}>
+                  <td>
+                    <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+                      <input
+                        type="checkbox"
+                        aria-label={label}
+                        checked={on}
+                        onChange={e => {
+                          const next = new Set(draft.services);
+                          if (e.target.checked) next.add(s.code);
+                          else next.delete(s.code);
+                          set({ services: next });
+                        }}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div
+                        tabIndex={0}
+                        style={{ cursor: ev ? "help" : undefined, ...(on ? {} : { opacity: 0.6 }) }}
+                        title={s.hint || undefined}
+                        onMouseEnter={x => ev && setHover({ e: ev, rect: x.currentTarget.getBoundingClientRect() })}
+                        onMouseLeave={() => setHover(null)}
+                        onFocus={x => ev && setHover({ e: ev, rect: x.currentTarget.getBoundingClientRect() })}
+                        onBlur={() => setHover(null)}
+                      >
+                        <strong>{label}</strong> {on ? null : <Pill>Not in this plan</Pill>}
+                        <span className="sub">{ev ? `${ev.event} · hover for the text` : s.code}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{n?.audience ?? ev?.audience ?? "—"}</td>
+                  {MESSAGE_CHANNELS.map(([ch, name]) => (
+                    <Fragment key={ch}>{cell(s.code, ch, name)}</Fragment>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="faint" style={{ margin: "8px 12px 4px", fontSize: 12.5 }}>
+          Tick where each message goes for this plan. Greyed-out boxes are switched off in Global notifications (change them there); messages switched off on all three there are not listed. Hover a message to see its text.
+        </p>
+        {hover ? <TemplateCard e={hover.e} rect={hover.rect} readOnly /> : null}
+      </div>
+    );
+  };
   const fields = catalog.priceFields.filter(f => f.segments.includes(seg));
   const deliveryTypes = useDeliveryTypes();
   const offered = (deliveryTypes.data ?? []).filter(t => t.active && t.segments.includes(seg));
@@ -708,49 +817,10 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
                     {g.label}
                     <small className="faint" style={{ fontWeight: 500 }}>{`${items.filter(s => draft.services.has(s.code) || s.core).length} of ${items.length} on`}</small>
                   </summary>
-                  <div style={{ display: "grid", gap: 6, padding: "2px 12px 12px" }}>
-                    {messages ? <small className="faint">SMS, email and push per message. A channel switched off in Global notifications is greyed out; messages off on all three there aren't listed.</small> : null}
-                    {items.map(s =>
-                      messages ? (
-                        <div key={s.code} className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                          <label className="check" title={s.hint || ""}>
-                            <input
-                              type="checkbox"
-                              checked={draft.services.has(s.code)}
-                              onChange={e => {
-                                const next = new Set(draft.services);
-                                if (e.target.checked) next.add(s.code);
-                                else next.delete(s.code);
-                                set({ services: next });
-                              }}
-                            />{" "}
-                            {s.label}
-                          </label>
-                          <span className="row" style={{ gap: 12 }}>
-                            {MESSAGE_CHANNELS.map(([ch, name]) => {
-                              const globalOn = channelOnGlobally(s.code, ch);
-                              const key = `${s.code}:${ch}`;
-                              return (
-                                <label key={ch} className="check" style={{ fontSize: 12.5 }} title={globalOn ? "" : `${name} is switched off for this message in Global notifications`}>
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`${s.label}: ${name}`}
-                                    checked={globalOn && draft.services.has(s.code) && !draft.channelsOff.has(key)}
-                                    disabled={!globalOn || !draft.services.has(s.code)}
-                                    onChange={e => {
-                                      const next = new Set(draft.channelsOff);
-                                      if (e.target.checked) next.delete(key);
-                                      else next.add(key);
-                                      set({ channelsOff: next });
-                                    }}
-                                  />{" "}
-                                  {name}
-                                </label>
-                              );
-                            })}
-                          </span>
-                        </div>
-                      ) : (
+                  <div style={{ display: "grid", gap: 6, padding: messages ? "0 0 4px" : "2px 12px 12px" }}>
+                    {messages ? (
+                      messageTable(items)
+                    ) : items.map(s => (
                       <label key={s.code} className="check" title={s.hint || ""}>
                         <input
                           type="checkbox"
@@ -766,8 +836,7 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
                         {s.label}
                         {s.core ? " (always on)" : ""}
                       </label>
-                      ),
-                    )}
+                    ))}
                   </div>
                 </details>
               );

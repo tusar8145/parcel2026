@@ -13,9 +13,9 @@ import { Button, Loading, PageHeading, Panel, Pill } from "@panel/ui/kit";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
 
-type Channel = "sms" | "email" | "push";
+export type Channel = "sms" | "email" | "push";
 const CHANNEL_NAME: Record<Channel, string> = { sms: "SMS", email: "Email", push: "Push" };
-interface ChannelView {
+export interface ChannelView {
   enabledByAdmin: boolean;
   locked?: boolean;
   customized?: boolean;
@@ -24,7 +24,7 @@ interface ChannelView {
   body?: string;
   html?: string;
 }
-interface EventView {
+export interface EventView {
   event: string;
   label: string;
   group: string;
@@ -231,10 +231,10 @@ function Messages() {
 }
 
 const PREVIEW_LIMIT = 700;
-const clip = (text: string) => (text.length > PREVIEW_LIMIT ? `${text.slice(0, PREVIEW_LIMIT).trimEnd()}… (Edit shows the full text)` : text);
+const clip = (text: string, readOnly = false) => (text.length > PREVIEW_LIMIT ? `${text.slice(0, PREVIEW_LIMIT).trimEnd()}…${readOnly ? "" : " (Edit shows the full text)"}` : text);
 
-/** Hover (or keyboard focus) on a message name shows its current SMS / email text. */
-function TemplateCard({ e, rect }: { e: EventView; rect: DOMRect }) {
+/** Hover (or keyboard focus) on a message name shows its current SMS / email text (also Service plans & pricing, read only). */
+export function TemplateCard({ e, rect, readOnly = false }: { e: EventView; rect: DOMRect; readOnly?: boolean }) {
   const block = (title: string, ch: ChannelView, body: React.ReactNode) => (
     <div style={{ display: "grid", gap: 4 }}>
       <div className="row" style={{ gap: 6 }}>
@@ -245,7 +245,7 @@ function TemplateCard({ e, rect }: { e: EventView; rect: DOMRect }) {
       {body}
     </div>
   );
-  const text = (v?: string) => <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, lineHeight: 1.5 }}>{clip(v || "")}</div>;
+  const text = (v?: string) => <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 13, lineHeight: 1.5 }}>{clip(v || "", readOnly)}</div>;
   const top = rect.bottom + 8 + 300 > window.innerHeight ? Math.max(16, rect.top - 308) : rect.bottom + 8;
   return createPortal(
     <div role="tooltip" style={{ position: "fixed", zIndex: 60, left: Math.max(16, Math.min(rect.left, window.innerWidth - 456)), top, maxWidth: "min(440px, calc(100vw - 32px))", maxHeight: 300, overflow: "auto", display: "grid", gap: 10, padding: "12px 14px", background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 14px 40px #1018282e", pointerEvents: "none" }}>

@@ -101,6 +101,7 @@ export default function ServicePlans() {
         seg={seg}
         catalog={c}
         pkg={packages.data.find(p => p.id === editing) ?? null}
+        sameCategory={packages.data.filter(p => p.segment === seg)}
         draft={draft}
         setDraft={setDraft}
         products={products.data ?? []}
@@ -600,9 +601,25 @@ interface GlobalEvents {
   events: EventView[];
 }
 
-function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: { seg: Segment; catalog: ServiceCatalog; pkg: Package | null; draft: Draft; setDraft: (d: Draft) => void; products: Product[]; close: () => void; saved: () => Promise<unknown> }) {
+function Editor({ seg, catalog, pkg, sameCategory, draft, setDraft, products, close, saved }: { seg: Segment; catalog: ServiceCatalog; pkg: Package | null; sameCategory: Package[]; draft: Draft; setDraft: (d: Draft) => void; products: Product[]; close: () => void; saved: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   const isNew = !pkg;
+  // New package: start from an existing package of the same category (services, message channels, prices, description).
+  const [copiedFrom, setCopiedFrom] = useState("");
+  function copyFrom(id: string) {
+    setCopiedFrom(id);
+    const src = sameCategory.find(p => p.id === id);
+    const base = src?.current || src?.versions?.[0];
+    if (!src || !base) return;
+    setDraft({
+      ...draft,
+      description: src.description ?? "",
+      services: new Set(base.services),
+      channelsOff: new Set(base.notificationChannelsOff ?? []),
+      prices: { ...(catalog.defaults || {}), ...(base.prices || {}) },
+    });
+    toast(`Copied everything from ${src.name}. Give the new package its own name.`, "good");
+  }
   const services = catalog.services.filter(s => s.segments.includes(seg));
   // Global notifications (super admin): a channel switched off there for every event of a message is off here too.
   const globalEvents = useQuery({ queryKey: ["admin", "notification-events"], queryFn: () => api<GlobalEvents>("/notifications/events") });
@@ -779,6 +796,22 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
             Details
           </h3>
           <div className="form-grid">
+            {isNew && sameCategory.length ? (
+              <label className="field" style={{ gridColumn: "1 / -1" }}>
+                <span>Copy from an existing package</span>
+                <Select className="select" aria-label="Copy from an existing package" value={copiedFrom} onChange={e => copyFrom(e.target.value)}>
+                  <option value="">Start from the defaults</option>
+                  {sameCategory.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.isDefault ? " (default)" : ""}
+                      {p.status === "ARCHIVED" ? " (archived)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                <small>{`Only ${segLabel(seg)} packages. Copies the services, message channels, prices and description; you can change any of it before saving.`}</small>
+              </label>
+            ) : null}
             <label className="field">
               <span>Package name *</span>
               <input className="input" maxLength={80} required value={draft.name} onChange={e => set({ name: e.target.value })} />

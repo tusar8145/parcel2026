@@ -18,7 +18,7 @@ import { actorLabel, hasRole, merchantIdsOf, type Actor } from "../../common/aut
 import type { RequestMeta } from "../../common/auth/decorators";
 import { AppError, forbidden, notFound } from "../../common/errors";
 import { nextTrackingId, normalizeTrackingId } from "../../common/counters";
-import { parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
+import { offeredProofMethods, parcelInclude, parcelView, publicTrackingView, type ParcelWithRelations } from "./parcel.views";
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { assertRiderAssignable, hubManagerForHubIds, opsHubScope } from "./ops-scope";
 import { dateRangeWhere, failureWhere, forHubsWhere, merchantFiltersWhere, lineWhere, stageWhere, type stageFilterSchema } from "./parcel-stages";
@@ -219,6 +219,12 @@ export class ParcelsService {
         ));
       const tags = opts.tags ?? (await this.bookingTags(quote.segment, input, tx));
       const fields = this.packages.parcelFields(quote, product, tags);
+      // "Set specific proof": one of the methods this parcel's package offers.
+      if (input.proofMethod) {
+        const offered = offeredProofMethods({ packageVersionId: fields.packageVersionId, services: fields.services, notifications: fields.notifications, notifyChannels: fields.notifyChannels } as never) as string[];
+        if (!offered.includes(input.proofMethod))
+          throw new AppError("PROOF_METHOD_NOT_OFFERED", `This parcel's service plan doesn't offer that proof (it offers ${offered.join(", ") || "none"})`, 422, [{ path: "proofMethod", code: "PROOF_METHOD_NOT_OFFERED", message: "Choose one of the offered proof methods" }]);
+      }
       if (!dropOff && quote.dropHub) dropOff = { hub: { id: quote.dropHub.id, name: quote.dropHub.name, address: quote.dropHub.address } };
       // A pre-printed CN label (CN stock) becomes the tracking ID; otherwise a new one is issued.
       const cn = input.cn ? await claimCn(tx, input.cn, { merchantId: ctx.merchantId, channel: ctx.channel }) : null;
@@ -262,6 +268,8 @@ export class ParcelsService {
           receiverRelation: input.receiverRelation,
           originBranchCode: input.originBranchCode,
           codAmount: input.codAmount,
+          proofRequired: input.proofRequired ?? true,
+          proofMethod: input.proofMethod ?? null,
           ...fields,
           pricingSnapshot: this.packages.snapshot(quote, opts.import?.missingFields.length ? { destination: dest } : {}),
           estimatedDeliveryAt: estimateDelivery(quote.serviceLevel, input.pickup.district === dest.district),

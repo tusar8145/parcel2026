@@ -20,6 +20,14 @@ import { MessagePlanView } from "@panel/ui/MessagePlan";
 
 const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
+/** Delivery proof as booked: not required, one specific method, or any of the parcel's methods. */
+const PROOF_SHORT: Record<string, string> = { PHOTO: "Scan POD photo", OTP: "OTP", SIGNATURE: "Signature" };
+function proofText(p: { proofRequired?: boolean; proofMethod?: string | null; proofMethods?: string[] }) {
+  if (p.proofRequired === false) return "Not required";
+  if (p.proofMethod) return `Required · ${PROOF_SHORT[p.proofMethod] ?? p.proofMethod} only`;
+  return p.proofMethods?.length ? `Required · ${p.proofMethods.map(m => PROOF_SHORT[m] ?? m).join(" / ")}` : "Required";
+}
+
 export default function ParcelDrawer() {
   const [params, setParams] = useSearchParams();
   const id = params.get("parcel");
@@ -130,6 +138,7 @@ function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: 
                   ["Service", [p.serviceLevelLabel, p.type === "DOCUMENT" ? "Document" : "Parcel", p.weightKg != null ? `${p.weightKg} kg` : ""].filter(Boolean).join(" · ")],
                   ["Delivery type", p.deliveryType || p.service?.speedLabel || ""],
                   ["Priority", p.priority || ""],
+                  ["Delivery proof", proofText(p)],
                   [
                     "Product",
                     p.product ? (

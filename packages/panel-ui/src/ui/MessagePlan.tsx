@@ -9,7 +9,10 @@ import { when } from "../lib/format";
 type State = "SENT" | "PENDING" | "FAILED" | null;
 export interface MessagePlan {
   channels: { sms: boolean; email: boolean; push: boolean };
-  items: { code: string; label: string; audience: string; sms: State; email: State; done: boolean }[];
+  /** The ticked messages this parcel's journey gets; `when`: only if that happens (a failed attempt, a return…). */
+  items: { code: string; label: string; audience: string; sms: State; email: State; done: boolean; when?: string }[];
+  /** Ticked messages that don't apply to this parcel (e.g. collected from the hub: no out-for-delivery), and why. */
+  skipped?: { code: string; label: string; reason: string }[];
   done: number;
   total: number;
   sent: { channel: string; event: string; eventLabel: string; state: "SENT" | "PENDING" | "FAILED"; at: string }[];
@@ -59,7 +62,7 @@ export function MessagePlanView({ plan, booked }: { plan?: MessagePlan | null; b
                   {i.done ? "✓" : "○"}
                 </span>
                 {i.label}
-                <span className="faint" style={{ fontSize: 11 }}>{` · ${i.audience}`}</span>
+                <span className="faint" style={{ fontSize: 11 }}>{` · ${i.audience}${i.when ? ` · ${i.when}` : ""}`}</span>
               </span>
               <span className="row" style={{ gap: 4 }}>
                 {channels.sms ? <StateTag channel="SMS" state={i.sms} /> : null}
@@ -71,6 +74,19 @@ export function MessagePlanView({ plan, booked }: { plan?: MessagePlan | null; b
       ) : (
         <p className="faint" style={{ margin: 0 }}>No messages were ticked for this parcel.</p>
       )}
+      {plan.skipped?.length ? (
+        <div>
+          <div className="faint" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 0 4px" }}>{`Not for this parcel (${plan.skipped.length})`}</div>
+          <div className="stack" style={{ gap: 2 }}>
+            {plan.skipped.map(k => (
+              <div key={k.code} className="faint" style={{ fontSize: 12 }}>
+                <span style={{ textDecoration: "line-through" }}>{k.label}</span>
+                {` · ${k.reason}`}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {plan.sent.length ? (
         <div>
           <div className="faint" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 0 4px" }}>

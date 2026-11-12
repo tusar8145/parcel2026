@@ -97,6 +97,15 @@
     if (checks.length) parts.push(`<div class="${fieldClass} full df-svc-checks" style="display:flex;flex-direction:row;gap:8px 18px;flex-wrap:wrap">${checks.join("")}</div>`);
     if (o.cod && codAmount)
       parts.push(field(`${prefix}CodAmount`, "COD amount (৳)", `<input id="${prefix}CodAmount" type="number" min="1" max="1000000" step="1" inputmode="numeric" placeholder="Cash to collect from the recipient">`, !codChecked));
+    // Delivery proof: required (default) and, optionally, one specific method of the package's (o.proofMethods).
+    const proofs = o.proofMethods || [];
+    parts.push(
+      `<div class="${fieldClass} full" id="${prefix}Proof" data-proof-box="${prefix}" style="display:grid;gap:6px"><label class="df-check" style="display:flex;gap:7px;align-items:center;font-weight:600"><input type="checkbox" id="${prefix}ProofRequired" data-proof checked style="width:auto;padding:0"> Delivery proof required</label>${
+        proofs.length
+          ? `<label class="df-check" data-proof-specific style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="${prefix}ProofSpecific" data-proof style="width:auto;padding:0"> Set specific proof</label><select id="${prefix}ProofMethod" data-proof hidden style="max-width:360px">${proofs.map(m => `<option value="${esc(m)}">${esc(PROOF_LABEL[m] || m)}</option>`).join("")}</select>`
+          : ""
+      }<small data-proof-note style="color:#8792a2;font-size:12px">${esc(`The rider must give one of: ${proofs.map(m => PROOF_LABEL[m] || m).join(", ") || "the package's proof"}.`)}</small></div>`,
+    );
     if (view.notifications?.length)
       parts.push(
         `<details class="${fieldClass} full" id="${prefix}Notifications" style="display:block"><summary style="cursor:pointer;font-weight:600">Messages to send (${view.notifications.length} of ${view.notifications.length})</summary><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:5px 12px;margin-top:6px;font-size:13px">${view.notifications
@@ -108,8 +117,44 @@
 
   const fieldOf = el => el?.closest(".form-field, .field");
 
+  const PROOF_LABEL = { PHOTO: "Scan POD (signed invoice photo)", OTP: "OTP verification (recipient's code)", SIGNATURE: "Recipient signature" };
+  /** The proof methods offered now: OTP only while the Delivery code message is sent. */
+  function proofOptions(prefix) {
+    const select = $(`${prefix}ProofMethod`);
+    if (!select) return [];
+    const code = document.querySelector(`#${prefix}Notifications [data-svc-notify="notify.delivery_code"]`);
+    const otp = !silentProduct(prefix) && (!code || code.checked);
+    for (const o of select.options) o.disabled = o.value === "OTP" && !otp;
+    if (select.selectedOptions[0]?.disabled) select.value = [...select.options].find(o => !o.disabled)?.value || "";
+    return [...select.options].filter(o => !o.disabled).map(o => o.value);
+  }
+  /** Shows "Set specific proof" and its list only when proof is required; the note says what the rider must give. */
+  function syncProof(prefix) {
+    const req = $(`${prefix}ProofRequired`);
+    if (!req) return;
+    const specific = $(`${prefix}ProofSpecific`);
+    const select = $(`${prefix}ProofMethod`);
+    const offered = proofOptions(prefix);
+    const wrap = document.querySelector(`#${prefix}Proof [data-proof-specific]`);
+    if (wrap) wrap.hidden = !req.checked;
+    if (select) select.hidden = !(req.checked && specific?.checked);
+    const note = document.querySelector(`#${prefix}Proof [data-proof-note]`);
+    if (note)
+      note.textContent = !req.checked
+        ? "The rider can complete the delivery without proof."
+        : specific?.checked && select?.value
+          ? `The rider must give: ${PROOF_LABEL[select.value] || select.value}.`
+          : `The rider must give one of: ${offered.map(m => PROOF_LABEL[m] || m).join(", ") || "the package's proof"}.`;
+  }
+  // The proof block keeps itself in step (its boxes, and the messages list for OTP).
+  document.addEventListener("change", e => {
+    const box = e.target.closest?.("[data-proof-box]") || (e.target.matches?.("[data-svc-notify]") && document.querySelector("[data-proof-box]"));
+    if (box) syncProof(box.dataset.proofBox);
+  });
+
   /** Shows the drop / collection hub and the COD amount only for those choices; updates the messages count. */
   function sync(prefix) {
+    syncProof(prefix);
     const first = $(`${prefix}FirstMile`)?.value;
     const drop = fieldOf($(`${prefix}DropHub`));
     if (drop && first) drop.hidden = first !== "HUB_DROP";
@@ -156,7 +201,18 @@
       // Only a changed checklist is sent (default: every message in the package). A product that sends no
       // messages needs nothing: the API stores an empty list for it.
       ...(boxes.length && ticked.length !== boxes.length && !silentProduct(prefix) ? { notifications: ticked } : {}),
+      ...readProof(prefix),
     };
+  }
+
+  /** { proofRequired, proofMethod? } from the proof block (absent: required, any method). */
+  function readProof(prefix) {
+    const req = $(`${prefix}ProofRequired`);
+    if (!req) return {};
+    if (!req.checked) return { proofRequired: false };
+    const select = $(`${prefix}ProofMethod`);
+    const method = $(`${prefix}ProofSpecific`)?.checked && select && !select.selectedOptions[0]?.disabled ? select.value : "";
+    return { proofRequired: true, ...(method ? { proofMethod: method } : {}) };
   }
 
   /** Inline errors for the drop-off hub (drop at hub) and the COD amount (COD ticked). */

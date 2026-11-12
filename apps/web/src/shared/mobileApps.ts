@@ -5,7 +5,7 @@
  */
 export const MOBILE_APPS = {
   merchant: { href: "/downloads/merchant.apk", fileName: "Merchant-1.4.3.apk", version: "1.4.3", sizeMb: 69 },
-  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.6.1.apk", version: "1.6.1", sizeMb: 68 },
+  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.6.2.apk", version: "1.6.2", sizeMb: 68 },
   operations: { href: "/downloads/operations.apk", fileName: "Operations-1.5.1.apk", version: "1.5.1", sizeMb: 70 },
 } as const;
 

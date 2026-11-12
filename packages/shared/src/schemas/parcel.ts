@@ -70,6 +70,10 @@ export const quoteRequestSchema = z.object({
   merchantId: z.uuid().optional(),
 }).extend(serviceSelectionSchema.omit({ notifications: true }).shape);
 
+/** How a rider proves a delivery: a photo of the signed invoice, the recipient's code (OTP) or their signature. */
+export const PROOF_METHODS = ["PHOTO", "OTP", "SIGNATURE"] as const;
+export type ProofMethod = (typeof PROOF_METHODS)[number];
+
 export const createParcelSchema = z.object({
   sender: z.object({ name: text(120), phone: phoneSchema }),
   pickup: addressPartsSchema,
@@ -101,6 +105,10 @@ export const createParcelSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{2,4}-\d{6}-[0-9A-Z]{4,8}$/, "Enter the consignment number printed on the label")
     .optional(),
+  /** Delivery proof required (default): off, the rider may complete the delivery without proof. */
+  proofRequired: z.boolean().default(true),
+  /** A specific proof method (one the parcel's package offers); empty = any of them. */
+  proofMethod: z.enum(PROOF_METHODS, "Choose PHOTO, OTP or SIGNATURE").optional(),
 }).extend(serviceSelectionSchema.shape);
 export type CreateParcelInput = z.infer<typeof createParcelSchema>;
 
@@ -196,11 +204,14 @@ export const deliveryOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({
     outcome: z.literal("DELIVERED"),
     receivedBy: text(120),
-    proof: z.discriminatedUnion("method", [
-      z.object({ method: z.literal("OTP"), otp: z.string().trim().regex(/^\d{4,6}$/, "Enter the recipient's code") }),
-      z.object({ method: z.literal("SIGNATURE"), image: dataUrl }),
-      z.object({ method: z.literal("PHOTO"), image: dataUrl }),
-    ]),
+    /** Required unless the parcel was booked with "Delivery proof required" off (checked by the server). */
+    proof: z
+      .discriminatedUnion("method", [
+        z.object({ method: z.literal("OTP"), otp: z.string().trim().regex(/^\d{4,6}$/, "Enter the recipient's code") }),
+        z.object({ method: z.literal("SIGNATURE"), image: dataUrl }),
+        z.object({ method: z.literal("PHOTO"), image: dataUrl }),
+      ])
+      .optional(),
     /** Cash collected from the recipient; must equal the parcel's COD amount, or with `partial` the cash actually collected (0 … COD). */
     codCollected: amount.default(0),
     /** Partial delivery: the recipient kept part of the order; the rest goes back on a new return order. */

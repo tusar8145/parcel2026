@@ -243,23 +243,28 @@ export class RiderTasksService {
         const { cod, collected } = cashFor(parcel, { partial, codCollected: input.codCollected });
         if (!partial && cod > 0 && input.codCollected !== cod)
           throw new AppError("COD_MISMATCH", `Collect exactly ৳${cod.toLocaleString("en-BD")} before completing the delivery (or tick Partial delivery)`, 422, { expected: cod });
-        // Service packages: only the proof methods active for this parcel (OTP needs the delivery code message).
+        // Service packages: only the proof methods active for this parcel (OTP needs the delivery code message; a
+        // specific method set at booking narrows it to that one). Booked with "Delivery proof required" off: none needed.
+        const proof = input.proof;
+        if (!proof && parcel.proofRequired)
+          throw new AppError("PROOF_REQUIRED", "This parcel needs delivery proof: the recipient's code, signature or a photo of the signed invoice", 422, { allowed: proofMethodsOf(parcel) });
         const allowed = proofMethodsOf(parcel);
-        if (!allowed.includes(input.proof.method))
+        if (proof && !allowed.includes(proof.method))
           throw new AppError("PROOF_METHOD_NOT_ALLOWED", `This parcel takes ${allowed.map(m => (m === "OTP" ? "the recipient's code" : m === "PHOTO" ? "a photo of the signed invoice" : "the recipient's signature")).join(" or ")} as proof`, 422, { allowed });
         let fileId: string | undefined;
         let otpVerified = false;
-        if (input.proof.method === "OTP") {
+        if (proof?.method === "OTP") {
           // No code yet (e.g. still ASSIGNED): the recipient only gets one when the delivery starts.
           if (!parcel.deliveryOtpEncrypted)
             throw new AppError("DELIVERY_NOT_STARTED", "Start the delivery first; the code is sent to the recipient then", HttpStatus.CONFLICT);
           const expected = decrypt(parcel.deliveryOtpEncrypted);
-          if (!safeEqual(expected, input.proof.otp)) throw new AppError("INVALID_DELIVERY_CODE", "The recipient's code is incorrect", 422);
+          if (!safeEqual(expected, proof.otp)) throw new AppError("INVALID_DELIVERY_CODE", "The recipient's code is incorrect", 422);
           otpVerified = true;
-        } else {
-          const file = await this.storage.saveDataUrl(input.proof.image, `${parcel.trackingId}-${input.proof.method.toLowerCase()}`, actor.userId, tx);
+        } else if (proof) {
+          const file = await this.storage.saveDataUrl(proof.image, `${parcel.trackingId}-${proof.method.toLowerCase()}`, actor.userId, tx);
           fileId = file.id;
         }
+        const proofText = proof ? `${proof.method === "OTP" ? "OTP" : proof.method.toLowerCase()} proof` : "no proof (not required for this parcel)";
         const now = new Date();
         const capture = proofCapture(input.capture, now);
         await this.workflow.transition(
@@ -271,15 +276,15 @@ export class RiderTasksService {
             data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self", ...(partial ? partialData(collected, input.note) : {}) },
             ...(partial ? { title: "Partially delivered", metadata: { partial: true, codCollected: collected } } : {}),
             description: partial
-              ? `Partly delivered to ${input.receivedBy} (${input.proof.method === "OTP" ? "OTP" : input.proof.method.toLowerCase()} proof): ৳${collected.toLocaleString("en-BD")} collected${cod > 0 ? ` of ৳${cod.toLocaleString("en-BD")}` : ""}. What the recipient didn't keep goes back to the sender.`
-              : `Delivered to ${input.receivedBy} with ${input.proof.method === "OTP" ? "OTP" : input.proof.method.toLowerCase()} proof.`,
+              ? `Partly delivered to ${input.receivedBy} (${proofText}): ৳${collected.toLocaleString("en-BD")} collected${cod > 0 ? ` of ৳${cod.toLocaleString("en-BD")}` : ""}. What the recipient didn't keep goes back to the sender.`
+              : `Delivered to ${input.receivedBy} with ${proofText}.`,
             internalNote: input.note,
           },
           actor,
           meta,
           after,
         );
-        await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: input.proof.method, receivedBy: input.receivedBy, fileId, otpVerified, note: input.note, ...capture } });
+        if (proof) await tx.deliveryProof.create({ data: { parcelId: parcel.id, method: proof.method, receivedBy: input.receivedBy, fileId, otpVerified, note: input.note, ...capture } });
         await tx.deliveryAttempt.create({ data: { parcelId: parcel.id, riderId, outcome: "DELIVERED", note: input.note } });
         if (collected > 0) await tx.codCollection.create({ data: { parcelId: parcel.id, riderId, amount: collected, collectedAt: now } });
         if (partial) {

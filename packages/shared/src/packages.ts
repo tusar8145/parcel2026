@@ -424,6 +424,8 @@ export function packageOptions(segment: PackageSegment, services: readonly strin
     openBox: segment === "ECOMMERCE" && has.has("option.open_box"),
     weight: !isBanking(segment),
     notifications: bookableNotifications(services),
+    /** Delivery proof the rider may give (OTP only with the Delivery code message): "Set specific proof" picks one. */
+    proofMethods: proofMethodsFor(services, services),
     defaultFirstMile: defaultFirstMile(has),
     defaultLastMile: defaultLastMile(has),
   };

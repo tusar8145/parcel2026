@@ -91,6 +91,10 @@ export interface ImportServiceOptions {
   priority?: string | null;
   /** E-commerce / customer: the product type every row is priced as (overwrites its product's type). */
   productType?: ProductType | null;
+  /** The modal's "Delivery proof required" for every row (default on). */
+  proofRequired?: boolean | null;
+  /** The modal's "Set specific proof" for every row (PHOTO, OTP or SIGNATURE); empty = any the package offers. */
+  proofMethod?: "PHOTO" | "OTP" | "SIGNATURE" | null;
 }
 
 export interface RowResult {
@@ -558,6 +562,8 @@ export class ImportEngineService {
       speed,
       openBox,
       product,
+      proofRequired: ctx.services.proofRequired ?? true,
+      proofMethod: ctx.services.proofMethod ?? undefined,
     };
     // Priced to the destination, or (incomplete) to the configured default: inside the sender's own district or a fixed zone.
     const fallback =

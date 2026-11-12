@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.45.0 — 2026-11-12
+- Booking (Courier Operations, merchant panels, Excel imports): "Delivery proof required" (ticked by default) and "Set specific proof" to choose one of the service plan's proof methods (signed invoice photo, OTP or signature).
+- Rider app 1.6.2: a parcel booked without proof required can be delivered with "No proof"; a parcel with a specific proof takes only that one. The server refuses a delivery without the proof the parcel needs.
+- Parcel details show the delivery proof as booked.
+- Parcel details › Messages follow the parcel's journey: e.g. a collect-from-hub parcel lists no "Out for delivery", a hub drop-off no pickup messages, merchants no pickup or failed-attempt messages; "only if" messages (failed attempt, return, cancellation) are marked, and the ones that don't apply are listed with the reason.
+
 ## 1.44.0 — 2026-11-12
 - Each Android app has its own icon: Rider (motorbike, navy), Operations (warehouse, blue), Merchant (shop, yellow). New apps: Rider 1.6.1, Operations 1.5.1, Merchant 1.4.3.
 - "Update the app" page: the download link itself can be tapped too, the browser is tried several ways, and when none opens the link is copied to paste into Chrome.

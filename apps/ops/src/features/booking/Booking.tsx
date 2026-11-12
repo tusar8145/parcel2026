@@ -47,7 +47,7 @@ interface Merchant {
   pickupHub: { id: string; name: string } | null;
 }
 interface PackageView {
-  options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean };
+  options: { firstMiles: string[]; defaultFirstMile?: string; lastMiles: string[]; defaultLastMile?: string; speeds: string[]; cod: boolean; openBox: boolean; proofMethods?: string[] };
   labels: { firstMile: Record<string, string>; lastMile: Record<string, string>; speed: Record<string, string>; productType?: Record<string, string> };
   /** Products with their message channels (sms, email, push: where their parcels' messages go). */
   products?: { id: string; name: string; type: string; channels?: string[] }[];
@@ -78,6 +78,9 @@ export function openBooking(line?: BookingLine) {
   return openCustom(close => <BookingDialog fixed={line} close={() => close()} />, "wide");
 }
 
+/** Delivery proof methods as the booking shows them. */
+export const PROOF_LABEL: Record<string, string> = { PHOTO: "Scan POD (signed invoice photo)", OTP: "OTP verification (recipient's code)", SIGNATURE: "Recipient signature" };
+
 /** Package views are the same for a minute (order-services.js load cache). */
 const pkgCache = new Map<string, { view: PackageView; until: number }>();
 async function loadPackage(path: string) {
@@ -101,6 +104,8 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   const [delivery, setDelivery] = useState<Place>(emptyPlace);
   const [parcel, setParcel] = useState({ product: "", weight: "0.5", contents: "", ref: "", cn: "" });
   const [pkg, setPkg] = useState<{ key: string; view: PackageView | null; error?: string } | null>(null);
+  // Delivery proof: required (default) and, optionally, one specific method of the package's.
+  const [proof, setProof] = useState({ required: true, specific: false, method: "" });
   const [svc, setSvc] = useState({ firstMile: "", dropHubId: "", lastMile: "", speed: "REGULAR", cod: false, codAmount: "", openBox: false, off: new Set<string>(), category: "", priority: "" });
   const [quote, setQuote] = useState<{ q?: Quote; text?: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -184,6 +189,9 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
   }, [view, svc, parcel.product, silent]);
   const drop = service?.firstMile === "HUB_DROP";
   const hubCollect = service?.lastMile === "HUB_COLLECT";
+  // The proof methods for this booking: the package's, without OTP when the Delivery code message isn't sent.
+  const proofMethods = (view?.options.proofMethods ?? []).filter(m => m !== "OTP" || (!silent && (!service?.notifications || service.notifications.includes("notify.delivery_code"))));
+  const proofMethod = proof.required && proof.specific && proofMethods.includes(proof.method) ? proof.method : undefined;
 
   // Live price: the same places and choices the booking sends (product included, so the price matches).
   const quoteBody = () => {
@@ -302,6 +310,8 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
       contents: parcel.contents.trim() || undefined,
       merchantOrderRef: parcel.ref.trim() || undefined,
       cn: parcel.cn.trim().toUpperCase() || undefined,
+      proofRequired: proof.required,
+      ...(proofMethod ? { proofMethod } : {}),
     };
     setBusy(true);
     try {
@@ -498,6 +508,37 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
                   ) : null}
                 </div>
               ) : null}
+              <div className="full" style={{ display: "grid", gap: 6 }}>
+                <label className="check" style={{ fontWeight: 600 }}>
+                  <input type="checkbox" checked={proof.required} onChange={e => setProof(p => ({ ...p, required: e.target.checked }))} /> Delivery proof required
+                </label>
+                {proof.required && proofMethods.length ? (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={proof.specific}
+                      onChange={e => setProof(p => ({ ...p, specific: e.target.checked, method: p.method && proofMethods.includes(p.method) ? p.method : proofMethods[0] }))}
+                    />{" "}
+                    Set specific proof
+                  </label>
+                ) : null}
+                {proof.required && proof.specific && proofMethods.length ? (
+                  <Select className="select" aria-label="Specific proof" value={proofMethod ?? proofMethods[0]} onChange={e => setProof(p => ({ ...p, method: e.target.value }))} style={{ maxWidth: 360 }}>
+                    {proofMethods.map(m => (
+                      <option key={m} value={m}>
+                        {PROOF_LABEL[m] ?? m}
+                      </option>
+                    ))}
+                  </Select>
+                ) : null}
+                <small className="faint">
+                  {!proof.required
+                    ? "The rider can complete the delivery without proof."
+                    : proofMethod
+                      ? `The rider must give: ${PROOF_LABEL[proofMethod]}.`
+                      : `The rider must give one of: ${proofMethods.map(m => PROOF_LABEL[m] ?? m).join(", ") || "the package's proof"}.`}
+                </small>
+              </div>
               {o!.cod && svc.cod
                 ? field("codAmount", "COD amount (৳)", input("codAmount", svc.codAmount, v => setSvc(s => ({ ...s, codAmount: v })), { type: "number", min: 1, max: 1000000, step: 1, inputMode: "numeric", placeholder: "Cash to collect from the recipient" }), { req: true })
                 : null}

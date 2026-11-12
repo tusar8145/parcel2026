@@ -98,10 +98,15 @@ export function serviceView(p: ParcelWithRelations, internal = true) {
 
 /** Methods the delivery rider may use (all three for parcels booked before packages). */
 /** OTP needs the delivery code SMS: ticked at booking and the category's SMS on. */
-export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null }) =>
+/** A specific method set at booking (proofMethod) narrows them to that one while the package still offers it. */
+export const offeredProofMethods = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null }) =>
   p.packageVersionId
     ? proofMethodsFor(p.services, p.notifyChannels && !p.notifyChannels.includes("sms") ? p.notifications.filter(n => n !== "notify.delivery_code") : p.notifications)
     : (["OTP", "SIGNATURE", "PHOTO"] as const).slice();
+export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null; proofMethod?: string | null }) => {
+  const offered = offeredProofMethods(p);
+  return p.proofMethod && (offered as string[]).includes(p.proofMethod) ? offered.filter(m => m === p.proofMethod) : offered;
+};
 
 /** Collect from hub: the collection hub, when it became ready and the last day to collect. */
 const collectView = (p: ParcelWithRelations) =>
@@ -216,6 +221,9 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
     /** Service package choices (null: booked before packages). */
     service: serviceView(p, opts.internal),
     proofMethods: proofMethodsOf(p),
+    /** Booked with "Delivery proof required" (default) and, optionally, one specific method. */
+    proofRequired: p.proofRequired,
+    proofMethod: p.proofMethod,
     openBox: p.openBox,
     onDemand: p.onDemand,
     product: p.productLabel ?? p.productName,

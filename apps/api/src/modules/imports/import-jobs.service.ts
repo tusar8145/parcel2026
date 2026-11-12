@@ -483,6 +483,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
       productType: options.kind === "document" ? undefined : options.productType,
       category: options.category,
       priority: options.priority,
+      proofRequired: options.proofRequired,
+      proofMethod: options.proofMethod,
     };
     // First / last mile, drop hub and messages: only what the file's package offers.
     await this.checkServices(scope.merchantId, options.kind, services);

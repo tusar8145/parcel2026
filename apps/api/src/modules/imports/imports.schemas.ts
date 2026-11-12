@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { firstMileSchema, lastMileSchema, PARCEL_INTAKES, PRODUCT_TYPES, speedOptionSchema } from "@delivery-fast/shared";
+import { firstMileSchema, lastMileSchema, PARCEL_INTAKES, PRODUCT_TYPES, PROOF_METHODS, speedOptionSchema } from "@delivery-fast/shared";
 import { pageQuerySchema } from "../../common/pagination";
 import { IMPORT_KINDS } from "./columns";
 
@@ -33,6 +33,10 @@ export const importOptionsSchema = z.object({
   notifications: z
     .preprocess(v => (v === "none" ? [] : typeof v === "string" ? (v.trim().startsWith("[") ? JSON.parse(v) : v.split(",").map(x => x.trim()).filter(Boolean)) : v), z.array(z.string().trim().min(1).max(60)).max(40))
     .optional(),
+  /** "Delivery proof required" for every row (default true); multipart sends "true" / "false". */
+  proofRequired: z.preprocess(v => (v === "true" ? true : v === "false" ? false : v), z.boolean()).optional(),
+  /** "Set specific proof" for every row: PHOTO, OTP or SIGNATURE (one the package offers). Empty = any. */
+  proofMethod: z.preprocess(v => (v === "" ? undefined : v), z.enum(PROOF_METHODS, "Choose PHOTO, OTP or SIGNATURE").optional()),
   fileName: z.string().trim().max(200).optional(),
   /**
    * Courier Operations, any merchant's file: the columns as matched in the dialog (POST /imports/analyze),

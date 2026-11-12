@@ -42,6 +42,10 @@ export interface Attempt {
   rider?: { code: string; name: string } | null;
 }
 export interface Parcel {
+  /** Delivery proof as booked ("Delivery proof required", "Set specific proof") and the methods the rider may use. */
+  proofRequired?: boolean;
+  proofMethod?: string | null;
+  proofMethods?: string[];
   id: string;
   trackingId: string;
   channel: string;

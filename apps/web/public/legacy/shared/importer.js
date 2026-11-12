@@ -205,6 +205,33 @@
         .map(n => `<label style="display:flex;gap:7px;align-items:center"><input type="checkbox" data-dfi-notify="${esc(n.code)}" ${ui.notifications.has(n.code) ? "checked" : ""}> ${esc(n.title)}</label>`)
         .join("")}</div><p class="panel-subtitle" style="margin:6px 0 0;font-size:12px">Rows whose product doesn't send messages are booked without any.</p></fieldset>`;
   }
+  // ───── delivery proof for the whole file: required (default) and, optionally, one specific method ─────
+  const PROOF_LABEL = { PHOTO: "Scan POD (signed invoice photo)", OTP: "OTP verification (recipient's code)", SIGNATURE: "Recipient signature" };
+  /** The package's proof methods for this file: OTP only while the Delivery code message is ticked. */
+  const proofMethods = () => (ui.pkg?.options?.proofMethods || []).filter(m => m !== "OTP" || !ui.pkg.notifications?.some(n => n.code === "notify.delivery_code") || ui.notifications?.has("notify.delivery_code"));
+  function proofBox() {
+    if (!ui.pkg) return "";
+    const p = (ui.proof ||= { required: true, specific: false, method: "" });
+    const methods = proofMethods();
+    if (!methods.includes(p.method)) p.method = methods[0] || "";
+    const note = !p.required
+      ? "The rider can complete these deliveries without proof."
+      : p.specific && p.method
+        ? `The rider must give: ${PROOF_LABEL[p.method] || p.method}.`
+        : `The rider must give one of: ${methods.map(m => PROOF_LABEL[m] || m).join(", ") || "the package's proof"}.`;
+    return `<fieldset id="dfiProof" style="border:1px solid #e3e8ef;border-radius:10px;padding:10px 12px;margin:0"><legend style="font-weight:600;font-size:13px;padding:0 4px">Delivery proof</legend>
+      <div style="display:grid;gap:6px;font-size:13px"><label style="display:flex;gap:7px;align-items:center;font-weight:600"><input type="checkbox" id="dfiProofRequired" ${p.required ? "checked" : ""}> Delivery proof required</label>${
+        p.required && methods.length
+          ? `<label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="dfiProofSpecific" ${p.specific ? "checked" : ""}> Set specific proof</label>${
+              p.specific ? `<select class="select-small" id="dfiProofMethod" style="max-width:340px">${methods.map(m => `<option value="${esc(m)}" ${m === p.method ? "selected" : ""}>${esc(PROOF_LABEL[m] || m)}</option>`).join("")}</select>` : ""
+            }`
+          : ""
+      }<p class="panel-subtitle" style="margin:0;font-size:12px">${esc(note)}</p></div></fieldset>`;
+  }
+  const redrawProof = () => {
+    const box = document.getElementById("dfiProof");
+    if (box) box.outerHTML = proofBox();
+  };
   const notificationLegend = () => `Messages to send for these ${noun(ui.cfg)} (${ui.notifications.size} of ${ui.pkg.notifications.length})`;
   const lastMileNote = () =>
     ui.pkg && ui.lastMile === "HUB_COLLECT"
@@ -276,6 +303,7 @@
       ${choose ? `<p class="panel-subtitle" id="dfiChooseMerchant" style="margin:0">Choose the merchant: the template's services, the choices above and the checks follow its package.</p>` : ""}
       ${lastMileNote()}
       ${notificationBox()}
+      ${proofBox()}
       ${fileDrop()}
       ${message ? `<p role="alert" id="dfiMessage" style="margin:0;color:#b42318;font-weight:600">${esc(message)}</p>` : ""}
     </div>`;
@@ -323,6 +351,13 @@
     ui.intake = ui.firstMile === "HUB_DROP" ? "DROP_OFF" : "PICKUP";
     ui.hubId = document.getElementById("dfiHub")?.value || "";
     ui.lastMile = document.getElementById("dfiLastMile")?.value || ui.lastMile;
+    const required = document.getElementById("dfiProofRequired");
+    if (required) {
+      ui.proof ||= { required: true, specific: false, method: "" };
+      ui.proof.required = required.checked;
+      ui.proof.specific = !!document.getElementById("dfiProofSpecific")?.checked;
+      ui.proof.method = document.getElementById("dfiProofMethod")?.value || ui.proof.method;
+    }
     const boxes = [...document.querySelectorAll("[data-dfi-notify]")];
     if (boxes.length) {
       ui.notifications = new Set(boxes.filter(b => b.checked).map(b => b.dataset.dfiNotify));
@@ -361,6 +396,11 @@
       if (ui.pkg && ui.lastMile) form.append("lastMile", ui.lastMile);
       // The package's messages are the default; only an unticked one is sent.
       if (ui.pkg?.notifications?.length && ui.notifications.size !== ui.pkg.notifications.length) form.append("notifications", ui.notifications.size ? [...ui.notifications].join(",") : "none");
+      // Delivery proof for every row: required unless unticked; a specific method only when chosen (and offered).
+      if (ui.pkg && ui.proof) {
+        form.append("proofRequired", ui.proof.required ? "true" : "false");
+        if (ui.proof.required && ui.proof.specific && proofMethods().includes(ui.proof.method)) form.append("proofMethod", ui.proof.method);
+      }
       if (mapsColumns() && ui.layout) form.append("mapping", JSON.stringify({ headerRow: ui.layout.headerRow, columns: ui.layout.columns.map(c => c.key || null) }));
     }
     form.append("file", file, file.name);
@@ -945,6 +985,11 @@
       readOptions();
       const legend = document.querySelector("#dfiNotifications legend");
       if (legend) legend.textContent = notificationLegend();
+      redrawProof();
+    }
+    if (["dfiProofRequired", "dfiProofSpecific", "dfiProofMethod"].includes(event.target.id)) {
+      readOptions();
+      redrawProof();
     }
     // Bulk update history: one page's bulk updates, or every page's.
     if (event.target.id === "dfiHKind" && isBulk()) {

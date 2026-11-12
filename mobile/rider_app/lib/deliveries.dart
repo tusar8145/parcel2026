@@ -336,7 +336,12 @@ class _DeliveryPageState extends State<DeliveryPage> {
                       if (p['openBox'] == true) const KeyValue('Open box', 'The recipient may check before paying'),
                       if (p['merchantOrderRef'] != null) KeyValue('Order ref.', '${p['merchantOrderRef']}'),
                       if (p['instructions'] != null) KeyValue('Note', '${p['instructions']}'),
-                      KeyValue('Proof', ((p['proofMethods'] as List?) ?? []).map((m) => m == 'OTP' ? 'Code' : humanize('$m')).join(' / ')),
+                      KeyValue(
+                        'Proof',
+                        p['proofRequired'] == false
+                            ? 'Not required'
+                            : ((p['proofMethods'] as List?) ?? []).map((m) => m == 'OTP' ? 'Code' : humanize('$m')).join(' / '),
+                      ),
                     ],
                   ),
                 ),
@@ -404,8 +409,13 @@ class _DeliverPageState extends State<DeliverPage> {
   final _otp = TextEditingController();
   late final _cash = TextEditingController(text: _cod > 0 ? _plain(_cod) : '0');
   final _note = TextEditingController();
-  late final List<String> _methods = ((widget.parcel['proofMethods'] as List?) ?? const ['OTP', 'SIGNATURE', 'PHOTO']).map((m) => '$m').toList();
-  late String _method = _methods.first;
+  /// Booked with "Delivery proof required" off: the rider may deliver without proof ("No proof", the default here).
+  late final bool _proofRequired = widget.parcel['proofRequired'] != false;
+  late final List<String> _methods = [
+    ...((widget.parcel['proofMethods'] as List?) ?? const ['OTP', 'SIGNATURE', 'PHOTO']).map((m) => '$m'),
+    if (!_proofRequired) 'NONE',
+  ];
+  late String _method = _proofRequired ? _methods.first : 'NONE';
   List<String> _relations = const ['Self'];
   String _relation = 'Self';
   bool _partial = false;
@@ -449,8 +459,10 @@ class _DeliverPageState extends State<DeliverPage> {
   Future<void> _submit() async {
     setState(() => _error = null);
     if (!_form.currentState!.validate()) return;
-    Map<String, dynamic> proof;
-    if (_method == 'OTP') {
+    Map<String, dynamic>? proof;
+    if (_method == 'NONE') {
+      proof = null;
+    } else if (_method == 'OTP') {
       proof = {'method': 'OTP', 'otp': _otp.text.trim()};
     } else if (_method == 'SIGNATURE') {
       final png = await _pad.currentState?.toDataUrl();
@@ -473,7 +485,7 @@ class _DeliverPageState extends State<DeliverPage> {
             'outcome': 'DELIVERED',
             'receivedBy': _receivedBy.text.trim(),
             'receiverRelation': _relation,
-            'proof': proof,
+            'proof': ?proof,
             'codCollected': collected,
             if (_partial) 'partial': true,
             if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
@@ -578,7 +590,7 @@ class _DeliverPageState extends State<DeliverPage> {
                       children: [
                         for (final m in _methods)
                           ChoiceChip(
-                            label: Text(m == 'OTP' ? "Recipient's code" : (m == 'SIGNATURE' ? 'Signature' : 'Photo')),
+                            label: Text(m == 'OTP' ? "Recipient's code" : (m == 'SIGNATURE' ? 'Signature' : (m == 'NONE' ? 'No proof' : 'Photo'))),
                             selected: _method == m,
                             onSelected: (_) => setState(() {
                               _method = m;
@@ -588,6 +600,7 @@ class _DeliverPageState extends State<DeliverPage> {
                       ],
                     ),
                   const SizedBox(height: 10),
+                  if (_method == 'NONE') const Text('This parcel was booked without proof required: you can complete the delivery without it.', style: TextStyle(color: muted)),
                   if (_method == 'OTP') ...[
                     if (!_started) const Text('Start the delivery first: the code is sent to the recipient then.', style: TextStyle(color: warn)),
                     TextFormField(

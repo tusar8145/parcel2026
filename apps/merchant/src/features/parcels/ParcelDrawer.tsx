@@ -33,6 +33,8 @@ interface Full extends Parcel {
   intake?: string;
   dropOffHub?: { name: string } | null;
   openBox?: boolean;
+  proofRequired?: boolean;
+  proofMethod?: string | null;
   collect?: { hub?: { name?: string; address?: string } | null; readyAt?: string | null; dueAt?: string | null } | null;
   cod?: { state?: string } | null;
   pickupWindow?: { label?: string } | null;
@@ -238,6 +240,7 @@ function Content({ id, close, closeRef }: { id: string; close: () => void; close
               ["First mile", p.intake === "DROP_OFF" && p.dropOffHub ? `${firstMile} · ${p.dropOffHub.name}` : firstMile],
               ["Last mile", p.service?.lastMileLabel || (p.collect ? "Hub Pickup" : "Home delivery")],
               ["Open box", p.openBox ? "Allowed" : ""],
+              ["Delivery proof", p.proofRequired === false ? "Not required" : p.proofMethod ? `Required · ${({ PHOTO: "Scan POD photo", OTP: "OTP", SIGNATURE: "Signature" } as Record<string, string>)[p.proofMethod] ?? p.proofMethod} only` : "Required"],
               [doc ? "Value" : "COD", doc ? "" : Number(p.codAmount) ? `${money(p.codAmount)}${p.cod ? ` · ${p.cod.state === "SETTLED" ? "paid to you" : "collected"}` : ""}` : "No cash to collect"],
               ["Product value", Number(p.declaredValue) ? money(p.declaredValue) : ""],
               ["Pickup window", p.pickupWindow?.label],

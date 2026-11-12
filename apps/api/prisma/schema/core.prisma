@@ -527,6 +527,10 @@ model Parcel {
   receiverRelation String?
   /// Corporate merchants: the branch the consignment originates from.
   originBranchCode String?
+  /// Delivery proof required (booking, default on): off, the rider may complete the delivery without proof.
+  proofRequired    Boolean      @default(true)
+  /// A specific proof method set at booking (PHOTO, OTP or SIGNATURE, one of the package's); null = any of them.
+  proofMethod      String?
 
   codAmount       Decimal @default(0) @db.Decimal(12, 2)
   baseCharge      Decimal @db.Decimal(12, 2)

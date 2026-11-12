@@ -308,6 +308,49 @@ describe("service packages", () => {
       expect(Number(after.totalCharge)).toBe(Number(booked.body.charges.total) + 25);
     });
 
+    it("books with delivery proof not required or one specific method, and the rider follows it", async () => {
+      const { token } = await admin();
+      const { m, owner } = await merchant();
+      const pkg = await createPackage(token, "ECOMMERCE", "All proof", await allServices("ECOMMERCE"));
+      await assign(token, m.id, pkg.id);
+      const gulshan = await hub(ctx, "HUB-PK2");
+      const rider = await riderUser(ctx, "R-9102", gulshan.id);
+      const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+      const out = async (trackingId: string) => {
+        await ctx.prisma.parcel.update({ where: { trackingId }, data: { status: "AT_HUB", currentHubId: gulshan.id } });
+        expect((await ctx.api("POST", `/parcels/${trackingId}/assign-delivery`, { token: ops.token, body: { riderId: rider.rider.id } })).status).toBe(200);
+        await ctx.api("POST", `/rider/parcels/${trackingId}/start-delivery`, { token: rider.token });
+      };
+
+      // Proof not required: delivered without any.
+      const free = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 0, proofRequired: false }) });
+      expect(free.status, JSON.stringify(free.body)).toBe(201);
+      expect(free.body).toMatchObject({ proofRequired: false, proofMethod: null });
+      // Its messages follow its journey: a merchant's door delivery gets "Out for delivery", not the pickup or collection ones.
+      const plan = free.body.messagePlan as { items: { code: string }[]; skipped: { code: string; reason: string }[] };
+      expect(plan.items.map(i => i.code)).toContain("notify.out_for_delivery");
+      expect(plan.items.map(i => i.code)).not.toContain("notify.collection");
+      expect(plan.skipped).toEqual(expect.arrayContaining([expect.objectContaining({ code: "notify.pickup_assigned", reason: "merchants follow pickups in their panel" })]));
+      await out(free.body.trackingId);
+      const done = await ctx.api("POST", `/rider/parcels/${free.body.trackingId}/delivery`, { token: rider.token, body: { outcome: "DELIVERED", receivedBy: "N" } });
+      expect(done.status, JSON.stringify(done.body)).toBe(200);
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: free.body.trackingId } })).status).toBe("DELIVERED");
+
+      // One specific method: only that one, and proof can't be left out.
+      const signed = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 0, proofMethod: "SIGNATURE" }) });
+      expect(signed.body).toMatchObject({ proofRequired: true, proofMethod: "SIGNATURE", proofMethods: ["SIGNATURE"] });
+      await out(signed.body.trackingId);
+      const otp = await ctx.api("POST", `/rider/parcels/${signed.body.trackingId}/delivery`, { token: rider.token, body: { outcome: "DELIVERED", receivedBy: "N", proof: { method: "OTP", otp: "1234" } } });
+      expect(otp.body.error.code).toBe("PROOF_METHOD_NOT_ALLOWED");
+      const none = await ctx.api("POST", `/rider/parcels/${signed.body.trackingId}/delivery`, { token: rider.token, body: { outcome: "DELIVERED", receivedBy: "N" } });
+      expect(none.body.error.code).toBe("PROOF_REQUIRED");
+
+      // A method the booking can't use (OTP without the Delivery code message) is refused at booking.
+      const bad = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 0, notifications: ["notify.delivered"], proofMethod: "OTP" }) });
+      expect(bad.status).toBe(422);
+      expect(bad.body.error.code).toBe("PROOF_METHOD_NOT_OFFERED");
+    });
+
     it("API keys, webhooks and support tickets follow the package", async () => {
       const { token } = await admin();
       const { m, owner } = await merchant();

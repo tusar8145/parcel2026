@@ -8,13 +8,52 @@ import { opsHubScope } from "./ops-scope";
 import { PARCEL_NOTIFICATIONS } from "@delivery-fast/shared";
 
 /**
- * The messages a parcel was booked with (parcel details, staff and its owner): its channels, each ticked message
- * with its SMS / email state (null: not sent yet, e.g. the event hasn't happened), how many are done, and the SMS
- * and emails sent (no text: owners see when and what, not the body).
+ * Whether a ticked message belongs to this parcel's journey (ParcelWorkflowService.notify sends them): collect from
+ * hub has no out-for-delivery / delivery code (the collection messages instead), a hub drop-off no pickup messages,
+ * merchants get no pickup / failed-attempt / feedback messages. `when`: sent only if that happens.
+ */
+function journeyRule(code: string, p: { merchant: boolean; dropOff: boolean; collect: boolean }): { show: true; when?: string } | { show: false; reason: string } {
+  switch (code) {
+    case "notify.booked":
+      return p.dropOff ? { show: false, reason: "a hub drop-off gets the drop-off message instead" } : { show: true };
+    case "notify.drop_off_booked":
+      return p.dropOff ? { show: true } : { show: false, reason: "a rider pickup gets the pickup request message instead" };
+    case "notify.pickup_assigned":
+    case "notify.picked_up":
+      return p.dropOff ? { show: false, reason: "dropped off at the hub: no pickup" } : p.merchant ? { show: false, reason: "merchants follow pickups in their panel" } : { show: true };
+    case "notify.out_for_delivery":
+    case "notify.delivery_code":
+      return p.collect ? { show: false, reason: "collected from the hub: no delivery to the door" } : { show: true };
+    case "notify.collection":
+      return p.collect ? { show: true } : { show: false, reason: "delivered to the door, not collected from the hub" };
+    case "notify.delivery_failed":
+      return p.merchant ? { show: false, reason: "merchants get only the final outcome" } : { show: true, when: "only if a delivery attempt fails" };
+    case "notify.cancelled":
+      return { show: true, when: "only if the pickup is cancelled" };
+    case "notify.return_scheduled":
+    case "notify.returned":
+      return { show: true, when: "only if it goes back to the sender" };
+    case "notify.changed_to_drop_off":
+    case "notify.changed_to_pickup":
+      return { show: false, reason: "only if the first mile is switched" };
+    case "notify.feedback_request":
+      return p.merchant ? { show: false, reason: "merchants aren't asked for feedback" } : { show: true };
+    case "notify.guest_verification":
+      return { show: false, reason: "sent before booking" };
+    default:
+      return { show: true };
+  }
+}
+
+/**
+ * The messages a parcel was booked with (parcel details, staff and its owner): its channels, each ticked message that
+ * belongs to its journey with its SMS / email state (null: not sent yet, e.g. the event hasn't happened; `when`: only
+ * if that happens), the ticked ones that don't apply to it (and why), how many are done, and the SMS and emails sent
+ * (no text: owners see when and what, not the body). A message that was sent always shows.
  */
 export async function messagePlanOf(
   prisma: PrismaService,
-  parcel: { trackingId: string; createdAt: Date; notifications: string[]; notifyChannels: string[] },
+  parcel: { trackingId: string; createdAt: Date; notifications: string[]; notifyChannels: string[]; merchantId?: string | null; intake?: string | null; lastMile?: string | null },
 ) {
   const until = new Date(parcel.createdAt.getTime() + LEGACY_WINDOW_DAYS * 86_400_000);
   const rows = await prisma.outboxMessage.findMany({
@@ -35,16 +74,24 @@ export async function messagePlanOf(
     for (const r of rows) if (r.channel === channel && events.includes(r.template) && (!best || rank[r.state] > rank[best])) best = r.state;
     return best;
   };
-  const items = PARCEL_NOTIFICATIONS.filter(n => parcel.notifications.includes(n.code)).map(n => {
+  const journey = { merchant: !!parcel.merchantId, dropOff: parcel.intake === "DROP_OFF", collect: parcel.lastMile === "HUB_COLLECT" };
+  const items: { code: string; label: string; audience: string; sms: ReturnType<typeof stateOf>; email: ReturnType<typeof stateOf>; done: boolean; when?: string }[] = [];
+  const skipped: { code: string; label: string; reason: string }[] = [];
+  for (const n of PARCEL_NOTIFICATIONS.filter(n => parcel.notifications.includes(n.code))) {
     const sms = channels.has("sms") ? stateOf(n.events, "SMS") : null;
     const email = channels.has("email") ? stateOf(n.events, "EMAIL") : null;
-    return { code: n.code, label: n.label, audience: n.audience, sms, email, done: sms === "SENT" || email === "SENT" };
-  });
+    const rule = journeyRule(n.code, journey);
+    if (rule.show || sms || email) items.push({ code: n.code, label: n.label, audience: n.audience, sms, email, done: sms === "SENT" || email === "SENT", ...(rule.show && rule.when && !sms && !email ? { when: rule.when } : {}) });
+    else skipped.push({ code: n.code, label: n.label, reason: rule.reason });
+  }
+  // Done of total counts the messages this parcel will get for sure (not the "only if" ones still waiting).
+  const counted = items.filter(i => !i.when);
   return {
     channels: { sms: channels.has("sms"), email: channels.has("email"), push: channels.has("push") },
     items,
-    done: items.filter(i => i.done).length,
-    total: items.length,
+    skipped,
+    done: counted.filter(i => i.done).length,
+    total: counted.length,
     sent: rows.map(r => ({ channel: r.channel, event: r.template, eventLabel: definitionOf(r.template)?.label ?? r.template, state: r.state, at: r.sentAt ?? r.createdAt })).reverse(),
   };
 }

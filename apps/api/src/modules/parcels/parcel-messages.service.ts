@@ -5,7 +5,7 @@ import type { Actor } from "../../common/auth/actor";
 import { notFound } from "../../common/errors";
 import { definitionOf } from "../notifications/catalog";
 import { opsHubScope } from "./ops-scope";
-import { PARCEL_NOTIFICATIONS } from "@delivery-fast/shared";
+import { channelOff, PARCEL_NOTIFICATIONS } from "@delivery-fast/shared";
 
 /**
  * Whether a ticked message belongs to this parcel's journey (ParcelWorkflowService.notify sends them): collect from
@@ -53,7 +53,7 @@ function journeyRule(code: string, p: { merchant: boolean; dropOff: boolean; col
  */
 export async function messagePlanOf(
   prisma: PrismaService,
-  parcel: { trackingId: string; createdAt: Date; notifications: string[]; notifyChannels: string[]; merchantId?: string | null; intake?: string | null; lastMile?: string | null },
+  parcel: { trackingId: string; createdAt: Date; notifications: string[]; notifyChannels: string[]; notificationChannelsOff?: string[] | null; merchantId?: string | null; intake?: string | null; lastMile?: string | null },
 ) {
   const until = new Date(parcel.createdAt.getTime() + LEGACY_WINDOW_DAYS * 86_400_000);
   const rows = await prisma.outboxMessage.findMany({
@@ -78,8 +78,8 @@ export async function messagePlanOf(
   const items: { code: string; label: string; audience: string; sms: ReturnType<typeof stateOf>; email: ReturnType<typeof stateOf>; done: boolean; when?: string }[] = [];
   const skipped: { code: string; label: string; reason: string }[] = [];
   for (const n of PARCEL_NOTIFICATIONS.filter(n => parcel.notifications.includes(n.code))) {
-    const sms = channels.has("sms") ? stateOf(n.events, "SMS") : null;
-    const email = channels.has("email") ? stateOf(n.events, "EMAIL") : null;
+    const sms = channels.has("sms") && !channelOff(parcel.notificationChannelsOff, n.code, "sms") ? stateOf(n.events, "SMS") : null;
+    const email = channels.has("email") && !channelOff(parcel.notificationChannelsOff, n.code, "email") ? stateOf(n.events, "EMAIL") : null;
     const rule = journeyRule(n.code, journey);
     if (rule.show || sms || email) items.push({ code: n.code, label: n.label, audience: n.audience, sms, email, done: sms === "SENT" || email === "SENT", ...(rule.show && rule.when && !sms && !email ? { when: rule.when } : {}) });
     else skipped.push({ code: n.code, label: n.label, reason: rule.reason });

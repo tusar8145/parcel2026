@@ -351,6 +351,36 @@ describe("service packages", () => {
       expect(bad.body.error.code).toBe("PROOF_METHOD_NOT_OFFERED");
     });
 
+    it("a package can switch a channel off per message: kept on the parcel, that channel isn't sent", async () => {
+      const { token } = await admin();
+      const { m, owner } = await merchant();
+      const res = await ctx.api("POST", "/packages", {
+        token,
+        body: { segment: "ECOMMERCE", name: "No booking SMS", services: await allServices("ECOMMERCE"), prices: {}, notificationChannelsOff: ["notify.booked:sms", "notify.delivery_code:sms", "notify.unknown:sms", "notify.booked:fax"] },
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const version = await ctx.prisma.servicePackageVersion.findFirstOrThrow({ where: { packageId: res.body.id } });
+      expect(version.notificationChannelsOff).toEqual(["notify.booked:sms", "notify.delivery_code:sms"]); // unknown entries dropped
+      await assign(token, m.id, res.body.id);
+
+      const booked = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 0 }) });
+      expect(booked.status, JSON.stringify(booked.body)).toBe(201);
+      const t = booked.body.trackingId as string;
+      expect((await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: t } })).notificationChannelsOff).toEqual(["notify.booked:sms", "notify.delivery_code:sms"]);
+      expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.booked", channel: "SMS", body: { contains: t } } })).toBe(0);
+      // Without the delivery code SMS there is no OTP proof.
+      expect(booked.body.proofMethods).not.toContain("OTP");
+      // Its message list shows no SMS for it.
+      const plan = booked.body.messagePlan as { items: { code: string; sms: unknown }[] };
+      expect(plan.items.find(i => i.code === "notify.booked")?.sms ?? null).toBeNull();
+
+      // The same booking on a package without the switch sends the SMS.
+      await assign(token, m.id, null);
+      const normal = await ctx.api("POST", "/parcels", { token: owner.token, body: order({ codAmount: 0 }) });
+      expect(await ctx.prisma.outboxMessage.count({ where: { template: "parcel.booked", channel: "SMS", body: { contains: normal.body.trackingId } } })).toBeGreaterThan(0);
+      expect(normal.body.proofMethods).toContain("OTP");
+    });
+
     it("API keys, webhooks and support tickets follow the package", async () => {
       const { token } = await admin();
       const { m, owner } = await merchant();

@@ -640,6 +640,8 @@ model Parcel {
   /// Parcel notifications that may be sent: the booking's ticked messages (default every message in the
   /// package; empty when the product has `sendMessages = false`). NotifyService sends only these.
   notifications           String[]  @default([])
+  /// The package's channels switched off per message at booking ("notify.booked:sms"): that message skips that channel.
+  notificationChannelsOff String[]  @default([])
   /// Collect from hub: the collection hub, the code the recipient shows, and the hold period.
   collectHubId            String?   @db.Uuid
   collectionCodeEncrypted String?

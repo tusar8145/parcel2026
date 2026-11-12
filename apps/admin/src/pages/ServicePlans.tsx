@@ -34,6 +34,8 @@ interface Draft {
   name: string;
   description: string;
   services: Set<string>;
+  /** Message channels switched off per message ("notify.booked:sms"). */
+  channelsOff: Set<string>;
   /** Flat price fields, and `deliveryFees` (delivery type code → + charge). */
   prices: Prices;
   effectiveFrom: string;
@@ -82,6 +84,7 @@ export default function ServicePlans() {
       name: pkg?.name ?? "",
       description: pkg?.description ?? "",
       services: new Set(base?.services ?? defaults?.services ?? servicesFor(seg).map(s => s.code)),
+      channelsOff: new Set(base ? (base.notificationChannelsOff ?? []) : (defaults?.notificationChannelsOff ?? [])),
       prices: { ...(c!.defaults || {}), ...(defaults?.prices || {}), ...(base?.prices || {}) },
       effectiveFrom: "",
       note: "",
@@ -584,10 +587,31 @@ function HubPickup() {
   );
 }
 
+/** Service groups of package messages: each gets SMS / Email / Push ticks, matched against Global notifications. */
+const MESSAGE_GROUPS = ["parcelNotifications", "supportNotifications"];
+type MessageChannel = "sms" | "email" | "push";
+const MESSAGE_CHANNELS: [MessageChannel, string][] = [
+  ["sms", "SMS"],
+  ["email", "Email"],
+  ["push", "Push"],
+];
+interface GlobalEvents {
+  events: { event: string; channels: Partial<Record<MessageChannel, { enabledByAdmin: boolean; locked?: boolean }>> }[];
+}
+
 function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: { seg: Segment; catalog: ServiceCatalog; pkg: Package | null; draft: Draft; setDraft: (d: Draft) => void; products: Product[]; close: () => void; saved: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false);
   const isNew = !pkg;
   const services = catalog.services.filter(s => s.segments.includes(seg));
+  // Global notifications (super admin): a channel switched off there for every event of a message is off here too.
+  const globalEvents = useQuery({ queryKey: ["admin", "notification-events"], queryFn: () => api<GlobalEvents>("/notifications/events") });
+  const eventsOf = new Map([...(catalog.notifications ?? []), ...(catalog.supportNotifications ?? [])].map(n => [n.code, n.events]));
+  const channelOnGlobally = (code: string, ch: MessageChannel) => {
+    if (!globalEvents.data) return true;
+    const events = eventsOf.get(code) ?? [];
+    return globalEvents.data.events.some(e => events.includes(e.event) && !!e.channels[ch] && (e.channels[ch]!.enabledByAdmin || !!e.channels[ch]!.locked));
+  };
+  const allOff = (code: string) => !!globalEvents.data && eventsOf.has(code) && MESSAGE_CHANNELS.every(([ch]) => !channelOnGlobally(code, ch));
   const fields = catalog.priceFields.filter(f => f.segments.includes(seg));
   const deliveryTypes = useDeliveryTypes();
   const offered = (deliveryTypes.data ?? []).filter(t => t.active && t.segments.includes(seg));
@@ -597,7 +621,7 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (draft.name.trim().length < 2) return toast("Enter the package name (at least 2 characters).", "bad");
-    const body = { services: [...draft.services], prices: draft.prices, ...(draft.effectiveFrom ? { effectiveFrom: new Date(draft.effectiveFrom).toISOString() } : {}), ...(draft.note.trim() ? { note: draft.note.trim() } : {}) };
+    const body = { services: [...draft.services], notificationChannelsOff: [...draft.channelsOff], prices: draft.prices, ...(draft.effectiveFrom ? { effectiveFrom: new Date(draft.effectiveFrom).toISOString() } : {}), ...(draft.note.trim() ? { note: draft.note.trim() } : {}) };
     setBusy(true);
     try {
       const name = draft.name.trim();
@@ -674,7 +698,9 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
           </h3>
           <div style={{ display: "grid", gap: 9 }}>
             {catalog.groups.map(g => {
-              const items = services.filter(s => s.group === g.code);
+              const messages = MESSAGE_GROUPS.includes(g.code);
+              // Messages switched off on every channel in Global notifications aren't offered here.
+              const items = services.filter(s => s.group === g.code && !(messages && allOff(s.code)));
               if (!items.length) return null;
               return (
                 <details key={g.code} open style={{ border: "1px solid var(--line)", borderRadius: 9 }}>
@@ -683,7 +709,48 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
                     <small className="faint" style={{ fontWeight: 500 }}>{`${items.filter(s => draft.services.has(s.code) || s.core).length} of ${items.length} on`}</small>
                   </summary>
                   <div style={{ display: "grid", gap: 6, padding: "2px 12px 12px" }}>
-                    {items.map(s => (
+                    {messages ? <small className="faint">SMS, email and push per message. A channel switched off in Global notifications is greyed out; messages off on all three there aren't listed.</small> : null}
+                    {items.map(s =>
+                      messages ? (
+                        <div key={s.code} className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <label className="check" title={s.hint || ""}>
+                            <input
+                              type="checkbox"
+                              checked={draft.services.has(s.code)}
+                              onChange={e => {
+                                const next = new Set(draft.services);
+                                if (e.target.checked) next.add(s.code);
+                                else next.delete(s.code);
+                                set({ services: next });
+                              }}
+                            />{" "}
+                            {s.label}
+                          </label>
+                          <span className="row" style={{ gap: 12 }}>
+                            {MESSAGE_CHANNELS.map(([ch, name]) => {
+                              const globalOn = channelOnGlobally(s.code, ch);
+                              const key = `${s.code}:${ch}`;
+                              return (
+                                <label key={ch} className="check" style={{ fontSize: 12.5 }} title={globalOn ? "" : `${name} is switched off for this message in Global notifications`}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`${s.label}: ${name}`}
+                                    checked={globalOn && draft.services.has(s.code) && !draft.channelsOff.has(key)}
+                                    disabled={!globalOn || !draft.services.has(s.code)}
+                                    onChange={e => {
+                                      const next = new Set(draft.channelsOff);
+                                      if (e.target.checked) next.delete(key);
+                                      else next.add(key);
+                                      set({ channelsOff: next });
+                                    }}
+                                  />{" "}
+                                  {name}
+                                </label>
+                              );
+                            })}
+                          </span>
+                        </div>
+                      ) : (
                       <label key={s.code} className="check" title={s.hint || ""}>
                         <input
                           type="checkbox"
@@ -699,7 +766,8 @@ function Editor({ seg, catalog, pkg, draft, setDraft, products, close, saved }: 
                         {s.label}
                         {s.core ? " (always on)" : ""}
                       </label>
-                    ))}
+                      ),
+                    )}
                   </div>
                 </details>
               );

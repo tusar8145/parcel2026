@@ -221,7 +221,7 @@ export class ParcelsService {
       const fields = this.packages.parcelFields(quote, product, tags);
       // "Set specific proof": one of the methods this parcel's package offers.
       if (input.proofMethod) {
-        const offered = offeredProofMethods({ packageVersionId: fields.packageVersionId, services: fields.services, notifications: fields.notifications, notifyChannels: fields.notifyChannels } as never) as string[];
+        const offered = offeredProofMethods({ packageVersionId: fields.packageVersionId, services: fields.services, notifications: fields.notifications, notifyChannels: fields.notifyChannels, notificationChannelsOff: fields.notificationChannelsOff } as never) as string[];
         if (!offered.includes(input.proofMethod))
           throw new AppError("PROOF_METHOD_NOT_OFFERED", `This parcel's service plan doesn't offer that proof (it offers ${offered.join(", ") || "none"})`, 422, [{ path: "proofMethod", code: "PROOF_METHOD_NOT_OFFERED", message: "Choose one of the offered proof methods" }]);
       }
@@ -311,7 +311,7 @@ export class ParcelsService {
         ...(await this.notifications.notify(tx, {
           event: dropOff ? "parcel.drop_off_booked" : "parcel.booked",
           to: { phone: input.sender.phone, userId: ctx.customerId, name: input.sender.name },
-          parcel: { packageVersionId: fields.packageVersionId, notifications: fields.notifications, notifyChannels: fields.notifyChannels },
+          parcel: { packageVersionId: fields.packageVersionId, notifications: fields.notifications, notifyChannels: fields.notifyChannels, notificationChannelsOff: fields.notificationChannelsOff },
           vars: {
             trackingId,
             charge: quote.totalCharge,

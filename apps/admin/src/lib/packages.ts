@@ -18,11 +18,16 @@ export interface ServiceCatalog {
   defaults: Record<string, number>;
   labels: { speed: Record<string, string>; firstMile: Record<string, string>; lastMile: Record<string, string> };
   productTypes: { code: string; label: string }[];
+  /** Package messages and the events behind them (to match Global notifications). */
+  notifications?: { code: string; events: string[] }[];
+  supportNotifications?: { code: string; events: string[] }[];
 }
 export interface PackageVersion {
   version: number;
   effectiveFrom: string;
   services: string[];
+  /** Message channels switched off per message ("notify.booked:sms"). */
+  notificationChannelsOff?: string[];
   prices: Record<string, number>;
 }
 export interface Package {

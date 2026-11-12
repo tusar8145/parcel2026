@@ -4,6 +4,7 @@ import {
   LAST_MILE_LABEL,
   PARCEL_NOTIFICATIONS,
   proofMethodsFor,
+  channelOff,
   SERVICE_LEVEL_LABEL,
   TRACKING_STAGES,
   isCustomerCancellable,
@@ -97,13 +98,16 @@ export function serviceView(p: ParcelWithRelations, internal = true) {
 }
 
 /** Methods the delivery rider may use (all three for parcels booked before packages). */
-/** OTP needs the delivery code SMS: ticked at booking and the category's SMS on. */
+/** OTP needs the delivery code SMS: ticked at booking, the category's SMS on and the package not switching its SMS off. */
 /** A specific method set at booking (proofMethod) narrows them to that one while the package still offers it. */
-export const offeredProofMethods = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null }) =>
+export const offeredProofMethods = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null; notificationChannelsOff?: string[] | null }) =>
   p.packageVersionId
-    ? proofMethodsFor(p.services, p.notifyChannels && !p.notifyChannels.includes("sms") ? p.notifications.filter(n => n !== "notify.delivery_code") : p.notifications)
+    ? proofMethodsFor(
+        p.services,
+        (p.notifyChannels && !p.notifyChannels.includes("sms")) || channelOff(p.notificationChannelsOff, "notify.delivery_code", "sms") ? p.notifications.filter(n => n !== "notify.delivery_code") : p.notifications,
+      )
     : (["OTP", "SIGNATURE", "PHOTO"] as const).slice();
-export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null; proofMethod?: string | null }) => {
+export const proofMethodsOf = (p: Pick<ParcelWithRelations, "packageVersionId" | "services" | "notifications"> & { notifyChannels?: string[] | null; notificationChannelsOff?: string[] | null; proofMethod?: string | null }) => {
   const offered = offeredProofMethods(p);
   return p.proofMethod && (offered as string[]).includes(p.proofMethod) ? offered.filter(m => m === p.proofMethod) : offered;
 };

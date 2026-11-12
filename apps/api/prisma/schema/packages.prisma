@@ -35,6 +35,8 @@ model ServicePackageVersion {
   version         Int
   /// Enabled service codes (SERVICES in packages/shared).
   services        String[]
+  /// Message channels switched off per message: "notify.booked:sms" (code:channel; sms, email or push). Empty = every channel.
+  notificationChannelsOff String[] @default([])
   /// packagePricesSchema (packages/shared).
   prices          Json
   effectiveFrom   DateTime       @default(now())

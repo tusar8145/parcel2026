@@ -157,6 +157,19 @@ export const SUPPORT_NOTIFICATIONS = [
   { code: "notify.support_escalation", label: "Support SLA escalation", events: ["support.sla_escalation"] },
 ] as const;
 
+/** Where a package message can go; a package can switch one off per message ("notify.booked:sms", ServicePackageVersion.notificationChannelsOff). */
+export const MESSAGE_CHANNELS = ["sms", "email", "push"] as const;
+export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
+export const channelOffKey = (code: string, channel: MessageChannel) => `${code}:${channel}`;
+const PACKAGE_MESSAGE_CODES: ReadonlySet<string> = new Set([...PARCEL_NOTIFICATIONS, ...SUPPORT_NOTIFICATIONS].map(n => n.code));
+/** "notify.booked:sms" for a package message and a channel. */
+export const isChannelOffKey = (key: string) => {
+  const i = key.lastIndexOf(":");
+  return i > 0 && PACKAGE_MESSAGE_CODES.has(key.slice(0, i)) && (MESSAGE_CHANNELS as readonly string[]).includes(key.slice(i + 1));
+};
+/** Is this channel switched off for the message (code) by the package / parcel list? */
+export const channelOff = (off: readonly string[] | null | undefined, code: string, channel: MessageChannel) => !!off?.includes(channelOffKey(code, channel));
+
 /** Notification event → the package service that gates it (events not listed are outside packages, e.g. sign-in codes). */
 export const NOTIFICATION_SERVICE_OF_EVENT: Readonly<Record<string, string>> = Object.fromEntries([
   ...PARCEL_NOTIFICATIONS.flatMap(n => n.events.map(e => [e, n.code] as const)),

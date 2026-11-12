@@ -1,10 +1,16 @@
 import { z } from "zod";
-import { PRODUCT_TYPES, packagePricesSchema, PACKAGE_SEGMENTS, quoteRequestSchema } from "@delivery-fast/shared";
+import { PRODUCT_TYPES, isChannelOffKey, packagePricesSchema, PACKAGE_SEGMENTS, quoteRequestSchema } from "@delivery-fast/shared";
 
 export const segmentSchema = z.enum(PACKAGE_SEGMENTS, "Choose ECOMMERCE, BANKING_FINANCIAL or CUSTOMER");
 const name = z.string().trim().min(2, "Use at least 2 characters").max(80, "Use at most 80 characters");
 const note = z.string().trim().max(300, "Use at most 300 characters").optional();
 const services = z.array(z.string().trim().min(1)).max(200, "Too many services");
+/** Message channels switched off per message ("notify.booked:sms"); unknown entries are dropped. */
+const notificationChannelsOff = z
+  .array(z.string().trim())
+  .max(300, "Too many entries")
+  .default([])
+  .transform(list => [...new Set(list.filter(isChannelOffKey))]);
 /** Defaults to now; a future date schedules the change (the current version stays in force until then). */
 const effectiveFrom = z.coerce.date("Enter a valid date").optional();
 
@@ -13,6 +19,7 @@ export const createPackageSchema = z.object({
   name,
   description: z.string().trim().max(300).optional(),
   services,
+  notificationChannelsOff,
   prices: packagePricesSchema,
   effectiveFrom,
   /** Make it the segment's Default package (for everyone without an assigned package). */
@@ -23,6 +30,7 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
 
 export const packageVersionSchema = z.object({
   services,
+  notificationChannelsOff,
   prices: packagePricesSchema,
   effectiveFrom,
   note,

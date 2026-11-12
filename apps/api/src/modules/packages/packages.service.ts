@@ -11,6 +11,7 @@ import {
   packagePricesSchema,
   packageProblems,
   PARCEL_NOTIFICATIONS,
+  SUPPORT_NOTIFICATIONS,
   priceParcel,
   PRICE_FIELDS,
   PRODUCT_TYPE_LABEL,
@@ -113,6 +114,8 @@ export interface PackageQuote extends PriceBreakdown {
   package: { id: string; name: string; versionId: string; version: number; isDefault: boolean };
   segment: PackageSegment;
   services: string[];
+  /** The package's message channels switched off per message ("notify.booked:sms"). */
+  notificationChannelsOff: string[];
   prices: PackagePrices;
   selection: BookingSelection;
   /** The districts the route tier was priced from (the drop hub's / the collection hub's when chosen). */
@@ -381,6 +384,7 @@ export class PackagesService implements OnModuleInit {
       package: { id: pkg.packageId, name: pkg.name, versionId: pkg.versionId, version: pkg.version, isDefault: pkg.isDefault },
       segment,
       services: pkg.services,
+      notificationChannelsOff: pkg.notificationChannelsOff ?? [],
       prices: pkg.prices,
       selection,
       pickupDistrict,
@@ -457,6 +461,7 @@ export class PackagesService implements OnModuleInit {
       // The booking's ticked messages (default: every message in the package); the product's channels decide where they go.
       notifications: q.selection.notifications,
       notifyChannels: channelsOf(channels),
+      notificationChannelsOff: q.notificationChannelsOff ?? [],
       collectHubId: q.collectHub?.id ?? null,
       serviceLevel: q.serviceLevel,
     };
@@ -508,7 +513,7 @@ export class PackagesService implements OnModuleInit {
 
   /** Re-prices a v2 package-priced parcel with its frozen package (weight / destination / first mile changes); null for other parcels. */
   async reprice(
-    parcel: { pricingSnapshot: unknown; pickupDistrict: string; pickupZone: string; pickupArea?: string | null; deliveryDistrict: string | null; deliveryZone: string | null; deliveryArea?: string | null; codAmount: Prisma.Decimal | number; weightKg: Prisma.Decimal | number; collectHubId?: string | null; dropOffHubId?: string | null },
+    parcel: { pricingSnapshot: unknown; pickupDistrict: string; pickupZone: string; pickupArea?: string | null; deliveryDistrict: string | null; deliveryZone: string | null; deliveryArea?: string | null; codAmount: Prisma.Decimal | number; weightKg: Prisma.Decimal | number; collectHubId?: string | null; dropOffHubId?: string | null; notificationChannelsOff?: string[] | null },
     changes: Partial<QuoteRequest> & { delivery?: { district: string; zone?: string | null; area?: string | null } },
     db: Db = this.prisma,
   ): Promise<PackageQuote | null> {
@@ -524,6 +529,8 @@ export class PackagesService implements OnModuleInit {
       version: snap.version ?? 1,
       effectiveFrom: new Date(0),
       services: snap.services,
+      // Kept as booked (the parcel's own list).
+      notificationChannelsOff: parcel.notificationChannelsOff ?? [],
       prices: packagePricesSchema.parse(snap.prices ?? {}),
     };
     const s = snap.selection;
@@ -562,6 +569,7 @@ export class PackagesService implements OnModuleInit {
       labels: { firstMile: FIRST_MILE_LABEL, lastMile: LAST_MILE_LABEL, tier: ROUTE_TIER_LABEL, productType: PRODUCT_TYPE_LABEL },
       productTypes: PRODUCT_TYPES.map(t => ({ code: t, label: PRODUCT_TYPE_LABEL[t] })),
       notifications: PARCEL_NOTIFICATIONS,
+      supportNotifications: SUPPORT_NOTIFICATIONS,
     };
   }
 
@@ -595,7 +603,7 @@ export class PackagesService implements OnModuleInit {
     const versions = [...p.versions].sort((a, b) => b.version - a.version);
     const current = versions.filter(v => v.effectiveFrom <= now).sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime() || b.version - a.version)[0] ?? null;
     const scheduled = versions.filter(v => v.effectiveFrom > now).sort((a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime());
-    const v = (x: (typeof versions)[number]) => ({ id: x.id, version: x.version, services: x.services, prices: packagePricesSchema.parse(x.prices ?? {}), effectiveFrom: x.effectiveFrom, note: x.note, createdAt: x.createdAt, changeRequestId: x.changeRequestId });
+    const v = (x: (typeof versions)[number]) => ({ id: x.id, version: x.version, services: x.services, notificationChannelsOff: x.notificationChannelsOff ?? [], prices: packagePricesSchema.parse(x.prices ?? {}), effectiveFrom: x.effectiveFrom, note: x.note, createdAt: x.createdAt, changeRequestId: x.changeRequestId });
     return {
       id: p.id,
       segment: p.segment,
@@ -720,7 +728,7 @@ export class PackagesService implements OnModuleInit {
     if (input.packageId) pkg = await versionInForce(this.prisma, input.packageId);
     else if (input.services && input.prices) {
       const { services, prices } = this.checkContent(input.segment, input.services, input.prices);
-      pkg = { packageId: "draft", name: "Draft", segment: input.segment, isDefault: false, status: "ACTIVE", versionId: "draft", version: 0, effectiveFrom: new Date(), services, prices };
+      pkg = { packageId: "draft", name: "Draft", segment: input.segment, isDefault: false, status: "ACTIVE", versionId: "draft", version: 0, effectiveFrom: new Date(), services, notificationChannelsOff: [], prices };
     } else pkg = await this.effective(input.merchantId ? { merchantId: input.merchantId } : { segment: input.segment });
     if (!pkg) throw notFound("Package version in force");
     return this.quote({}, input, this.prisma, { pkg });
@@ -773,10 +781,10 @@ export class PackagesService implements OnModuleInit {
             description: p.description,
             defaultFor: p.makeDefault ? p.segment : null,
             createdById: requestedById,
-            versions: { create: { version: 1, services: p.services, prices: json(p.prices), effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : new Date(), note: p.note, createdById: requestedById } },
+            versions: { create: { version: 1, services: p.services, notificationChannelsOff: p.notificationChannelsOff ?? [], prices: json(p.prices), effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : new Date(), note: p.note, createdById: requestedById } },
           },
         });
-        await this.audit.record(actor, { action: "package.create", entityType: "service_package", entityId: pkg.id, data: json({ segment: p.segment, name: p.name, services: p.services, prices: p.prices, makeDefault: p.makeDefault, requestedById }) }, meta, tx);
+        await this.audit.record(actor, { action: "package.create", entityType: "service_package", entityId: pkg.id, data: json({ segment: p.segment, name: p.name, services: p.services, notificationChannelsOff: p.notificationChannelsOff ?? [], prices: p.prices, makeDefault: p.makeDefault, requestedById }) }, meta, tx);
         invalidatePackageCache();
         return json(pkg);
       },
@@ -798,10 +806,10 @@ export class PackagesService implements OnModuleInit {
       apply: async (tx, p, { actor, requestedById, meta }) => {
         const last = await tx.servicePackageVersion.findFirst({ where: { packageId: p.packageId }, orderBy: { version: "desc" }, select: { version: true } });
         const version = await tx.servicePackageVersion.create({
-          data: { packageId: p.packageId, version: (last?.version ?? 0) + 1, services: p.services, prices: json(p.prices), effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : new Date(), note: p.note, createdById: requestedById },
+          data: { packageId: p.packageId, version: (last?.version ?? 0) + 1, services: p.services, notificationChannelsOff: p.notificationChannelsOff ?? [], prices: json(p.prices), effectiveFrom: p.effectiveFrom ? new Date(p.effectiveFrom) : new Date(), note: p.note, createdById: requestedById },
         });
         if (p.name || p.description !== undefined) await tx.servicePackage.update({ where: { id: p.packageId }, data: { ...(p.name ? { name: p.name } : {}), ...(p.description !== undefined ? { description: p.description } : {}) } });
-        await this.audit.record(actor, { action: "package.version", entityType: "service_package", entityId: p.packageId, data: json({ version: version.version, services: p.services, prices: p.prices, effectiveFrom: version.effectiveFrom, requestedById }) }, meta, tx);
+        await this.audit.record(actor, { action: "package.version", entityType: "service_package", entityId: p.packageId, data: json({ version: version.version, services: p.services, notificationChannelsOff: p.notificationChannelsOff ?? [], prices: p.prices, effectiveFrom: version.effectiveFrom, requestedById }) }, meta, tx);
         invalidatePackageCache();
         return json(version);
       },

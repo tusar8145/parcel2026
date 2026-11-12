@@ -15,6 +15,8 @@ export interface PackageView {
   version: number;
   effectiveFrom: Date;
   services: string[];
+  /** Message channels switched off per message ("notify.booked:sms"). */
+  notificationChannelsOff: string[];
   prices: PackagePrices;
 }
 
@@ -58,6 +60,7 @@ export async function versionInForce(db: Db, packageId: string, at = new Date())
     version: version.version,
     effectiveFrom: version.effectiveFrom,
     services: version.services,
+    notificationChannelsOff: version.notificationChannelsOff ?? [],
     prices: parsed.success ? parsed.data : packagePricesSchema.parse({}),
   };
 }

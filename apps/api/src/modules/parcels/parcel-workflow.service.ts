@@ -304,7 +304,7 @@ export class ParcelWorkflowService {
    * parcel whose package (or booking) left out the "Delivery code" message gets no SMS, and OTP
    * isn't one of its proof methods (proofMethodsFor).
    */
-  async issueDeliveryCode(db: Db, parcel: Pick<Parcel, "trackingId" | "recipientPhone" | "codAmount"> & Partial<Pick<Parcel, "packageVersionId" | "notifications" | "notifyChannels">>, after: AfterCommit) {
+  async issueDeliveryCode(db: Db, parcel: Pick<Parcel, "trackingId" | "recipientPhone" | "codAmount"> & Partial<Pick<Parcel, "packageVersionId" | "notifications" | "notifyChannels" | "notificationChannelsOff">>, after: AfterCommit) {
     const code = randomDigits(4);
     const cod = Number(parcel.codAmount) > 0 ? Number(parcel.codAmount).toLocaleString("en-BD") : "";
     // A security message: can't be switched off by recipients, skips per-recipient SMS spacing.
@@ -314,7 +314,7 @@ export class ParcelWorkflowService {
         to: { phone: parcel.recipientPhone },
         vars: { trackingId: parcel.trackingId, code, codAmount: cod },
         channels: ["sms"],
-        parcel: { packageVersionId: parcel.packageVersionId ?? null, notifications: parcel.notifications ?? [], notifyChannels: parcel.notifyChannels ?? null },
+        parcel: { packageVersionId: parcel.packageVersionId ?? null, notifications: parcel.notifications ?? [], notifyChannels: parcel.notifyChannels ?? null, notificationChannelsOff: parcel.notificationChannelsOff ?? null },
       })),
     );
     return encrypt(code);

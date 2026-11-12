@@ -19,20 +19,21 @@ export default function Page() {
         const a = MOBILE_APPS[app];
         return (
           <section className="ap-card" key={app}>
-            <span className="ap-icon" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="6" y="2" width="12" height="20" rx="2.5" />
-                <path d="M10 18h4" />
-              </svg>
-            </span>
+            {/* The app's own launcher icon (public/downloads/<app>-icon.png). */}
+            <img className="ap-icon" src={`/downloads/${app}-icon.png`} alt="" width={44} height={44} />
             <div className="ap-text">
               <h2>{name}</h2>
               <p>{who}</p>
               <small>{`Android · v${a.version} · ${a.sizeMb} MB`}</small>
+              <a className="ap-btn" href={a.href} download={a.fileName}>
+                {"Download"}
+              </a>
             </div>
-            <a className="ap-btn" href={a.href} download={a.fileName}>
-              {"Download"}
-            </a>
+            {/* Scan from another screen (e.g. the Operations console on a computer) to download on the phone. */}
+            <figure className="ap-qr">
+              <img src={`/downloads/${app}-qr.svg`} alt={`QR code: download the ${name}`} width={112} height={112} />
+              <figcaption>{"Scan with the phone camera"}</figcaption>
+            </figure>
           </section>
         );
       })}
@@ -46,9 +47,10 @@ const CSS = `
 .ap{max-width:640px;margin:0 auto;padding:16px 16px 40px;display:grid;gap:12px}
 .ap-head{display:grid;gap:2px;background:#1d5fd0;color:#fff;border-radius:12px;padding:14px 16px}.ap-head strong{font-size:18px}.ap-head span{font-size:14px;opacity:.9}
 .ap-card{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #e4e7ec;border-radius:12px;padding:16px}
-.ap-icon{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:11px;background:#2f55c9;color:#fff}
-.ap-text{flex:1;min-width:0}.ap-text h2{margin:0 0 4px;font-size:16px}.ap-text p{margin:0 0 4px;color:#475467;font-size:14px;line-height:1.45}.ap-text small{color:#667085;font-size:12.5px}
-.ap-btn{flex:none;padding:10px 16px;border-radius:8px;background:#12a150;color:#fff;font-weight:600;text-decoration:none}
+.ap-icon{flex:none;width:44px;height:44px;border-radius:11px;align-self:flex-start}
+.ap-text{flex:1;min-width:0}.ap-text h2{margin:0 0 4px;font-size:16px}.ap-text p{margin:0 0 4px;color:#475467;font-size:14px;line-height:1.45}.ap-text small{display:block;color:#667085;font-size:12.5px;margin-bottom:10px}
+.ap-btn{display:inline-block;padding:10px 16px;border-radius:8px;background:#12a150;color:#fff;font-weight:600;text-decoration:none}
+.ap-qr{flex:none;margin:0;display:grid;justify-items:center;gap:4px}.ap-qr img{display:block;border:1px solid #e4e7ec;border-radius:8px;background:#fff}.ap-qr figcaption{color:#667085;font-size:11.5px}
 .ap-note{margin:4px 2px 0;color:#667085;font-size:13px;line-height:1.5}
-@media (max-width:480px){.ap-card{flex-wrap:wrap}.ap-btn{width:100%;text-align:center}}
+@media (max-width:480px){.ap-card{flex-wrap:wrap}.ap-btn{width:100%;text-align:center}.ap-qr{display:none}}
 `;

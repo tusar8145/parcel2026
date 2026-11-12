@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.44.0 — 2026-11-12
+- Each Android app has its own icon: Rider (motorbike, navy), Operations (warehouse, blue), Merchant (shop, yellow). New apps: Rider 1.6.1, Operations 1.5.1, Merchant 1.4.3.
+- "Update the app" page: the download link itself can be tapped too, the browser is tried several ways, and when none opens the link is copied to paste into Chrome.
+- App download page (/apps, "Get the apps" in Courier Operations): each app shows its icon and a QR code to scan with the phone camera.
+
 ## 1.43.0 — 2026-11-12
 - Super admin › Monitoring › Live map: riders, hubs, operations managers, Hub Managers and franchises on one map, each shown by a tick box (and "Online only"), or one hub / one franchise with its riders. Click a rider: online / offline, last active, today's path, the parcels they carry and the ones they went out with (delivered, failed, return) with the minutes each delivery took; any earlier day too. Click a staff member: their path.
 - Rider app 1.6.0 sends where the rider is also off shift (every 15 minutes while the app is open); on shift as before.

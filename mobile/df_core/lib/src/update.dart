@@ -26,6 +26,19 @@ class AppUpdate {
   }
 }
 
+/// Opens [link] in the phone's browser: the browser app first, then the system default, then an in-app browser view.
+/// None of them: the link is copied, so it can be pasted into the browser. Returns null, or what to tell the person.
+Future<String?> openDownloadLink(String link) async {
+  final uri = Uri.parse(link);
+  for (final mode in [LaunchMode.externalApplication, LaunchMode.platformDefault, LaunchMode.inAppBrowserView]) {
+    try {
+      if (await launchUrl(uri, mode: mode)) return null;
+    } catch (_) {}
+  }
+  await Clipboard.setData(ClipboardData(text: link));
+  return 'The browser could not be opened. The link is copied: open Chrome and paste it in the address bar.';
+}
+
 class UpdateRequiredPage extends StatelessWidget {
   const UpdateRequiredPage({super.key, required this.message, this.url});
   final String message;
@@ -58,13 +71,25 @@ class UpdateRequiredPage extends StatelessWidget {
                     FilledButton.icon(
                       style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                       onPressed: () async {
-                        if (!await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication) && context.mounted) snack(context, 'Could not open the browser. Copy the link instead.');
+                        final problem = await openDownloadLink(link);
+                        if (problem != null && context.mounted) snack(context, problem);
                       },
                       icon: const Icon(Icons.download),
                       label: const Text('Download the new version'),
                     ),
                     const SizedBox(height: 10),
-                    SelectableText(link, textAlign: TextAlign.center, style: const TextStyle(color: muted)),
+                    // The link itself opens too (people tap it more than the button).
+                    InkWell(
+                      onTap: () async {
+                        final problem = await openDownloadLink(link);
+                        if (problem != null && context.mounted) snack(context, problem);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(link, textAlign: TextAlign.center, style: const TextStyle(color: brand, decoration: TextDecoration.underline)),
+                      ),
+                    ),
+                    const Text('Or open deliveryfast.com.bd/apps in the browser.', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 12)),
                     TextButton.icon(
                       onPressed: () async {
                         await Clipboard.setData(ClipboardData(text: link));

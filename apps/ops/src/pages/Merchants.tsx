@@ -1,6 +1,6 @@
 /**
  * Merchants (bridge-pages.js register, bridge-merchant-hubs.js, bridge-merchant-tabs.js, bridge-login-as.js):
- *   - the register of ACTIVE merchants (GET /ops/merchants) in tabs by type (E-commerce first · Banking & Financial ·
+ *   - the register of ACTIVE merchants (GET /ops/merchants) in tabs by type (Banking & Financial first · E-commerce ·
  *     All, with counts), searchable, filtered by hub (the hub serving the pickup address; "No hub"); CSV export
  *   - "Address changes to approve" (GET /merchant-address-requests → POST …/:id/approve | reject with a reason)
  *   - "Change address" per merchant (PATCH /merchants/:id/address: district → zone → area → street; the hub follows)
@@ -50,7 +50,7 @@ interface AddressRequest {
 }
 
 const STATUS: Record<string, string> = { ACTIVE: "Active", PENDING_REVIEW: "Review", INFO_REQUESTED: "Info requested", SUSPENDED: "Suspended", REJECTED: "Rejected" };
-const TYPE_TABS = ["E-commerce", "Banking & Financial", "All"] as const;
+const TYPE_TABS = ["Banking & Financial", "E-commerce", "All"] as const;
 type TypeTab = (typeof TYPE_TABS)[number];
 const typeLabel = (m: Merchant) => (m.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce");
 const pickupText = (m: Merchant) => `${m.pickupZone || m.pickupArea}, ${m.pickupDistrict}${m.pickupZone ? "" : " (address not completed)"}${m.handover === "HUB_DROP" ? " · drops at hub" : ""}`;
@@ -62,9 +62,9 @@ export default function Merchants() {
   const canAddress = ops.can("merchantAddress");
   const [tab, setTab] = useState<TypeTab>(() => {
     try {
-      return (sessionStorage.getItem("df-ops-merchant-tab") as TypeTab) || "E-commerce";
+      return (sessionStorage.getItem("df-ops-merchant-tab") as TypeTab) || "Banking & Financial";
     } catch {
-      return "E-commerce";
+      return "Banking & Financial";
     }
   });
   const [hub, setHub] = useState("");

@@ -4,9 +4,9 @@ import { api } from "@panel/lib/api";
 
 export type Segment = "CUSTOMER" | "ECOMMERCE" | "BANKING_FINANCIAL";
 export const SEGMENTS: [Segment, string][] = [
-  ["CUSTOMER", "Customer"],
-  ["ECOMMERCE", "E-commerce"],
   ["BANKING_FINANCIAL", "Banking & Financial"],
+  ["ECOMMERCE", "E-commerce"],
+  ["CUSTOMER", "Customer"],
 ];
 export const segLabel = (code: string) => SEGMENTS.find(([c]) => c === code)?.[1] ?? code;
 export const PENDING = "Sent for approval: another super admin has to approve it (Admin users & roles → Approvals). Nothing changes until then.";

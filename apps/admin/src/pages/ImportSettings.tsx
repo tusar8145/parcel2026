@@ -15,7 +15,7 @@ import { toast, toastError } from "@panel/ui/toast";
 import { useCatalog } from "@/lib/admin";
 
 type Kind = "customer" | "ecommerce" | "document";
-const KINDS: Record<Kind, string> = { customer: "Customer parcel template", ecommerce: "E-commerce template", document: "Banking & Financial template" };
+const KINDS: Record<Kind, string> = { document: "Banking & Financial template", ecommerce: "E-commerce template", customer: "Customer parcel template" };
 const TAB_SLUG: Record<string, Kind> = { customer: "customer", "e-commerce": "ecommerce", ecommerce: "ecommerce", banking: "document", document: "document" };
 const PACKAGE_ONLY: Record<string, string> = { cod: "Only when the package offers cash on delivery", openBox: "Only when the package offers open box" };
 const LIMITS: [string, string, string][] = [
@@ -48,7 +48,7 @@ export default function ImportSettings({ tab: initial }: { tab?: string }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "imports-config"], queryFn: () => api<ImportConfig>("/imports/config") });
   const catalog = useCatalog();
-  const [tab, setTab] = useState<Kind>(TAB_SLUG[initial ?? ""] ?? "ecommerce");
+  const [tab, setTab] = useState<Kind>(TAB_SLUG[initial ?? ""] ?? "document");
   const [required, setRequired] = useState<Record<string, boolean>>({});
   const [defaults, setDefaults] = useState<Record<string, string>>({});
   const [dest, setDest] = useState<ImportConfig["defaultDestination"]>({ mode: "MERCHANT_CITY" });

@@ -46,8 +46,8 @@ export function moneyStaff({ me, centralHubId }: MenuContext) {
 /** Accounts tabs by role (bridge-accounts.js Ops.accountsTab). */
 const ACCOUNTS_TABS: Record<string, (c: MenuContext) => boolean> = {
   Overview: moneyStaff,
-  "E-commerce": moneyStaff,
   Financial: moneyStaff,
+  "E-commerce": moneyStaff,
   Customer: moneyStaff,
   "Rider cash": c => !!c.me?.can.receiveCash || moneyStaff(c),
   "Hub transfers": c => !!c.me?.can.receiveCash || moneyStaff(c),
@@ -66,7 +66,7 @@ export const VIEWS: ViewDef[] = [
     subtitle: "Orders waiting for operations: accept and assign a pickup rider, switch to drop-off, or cancel the request.",
     tabs: tabs("New orders"),
   },
-  { id: "All parcels", label: "All parcels", icon: "search", group: "today", tabs: tabs("All", "E-commerce", "Banking & Financial", "Customer") },
+  { id: "All parcels", label: "All parcels", icon: "search", group: "today", tabs: tabs("All", "Banking & Financial", "E-commerce", "Customer") },
   { id: "Work queue", label: "Parcel queue", icon: "queue", group: "queue", count: "workQueue", tabs: tabs("Work queue") },
   {
     id: "Scan desk",

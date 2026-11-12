@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.45.1 — 2026-11-12
+- Banking & Financial now comes first everywhere, then E-commerce, then Customer: the super admin menu (Banking & Financial merchants above E-commerce merchants), Service plans & pricing and Import settings tabs (opening on Banking & Financial), and in Courier Operations the All parcels tabs, the Merchants tabs (opening on Banking & Financial) and the Accounts tabs.
+
 ## 1.45.0 — 2026-11-12
 - Booking (Courier Operations, merchant panels, Excel imports): "Delivery proof required" (ticked by default) and "Set specific proof" to choose one of the service plan's proof methods (signed invoice photo, OTP or signature).
 - Rider app 1.6.2: a parcel booked without proof required can be delivered with "No proof"; a parcel with a specific proof takes only that one. The server refuses a delivery without the proof the parcel needs.

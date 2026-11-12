@@ -44,7 +44,7 @@ interface Draft {
 export default function ServicePlans() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const seg: Segment = TAB_OF[params.get("tab") ?? ""] ?? "CUSTOMER";
+  const seg: Segment = TAB_OF[params.get("tab") ?? ""] ?? "BANKING_FINANCIAL";
   const catalog = useServiceCatalog();
   const packages = usePackages();
   const assignments = useAssignments();

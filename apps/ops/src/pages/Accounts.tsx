@@ -84,7 +84,7 @@ export default function Accounts({ tab }: { tab: string }) {
   const counts = useQuery({ queryKey: ["acc", "tab-counts"], queryFn: () => api<Record<string, { count?: number; amount?: number; hint?: string }>>("/accounts/tab-counts"), staleTime: 15_000, retry: false });
   useLive(["parcel.updated"], () => void counts.refetch(), { debounceMs: 3000, fallbackMs: 120_000 });
   const badges = Object.fromEntries(
-    ["E-commerce", "Financial", "Customer", "Rider cash", "Hub transfers", "Rider pay", "Franchise"].map(t => {
+    ["Financial", "E-commerce", "Customer", "Rider cash", "Hub transfers", "Rider pay", "Franchise"].map(t => {
       const c = counts.data?.[t];
       return [
         t,

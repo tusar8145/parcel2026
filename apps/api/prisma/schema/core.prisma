@@ -64,6 +64,9 @@ model User {
   notificationPreferences NotificationPreference[]
   inAppNotifications      UserNotification[]
   pushDevices             PushDevice[]
+  /// Live map (live-map.prisma): an Operations app user's last position and path.
+  staffLocation           StaffLocation?
+  staffLocationPoints     StaffLocationPoint[]
 
   @@map("users")
 }

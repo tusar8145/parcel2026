@@ -63,9 +63,10 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       const now = Date.now();
       const fix = (ago: number, lat = 23.7808) => ({ lat, lng: 90.4142, accuracy: 12, heading: 90, speed: 4.2, at: new Date(now - ago).toISOString() });
 
-      const off = await ctx.api("POST", "/rider/location", { token: s.rider.token, body: fix(0) });
-      expect(off.status).toBe(409);
-      expect(off.body.error.code).toBe("RIDER_OFF_SHIFT");
+      // Off shift the app still sends a fix now and then (super admin › Live map): kept and shown, not refused.
+      const off = await ctx.api("POST", "/rider/location", { token: s.rider.token, body: fix(200_000, 23.6) });
+      expect(off.status, JSON.stringify(off.body)).toBe(202);
+      expect(off.body).toEqual({ accepted: 1, ignored: 0, live: true });
 
       expect((await ctx.api("PATCH", "/rider/me/status", { token: s.rider.token, body: { status: "ONLINE" } })).status).toBe(200);
       const live = await ctx.api("POST", "/rider/location", { token: s.rider.token, body: fix(60_000) });
@@ -84,7 +85,7 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
       expect(map.body.items[0]).toMatchObject({ code: "R-2048", lat: 23.79, lng: 90.4142, status: "ONLINE", stale: false, hub: { id: s.h.id } });
 
       const history = await ctx.api("GET", `/ops/rider-locations/${s.rider.rider.id}/history`, { token: s.ops.token });
-      expect(history.body.points.map((p: { lat: number }) => p.lat)).toEqual([23.7, 23.7808, 23.5, 23.79]);
+      expect(history.body.points.map((p: { lat: number }) => p.lat)).toEqual([23.6, 23.7, 23.7808, 23.5, 23.79]);
 
       // Implausible device time (an hour in the future) is refused.
       const future = await ctx.api("POST", "/rider/location", { token: s.rider.token, body: fix(-3600_000) });

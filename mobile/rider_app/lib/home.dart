@@ -127,6 +127,9 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
       openRiderNotification(context, data.cast<String, dynamic>());
     };
     Push.register('rider');
+    // Off shift: where the rider is, every 15 minutes while the app is open (super admin › Live map). On shift the
+    // shift tracker sends.
+    Presence.start(path: '/rider/location', every: const Duration(minutes: 15), skip: () => Tracker.on.value);
     // Back on shift after the app was closed: location sharing starts again.
     cachedGet('/rider/shift')
         .then((s) {

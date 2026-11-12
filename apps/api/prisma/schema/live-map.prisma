@@ -1,0 +1,32 @@
+// Live map (super admin › Live map): where Operations app users (operations managers, Hub Managers, franchise
+// accounts) are. Riders keep their own tables (rider.prisma: RiderLocation, RiderLocationPoint). Owned by
+// src/modules/live-map. History is deleted after RIDER_LOCATION_RETENTION_DAYS like the riders'.
+
+/// An Operations app user's last position (sent while the app is open).
+model StaffLocation {
+  userId     String   @id @db.Uuid
+  lat        Float
+  lng        Float
+  accuracy   Float // metres
+  at         DateTime // when the device took the fix
+  receivedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_locations")
+}
+
+/// An Operations app user's position history (the path on the live map).
+model StaffLocationPoint {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @db.Uuid
+  lat       Float
+  lng       Float
+  accuracy  Float
+  at        DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, at]) // replays of a queued fix are ignored
+  @@index([at])
+  @@map("staff_location_points")
+}

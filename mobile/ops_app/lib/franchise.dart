@@ -68,6 +68,8 @@ class FranchiseShellState extends State<FranchiseShell> {
       franchiseChanged.value++;
     };
     Push.register('operations');
+    // Where the franchise is, every 2 minutes while the app is open (super admin › Live map).
+    Presence.start(path: '/staff/location', every: const Duration(minutes: 2));
   }
 
   Future<void> _start() async {

@@ -15,6 +15,7 @@ import { AllExceptionsFilter } from "./common/exception.filter";
 import { RedisThrottlerStorage } from "./common/throttler-redis.storage";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { LiveMapModule } from "./modules/live-map/live-map.module";
 import { AppVersionsModule } from "./modules/app-versions/app-versions.module";
 import { AppVersionGuard } from "./modules/app-versions/app-version.guard";
 import { HealthController } from "./modules/health/health.controller";
@@ -136,6 +137,7 @@ import { WorkQueueModule } from "./modules/work-queue/work-queue.module";
     FranchiseModule,
     WorkQueueModule,
     AppVersionsModule,
+    LiveMapModule,
   ],
   controllers: [HealthController, EventsController],
   providers: [

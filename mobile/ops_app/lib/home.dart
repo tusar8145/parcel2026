@@ -92,6 +92,8 @@ class OpsShellState extends State<OpsShell> with WidgetsBindingObserver {
       openOpsNotification(context, data.cast<String, dynamic>());
     };
     Push.register('operations');
+    // Where this staff member is, every 2 minutes while the app is open (super admin › Live map).
+    Presence.start(path: '/staff/location', every: const Duration(minutes: 2));
   }
 
   Future<void> _start() async {

@@ -44,12 +44,12 @@ export class RiderLocationService implements OnApplicationBootstrap {
   }
 
   /**
-   * Live fix from a rider on shift. Stores history, moves the rider's latest position and
-   * publishes `rider.location` to operations (rider:read) and the rider's hub.
+   * Live fix from a rider: on shift (often) or off shift (rider app 1.6+: every 15 minutes while the app is open, for
+   * super admin › Live map). Stores history, moves the rider's latest position and publishes `rider.location` to
+   * operations (rider:read) and the rider's hub. Customers following a parcel hear only fixes taken on shift.
    */
   async record(actor: UserActor, point: Point) {
     const rider = await this.onShiftRider(actor);
-    if (rider.status === "OFFLINE") throw new AppError("RIDER_OFF_SHIFT", "Start your shift to share your location", HttpStatus.CONFLICT);
     const result = await this.store(rider, [point]);
     // A repeat of a fix already stored (same time, e.g. "Update now" right after an automatic send) is fine.
     if (!result.valid) throw new AppError("INVALID_LOCATION_TIME", "The location's time isn't plausible. Check the phone's date and time.", 422);
@@ -100,7 +100,7 @@ export class RiderLocationService implements OnApplicationBootstrap {
 
     const latest = valid[valid.length - 1];
     let live = false;
-    if (rider.status !== "OFFLINE" && latest.atDate.getTime() > now - MAX_REPLAY_AGE_MS) {
+    if (latest.atDate.getTime() > now - MAX_REPLAY_AGE_MS) {
       const data = { lat: latest.lat, lng: latest.lng, accuracy: latest.accuracy, heading: latest.heading ?? null, speed: latest.speed ?? null, at: latest.atDate, receivedAt: new Date() };
       // Only move forward in time: a late replay must not overwrite a newer live fix.
       const moved = await this.prisma.riderLocation.updateMany({ where: { riderId: rider.id, at: { lt: latest.atDate } }, data });
@@ -117,7 +117,7 @@ export class RiderLocationService implements OnApplicationBootstrap {
           staffPermission: "rider:read",
           data: { riderId: rider.id, code: rider.code, lat: latest.lat, lng: latest.lng, accuracy: latest.accuracy, heading: latest.heading ?? null, speed: latest.speed ?? null, at: latest.at, status: rider.status },
         });
-        await this.notifyParcelViewers(rider.id);
+        if (rider.status !== "OFFLINE") await this.notifyParcelViewers(rider.id);
       }
     }
     return { accepted: count, ignored: points.length - count, live, valid: valid.length };

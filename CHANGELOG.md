@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.43.0 — 2026-11-12
+- Super admin › Monitoring › Live map: riders, hubs, operations managers, Hub Managers and franchises on one map, each shown by a tick box (and "Online only"), or one hub / one franchise with its riders. Click a rider: online / offline, last active, today's path, the parcels they carry and the ones they went out with (delivered, failed, return) with the minutes each delivery took; any earlier day too. Click a staff member: their path.
+- Rider app 1.6.0 sends where the rider is also off shift (every 15 minutes while the app is open); on shift as before.
+- Operations app 1.5.0 sends where operations managers, Hub Managers and franchises are, every 2 minutes while the app is open (nothing when it is closed).
+
 ## 1.42.0 — 2026-11-12
 - Rider app 1.6.0 › Deliveries: "Best route" puts the open deliveries in the best order from where the rider is (stop numbers on each parcel), and "Google Maps" navigates through the next stops. The list follows today's plan, also when the plan was made in Courier Operations › Route planner.
 - Super admin › Operational settings › AI address reading: when an address can't be found on the map as written, AI rewrites it (area, road, landmark) and searches again, so route plans place the parcel at its address instead of the zone centre. On / off, a monthly USD limit and a daily limit, this month's and today's use, the last 30 days and recent addresses. Off or at a limit, everything works as before.

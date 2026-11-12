@@ -25,6 +25,7 @@ export const PAGES: PageDef[] = [
   { id: "Service plans", label: "Service plans & pricing", slug: "service-plans", icon: "sheet", group: "merchants", legacy: ["service-plans-and-pricing"] },
   { id: "Riders", label: "Riders", slug: "riders", icon: "truck", group: "riders" },
   { id: "Rider plans", label: "Rider earning plans", slug: "rider-plans", icon: "truck", group: "riders", legacy: ["rider-earning-plans"] },
+  { id: "Live map", label: "Live map", slug: "live-map", icon: "pin", group: "monitoring" },
   { id: "Platform activity", label: "Platform activity", slug: "platform-activity", icon: "chart", group: "monitoring" },
   { id: "Audit log", label: "Audit & security log", slug: "audit-log", icon: "lock", group: "monitoring", legacy: ["audit-and-security-log"] },
   { id: "Admin users", label: "Admin users & roles", slug: "admin-users", icon: "users", group: "platform", legacy: ["admin-users-and-roles"] },

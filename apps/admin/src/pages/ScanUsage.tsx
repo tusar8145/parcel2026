@@ -78,7 +78,7 @@ export default function ScanUsage() {
     <>
       <PageHeading
         eyebrow="Operational settings"
-        title="Scan with phone usage"
+        title="AI Scan with phone"
         subtitle="Every label photo read: by Claude or the local reader, how long it took and Claude's estimated cost."
         actions={
           <Button

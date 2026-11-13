@@ -14,6 +14,7 @@ import {
   emailGatewaySchema,
   eventSchema,
   outboxQuerySchema,
+  outboxByMerchantQuerySchema,
   preferencesSchema,
   previewSchema,
   settingsSchema,
@@ -27,6 +28,11 @@ import { GatewaysService } from "./gateways.service";
 import { NotifyService } from "./notify.service";
 import { PreferencesService } from "./preferences.service";
 import { smsSegments } from "./render";
+import { definitionOf } from "./catalog";
+import { maskBody } from "../parcels/parcel-messages.service";
+
+/** Dhaka days (inclusive) as a createdAt range. */
+const dayRange = (from?: string, to?: string) => (from || to ? { gte: new Date(`${from ?? "2000-01-01"}T00:00:00+06:00`), lt: new Date(new Date(`${to ?? "2999-12-31"}T00:00:00+06:00`).getTime() + 86_400_000) } : null);
 
 const TEST_SEND = { default: { limit: 10, ttl: 60_000 } };
 
@@ -147,17 +153,58 @@ export class NotificationsAdminController {
     return this.gateways.sendTest(actor, "EMAIL", body.email, { subject: body.subject ?? "Delivery Fast test email", body: text, html: `<p>${text.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!)}</p>` }, meta);
   }
 
-  /** Recent messages (bodies hidden: they can contain codes). */
+  /**
+   * Recent messages: what was sent (the text, with codes and private links masked), the event, the parcel and its
+   * merchant, to whom (masked) and how it went. Filters: channel, status, period (Dhaka days), merchant, search.
+   */
   @Get("outbox")
   @ApiZodQuery(outboxQuerySchema)
   async outbox(@ZQuery(outboxQuerySchema) query: z.infer<typeof outboxQuerySchema>) {
+    const range = dayRange(query.from, query.to);
+    const term = query.q?.trim();
+    const merchantTracking = query.merchantId ? (await this.prisma.parcel.findMany({ where: { merchantId: query.merchantId }, select: { trackingId: true }, take: 20_000 })).map(p => p.trackingId) : null;
     const rows = await this.prisma.outboxMessage.findMany({
-      where: { channel: query.channel, state: query.state },
+      where: {
+        channel: query.channel,
+        state: query.state,
+        ...(range ? { createdAt: range } : {}),
+        ...(merchantTracking ? { trackingId: { in: merchantTracking } } : {}),
+        ...(term ? { OR: [{ trackingId: { contains: term.toUpperCase() } }, { to: { contains: term.replace(/^0/, "") } }] } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: query.limit,
-      select: { id: true, channel: true, to: true, template: true, state: true, attempts: true, lastError: true, provider: true, providerMessageId: true, notBefore: true, sentAt: true, createdAt: true },
+      select: { id: true, channel: true, to: true, template: true, body: true, subject: true, trackingId: true, state: true, attempts: true, lastError: true, provider: true, providerMessageId: true, notBefore: true, sentAt: true, createdAt: true },
     });
-    return rows.map(r => ({ ...r, to: r.channel === "SMS" ? r.to.replace(/^(\+8801\d)\d{5}(\d{3})$/, "$1•••••$2") : r.to.replace(/^(.).*(@.*)$/, "$1•••$2") }));
+    const ids = [...new Set(rows.map(r => r.trackingId).filter((v): v is string => !!v))];
+    const parcels = ids.length ? await this.prisma.parcel.findMany({ where: { trackingId: { in: ids } }, select: { trackingId: true, merchant: { select: { id: true, code: true, name: true } } } }) : [];
+    const merchantOf = new Map(parcels.map(p => [p.trackingId, p.merchant]));
+    return rows.map(({ body, ...r }) => ({
+      ...r,
+      to: r.channel === "SMS" ? r.to.replace(/^(\+8801\d)\d{5}(\d{3})$/, "$1•••••$2") : r.to.replace(/^(.).*(@.*)$/, "$1•••$2"),
+      eventLabel: r.template.startsWith("broadcast:") ? "Message (Messaging)" : (definitionOf(r.template)?.label ?? r.template),
+      text: maskBody(r.template, body).slice(0, 600),
+      parts: r.channel === "SMS" ? smsSegments(body).segments : undefined,
+      merchant: r.trackingId ? (merchantOf.get(r.trackingId) ?? null) : null,
+    }));
+  }
+
+  /** How many SMS (or emails) each merchant's parcels got in a period (Dhaka days): sent, failed, waiting, SMS parts. */
+  @Get("outbox/by-merchant")
+  @ApiZodQuery(outboxByMerchantQuerySchema)
+  async outboxByMerchant(@ZQuery(outboxByMerchantQuerySchema) query: z.infer<typeof outboxByMerchantQuerySchema>) {
+    const range = dayRange(query.from, query.to)!;
+    const rows = await this.prisma.$queryRaw<{ merchantId: string | null; total: number; sent: number; failed: number; pending: number }[]>`
+      SELECT p."merchantId" AS "merchantId", count(*)::int AS total,
+             (count(*) FILTER (WHERE o.state = 'SENT'))::int AS sent,
+             (count(*) FILTER (WHERE o.state = 'FAILED'))::int AS failed,
+             (count(*) FILTER (WHERE o.state = 'PENDING'))::int AS pending
+      FROM outbox_messages o LEFT JOIN parcels p ON p."trackingId" = o."trackingId"
+      WHERE o.channel::text = ${query.channel} AND o."createdAt" >= ${range.gte.toISOString()}::timestamp AND o."createdAt" < ${range.lt.toISOString()}::timestamp
+      GROUP BY 1 ORDER BY total DESC`;
+    const merchants = await this.prisma.merchant.findMany({ where: { id: { in: rows.map(r => r.merchantId).filter((v): v is string => !!v) } }, select: { id: true, code: true, name: true, type: true } });
+    const byId = new Map(merchants.map(m => [m.id, m]));
+    const items = rows.map(r => ({ merchant: r.merchantId ? (byId.get(r.merchantId) ?? null) : null, total: r.total, sent: r.sent, failed: r.failed, pending: r.pending }));
+    return { channel: query.channel, from: query.from, to: query.to, total: items.reduce((a, r) => a + r.total, 0), items };
   }
 }
 

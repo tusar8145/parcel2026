@@ -18,7 +18,8 @@
     ["roles", "Roles"],
     ["settings", "Where to change"],
   ];
-  const S = { data: null, error: "", tab: "numbers", q: "", area: "" };
+  const S = { data: null, error: "", tab: "numbers", q: "", area: "", hide: [] };
+  const shownTabs = () => TABS.filter(([k]) => !S.hide.includes(k));
   let host = null;
 
   document.head.insertAdjacentHTML(
@@ -158,11 +159,14 @@
     if (!host?.isConnected) return;
     const d = S.data;
     const body = !d ? `<div class="sg-card sg-empty">${esc(S.error || "Loading the guide…")}</div>` : { numbers: numbersHtml, lifecycle: lifecycleHtml, notifications: notificationsHtml, money: moneyHtml, roles: rolesHtml, settings: settingsHtml }[S.tab](d);
-    host.innerHTML = `<div class="sg"><div class="sg-tabs" role="tablist" aria-label="System guide">${TABS.map(([k, label]) => `<button type="button" role="tab" data-sg-tab="${k}" aria-selected="${k === S.tab}">${label}</button>`).join("")}</div>${body}</div>`;
+    host.innerHTML = `<div class="sg"><div class="sg-tabs" role="tablist" aria-label="System guide">${shownTabs().map(([k, label]) => `<button type="button" role="tab" data-sg-tab="${k}" aria-selected="${k === S.tab}">${label}</button>`).join("")}</div>${body}</div>`;
   }
 
-  async function mount(element) {
+  /** `options.hide`: tabs not shown on this page (e.g. super admin: ["lifecycle", "notifications", "settings"]). */
+  async function mount(element, options = {}) {
     host = element;
+    S.hide = Array.isArray(options.hide) ? options.hide : [];
+    if (S.hide.includes(S.tab)) S.tab = shownTabs()[0]?.[0] ?? "numbers";
     paint();
     if (S.data) return;
     try {

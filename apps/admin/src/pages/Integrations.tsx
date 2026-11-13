@@ -3,7 +3,7 @@
  * gateways — status metrics, settings with write-only keys (PUT /notifications/gateways/:channel), health, and a test
  * message (POST /notifications/gateways/:channel/test) — and Firebase push.
  * Each has an on / off switch: off sends nothing on that channel (the messages aren't written either).
- * The SMS limits and message settings sit under the gateways. Sending to people is in Messaging.
+ * The SMS limits and message settings come after Firebase push. Sending to people is in Messaging.
  */
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -61,9 +61,9 @@ export function Integrations() {
         </>
       )}
       <div style={{ marginBottom: 16 }}>
-        <SmsLimits />
+        <FirebasePush />
       </div>
-      <FirebasePush />
+      <SmsLimits />
     </>
   );
 }

@@ -7,7 +7,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, describe } from "@panel/lib/api";
 import { PageHeading } from "@panel/ui/kit";
 
-type Guide = { mount: (el: HTMLElement) => Promise<void> | void };
+type Guide = { mount: (el: HTMLElement, options?: { hide?: string[] }) => Promise<void> | void };
+/** Tabs the super admin doesn't show (Parcel lifecycle, Notifications, Where to change). */
+const HIDDEN = ["lifecycle", "notifications", "settings"];
 const w = window as unknown as { DF?: Record<string, unknown> & { systemGuide?: Guide } };
 let loading: Promise<Guide> | null = null;
 
@@ -31,12 +33,12 @@ export default function SystemGuide() {
   const [error, setError] = useState("");
   useEffect(() => {
     loadGuide()
-      .then(g => host.current && g.mount(host.current))
+      .then(g => host.current && g.mount(host.current, { hide: HIDDEN }))
       .catch(e => setError((e as Error).message));
   }, []);
   return (
     <>
-      <PageHeading eyebrow="Platform control · reference" title="System guide" subtitle="What the numbers (PP, MR, HS…) mean, the parcel lifecycle and its SMS / email / push, money steps, roles, and where each setting is changed." />
+      <PageHeading eyebrow="Platform control · reference" title="System guide" subtitle="What the numbers (PP, MR, HS…) mean, the money steps and the roles." />
       {error ? <div className="callout bad">{error}</div> : null}
       <div ref={host} />
     </>

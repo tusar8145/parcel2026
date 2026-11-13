@@ -1,0 +1,90 @@
+/* Super admin menu: its own background, smooth hover / active effects and sub-menus that slide open (this panel only). */
+.admin-sidebar {
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(47, 85, 201, 0.1) 0%, rgba(47, 85, 201, 0) 60%),
+    linear-gradient(180deg, #f3f6fd 0%, #eaf0fb 55%, #e4ebf8 100%);
+  border-right: 1px solid #dbe3f2;
+}
+.admin-sidebar .brand { border-bottom: 1px solid rgba(47, 85, 201, 0.1); }
+.admin-sidebar .nav-label { color: #6a7896; }
+.admin-sidebar .nav-item {
+  position: relative;
+  color: #3a4660;
+  transition: background-color 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.25s ease;
+}
+.admin-sidebar .nav-item svg { transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease; }
+.admin-sidebar .nav-item:hover {
+  background: rgba(255, 255, 255, 0.92);
+  color: #101828;
+  transform: translateX(3px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 2px 8px -4px rgba(47, 85, 201, 0.25);
+}
+.admin-sidebar .nav-item:hover svg { transform: scale(1.12); color: var(--primary); }
+.admin-sidebar .nav-item[aria-current="page"] {
+  background: linear-gradient(95deg, var(--primary) 0%, #4a7ff0 100%);
+  color: #fff;
+  font-weight: 620;
+  transform: none;
+  box-shadow: 0 8px 18px -8px rgba(47, 85, 201, 0.7);
+  animation: df-nav-in 0.35s ease;
+}
+.admin-sidebar .nav-item[aria-current="page"] svg { color: #fff; transform: none; }
+.admin-sidebar .nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 7px;
+  bottom: 7px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--primary);
+  transform-origin: center;
+  animation: df-nav-bar 0.35s ease;
+}
+.admin-sidebar .nav-item[aria-current="page"] .nav-count { background: rgba(255, 255, 255, 0.95); color: var(--primary); }
+.admin-sidebar .nav-sub-toggle.has-active { color: var(--primary); font-weight: 620; }
+.admin-sidebar .nav-sub-toggle > svg:last-child { transition: transform 0.28s ease; }
+.admin-sidebar .nav-sub-toggle[aria-expanded="true"] > svg:last-child { transform: rotate(90deg); }
+.admin-sidebar .nav-sub-toggle:hover > svg:last-child { transform: translateX(2px); }
+.admin-sidebar .nav-sub-toggle[aria-expanded="true"]:hover > svg:last-child { transform: rotate(90deg); }
+
+/* Sub-menus slide open and closed. */
+.admin-sidebar .nav-sub-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.32s ease, opacity 0.25s ease;
+}
+.admin-sidebar .nav-sub-wrap.open { grid-template-rows: 1fr; opacity: 1; }
+.admin-sidebar .nav-sub-wrap > .nav-sub-items { min-height: 0; overflow: hidden; border-left-color: rgba(47, 85, 201, 0.22); }
+.admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item { animation: df-nav-fade 0.3s ease both; }
+.admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item:nth-child(2) { animation-delay: 0.03s; }
+.admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item:nth-child(3) { animation-delay: 0.06s; }
+.admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item:nth-child(4) { animation-delay: 0.09s; }
+.admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item:nth-child(n + 5) { animation-delay: 0.12s; }
+
+.admin-sidebar .sidebar-foot { border-top-color: rgba(47, 85, 201, 0.12); background: rgba(255, 255, 255, 0.45); backdrop-filter: blur(6px); }
+
+@keyframes df-nav-bar {
+  from { transform: scaleY(0); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+@keyframes df-nav-in {
+  from { box-shadow: 0 0 0 0 rgba(47, 85, 201, 0); filter: brightness(1.12); }
+  to { box-shadow: 0 8px 18px -8px rgba(47, 85, 201, 0.7); filter: none; }
+}
+@keyframes df-nav-fade {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar .nav-item,
+  .admin-sidebar .nav-item svg,
+  .admin-sidebar .nav-sub-wrap,
+  .admin-sidebar .nav-sub-toggle > svg:last-child { transition: none; }
+  .admin-sidebar .nav-item[aria-current="page"],
+  .admin-sidebar .nav-item[aria-current="page"]::before,
+  .admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item { animation: none; }
+  .admin-sidebar .nav-item:hover { transform: none; }
+}

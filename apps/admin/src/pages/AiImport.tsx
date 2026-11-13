@@ -96,7 +96,7 @@ export default function AiImport() {
     <>
       <PageHeading
         eyebrow="Operational settings"
-        title="AI import"
+        title="AI Product & Address"
         subtitle="Excel imports (merchants and operations): product names and addresses the system can't match itself go to AI. A new product or zone is created at once (tagged AI created; a new zone is served by the nearest zone's hub). Each decision is remembered, so the same name doesn't go to the AI again."
       />
       {!o.apiKey ? <div className="callout warn" style={{ marginBottom: 12 }}>No Anthropic API key on the server (ANTHROPIC_API_KEY): the AI can't run.</div> : null}

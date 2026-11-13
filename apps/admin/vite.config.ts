@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from "vite";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
@@ -30,8 +30,23 @@ const websiteFiles = (): Plugin => ({
   },
 });
 
+/** CHANGELOG.md (repo root), read at build time: "## 1.2.0 — 2026-11-02" headings, newest first, then "- change" lines. */
+function releases() {
+  const file = fileURLToPath(new URL("../../CHANGELOG.md", import.meta.url));
+  if (!existsSync(file)) return [];
+  const out: { version: string; date: string; changes: string[] }[] = [];
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const head = /^##\s+(\d+\.\d+\.\d+)\s*[\u2014-]\s*(\S+)/.exec(line);
+    if (head) out.push({ version: head[1], date: head[2], changes: [] });
+    else if (out.length && /^-\s+/.test(line)) out[out.length - 1].changes.push(line.replace(/^-\s+/, "").replace(/\*\*|`/g, ""));
+  }
+  return out;
+}
+
 export default defineConfig({
   base: "/admin/",
+  // What's new (the menu's foot): the version and every release's changes.
+  define: { __APP_RELEASES__: JSON.stringify(releases()) },
   plugins: [react(), websiteFiles()],
   resolve: {
     alias: {

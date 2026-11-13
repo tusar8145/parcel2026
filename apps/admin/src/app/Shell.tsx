@@ -16,6 +16,8 @@ import { confirm } from "@panel/ui/dialogs";
 import { toastError } from "@panel/ui/toast";
 import { GROUPS, legacyPath, PAGES, type PageDef } from "./nav";
 import { useMerchants } from "@/lib/admin";
+import "./sidebar.css";
+import WhatsNew from "./WhatsNew";
 
 export default function Shell({ children, crumb }: { children: ReactNode; crumb: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -76,7 +78,7 @@ function Sidebar() {
     );
   };
   return (
-    <aside className="sidebar" aria-label="Main menu">
+    <aside className="sidebar admin-sidebar" aria-label="Main menu">
       <div className="brand">
         <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Delivery Fast" width={528} height={100} />
         <small>Platform administration</small>
@@ -100,9 +102,12 @@ function Sidebar() {
                     <button type="button" className={`nav-item nav-sub-toggle${children.some(c => `/${c.slug}` === pathname) ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [sub]: !isOpen }))}>
                       <Icon name={sub === "Hub settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Messaging" ? "message" : "settings"} />
                       <span>{sub}</span>
-                      <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={14} />
+                      <Icon name="chevronRight" size={14} />
                     </button>
-                    {isOpen ? <div className="nav-sub-items">{children.map(item)}</div> : null}
+                    {/* Always there, so it can slide open and closed; closed: not reachable by keyboard. */}
+                    <div className={`nav-sub-wrap${isOpen ? " open" : ""}`} inert={!isOpen}>
+                      <div className="nav-sub-items">{children.map(item)}</div>
+                    </div>
                   </div>
                 );
               })}
@@ -117,6 +122,7 @@ function Sidebar() {
         </div>
       </nav>
       <div className="sidebar-foot">
+        <WhatsNew />
         <div className="profile">
           <button type="button" className="profile-button" title="Sign out" onClick={() => void signOut()}>
             <span className="avatar">{initialsOf(user?.name)}</span>

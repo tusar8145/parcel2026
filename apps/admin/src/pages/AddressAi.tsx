@@ -86,7 +86,7 @@ export default function AddressAi() {
     <>
       <PageHeading
         eyebrow="Operational settings"
-        title="AI address reading"
+        title="AI best route"
         subtitle="Route plans need each parcel on the map. When an address can't be found as written, AI rewrites it (area, road, landmark) and the map search runs again, so the parcel is placed at its address instead of the zone centre. Without it everything still works: such parcels are placed at their zone centre."
       />
       {o.blocked && o.blocked !== "off" ? <div className="callout warn" style={{ marginBottom: 12 }}>{BLOCKED[o.blocked] ?? o.blocked}</div> : null}

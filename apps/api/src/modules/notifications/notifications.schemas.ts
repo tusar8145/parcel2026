@@ -57,5 +57,18 @@ export const preferencesSchema = z.object({
 export const outboxQuerySchema = z.object({
   channel: z.enum(["SMS", "EMAIL"]).optional(),
   state: z.enum(["PENDING", "SENT", "FAILED"]).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
+  limit: z.coerce.number().int().min(1).max(500).default(25),
+  /** Dhaka days, inclusive. */
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  /** Messages about this merchant's parcels. */
+  merchantId: z.uuid().optional(),
+  /** A tracking ID or part of the recipient's number / address. */
+  q: z.string().trim().max(60).optional(),
+});
+/** SMS (or email) per merchant in a period (their parcels' messages). */
+export const outboxByMerchantQuerySchema = z.object({
+  channel: z.enum(["SMS", "EMAIL"]).default("SMS"),
+  from: z.iso.date(),
+  to: z.iso.date(),
 });

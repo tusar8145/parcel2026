@@ -7,6 +7,15 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.50.0 — 2026-11-14
+- Super admin menu: its own background, smooth hover and selection effects, and sub-menus that slide open and closed.
+- Super admin menu names: AI address reading is now AI best route, AI import is AI Product & Address, Scan with phone usage is AI Scan with phone.
+- SMS messages, Email messages and Push messages each have their own icon.
+- Super admin › System guide shows Numbers, Money flow and Roles (Parcel lifecycle, Notifications and Where to change are no longer shown there).
+- Integration settings: SMS limits and message settings now come after Firebase push.
+- Recent messages: each message shows what was sent (codes and private links hidden), the event, the parcel and its merchant; filter by period, channel, status, merchant or tracking ID; and a Per merchant view counts each merchant's SMS (or emails) in the chosen period.
+- Super admin: the version and What's new are at the bottom of the menu again, with every version's changes, a version list and a search.
+
 ## 1.49.0 — 2026-11-14
 - Ops and Rider apps: two new tasks for pre-printed CN labels, in any order. CN_Merchant: choose a merchant, then scan CN labels one after another; each becomes that merchant's parcel. CN_Scan: the camera stays on; with the CN barcode and the recipient in the frame, tap Capture and the photo is sent while the camera stays ready for the next parcel; the AI reads the recipient, phone, address and COD into that CN's parcel.
 - A CN label's first scan makes its parcel (one CN, one parcel; later scans add to it and never overwrite: a difference is shown to check). Operations' scans receive it at their hub; a rider's waits for drop-off at the rider's hub. It then works like any parcel (transfer, rider, out for delivery…) and needs no address to be delivered. Its messages start once its merchant is known.

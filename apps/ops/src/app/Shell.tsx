@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useLocation, useNavigate, useSearchParams } from "react-router";
+import { NavLink, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@panel/lib/api";
 import { useAuth } from "@panel/lib/auth";
@@ -12,16 +12,15 @@ import { useConnection, useLive } from "@panel/lib/events";
 import { ago, num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
 import { Icon } from "@panel/ui/Icon";
-import { toast, toastError } from "@panel/ui/toast";
+import { toastError } from "@panel/ui/toast";
 import { confirm } from "@panel/ui/dialogs";
 import { Select } from "@panel/ui/Select";
 import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
 import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, VIEWS, type ViewDef } from "./nav";
 import { chooseClassic, internalLink } from "./links";
-import { findParcels, useCatalog } from "@/features/parcels/search";
-import { focusScanBox } from "@/features/scan/scanner";
 import { PhoneScannerButton } from "@/features/scan/PhoneScanner";
 import { openShareFiles } from "@/features/account/ShareFiles";
+import GlobalSearch from "@/features/parcels/GlobalSearch";
 
 const CHIP = { live: "Live", connecting: "Connecting…", offline: "Offline · retrying" };
 
@@ -241,136 +240,6 @@ function PeriodPicker() {
         </option>
       ))}
     </Select>
-  );
-}
-
-/** Tracking ID, CN or phone (typed or scanned) + Enter → the parcel drawer; a zone or area → the hub that serves it. */
-function GlobalSearch() {
-  const [, setParams] = useSearchParams();
-  const [value, setValue] = useState("");
-  const [places, setPlaces] = useState<{ district: string; zone: string; area?: string; hub: { name: string } | null }[] | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const catalog = useCatalog();
-  const { hubs } = useOps();
-  const seq = useRef(0);
-
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (e.key === "F2" && !document.querySelector("dialog[open]")) {
-        e.preventDefault();
-        if (!focusScanBox()) toast("No scan box on this page.");
-        return;
-      }
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && !t.isContentEditable && !document.querySelector("dialog[open]")) {
-        e.preventDefault();
-        input.current?.focus();
-        input.current?.select();
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, []);
-
-  useEffect(() => {
-    const text = value.trim();
-    const mine = ++seq.current;
-    if (text.length < 3 || /\d/.test(text) || !catalog) return setPlaces(null);
-    const t = text.toLowerCase();
-    const found: { district: string; zone: string; area?: string }[] = [];
-    for (const district of catalog.districts || []) for (const zone of catalog.zonesByDistrict?.[district] || []) if (zone.toLowerCase().includes(t)) found.push({ district, zone });
-    for (const district of catalog.districts || [])
-      for (const zone of catalog.zonesByDistrict?.[district] || [])
-        for (const area of catalog.areasByZone?.[zone] || []) if (area.toLowerCase().includes(t) && !found.some(p => p.zone === zone && p.district === district && !p.area)) found.push({ district, zone, area });
-    const top = found.slice(0, 6);
-    if (!top.length) return setPlaces(null);
-    const timer = setTimeout(async () => {
-      const withHubs = await Promise.all(
-        top.map(async p => {
-          let hub: { name: string } | null = null;
-          try {
-            const page = await api<{ items: { name: string; hub?: { name: string } | null }[] }>(`/zones?limit=20&district=${encodeURIComponent(p.district)}&q=${encodeURIComponent(p.zone)}`);
-            hub = page.items.find(z => z.name.toLowerCase() === p.zone.toLowerCase() && z.hub)?.hub ?? null;
-          } catch {
-            /* fall back to the hubs' own zones */
-          }
-          hub ??= hubs.find(h => h.active !== false && h.district === p.district && (h.zone || "").toLowerCase() === p.zone.toLowerCase()) ?? null;
-          return { ...p, hub };
-        }),
-      );
-      if (mine === seq.current) setPlaces(withHubs);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [value, catalog, hubs]);
-
-  const rect = input.current?.getBoundingClientRect();
-  return (
-    <div className="search">
-      <Icon name="search" />
-      <input
-        ref={input}
-        type="search"
-        placeholder="Tracking ID, CN, phone or zone…"
-        aria-label="Find a parcel by tracking ID, CN or phone (type or scan, then Enter), or type a zone or area to see the hub that serves it"
-        autoComplete="off"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={() => setTimeout(() => setPlaces(null), 200)}
-        onKeyDown={e => {
-          if (e.key === "Escape") setPlaces(null);
-          if (e.key !== "Enter") return;
-          e.preventDefault();
-          const raw = value.trim();
-          if (!raw) return;
-          setPlaces(null);
-          findParcels(raw)
-            .then(found => {
-              if (!found.length) return toast(`No parcel found for “${raw}”.`);
-              setParams(p => {
-                p.set("parcel", found[0].trackingId);
-                if (found.length > 1) p.set("matches", found.slice(0, 20).map(f => f.trackingId).join(","));
-                else p.delete("matches");
-                return p;
-              });
-              input.current?.select();
-            })
-            .catch(toastError);
-        }}
-      />
-      {places && rect
-        ? createPortal(
-            <div className="menu" role="listbox" aria-label="Which hub serves this place" style={{ top: rect.bottom + 8, left: Math.max(12, rect.right - 380), width: "min(380px, calc(100vw - 24px))" }}>
-              <div className="section-title" style={{ margin: "4px 8px" }}>
-                Which hub serves it
-              </div>
-              {places.map(p => (
-                <div key={`${p.district}|${p.zone}|${p.area}`} className="menu-item" role="option" aria-selected="false" style={{ justifyContent: "space-between", cursor: "default" }}>
-                  <span>
-                    <strong>{p.area || p.zone}</strong>
-                    <br />
-                    <small className="faint">{p.area ? `${p.zone}, ${p.district}` : p.district}</small>
-                  </span>
-                  <span style={{ textAlign: "right" }}>
-                    {p.hub ? (
-                      <>
-                        {p.hub.name}
-                        <br />
-                        <small className="faint">serves this zone</small>
-                      </>
-                    ) : (
-                      <small className="faint">No hub set for this zone</small>
-                    )}
-                  </span>
-                </div>
-              ))}
-              <p className="faint" style={{ margin: "6px 8px", fontSize: 12 }}>
-                Enter still searches parcels (tracking ID, CN or phone).
-              </p>
-            </div>,
-            document.body,
-          )
-        : null}
-    </div>
   );
 }
 

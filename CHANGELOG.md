@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.52.2 — 2026-11-14
+- Courier Operations parcel details: Proof of delivery is now just above Messages (side panel and search window).
+
 ## 1.52.1 — 2026-11-14
 - Courier Operations parcel details › Proof of delivery: the signature or photo shows in place; click it to open it large (close with a click, Esc or ✕), with a Download button.
 

@@ -119,10 +119,6 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
                   <PositionMap trackingId={p.trackingId} status={`${p.status}:${p.updatedAt}`} />
                 </Suspense>
               </section>
-              <section>
-                <h3 className="section-title">Proof of delivery</h3>
-                <Proof p={p} />
-              </section>
               {p.chargesOff ? null : (
                 <section>
                   <h3 className="section-title">Price</h3>
@@ -175,6 +171,10 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
               ) : null}
             </div>
             <div className="pd-col">
+              <section>
+                <h3 className="section-title">Proof of delivery</h3>
+                <Proof p={p} />
+              </section>
               <MessagesCombined p={p} />
               {p.cnFlow ? (
                 <section>
@@ -279,12 +279,12 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
               </section>
             )}
             <section>
-              <h3 className="section-title">Messages (SMS · email · push)</h3>
-              <MessagePlanView plan={p.messagePlan} hideSkipped />
-            </section>
-            <section>
               <h3 className="section-title">Proof of delivery</h3>
               <Proof p={p} />
+            </section>
+            <section>
+              <h3 className="section-title">Messages (SMS · email · push)</h3>
+              <MessagePlanView plan={p.messagePlan} hideSkipped />
             </section>
             {p.deliveredLocation ? (
               <section>

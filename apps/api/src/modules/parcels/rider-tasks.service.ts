@@ -273,7 +273,15 @@ export class RiderTasksService {
           {
             to: "DELIVERED",
             actorRole: "rider",
-            data: { deliveredAt: now, attemptCount: { increment: 1 }, deliveryOtpEncrypted: null, receiverRelation: input.receiverRelation || "Self", ...(partial ? partialData(collected, input.note) : {}) },
+            data: {
+              deliveredAt: now,
+              attemptCount: { increment: 1 },
+              deliveryOtpEncrypted: null,
+              receiverRelation: input.receiverRelation || "Self",
+              // Where the rider recorded it (the phone GPS sent with the entry), with or without proof: the map in parcel details.
+              ...(capture.lat !== undefined && capture.lng !== undefined ? { deliveredLat: capture.lat, deliveredLng: capture.lng, deliveredAccuracy: capture.accuracy ?? null } : {}),
+              ...(partial ? partialData(collected, input.note) : {}),
+            },
             ...(partial ? { title: "Partially delivered", metadata: { partial: true, codCollected: collected } } : {}),
             description: partial
               ? `Partly delivered to ${input.receivedBy} (${proofText}): ৳${collected.toLocaleString("en-BD")} collected${cod > 0 ? ` of ৳${cod.toLocaleString("en-BD")}` : ""}. What the recipient didn't keep goes back to the sender.`

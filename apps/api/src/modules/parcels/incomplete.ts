@@ -39,6 +39,8 @@ type ParcelDetails = {
   deliveryStreet: string | null;
   deliveryDistrict: string | null;
   deliveryZone: string | null;
+  /** CN_ parcels (apps CN_Merchant / CN_Scan): the label on the parcel carries the recipient; no detail is needed to move or deliver it. */
+  cnFlow?: boolean;
 };
 
 /** What is still missing, from the stored columns. */
@@ -57,6 +59,7 @@ export const describeMissing = (fields: readonly string[]) => fields.map(f => MI
 
 /** What the parcel still lacks for a step (empty when it may go there). */
 export function missingFor(p: Omit<ParcelDetails, "trackingId">, to: ParcelStatus): MissingField[] {
+  if (p.cnFlow) return [];
   const needed = NEEDED_FOR[to];
   return needed ? missingFieldsOf(p).filter(f => needed.includes(f)) : [];
 }

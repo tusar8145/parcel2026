@@ -180,4 +180,33 @@ describe("dashboard periods (from / to on overview, stats and summary endpoints)
     // Without a period: the last `days` days as before.
     expect((await get(s.admin.token, "/analytics/traffic?days=14")).daily).toHaveLength(14);
   });
+
+  it("trend: booked (not cancelled), delivered and returned per Dhaka day of a month and per month of a year", async () => {
+    const { admin, late, early, ops } = await setup();
+    // A third parcel booked on Oct 11, returned on Oct 12; a fourth booked on Oct 11 and cancelled (not counted).
+    const back = await ctx.api("POST", "/ops/parcels", { token: ops.token, body: { merchantId: late.merchantId, ...parcelBody(), sender: undefined, pickup: undefined } });
+    const gone = await ctx.api("POST", "/ops/parcels", { token: ops.token, body: { merchantId: late.merchantId, ...parcelBody(), sender: undefined, pickup: undefined } });
+    const backId = (await ctx.prisma.parcel.findUniqueOrThrow({ where: { trackingId: back.body.trackingId } })).id;
+    await ctx.prisma.parcel.update({ where: { id: backId }, data: { createdAt: MID_OCT_11, status: "RETURNED" } });
+    await ctx.prisma.trackingEvent.create({ data: { parcelId: backId, status: "RETURNED", title: "Returned", createdAt: new Date("2026-10-12T06:00:00.000Z") } });
+    await ctx.prisma.parcel.update({ where: { trackingId: gone.body.trackingId }, data: { createdAt: MID_OCT_11, status: "PICKUP_CANCELLED" } });
+    void early;
+
+    const m = await get(admin.token, "/admin/overview/trend?month=2026-10");
+    expect(m).toMatchObject({ mode: "month", label: "Oct 2026", previousLabel: "Sep 2026", inProgress: false });
+    expect(m.labels).toHaveLength(31);
+    expect(m.booked[9]).toBe(1); // Oct 10
+    expect(m.booked[10]).toBe(2); // Oct 11: the delivered one and the returned one (the cancelled one isn't counted)
+    expect(m.delivered[10]).toBe(1);
+    expect(m.returned[11]).toBe(1); // Oct 12
+    expect(m.totals).toEqual({ booked: 3, delivered: 1, returned: 1 });
+    expect(m.previous).toEqual({ booked: 0, delivered: 0, returned: 0 });
+
+    const y = await get(admin.token, "/admin/overview/trend?year=2026");
+    expect(y).toMatchObject({ mode: "year", label: "2026" });
+    expect(y.labels).toHaveLength(12);
+    expect(y.booked[9]).toBe(3);
+    expect(y.returned[9]).toBe(1);
+    await get(admin.token, "/admin/overview/trend?month=2026-13", 422);
+  });
 });

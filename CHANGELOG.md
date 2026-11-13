@@ -7,6 +7,17 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.49.0 — 2026-11-14
+- Ops and Rider apps: two new tasks for pre-printed CN labels, in any order. CN_Merchant: choose a merchant, then scan CN labels one after another; each becomes that merchant's parcel. CN_Scan: the camera stays on; with the CN barcode and the recipient in the frame, tap Capture and the photo is sent while the camera stays ready for the next parcel; the AI reads the recipient, phone, address and COD into that CN's parcel.
+- A CN label's first scan makes its parcel (one CN, one parcel; later scans add to it and never overwrite: a difference is shown to check). Operations' scans receive it at their hub; a rider's waits for drop-off at the rider's hub. It then works like any parcel (transfer, rider, out for delivery…) and needs no address to be delivered. Its messages start once its merchant is known.
+- Courier Operations parcel details: a CN parcel's photos with what was read (and any difference), and for every delivered parcel a map of where the rider recorded the delivery.
+- Every delivery now keeps where the rider recorded it (the phone's location), with or without proof.
+- Super admin › Operational settings › CN_Scan AI: AI reading on/off, a daily limit, and the photos, readings and estimated cost per day. Off: photos and CNs are kept and the details are typed in Courier Operations.
+- Rider and Ops apps: signing in the signature box no longer scrolls the page.
+- Super admin › Platform overview: a full-width Trend section with booked (not cancelled), delivered and returned parcels per day of a chosen month or per month of a year, compared with the previous month or year up to the same point, and whether things are getting better or worse.
+- Super admin › Live map: Hubs and Franchises start unticked.
+- Rider app 1.7.0, Operations app 1.6.0.
+
 ## 1.48.0 — 2026-11-13
 - New orders › Scan with phone: the phone page has a Live camera. The camera stays on in the page; point it at the label and tap Capture, and the photo is sent in the background while the camera stays ready for the next parcel (a light button where the phone allows it, and the screen stays on). Take photo (the phone camera app) and Choose photos still work as before.
 

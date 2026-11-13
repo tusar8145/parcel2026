@@ -531,6 +531,13 @@ model Parcel {
   proofRequired    Boolean      @default(true)
   /// A specific proof method set at booking (PHOTO, OTP or SIGNATURE, one of the package's); null = any of them.
   proofMethod      String?
+  /// Made by the apps' CN_ features (CN_Merchant / CN_Scan): no address needed for delivery; messages start once its merchant is known.
+  cnFlow           Boolean      @default(false)
+  /// Where the rider recorded the delivery: the phone's GPS at the delivery entry (with or without proof).
+  deliveredLat      Float?
+  deliveredLng      Float?
+  deliveredAccuracy Float?
+  cnCaptures       CnCapture[]
 
   codAmount       Decimal @default(0) @db.Decimal(12, 2)
   baseCharge      Decimal @db.Decimal(12, 2)

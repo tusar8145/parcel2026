@@ -16,6 +16,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   geolocator: ^14.1.2
   http: ^1.6.0
+  http_parser: ^4.1.2
   image_picker: ^1.2.4
   mobile_scanner: ^7.4.2
   url_launcher: ^6.3.3

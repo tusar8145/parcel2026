@@ -94,6 +94,10 @@ model ScanReadLog {
   outputTokens Int              @default(0)
   /// Estimated from the model's list price (the bill: Anthropic Console › Usage).
   costUsd      Decimal          @default(0) @db.Decimal(12, 6)
+  /// PHONE (Scan with phone) or CN (CN_Scan in the apps).
+  source       String           @default("PHONE")
+  /// The CN_Scan photo (source CN).
+  captureId    String?          @db.Uuid
   createdAt    DateTime         @default(now())
 
   @@index([createdAt])

@@ -272,6 +272,31 @@ model CnStock {
   @@map("cn_stock")
 }
 
+/// A CN_Scan photo from the Ops / Rider app: the parcel's label with its CN barcode; the AI reads the recipient from it.
+model CnCapture {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  parcelId    String    @db.Uuid
+  cn          String
+  /// The photo (StoredFile id).
+  fileId      String?   @db.Uuid
+  /// READING → READ / FAILED; SKIPPED when the CN_Scan AI is off or its daily limit is reached.
+  status      String    @default("READING")
+  /// What was read (import column keys).
+  cells       Json      @default("{}")
+  /// Fields read that differed from what the parcel already had (the parcel's were kept).
+  conflicts   Json      @default("[]")
+  /// OPS_APP or RIDER_APP.
+  source      String
+  createdById String?   @db.Uuid
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+  parcel      Parcel    @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@index([parcelId, createdAt])
+  @@index([createdAt])
+  @@map("cn_captures")
+}
+
 // ── SLA engine ──
 
 /// Pickup and delivery targets per service level and (optional) origin/destination zone.

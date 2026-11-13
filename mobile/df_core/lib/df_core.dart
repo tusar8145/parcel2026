@@ -8,6 +8,7 @@ export 'src/barcode.dart';
 export 'src/branding.dart';
 export 'src/push.dart';
 export 'src/scanner.dart';
+export 'src/cn.dart';
 export 'src/support.dart';
 export 'src/widgets.dart';
 export 'src/update.dart';

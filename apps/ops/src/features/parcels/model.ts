@@ -44,6 +44,10 @@ export interface Attempt {
 export interface Parcel {
   /** Delivery proof as booked ("Delivery proof required", "Set specific proof") and the methods the rider may use. */
   proofRequired?: boolean;
+  /** Made by the apps' CN_Merchant / CN_Scan. */
+  cnFlow?: boolean;
+  /** Where the rider recorded the delivery (phone GPS). */
+  deliveredLocation?: { lat: number; lng: number; accuracy?: number | null } | null;
   proofMethod?: string | null;
   proofMethods?: string[];
   id: string;

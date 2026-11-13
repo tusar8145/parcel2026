@@ -12,7 +12,7 @@ import { createCustomRoleSchema, rolePermissionsSchema, RolesService, updateCust
 import { ImpersonationService, impersonationTargetsQuerySchema, listImpersonationsQuerySchema, startImpersonationSchema } from "./impersonation.service";
 import { platformConfigSchema, PLATFORM_CONFIG_MAX_BYTES, type PlatformConfig } from "./admin.schemas";
 import { DERIVED_KEYS, PlatformConfigService, RETIRED_KEYS } from "./platform-config.service";
-import { OverviewService } from "./overview.service";
+import { OverviewService, trendQuerySchema, type TrendQuery } from "./overview.service";
 import { periodQuerySchema, type PeriodQuery } from "../../common/period";
 
 const DERIVED_NOTE = `Server-owned settings (${DERIVED_KEYS.join(", ")}) and the route/weight fields of merchantPricing and deliveryRates always reflect PUT /catalog and the rate cards in force. Retired lists (${RETIRED_KEYS.join(", ")}) are never stored or returned: products are the parcel products (/parcel-products).`;
@@ -53,6 +53,14 @@ export class AdminController {
   @ApiZodQuery(periodQuerySchema)
   overview(@ZQuery(periodQuerySchema) query: PeriodQuery) {
     return this.overviewService.overview(query);
+  }
+
+  /** Platform overview › Trend: booked (not cancelled), delivered and returned per day of a month (month=YYYY-MM, default this month) or per month of a year (year=YYYY), against the previous one up to the same point. */
+  @RequirePermissions("merchant:read:any", "user:read", "audit:read")
+  @Get("overview/trend")
+  @ApiZodQuery(trendQuerySchema)
+  trend(@ZQuery(trendQuerySchema) query: TrendQuery) {
+    return this.overviewService.trend(query);
   }
 }
 

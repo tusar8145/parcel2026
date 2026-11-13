@@ -443,7 +443,8 @@ export class ParcelScansService implements OnApplicationBootstrap {
   async usage(input: { from: string; to: string; page: number; pageSize: number }) {
     const start = new Date(`${input.from}T00:00:00+06:00`);
     const end = new Date(new Date(`${input.to}T00:00:00+06:00`).getTime() + 86_400_000);
-    const where = { createdAt: { gte: start, lt: end } };
+    // Scan with phone only (CN_Scan has its own usage: /cn/usage).
+    const where = { createdAt: { gte: start, lt: end }, source: "PHONE" };
     const sum = { costUsd: true, inputTokens: true, cacheRead: true, cacheWrite: true, outputTokens: true, ms: true } as const;
     const [all, byReader, byStatus, fallbacks, byModel, total, rows, daily] = await Promise.all([
       this.prisma.scanReadLog.aggregate({ where, _count: { _all: true }, _sum: sum }),
@@ -459,7 +460,7 @@ export class ParcelScansService implements OnApplicationBootstrap {
                count(*) FILTER (WHERE reader = 'CLAUDE') AS claude,
                count(*) FILTER (WHERE status = 'FAILED') AS failed,
                sum("costUsd")::text AS cost
-        FROM scan_read_logs WHERE "createdAt" >= ${start} AND "createdAt" < ${end}
+        FROM scan_read_logs WHERE source = 'PHONE' AND "createdAt" >= ${start} AND "createdAt" < ${end}
         GROUP BY 1 ORDER BY 1 DESC`,
     ]);
     const users = await this.prisma.user.findMany({ where: { id: { in: [...new Set(rows.map(r => r.userId).filter((v): v is string => !!v))] } }, select: { id: true, name: true } });

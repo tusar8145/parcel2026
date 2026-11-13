@@ -78,6 +78,24 @@ class ScanPage extends StatelessWidget {
                 onTap: () => _failed(context),
               ),
               _TaskCard(icon: Icons.undo, color: bad, title: 'Return to merchant', text: 'Choose the return run, then scan each parcel the merchant takes back.', onTap: () => _return(context)),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(2, 14, 2, 6),
+                child: Text('CN labels', style: TextStyle(fontWeight: FontWeight.w800, color: muted)),
+              ),
+              _TaskCard(
+                icon: Icons.qr_code_2,
+                color: brand,
+                title: 'CN_Merchant',
+                text: "Choose the merchant, then scan CN labels: they become that merchant's parcels. Bring them to your hub.",
+                onTap: () => openCnMerchant(context),
+              ),
+              _TaskCard(
+                icon: Icons.document_scanner_outlined,
+                color: brand,
+                title: 'CN_Scan',
+                text: 'Camera stays on: CN barcode + recipient in the frame, tap Capture.',
+                onTap: () => openCnScan(context),
+              ),
             ],
           ),
         );

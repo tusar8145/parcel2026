@@ -76,6 +76,7 @@ export default function Overview() {
         <Metric label="Active merchants" icon="box" value={p ? num(p.activeMerchants) : "0"} foot={p ? change(p.activeMerchants, p.previous.activeMerchants) : ""} note={`booked ${period.words}`} />
         <Metric label="Delivered" icon="check" value={p ? num(p.delivered) : "0"} foot={p ? change(p.delivered, p.previous.delivered) : ""} note={period.words} />
       </div>
+      <TrendPanel />
       <div className="grid-main" style={{ marginBottom: 16 }}>
         <Panel title="Bookings" subtitle={`Parcels booked per ${p?.series.bucket || "day"} · ${period.text} vs. the previous period`}>
           <div className="panel-body">{p ? <BookingsChart series={p.series} text={period.text} /> : <div className="skeleton" style={{ height: 150 }} />}</div>
@@ -263,6 +264,201 @@ function BookingsChart({ series, text }: { series: PeriodFigures["series"]; text
           ) : null,
         )}
       </svg>
+    </div>
+  );
+}
+
+// ───────────── Trend: booked / delivered / returned per day of a month or per month of a year ─────────────
+
+interface Trend {
+  mode: "month" | "year";
+  label: string;
+  previousLabel: string;
+  inProgress: boolean;
+  upTo: string | null;
+  labels: string[];
+  booked: number[];
+  delivered: number[];
+  returned: number[];
+  totals: { booked: number; delivered: number; returned: number };
+  previous: { booked: number; delivered: number; returned: number };
+}
+const LINES = [
+  { key: "booked", label: "Booked (not cancelled)", color: "#1d5fd0", upIsGood: true },
+  { key: "delivered", label: "Delivered", color: "#067647", upIsGood: true },
+  { key: "returned", label: "Returned", color: "#d92d20", upIsGood: false },
+] as const;
+const thisMonth = () => new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 7);
+const pct = (now: number, before: number) => (before ? Math.round(((now - before) / before) * 100) : now ? 100 : 0);
+/** Returned as a share of finished parcels (delivered + returned). */
+const returnRate = (t: { delivered: number; returned: number }) => (t.delivered + t.returned ? (t.returned / (t.delivered + t.returned)) * 100 : 0);
+
+function TrendPanel() {
+  const [mode, setMode] = useState<"month" | "year">("month");
+  const [month, setMonth] = useState(thisMonth());
+  const [year, setYear] = useState(thisMonth().slice(0, 4));
+  const q = useQuery({
+    queryKey: ["admin", "overview", "trend", mode, mode === "month" ? month : year],
+    queryFn: () => api<Trend>(`/admin/overview/trend?${mode === "month" ? `month=${month}` : `year=${year}`}`),
+    staleTime: 60_000,
+  });
+  const t = q.data;
+  const years = Array.from({ length: 5 }, (_, i) => String(Number(thisMonth().slice(0, 4)) - i));
+  const step = (by: number) => {
+    if (mode === "year") return setYear(String(Number(year) + by));
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + by, 1));
+    setMonth(d.toISOString().slice(0, 7));
+  };
+  const atLatest = mode === "month" ? month >= thisMonth() : year >= thisMonth().slice(0, 4);
+
+  // Better or worse: more booked, more delivered and a lower return rate count as better.
+  let verdict: { text: string; tone: "good" | "warn" | "bad" } | null = null;
+  if (t) {
+    const rateNow = returnRate(t.totals);
+    const rateBefore = returnRate(t.previous);
+    const score = Math.sign(t.totals.booked - t.previous.booked) + Math.sign(t.totals.delivered - t.previous.delivered) + Math.sign(Math.round((rateBefore - rateNow) * 10));
+    verdict = score >= 2 ? { text: "Getting better", tone: "good" } : score <= -2 ? { text: "Getting worse", tone: "bad" } : { text: "About the same", tone: "warn" };
+  }
+  const versus = t ? `vs. ${t.previousLabel}${t.inProgress && t.upTo ? ` (up to the same ${t.mode === "month" ? `day, 1–${t.upTo}` : `month, Jan–${t.upTo}`})` : ""}` : "";
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+    <Panel
+      title="Trend"
+      subtitle={t ? `${t.mode === "month" ? "Per day" : "Per month"} · ${t.label} ${versus}` : "Booked, delivered and returned parcels"}
+      tools={
+        <>
+          <div className="seg-tabs" role="group" aria-label="Trend by">
+            <button type="button" className={mode === "month" ? "on" : ""} onClick={() => setMode("month")}>
+              Month
+            </button>
+            <button type="button" className={mode === "year" ? "on" : ""} onClick={() => setMode("year")}>
+              Year
+            </button>
+          </div>
+          <Button size="sm" onClick={() => step(-1)} aria-label="Previous">
+            ‹
+          </Button>
+          {mode === "month" ? (
+            <input className="input sm" type="month" aria-label="Month" max={thisMonth()} value={month} onChange={e => e.target.value && setMonth(e.target.value)} style={{ width: 150 }} />
+          ) : (
+            <select className="select sm" aria-label="Year" value={year} onChange={e => setYear(e.target.value)} style={{ width: 100 }}>
+              {(years.includes(year) ? years : [year, ...years]).map(y => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button size="sm" onClick={() => step(1)} disabled={atLatest} aria-label="Next">
+            ›
+          </Button>
+        </>
+      }
+    >
+      <div className="panel-body">
+        {t ? (
+          <>
+            <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              {LINES.map(l => {
+                const now = t.totals[l.key];
+                const before = t.previous[l.key];
+                const change = pct(now, before);
+                const good = change === 0 ? null : change > 0 === l.upIsGood;
+                return (
+                  <div key={l.key} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", minWidth: 170 }}>
+                    <div className="row" style={{ gap: 6, fontSize: 12, color: "var(--muted)" }}>
+                      <i style={{ width: 10, height: 3, background: l.color, display: "inline-block", borderRadius: 2 }} /> {l.label}
+                    </div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{num(now)}</div>
+                    <small style={{ color: good === null ? "var(--muted)" : good ? "#067647" : "#d92d20", fontWeight: 600 }}>
+                      {change > 0 ? "▲" : change < 0 ? "▼" : "•"} {Math.abs(change)}% <span className="faint" style={{ fontWeight: 400 }}>{`(${num(before)} in ${t.previousLabel})`}</span>
+                    </small>
+                  </div>
+                );
+              })}
+              <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", minWidth: 170 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Return rate</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{returnRate(t.totals).toFixed(1)}%</div>
+                <small className="faint">{`${returnRate(t.previous).toFixed(1)}% in ${t.previousLabel}`}</small>
+              </div>
+              {verdict ? (
+                <div style={{ alignSelf: "center" }}>
+                  <Pill tone={verdict.tone}>{verdict.text}</Pill>
+                  <small className="faint" style={{ display: "block", marginTop: 4 }}>
+                    more booked, more delivered, fewer returns = better
+                  </small>
+                </div>
+              ) : null}
+            </div>
+            <TrendChart t={t} />
+          </>
+        ) : q.error ? (
+          <div className="callout bad">The trend couldn't be loaded.</div>
+        ) : (
+          <div className="skeleton" style={{ height: 220 }} />
+        )}
+      </div>
+    </Panel>
+    </div>
+  );
+}
+
+function TrendChart({ t }: { t: Trend }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 1000;
+  const H = 240;
+  const left = 46;
+  const right = 985;
+  const top = 14;
+  const bottom = 205;
+  const n = t.labels.length;
+  const max = Math.max(4, ...t.booked, ...t.delivered, ...t.returned);
+  const x = (i: number) => (n === 1 ? left : left + (i * (right - left)) / (n - 1));
+  const y = (v: number) => bottom - (v / max) * (bottom - top);
+  const path = (values: number[]) => values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const every = Math.max(1, Math.ceil(n / 16));
+  return (
+    <div style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Booked, delivered and returned, ${t.label}`} style={{ width: "100%", height: "auto", display: "block" }} onMouseLeave={() => setHover(null)}>
+        {[1, 0.75, 0.5, 0.25, 0].map(f => (
+          <g key={f}>
+            <line x1={left - 4} x2={right} y1={y(max * f)} y2={y(max * f)} stroke="var(--line)" />
+            <text x={2} y={y(max * f) + 4} fontSize="12" fill="var(--faint)">
+              {num(Math.round(max * f))}
+            </text>
+          </g>
+        ))}
+        {hover !== null ? <line x1={x(hover)} x2={x(hover)} y1={top} y2={bottom} stroke="var(--faint)" strokeDasharray="3 3" /> : null}
+        {LINES.map(l => (
+          <path key={l.key} d={path(t[l.key])} fill="none" stroke={l.color} strokeWidth="2.2" strokeLinejoin="round" />
+        ))}
+        {LINES.map(l => t[l.key].map((v, i) => <circle key={`${l.key}${i}`} cx={x(i)} cy={y(v)} r={hover === i ? 4 : n > 20 ? 0 : 2.5} fill={l.color} />))}
+        {t.labels.map((lb, i) =>
+          i % every === 0 || i === n - 1 ? (
+            <text key={i} x={x(i)} y={226} fontSize="12" fill="var(--faint)" textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}>
+              {lb}
+            </text>
+          ) : null,
+        )}
+        {t.labels.map((_, i) => (
+          <rect key={i} x={x(i) - (right - left) / Math.max(1, n - 1) / 2} y={top} width={(right - left) / Math.max(1, n - 1)} height={bottom - top} fill="transparent" onMouseEnter={() => setHover(i)} />
+        ))}
+      </svg>
+      {hover !== null ? (
+        <div style={{ position: "absolute", top: 0, left: `min(calc(${(x(hover) / W) * 100}% + 10px), calc(100% - 190px))`, background: "var(--surface, #fff)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, boxShadow: "0 8px 24px #1018281f", pointerEvents: "none", minWidth: 170 }}>
+          <strong>{t.mode === "month" ? `${t.labels[hover]} ${t.label}` : `${t.labels[hover]} ${t.label}`}</strong>
+          {LINES.map(l => (
+            <div key={l.key} className="row" style={{ gap: 6, justifyContent: "space-between" }}>
+              <span className="row" style={{ gap: 6 }}>
+                <i style={{ width: 8, height: 8, borderRadius: "50%", background: l.color, display: "inline-block" }} /> {l.label.replace(" (not cancelled)", "")}
+              </span>
+              <strong>{num(t[l.key][hover])}</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

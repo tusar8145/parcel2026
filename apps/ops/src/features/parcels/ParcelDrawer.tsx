@@ -17,6 +17,7 @@ import { changeProductType, changeReturnCharge, printLabels, refreshParcels } fr
 import { CLOSED, PICKUP_STAGE, awaitingDropOff, failedDelivery, failureBadge, failureText, riderOf, slaOf, type Parcel } from "./model";
 import { useParcelActions } from "./useParcelActions";
 import { MessagePlanView } from "@panel/ui/MessagePlan";
+import { CnPhotos, DeliveredMap } from "./CnDetails";
 
 const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
@@ -176,6 +177,18 @@ function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: 
               <h3 className="section-title">Proof of delivery</h3>
               <Proof p={p} />
             </section>
+            {p.deliveredLocation ? (
+              <section>
+                <h3 className="section-title">Delivered at</h3>
+                <DeliveredMap at={p.deliveredLocation} />
+              </section>
+            ) : null}
+            {p.cnFlow ? (
+              <section>
+                <h3 className="section-title">CN photos (CN_Scan)</h3>
+                <CnPhotos trackingId={p.trackingId} />
+              </section>
+            ) : null}
             <Notes p={p} onSaved={fresh => qc.setQueryData(["parcel", id], fresh)} />
             <Messages id={p.trackingId} />
             <section>

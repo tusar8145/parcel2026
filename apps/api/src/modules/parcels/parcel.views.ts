@@ -228,6 +228,10 @@ export function parcelView(p: ParcelWithRelations, opts: { internal: boolean }) 
     /** Booked with "Delivery proof required" (default) and, optionally, one specific method. */
     proofRequired: p.proofRequired,
     proofMethod: p.proofMethod,
+    /** Made by the apps CN_Merchant / CN_Scan (no address needed to deliver). */
+    cnFlow: p.cnFlow,
+    /** Where the rider recorded the delivery (phone GPS). */
+    deliveredLocation: p.deliveredLat != null && p.deliveredLng != null ? { lat: p.deliveredLat, lng: p.deliveredLng, accuracy: p.deliveredAccuracy } : null,
     openBox: p.openBox,
     onDemand: p.onDemand,
     product: p.productLabel ?? p.productName,

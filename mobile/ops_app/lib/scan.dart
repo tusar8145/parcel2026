@@ -236,6 +236,18 @@ class ScanPage extends StatelessWidget {
         _Task(Icons.inventory_outlined, brand, 'Collect from hub', 'Hub Pickup counter: code, who collects, COD.', () => _collect(context)),
         _Task(Icons.assignment_return_outlined, bad, 'Return rider assign', 'Parcels going back join a rider\'s return run.', () => _returnAssign(context)),
         _Task(Icons.undo, bad, 'Return entry', 'Parcels the merchant took back.', () => _returnEntry(context)),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(2, 14, 2, 6),
+          child: Text('CN labels', style: TextStyle(fontWeight: FontWeight.w800, color: muted)),
+        ),
+        _Task(Icons.qr_code_2, brand, 'CN_Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
+          if (await _needHub(context) && context.mounted) await openCnMerchant(context, hubId: Ops.hubId);
+          opsChanged.value++;
+        }),
+        _Task(Icons.document_scanner_outlined, brand, 'CN_Scan', 'Camera stays on: CN barcode + recipient in the frame, tap Capture.', () async {
+          if (await _needHub(context) && context.mounted) await openCnScan(context, hubId: Ops.hubId);
+          opsChanged.value++;
+        }),
       ],
     );
   }

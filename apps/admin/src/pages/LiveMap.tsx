@@ -115,7 +115,7 @@ type Selected = { kind: "rider"; id: string } | { kind: "staff"; id: string } | 
 export default function LiveMap() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin", "live-map"], queryFn: () => api<Overview>("/live-map"), refetchInterval: 60_000 });
-  const [on, setOn] = useState<Record<Layer, boolean>>({ riders: true, hubs: true, ops: true, hubManagers: true, franchises: true });
+  const [on, setOn] = useState<Record<Layer, boolean>>({ riders: true, hubs: false, ops: true, hubManagers: true, franchises: false }); // Hubs and Franchises start unticked.
   const [onlineOnly, setOnlineOnly] = useState(false);
   const [focus, setFocus] = useState(""); // "" | hub:<id> | franchise:<id>
   const [selected, setSelected] = useState<Selected>(null);

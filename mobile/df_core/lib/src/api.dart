@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import 'update.dart';
 
@@ -130,6 +131,43 @@ class Api {
 
   static Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) async {
     final data = await _send('PATCH', path, body: body);
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  /// A photo with text fields (multipart/form-data; the file field is `photo`), e.g. CN_Scan.
+  static Future<Map<String, dynamic>> upload(String path, {required Map<String, String> fields, required List<int> bytes, String filename = 'photo.jpg', String contentType = 'image/jpeg', bool retry = true}) async {
+    http.Response res;
+    try {
+      final req = http.MultipartRequest('POST', Uri.parse('$apiBase$path'));
+      req.headers.addAll({
+        'accept': 'application/json',
+        if (Session.accessToken != null) 'authorization': 'Bearer ${Session.accessToken}',
+        if (AppConfig.version.isNotEmpty) 'x-app': AppConfig.appName.toLowerCase(),
+        if (AppConfig.version.isNotEmpty) 'x-app-version': AppConfig.version,
+      });
+      req.fields.addAll(fields);
+      final type = contentType.split('/');
+      req.files.add(http.MultipartFile.fromBytes('photo', bytes, filename: filename, contentType: MediaType(type[0], type.length > 1 ? type[1] : 'jpeg')));
+      res = await http.Response.fromStream(await client.send(req).timeout(const Duration(seconds: 40)));
+    } catch (_) {
+      throw ApiError('Could not reach the server. Check the internet connection and try again.');
+    }
+    if (res.statusCode == 401 && retry && Session.user != null) {
+      if (await Session.restore()) return upload(path, fields: fields, bytes: bytes, filename: filename, contentType: contentType, retry: false);
+      Session.accessToken = null;
+      onSignedOut?.call();
+      throw ApiError('Your session has ended. Please sign in again.', status: 401);
+    }
+    dynamic data;
+    try {
+      data = res.bodyBytes.isEmpty ? <String, dynamic>{} : jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      throw ApiError('The server sent an unexpected reply (${res.statusCode}).', status: res.statusCode);
+    }
+    if (res.statusCode >= 400) {
+      final err = data is Map ? data['error'] : null;
+      throw ApiError((err is Map ? err['message'] as String? : null) ?? 'Something went wrong (${res.statusCode}).', status: res.statusCode, code: err is Map ? err['code'] as String? : null);
+    }
     return data is Map<String, dynamic> ? data : {};
   }
 

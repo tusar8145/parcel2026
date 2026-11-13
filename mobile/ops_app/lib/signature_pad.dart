@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// The recipient signs with a finger; [SignaturePadState.toDataUrl] gives the PNG the API stores as proof.
@@ -40,14 +41,30 @@ class SignaturePadState extends State<SignaturePad> {
     return LayoutBuilder(
       builder: (context, c) {
         _size = Size(c.maxWidth, c.maxHeight);
-        return GestureDetector(
-          onPanStart: (d) => setState(() => _strokes.add([d.localPosition])),
-          onPanUpdate: (d) => setState(() => _strokes.last.add(d.localPosition)),
-          onPanEnd: (_) => widget.onChanged?.call(),
+        // The pad takes the finger at once, so the page doesn't scroll while the recipient signs.
+        return RawGestureDetector(
+          gestures: {
+            _ImmediatePan: GestureRecognizerFactoryWithHandlers<_ImmediatePan>(
+              () => _ImmediatePan(),
+              (r) => r
+                ..onStart = ((d) => setState(() => _strokes.add([d.localPosition])))
+                ..onUpdate = ((d) => setState(() => _strokes.last.add(d.localPosition)))
+                ..onEnd = ((_) => widget.onChanged?.call()),
+            ),
+          },
           child: CustomPaint(painter: _SignaturePainter(_strokes), size: Size.infinite),
         );
       },
     );
+  }
+}
+
+/// A pan that wins at the first touch (the scrolling page around the pad never gets the finger).
+class _ImmediatePan extends PanGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
   }
 }
 

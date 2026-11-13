@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { z } from "zod";
 import { PrismaService } from "../../common/prisma.service";
 import type { ParcelStatus, Role } from "../../generated/prisma/client";
 import { fillSeries, periodBuckets, periodView, resolvePeriod, type Period, type PeriodQuery } from "../../common/period";
@@ -15,6 +16,17 @@ export function dhakaPeriodStarts(now = new Date()) {
   const month = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - DHAKA_OFFSET_MS;
   return { today: new Date(day), month: new Date(month) };
 }
+
+/** Platform overview › Trend: one month (by day) or one year (by month). */
+export const trendQuerySchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM").optional(),
+    year: z.string().regex(/^\d{4}$/, "Use YYYY").optional(),
+  })
+  .refine(q => !(q.month && q.year), "Choose a month or a year, not both");
+export type TrendQuery = z.infer<typeof trendQuerySchema>;
+type TrendSeries = { booked: number[]; delivered: number[]; returned: number[] };
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 @Injectable()
 export class OverviewService {
@@ -120,6 +132,86 @@ export class OverviewService {
       auditEventsThisMonth: auditThisMonth,
       merchantActivity: [...byMerchant.values()],
       riderActivity: [...byRider.values()],
+    };
+  }
+
+  /**
+   * Trend (Platform overview): booked (not cancelled), delivered and returned parcels per day of a month or per month
+   * of a year, in Dhaka time, with the totals of the previous month / year up to the same point (so a month in
+   * progress is compared fairly: 1–13 Nov against 1–13 Oct). Returned = the first time a parcel became RETURNED.
+   */
+  async trend(query: TrendQuery) {
+    const now = new Date();
+    const local = new Date(now.getTime() + DHAKA_OFFSET_MS);
+    const yearMode = !!query.year;
+    const y = query.year ? Number(query.year) : query.month ? Number(query.month.slice(0, 4)) : local.getUTCFullYear();
+    const m = query.month ? Number(query.month.slice(5, 7)) - 1 : local.getUTCMonth();
+    const at = (yy: number, mm: number, dd = 1) => new Date(Date.UTC(yy, mm, dd) - DHAKA_OFFSET_MS);
+    const start = yearMode ? at(y, 0) : at(y, m);
+    const end = yearMode ? at(y + 1, 0) : at(y, m + 1);
+    const prevStart = yearMode ? at(y - 1, 0) : at(y, m - 1);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const keys: string[] = [];
+    const labels: string[] = [];
+    if (yearMode)
+      for (let i = 0; i < 12; i++) {
+        keys.push(`${y}-${pad(i + 1)}`);
+        labels.push(MONTH_SHORT[i]);
+      }
+    else {
+      const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      for (let d = 1; d <= days; d++) {
+        keys.push(`${y}-${pad(m + 1)}-${pad(d)}`);
+        labels.push(String(d));
+      }
+    }
+    // A period in progress is compared with the same stretch of the previous one.
+    const inProgress = now >= start && now < end;
+    const elapsed = inProgress ? now.getTime() - start.getTime() : end.getTime() - start.getTime();
+    const prevEnd = new Date(Math.min(start.getTime(), prevStart.getTime() + elapsed));
+    const fmt = yearMode ? "YYYY-MM" : "YYYY-MM-DD";
+    const from = start.toISOString();
+    const to = end.toISOString();
+    const p = this.prisma;
+    const [booked, delivered, returned] = await Promise.all([
+      p.$queryRaw<{ key: string; n: number }[]>`
+        SELECT to_char("createdAt" + interval '6 hours', ${fmt}) AS key, count(*)::int AS n FROM parcels
+        WHERE "createdAt" >= ${from}::timestamp AND "createdAt" < ${to}::timestamp AND status <> 'PICKUP_CANCELLED' GROUP BY 1`,
+      p.$queryRaw<{ key: string; n: number }[]>`
+        SELECT to_char("deliveredAt" + interval '6 hours', ${fmt}) AS key, count(*)::int AS n FROM parcels
+        WHERE "deliveredAt" >= ${from}::timestamp AND "deliveredAt" < ${to}::timestamp GROUP BY 1`,
+      p.$queryRaw<{ key: string; n: number }[]>`
+        SELECT to_char(t + interval '6 hours', ${fmt}) AS key, count(*)::int AS n
+        FROM (SELECT "parcelId", min("createdAt") AS t FROM tracking_events WHERE status = 'RETURNED' GROUP BY 1) r
+        WHERE t >= ${from}::timestamp AND t < ${to}::timestamp GROUP BY 1`,
+    ]);
+    const maps = { booked: new Map(booked.map(r => [r.key, r.n])), delivered: new Map(delivered.map(r => [r.key, r.n])), returned: new Map(returned.map(r => [r.key, r.n])) };
+    const series: TrendSeries = { booked: [], delivered: [], returned: [] };
+    for (const k of keys) for (const s of ["booked", "delivered", "returned"] as const) series[s].push(maps[s].get(k) ?? 0);
+    // The previous period's totals up to the same moment.
+    const prevRange = { gte: prevStart, lt: prevEnd };
+    const [prevBooked, prevDelivered, prevReturned] = await Promise.all([
+      p.parcel.count({ where: { createdAt: prevRange, status: { notIn: NOT_BOOKED } } }),
+      p.parcel.count({ where: { deliveredAt: prevRange } }),
+      p.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM (SELECT "parcelId", min("createdAt") AS t FROM tracking_events WHERE status = 'RETURNED' GROUP BY 1) r
+        WHERE t >= ${prevStart.toISOString()}::timestamp AND t < ${prevEnd.toISOString()}::timestamp`,
+    ]);
+    const total = (rows: { key: string; n: number }[], filter: (k: string) => boolean) => rows.filter(r => filter(r.key)).reduce((a, r) => a + r.n, 0);
+    const own = new Set(keys);
+    const elapsedKeys = inProgress ? keys.filter(k => (yearMode ? `${k}-01` : k) <= local.toISOString().slice(0, yearMode ? 10 : 10)) : keys;
+    return {
+      mode: yearMode ? "year" : "month",
+      label: yearMode ? String(y) : `${MONTH_SHORT[m]} ${y}`,
+      previousLabel: yearMode ? String(y - 1) : `${MONTH_SHORT[(m + 11) % 12]} ${m === 0 ? y - 1 : y}`,
+      inProgress,
+      /** How far the comparison goes: "1–13" of each month, or Jan–Nov of each year. */
+      upTo: inProgress ? labels[elapsedKeys.length - 1] ?? null : null,
+      keys,
+      labels,
+      ...series,
+      totals: { booked: total(booked, k => own.has(k)), delivered: total(delivered, k => own.has(k)), returned: total(returned, k => own.has(k)) },
+      previous: { booked: prevBooked, delivered: prevDelivered, returned: prevReturned[0]?.n ?? 0 },
     };
   }
 

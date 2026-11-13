@@ -12,6 +12,6 @@ import { MessageReaderController, MessageReaderService } from "./message-reader"
   imports: [ImportsModule, PricingModule],
   controllers: [ParcelScansController, MessageReaderController],
   providers: [ParcelScansService, ScanReaderService, ScanAiService, ScanClaudeService, MessageReaderService],
-  exports: [ParcelScansService],
+  exports: [ParcelScansService, ScanClaudeService],
 })
 export class ParcelScansModule {}

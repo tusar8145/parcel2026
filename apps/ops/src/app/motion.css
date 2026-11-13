@@ -1,0 +1,81 @@
+/*
+ * Courier Operations: smooth opening and closing everywhere (the same feel as the search window). Active only with the
+ * "df-motion" class on <html> (set in main.tsx), so the other panels keep their own behaviour.
+ */
+.df-motion {
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.25, 1);
+}
+
+/* Dialogs: rise and fade in; fade out (".closing" while the panel waits before removing it). */
+.df-motion dialog.dialog[open] { animation: df-dialog-in 0.24s var(--ease-out); }
+.df-motion dialog.dialog[open]::backdrop { animation: df-backdrop-in 0.24s ease; }
+.df-motion dialog.dialog.closing { animation: df-dialog-out 0.18s ease forwards; }
+.df-motion dialog.dialog.closing::backdrop { animation: df-backdrop-out 0.18s ease forwards; }
+
+/* The parcel side panel: slides in from the right, and back out when closed. */
+.df-motion .drawer { animation: df-drawer-in 0.32s var(--ease-out); }
+.df-motion .drawer.closing { animation: df-drawer-out 0.22s var(--ease-in-out) forwards; }
+
+/* Dropdown menus and pop-overs. */
+.df-motion .menu { animation: df-menu-in 0.18s var(--ease-out); transform-origin: top center; }
+
+/* A page fades and rises in when you move to it. */
+.df-motion .content.page-in { animation: df-page-in 0.3s var(--ease-out); }
+
+/* Tabs, menu items, buttons, inputs: colour and shadow changes ease instead of jumping. */
+.df-motion .tab,
+.df-motion .seg-tabs button,
+.df-motion .nav-item,
+.df-motion .menu-item,
+.df-motion .pill,
+.df-motion .input,
+.df-motion .select,
+.df-motion .textarea { transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.df-motion .button { transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, transform 0.12s ease; }
+.df-motion .button:active:not(:disabled) { transform: translateY(1px); }
+.df-motion .toast { animation: df-toast-in 0.26s var(--ease-out); }
+
+@keyframes df-dialog-in { from { opacity: 0; transform: translateY(-12px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes df-dialog-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px) scale(0.98); } }
+@keyframes df-backdrop-in { from { background: rgb(16 24 40 / 0%); backdrop-filter: blur(0); } }
+@keyframes df-backdrop-out { to { background: rgb(16 24 40 / 0%); backdrop-filter: blur(0); } }
+@keyframes df-drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes df-drawer-out { from { transform: none; opacity: 1; } to { transform: translateX(48px); opacity: 0; } }
+@keyframes df-menu-in { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes df-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes df-toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .df-motion dialog.dialog[open],
+  .df-motion dialog.dialog[open]::backdrop,
+  .df-motion dialog.dialog.closing,
+  .df-motion dialog.dialog.closing::backdrop,
+  .df-motion .drawer,
+  .df-motion .drawer.closing,
+  .df-motion .menu,
+  .df-motion .content.page-in,
+  .df-motion .toast { animation: none; }
+}
+
+/* Menu: one highlight box slides to the selected item (the items themselves have no box of their own). */
+.df-motion .nav-track { position: relative; }
+.df-motion .nav-track > .nav-group,
+.df-motion .nav-track .nav-item { position: relative; z-index: 1; }
+.df-motion .nav-track .nav-item[aria-current="page"] { background: transparent; }
+.df-motion .nav-indicator { position: absolute; top: 0; left: 0; z-index: 0; border-radius: 8px; background: var(--primary-soft); opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+.df-motion .nav-indicator.shown { opacity: 1; }
+.df-motion .nav-indicator.ready { transition: transform 0.4s var(--ease-in-out), width 0.4s var(--ease-in-out), height 0.4s var(--ease-in-out), opacity 0.2s ease; }
+.df-motion .nav-indicator::before { content: ""; position: absolute; left: -10px; top: 7px; bottom: 7px; width: 3px; border-radius: 0 3px 3px 0; background: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .df-motion .nav-indicator.ready { transition: none; } }
+
+/* Menu hover, as in the super admin panel: no box or shadow; the item nudges right, its icon grows and turns blue. */
+.df-motion .sidebar .nav-item { transition: color 0.22s ease, transform 0.22s ease; }
+.df-motion .sidebar .nav-item svg { transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease; }
+.df-motion .sidebar .nav-item:hover { background: transparent; box-shadow: none; color: var(--ink); transform: translateX(3px); }
+.df-motion .sidebar .nav-item:hover svg { transform: scale(1.12); color: var(--primary); }
+.df-motion .sidebar .nav-item.journey:hover .nav-step { transform: scale(1.08); }
+.df-motion .sidebar .nav-item[aria-current="page"]:hover { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .df-motion .sidebar .nav-item:hover, .df-motion .sidebar .nav-item:hover svg { transform: none; }
+}

@@ -7,6 +7,10 @@ import { queryClient } from "@panel/lib/queryClient";
 import App from "@/app/App";
 import { arriveFromClassic } from "@/app/links";
 import "@panel/styles.css";
+import "@/app/motion.css";
+
+// Smooth opening and closing across Courier Operations (app/motion.css; dialogs fade out before they go).
+document.documentElement.classList.add("df-motion");
 
 arriveFromClassic();
 

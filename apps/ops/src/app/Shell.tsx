@@ -2,7 +2,7 @@
  * The frame around every view: the menu (journey order, live counts, by role), the top bar (find a parcel or
  * the hub that serves a place, live state, notifications with operations alerts) and the parcel drawer (?parcel=).
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,13 +28,31 @@ export default function Shell({ children, crumb }: { children: ReactNode; crumb:
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setMenuOpen(false), [location.pathname]);
+  // Another menu page: the page fades and rises in (app/motion.css); another tab of the same page: nothing moves.
+  // Paths are /ops/<page>/<tab>.
+  const content = useRef<HTMLElement>(null);
+  const lastView = useRef<string | null>(null);
+  useEffect(() => {
+    const el = content.current;
+    if (!el) return;
+    const view = location.pathname.split("/").filter(Boolean)[0] ?? "";
+    const restart = (node: Element, cls: string) => {
+      node.classList.remove(cls);
+      void (node as HTMLElement).offsetWidth;
+      node.classList.add(cls);
+    };
+    const sameView = lastView.current === view;
+    lastView.current = view;
+    // A tab change on the same page has no effect.
+    if (!sameView) restart(el, "page-in");
+  }, [location.pathname]);
   return (
     <div className="shell" data-menu={menuOpen ? "open" : "closed"}>
       <Sidebar />
       <div className="scrim" onClick={() => setMenuOpen(false)} />
       <div className="main">
         <Topbar crumb={crumb} onMenu={() => setMenuOpen(o => !o)} />
-        <main className="content" id="main">
+        <main className="content" id="main" ref={content}>
           {children}
         </main>
       </div>
@@ -109,6 +127,24 @@ function Sidebar() {
     const t = setTimeout(() => nav.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" }), 50);
     return () => clearTimeout(t);
   }, [pathname]);
+  // The selected item's box slides from item to item (app/motion.css .nav-indicator).
+  const track = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
+  useLayoutEffect(() => {
+    const host = track.current;
+    if (!host) return;
+    const place = () => {
+      const el = host.querySelector<HTMLElement>('.nav-item[aria-current="page"]');
+      if (!el) return setBox(b => ({ ...b, shown: false }));
+      const h = host.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setBox(b => ({ top: r.top - h.top, left: r.left - h.left, width: r.width, height: r.height, shown: true, ready: b.shown || b.ready }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [pathname]);
   const groups = (["today", "journey", "queue", "money", "find", "manage"] as const).filter(g => VIEWS.some(v => v.group === g && allowed.has(v.id)));
   if (financeFirst(ops.menu.roles)) groups.sort((a, b) => (a === "money" ? -1 : b === "money" ? 1 : 0));
   const initials = (user?.name || "?")
@@ -127,6 +163,8 @@ function Sidebar() {
         <small>{ops.myHubs?.length ? `Operations console · ${ops.myHubs.map(h => h.name).join(", ")}` : "Operations console"}</small>
       </div>
       <nav className="nav" ref={nav}>
+        <div className="nav-track" ref={track}>
+        <div className={`nav-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
         {groups.map(g => (
           <div className="nav-group" key={g}>
             {GROUP_LABEL[g] ? <div className="nav-label">{GROUP_LABEL[g]}</div> : null}
@@ -158,6 +196,7 @@ function Sidebar() {
             <Icon name="external" />
             <span>Classic console</span>
           </a>
+        </div>
         </div>
         {/* At the end of the menu (they scroll with it), like the super admin panel's "Open operations console". */}
         <div className="nav-extras">

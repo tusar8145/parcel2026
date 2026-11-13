@@ -64,7 +64,10 @@ export interface FormConfig {
   onSubmit?: (values: FormValues) => Promise<string | void> | string | void;
 }
 
-type Entry = { id: number; render: (close: (value: unknown) => void) => ReactNode; resolve: (value: unknown) => void; size?: "wide" | "xwide" };
+type Entry = { id: number; render: (close: (value: unknown) => void) => ReactNode; resolve: (value: unknown) => void; size?: "wide" | "xwide"; closing?: boolean };
+/** A panel with smooth motion ("df-motion" on <html>, Courier Operations): a closed dialog fades out before it goes. */
+const CLOSE_MS = 180;
+const animated = () => typeof document !== "undefined" && document.documentElement.classList.contains("df-motion") && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 let entries: Entry[] = [];
 let seq = 0;
 const subs = new Set<() => void>();
@@ -80,9 +83,17 @@ function open<T>(render: Entry["render"], size?: Entry["size"]): Promise<T> {
 }
 function close(id: number, value: unknown) {
   const entry = entries.find(e => e.id === id);
-  entries = entries.filter(e => e.id !== id);
-  emit();
-  entry?.resolve(value);
+  if (!entry || entry.closing) return;
+  const remove = () => {
+    entries = entries.filter(e => e.id !== id);
+    emit();
+  };
+  if (animated()) {
+    entries = entries.map(e => (e.id === id ? { ...e, closing: true } : e));
+    emit();
+    setTimeout(remove, CLOSE_MS);
+  } else remove();
+  entry.resolve(value);
 }
 
 export function openCustom<T = unknown>(render: (close: (value?: T) => void) => ReactNode, size?: Entry["size"]) {
@@ -398,7 +409,7 @@ export function DialogHost() {
   return (
     <>
       {list.map(e => (
-        <ModalDialog key={e.id} size={e.size} onCancel={() => close(e.id, null)}>
+        <ModalDialog key={e.id} size={e.size} closing={e.closing} onCancel={() => close(e.id, null)}>
           {e.render(v => close(e.id, v))}
         </ModalDialog>
       ))}
@@ -406,7 +417,7 @@ export function DialogHost() {
   );
 }
 
-function ModalDialog({ children, onCancel, size }: { children: ReactNode; onCancel: () => void; size?: "wide" | "xwide" }) {
+function ModalDialog({ children, onCancel, size, closing }: { children: ReactNode; onCancel: () => void; size?: "wide" | "xwide"; closing?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -415,7 +426,7 @@ function ModalDialog({ children, onCancel, size }: { children: ReactNode; onCanc
   return (
     <dialog
       ref={ref}
-      className={`dialog ${size ?? ""}`}
+      className={`dialog ${size ?? ""}${closing ? " closing" : ""}`}
       onCancel={e => {
         e.preventDefault();
         onCancel();

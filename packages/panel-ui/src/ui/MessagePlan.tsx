@@ -3,6 +3,7 @@
  * each message ticked at booking with its SMS / email state, how many are done, and the SMS and emails sent
  * (GET /parcels/:id › messagePlan).
  */
+import type { ReactNode } from "react";
 import { Pill } from "./kit";
 import { when } from "../lib/format";
 
@@ -10,7 +11,7 @@ type State = "SENT" | "PENDING" | "FAILED" | null;
 export interface MessagePlan {
   channels: { sms: boolean; email: boolean; push: boolean };
   /** The ticked messages this parcel's journey gets; `when`: only if that happens (a failed attempt, a return…). */
-  items: { code: string; label: string; audience: string; sms: State; email: State; done: boolean; when?: string }[];
+  items: { code: string; label: string; audience: string; events?: string[]; sms: State; email: State; done: boolean; when?: string }[];
   /** Ticked messages that don't apply to this parcel (e.g. collected from the hub: no out-for-delivery), and why. */
   skipped?: { code: string; label: string; reason: string }[];
   done: number;
@@ -34,8 +35,8 @@ function StateTag({ channel, state }: { channel: string; state: State }) {
   return <Pill tone={tone}>{`${channel} ${label.toLowerCase()}`}</Pill>;
 }
 
-/** `hideSkipped`: leave out "Not for this parcel" (the search window). */
-export function MessagePlanView({ plan, booked, hideSkipped = false }: { plan?: MessagePlan | null; booked?: boolean; hideSkipped?: boolean }) {
+/** `hideSkipped`: leave out "Not for this parcel". `under`: shown inside each message's box, under it (the search window: what was sent). */
+export function MessagePlanView({ plan, booked, hideSkipped = false, under }: { plan?: MessagePlan | null; booked?: boolean; hideSkipped?: boolean; under?: (item: MessagePlan["items"][number]) => ReactNode }) {
   if (!plan) return <p className="faint" style={{ margin: 0 }}>Loading…</p>;
   if (booked === false) return <p className="faint" style={{ margin: 0 }}>Booked before service packages: the account's standard delivery messages.</p>;
   const { channels } = plan;
@@ -57,7 +58,8 @@ export function MessagePlanView({ plan, booked, hideSkipped = false }: { plan?: 
       {plan.items.length ? (
         <div className="stack" style={{ gap: 6 }}>
           {plan.items.map(i => (
-            <div key={i.code} className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "6px 9px", border: "1px solid var(--line)", borderRadius: 8, background: i.done ? "var(--good-soft)" : undefined }}>
+            <div key={i.code} style={{ padding: "6px 9px", border: "1px solid var(--line)", borderRadius: 8, background: i.done ? "var(--good-soft)" : undefined }}>
+            <div className="row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13 }}>
                 <span aria-hidden="true" style={{ marginRight: 6, color: i.done ? "var(--good)" : "var(--muted)" }}>
                   {i.done ? "✓" : "○"}
@@ -69,6 +71,8 @@ export function MessagePlanView({ plan, booked, hideSkipped = false }: { plan?: 
                 {channels.sms ? <StateTag channel="SMS" state={i.sms} /> : null}
                 {channels.email ? <StateTag channel="Email" state={i.email} /> : null}
               </span>
+            </div>
+            {under ? under(i) : null}
             </div>
           ))}
         </div>

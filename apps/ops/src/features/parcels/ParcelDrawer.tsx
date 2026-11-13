@@ -33,12 +33,22 @@ export default function ParcelDrawer() {
   const [params, setParams] = useSearchParams();
   const id = params.get("parcel");
   const matches = (params.get("matches") || "").split(",").filter(Boolean);
-  const close = () =>
-    setParams(p => {
-      p.delete("parcel");
-      p.delete("matches");
-      return p;
-    });
+  // Closing slides the panel out first (app/motion.css), then removes it.
+  const [closing, setClosing] = useState(false);
+  const close = () => {
+    const done = () => {
+      setClosing(false);
+      setParams(p => {
+        p.delete("parcel");
+        p.delete("matches");
+        return p;
+      });
+    };
+    if (document.documentElement.classList.contains("df-motion") && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setClosing(true);
+      setTimeout(done, 200);
+    } else done();
+  };
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!id) return;
@@ -50,7 +60,7 @@ export default function ParcelDrawer() {
   }, [id]);
   if (!id) return null;
   return (
-    <aside className="drawer" role="dialog" aria-modal="false" aria-labelledby="drawerTitle">
+    <aside className={`drawer${closing ? " closing" : ""}`} role="dialog" aria-modal="false" aria-labelledby="drawerTitle">
       <DrawerContent id={id} matches={matches} close={close} closeRef={closeRef} />
     </aside>
   );
@@ -108,6 +118,10 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
                   <PositionMap trackingId={p.trackingId} status={`${p.status}:${p.updatedAt}`} />
                 </Suspense>
               </section>
+              <section>
+                <h3 className="section-title">Proof of delivery</h3>
+                <Proof p={p} />
+              </section>
               {p.chargesOff ? null : (
                 <section>
                   <h3 className="section-title">Price</h3>
@@ -151,10 +165,6 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
           ]}
         />
       </section>
-              <section>
-                <h3 className="section-title">Proof of delivery</h3>
-                <Proof p={p} />
-              </section>
               <Notes p={p} onSaved={fresh => qc.setQueryData(["parcel", id], fresh)} />
               {p.deliveredLocation ? (
                 <section>
@@ -164,11 +174,7 @@ export function DrawerContent({ id, matches, close, closeRef, wide = false }: { 
               ) : null}
             </div>
             <div className="pd-col">
-              <section>
-                <h3 className="section-title">Messages (SMS · email · push)</h3>
-                <MessagePlanView plan={p.messagePlan} hideSkipped />
-              </section>
-              <Messages id={p.trackingId} />
+              <MessagesCombined p={p} />
               {p.cnFlow ? (
                 <section>
                   <h3 className="section-title">CN photos (CN_Scan)</h3>
@@ -639,6 +645,58 @@ interface Message {
   lastError?: string | null;
 }
 const MESSAGE_STATE: Record<string, [string, "good" | "warn" | "bad"]> = { SENT: ["Sent", "good"], PENDING: ["Queued", "warn"], FAILED: ["Failed", "bad"] };
+/**
+ * Messages (search window): each message this parcel gets, with its SMS / email state and, right under its name, the
+ * message that was sent for it (text with codes hidden, to whom, when). Messages outside the plan (e.g. the delivery
+ * code) are listed after them.
+ */
+function MessagesCombined({ p }: { p: Parcel }) {
+  const q = useQuery({ queryKey: ["parcel", p.trackingId, "messages"], queryFn: () => api<{ items: (Message & { event?: string })[] }>(`/parcels/${encodeURIComponent(p.trackingId)}/messages`), staleTime: 30_000 });
+  const sent = q.data?.items ?? [];
+  const items = p.messagePlan?.items ?? [];
+  const forItem = (it: { events?: string[]; label: string }) => sent.filter(m => (it.events?.length ? !!m.event && it.events.includes(m.event) : m.eventLabel === it.label));
+  const used = new Set(items.flatMap(it => forItem(it).map(m => m.id)));
+  const other = sent.filter(m => !used.has(m.id));
+  /** One sent message: when, to whom, its state and text (codes hidden). */
+  const message = (m: Message) => {
+    const [label, tone] = MESSAGE_STATE[m.state] || [m.state, "warn"];
+    return (
+      <div key={m.id} className="pd-sent">
+        <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+          <small className="faint">{[m.channel === "EMAIL" ? "Email" : "SMS", `to ${m.to}`, when(m.sentAt || m.queuedAt)].filter(Boolean).join(" · ")}</small>
+          <Pill tone={tone}>{label}</Pill>
+        </div>
+        <div className="pd-sent-text">
+          {m.subject ? `${m.subject}\n` : ""}
+          {m.text}
+        </div>
+        {m.lastError && m.state !== "SENT" ? <small style={{ display: "block", color: "var(--bad)" }}>{m.lastError}</small> : null}
+      </div>
+    );
+  };
+  return (
+    <section>
+      <h3 className="section-title row" style={{ justifyContent: "space-between" }}>
+        Messages (SMS · email · push)
+        <button type="button" className="button sm" style={{ textTransform: "none", letterSpacing: 0 }} onClick={() => void q.refetch()}>
+          Refresh
+        </button>
+      </h3>
+      <MessagePlanView plan={p.messagePlan} hideSkipped under={it => forItem(it).map(message)} />
+      {other.length ? (
+        <div className="stack" style={{ gap: 6, marginTop: 6 }}>
+          {other.map(m => (
+            <div key={m.id} style={{ padding: "6px 9px", border: "1px solid var(--line)", borderRadius: 8 }}>
+              <span style={{ fontSize: 13 }}>{m.eventLabel}</span>
+              {message(m)}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function Messages({ id }: { id: string }) {
   const q = useQuery({ queryKey: ["parcel", id, "messages"], queryFn: () => api<{ items: Message[] }>(`/parcels/${encodeURIComponent(id)}/messages`), staleTime: 30_000 });
   return (

@@ -75,13 +75,13 @@ export async function messagePlanOf(
     return best;
   };
   const journey = { merchant: !!parcel.merchantId, dropOff: parcel.intake === "DROP_OFF", collect: parcel.lastMile === "HUB_COLLECT" };
-  const items: { code: string; label: string; audience: string; sms: ReturnType<typeof stateOf>; email: ReturnType<typeof stateOf>; done: boolean; when?: string }[] = [];
+  const items: { code: string; label: string; audience: string; events: readonly string[]; sms: ReturnType<typeof stateOf>; email: ReturnType<typeof stateOf>; done: boolean; when?: string }[] = [];
   const skipped: { code: string; label: string; reason: string }[] = [];
   for (const n of PARCEL_NOTIFICATIONS.filter(n => parcel.notifications.includes(n.code))) {
     const sms = channels.has("sms") && !channelOff(parcel.notificationChannelsOff, n.code, "sms") ? stateOf(n.events, "SMS") : null;
     const email = channels.has("email") && !channelOff(parcel.notificationChannelsOff, n.code, "email") ? stateOf(n.events, "EMAIL") : null;
     const rule = journeyRule(n.code, journey);
-    if (rule.show || sms || email) items.push({ code: n.code, label: n.label, audience: n.audience, sms, email, done: sms === "SENT" || email === "SENT", ...(rule.show && rule.when && !sms && !email ? { when: rule.when } : {}) });
+    if (rule.show || sms || email) items.push({ code: n.code, label: n.label, audience: n.audience, events: n.events, sms, email, done: sms === "SENT" || email === "SENT", ...(rule.show && rule.when && !sms && !email ? { when: rule.when } : {}) });
     else skipped.push({ code: n.code, label: n.label, reason: rule.reason });
   }
   // Done of total counts the messages this parcel will get for sure (not the "only if" ones still waiting).

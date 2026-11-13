@@ -252,3 +252,51 @@
   .pd-history-box { grid-template-columns: minmax(0, 1fr); }
   .pd-history-box > .pd-more-bar { grid-column: 1; grid-row: 3; justify-content: center; }
 }
+
+/* History 90% of the width, View more in the last 10%. */
+.pd-history-box { grid-template-columns: minmax(0, 9fr) minmax(0, 1fr); }
+.pd-history-box > .pd-more-bar { justify-content: flex-end; }
+.pd-history-box .pd-more-btn { white-space: nowrap; padding: 6px 12px; }
+
+/* Messages: each one with what was sent under its name. */
+.pd-msgs { display: grid; gap: 8px; }
+.pd-msg { padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2, #f8fafc); }
+.pd-msg.has-sent { background: #fff; }
+.pd-msg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.pd-msg-head strong { font-size: 13.5px; }
+.pd-msg-sent { margin-top: 6px; padding: 8px 10px; border-left: 3px solid var(--primary-soft, #e8eefc); border-radius: 6px; background: var(--surface-2, #f8fafc); }
+.pd-msg-text { margin-top: 4px; font-size: 13px; color: var(--ink-2); white-space: pre-line; overflow-wrap: anywhere; }
+
+/* Messages like the left-hand cards (Price): plain rows with dividers, name on the left, what was sent on the right. */
+.pd-msgs { gap: 0; }
+.pd-msg { display: grid; grid-template-columns: 140px minmax(0, 1fr); column-gap: 12px; align-items: start; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.pd-msg.has-sent { background: none; }
+.pd-msg:last-child { border-bottom: 0; }
+.pd-msg-head { grid-column: 1; grid-row: 1 / span 20; display: block; margin: 0; }
+.pd-msg-head strong { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.pd-msg-head small { display: block; margin-top: 1px; font-size: 11.5px; }
+.pd-msg > :not(.pd-msg-head) { grid-column: 2; min-width: 0; }
+.pd-msg > small.faint { font-size: 12.5px; padding-top: 1px; }
+.pd-msg-sent { margin: 0 0 6px; padding: 0; border: 0; border-radius: 0; background: none; }
+.pd-msg-sent:last-child { margin-bottom: 0; }
+.pd-msg-sent .row small { font-size: 11.5px; }
+.pd-msg-text { margin-top: 2px; font-size: 12.8px; color: var(--muted); }
+@media (max-width: 760px) {
+  .pd-msg { grid-template-columns: minmax(0, 1fr); }
+  .pd-msg-head { grid-row: auto; margin-bottom: 4px; }
+  .pd-msg > :not(.pd-msg-head) { grid-column: 1; }
+}
+
+/* Each message: a checkbox (ticked when sent), its name and recipient on one line; what was sent below, full width. */
+.pd-msg { display: block; }
+.pd-msg-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.pd-msg-head strong { display: inline; }
+.pd-msg-head small { display: inline; margin: 0; }
+.pd-check { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--line-strong, #c4cad4); border-radius: 5px; background: #fff; color: #fff; font-size: 12px; font-weight: 800; line-height: 1; }
+.pd-check.on { border-color: #067647; background: #067647; }
+.pd-check.half { border-color: #b54708; background: #fef0c7; color: #b54708; }
+.pd-msg > :not(.pd-msg-head) { margin-left: 26px; }
+
+/* A sent message inside its message's box (same design as the side panel's Messages). */
+.pd-sent { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.pd-sent-text { margin-top: 3px; font-size: 12.8px; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }

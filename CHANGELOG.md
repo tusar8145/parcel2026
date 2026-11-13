@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.48.0 — 2026-11-13
+- New orders › Scan with phone: the phone page has a Live camera. The camera stays on in the page; point it at the label and tap Capture, and the photo is sent in the background while the camera stays ready for the next parcel (a light button where the phone allows it, and the screen stays on). Take photo (the phone camera app) and Choose photos still work as before.
+
 ## 1.47.0 — 2026-11-12
 - Service plans & pricing › New package: "Copy from an existing package" fills in everything (services, message channels, prices, description) from another package of the same category (Banking & Financial, E-commerce or Customer). Change anything before saving; the name is yours to give.
 

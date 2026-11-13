@@ -56,7 +56,8 @@ export default function ParcelDrawer() {
   );
 }
 
-function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: string[]; close: () => void; closeRef: React.RefObject<HTMLButtonElement | null> }) {
+/** A parcel's full details (the side panel's content; also the search window's right pane). */
+export function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: string[]; close: () => void; closeRef: React.RefObject<HTMLButtonElement | null> }) {
   const qc = useQueryClient();
   const actions = useParcelActions();
   const q = useQuery({ queryKey: ["parcel", id], queryFn: () => api<Parcel>(`/parcels/${encodeURIComponent(id)}`), staleTime: 5_000 });

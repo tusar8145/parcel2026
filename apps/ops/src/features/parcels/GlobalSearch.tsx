@@ -1,19 +1,18 @@
 /**
- * The top bar's search: a box that opens a search window (click it, or press "/"). Type or scan a tracking ID, CN or
- * phone: matching parcels show as you type; Enter or a click opens the parcel in its side panel (the usual drawer),
- * with the other matches one click away. A zone or area name also shows the hub that serves it. The window closes with
- * Esc, the ✕ or a click outside.
+ * The top bar's search: a box that opens the search window (click it, or press "/"). Type or scan a tracking ID, CN
+ * or phone: matching parcels show on the left as you type, and the chosen one's full details (everything the side
+ * panel shows, with its actions) on the right. A zone or area name also shows the hub that serves it. The window
+ * closes with Esc, the ✕ or a click outside. Parcels opened anywhere else still open in the side panel.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router";
-import { api } from "@panel/lib/api";
-import { describe } from "@panel/lib/api";
+import { api, describe } from "@panel/lib/api";
 import { useOps } from "@/lib/ops";
 import { Icon } from "@panel/ui/Icon";
 import { focusScanBox } from "@/features/scan/scanner";
 import { toast } from "@panel/ui/toast";
 import { findParcels, useCatalog } from "./search";
+import { DrawerContent } from "./ParcelDrawer";
 import type { Parcel } from "./model";
 import "./global-search.css";
 
@@ -41,9 +40,9 @@ export default function GlobalSearch() {
   }, []);
   return (
     <>
-      <button type="button" className="search gs-trigger" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Search parcels: tracking ID, CN, phone or zone">
+      <button type="button" className="gs-trigger" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Search parcels: tracking ID, CN, phone or zone">
         <Icon name="search" />
-        <span>Tracking ID, CN, phone or zone…</span>
+        <span className="gs-trigger-text">Tracking ID, CN, phone or zone…</span>
         <kbd>/</kbd>
       </button>
       {open ? <SearchDialog onClose={() => setOpen(false)} /> : null}
@@ -52,10 +51,10 @@ export default function GlobalSearch() {
 }
 
 function SearchDialog({ onClose }: { onClose: () => void }) {
-  const [, setParams] = useSearchParams();
   const catalog = useCatalog();
   const { hubs } = useOps();
   const input = useRef<HTMLInputElement>(null);
+  const detailClose = useRef<HTMLButtonElement>(null);
   const [shown, setShown] = useState(false);
   const [value, setValue] = useState("");
   const [results, setResults] = useState<Parcel[] | null>(null);
@@ -63,6 +62,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [active, setActive] = useState(0);
+  const [picked, setPicked] = useState<string | null>(null);
   const seq = useRef(0);
 
   // Opens with a short fade-and-rise; closes the same way before it is removed.
@@ -73,8 +73,13 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   }, []);
   const close = useCallback(() => {
     setShown(false);
-    setTimeout(onClose, 180);
+    setTimeout(onClose, 200);
   }, [onClose]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("dialog[open]") && close();
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [close]);
 
   const run = useCallback(async (raw: string) => {
     const text = raw.trim();
@@ -90,6 +95,8 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
       if (mine !== seq.current) return;
       setResults(found);
       setActive(0);
+      // The first match's details at once (a scan opens straight to it).
+      setPicked(found[0]?.trackingId ?? null);
       setError("");
     } catch (e) {
       if (mine === seq.current) setError(describe(e));
@@ -98,7 +105,6 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  // Parcels as you type (a scanner's Enter searches at once).
   useEffect(() => {
     const t = setTimeout(() => void run(value), 350);
     return () => clearTimeout(t);
@@ -138,128 +144,138 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     };
   }, [value, catalog, hubs]);
 
-  const openParcel = (p: Parcel, list: Parcel[]) => {
-    setParams(sp => {
-      sp.set("parcel", p.trackingId);
-      if (list.length > 1) sp.set("matches", list.slice(0, 20).map(x => x.trackingId).join(","));
-      else sp.delete("matches");
-      return sp;
-    });
-    close();
-  };
-
   const onKey = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") return close();
     const list = results ?? [];
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive(a => Math.min(a + 1, Math.max(0, list.length - 1)));
+      const i = Math.min(active + 1, Math.max(0, list.length - 1));
+      setActive(i);
+      if (list[i]) setPicked(list[i].trackingId);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive(a => Math.max(0, a - 1));
+      const i = Math.max(0, active - 1);
+      setActive(i);
+      if (list[i]) setPicked(list[i].trackingId);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const raw = value.trim();
       if (!raw) return;
-      // Scanned / typed and Enter at once: search now, then open the first match.
-      if (!results || busy) {
-        const found = await findParcels(raw).catch(err => (setError(describe(err)), [] as Parcel[]));
-        setResults(found);
-        if (found.length) openParcel(found[0], found);
-        else toast(`No parcel found for “${raw}”.`);
-        return;
-      }
-      if (list[active]) openParcel(list[active], list);
-      else toast(`No parcel found for “${raw}”.`);
+      // Scanned / typed and Enter at once: search now.
+      const found = !results || busy ? await findParcels(raw).catch(err => (setError(describe(err)), [] as Parcel[])) : list;
+      if (found !== list) setResults(found);
+      if (!found.length) return toast(`No parcel found for “${raw}”.`);
+      setPicked(found[Math.min(active, found.length - 1)]?.trackingId ?? found[0].trackingId);
     }
   };
 
   const text = value.trim();
+  const list = results ?? [];
   return createPortal(
     <div className={`gs-backdrop${shown ? " in" : ""}`} role="presentation" onMouseDown={e => e.target === e.currentTarget && close()}>
-      <section className="gs-panel" role="dialog" aria-modal="true" aria-label="Search parcels">
+      <section className={`gs-panel${picked ? " has-detail" : ""}`} role="dialog" aria-modal="true" aria-label="Search parcels">
         <header className="gs-head">
-          <Icon name="search" size={20} />
-          <input ref={input} className="gs-input" type="search" autoComplete="off" placeholder="Tracking ID, CN, phone or zone…" aria-label="Tracking ID, CN, phone or zone" value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => void onKey(e)} />
-          {busy ? <span className="gs-spin" aria-label="Searching" /> : null}
+          <label className="gs-field">
+            <Icon name="search" size={20} />
+            <input ref={input} className="gs-input" type="search" autoComplete="off" placeholder="Tracking ID, CN, phone or zone…" aria-label="Tracking ID, CN, phone or zone" value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => void onKey(e)} />
+            {busy ? <span className="gs-spin" aria-label="Searching" /> : text ? (
+              <button type="button" className="gs-clear" aria-label="Clear" onClick={() => (setValue(""), setResults(null), setPicked(null), input.current?.focus())}>
+                Clear
+              </button>
+            ) : null}
+          </label>
           <button type="button" className="gs-close" aria-label="Close" onClick={close}>
             <Icon name="x" />
           </button>
         </header>
-        <div className="gs-body">
-          {!text ? (
-            <div className="gs-empty">
-              <strong>Find a parcel</strong>
-              <span>Type or scan a tracking ID or CN, a phone number, or a zone / area name to see the hub that serves it.</span>
-              <span className="gs-keys">
-                <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close
-              </span>
-            </div>
-          ) : text.length < 3 ? (
-            <div className="gs-empty">
-              <span>Type at least 3 characters.</span>
-            </div>
-          ) : (
-            <>
-              {error ? <div className="callout bad" style={{ margin: "0 0 10px" }}>{error}</div> : null}
-              {results ? (
-                <>
-                  <div className="gs-section">{results.length ? `Parcels · ${results.length}${results.length >= 20 ? "+" : ""}` : busy ? "Searching…" : "No parcel found"}</div>
-                  <ul className="gs-list" role="listbox" aria-label="Parcels">
-                    {results.map((p, i) => (
-                      <li key={p.trackingId} role="option" aria-selected={i === active}>
-                        <button type="button" className={`gs-item${i === active ? " active" : ""}`} onMouseEnter={() => setActive(i)} onClick={() => openParcel(p, results)} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}>
-                          <span className="gs-item-top">
-                            <strong className="gs-id">{p.trackingId}</strong>
-                            <span className={`pill ${TONE[p.status] ?? ""}`}>{p.statusLabel}</span>
-                            {money(p.codAmount) ? <span className="gs-cod">{`COD ${money(p.codAmount)}`}</span> : null}
-                          </span>
-                          <span className="gs-item-grid">
-                            <span>
-                              <small>Recipient</small>
-                              {[p.recipient?.name, p.recipient?.phone].filter(Boolean).join(" · ") || "—"}
-                            </span>
-                            <span>
-                              <small>Merchant</small>
-                              {p.merchant?.name ?? p.sender?.name ?? "Customer"}
-                            </span>
-                            <span>
-                              <small>To</small>
-                              {[p.delivery?.zone, p.delivery?.district].filter(Boolean).join(", ") || "—"}
-                            </span>
-                            <span>
-                              <small>Hub</small>
-                              {p.currentHub?.name ?? "—"}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <div className="gs-empty">
-                  <span>Searching…</span>
-                </div>
-              )}
-              {places.length ? (
-                <>
-                  <div className="gs-section">Which hub serves it</div>
-                  <ul className="gs-list">
-                    {places.map(p => (
-                      <li key={`${p.district}|${p.zone}|${p.area}`} className="gs-place">
-                        <span>
-                          <strong>{p.area || p.zone}</strong>
-                          <small>{p.area ? `${p.zone}, ${p.district}` : p.district}</small>
+        <div className="gs-main">
+          <div className="gs-results">
+            {!text ? (
+              <div className="gs-empty">
+                <span className="gs-empty-icon">
+                  <Icon name="search" size={26} />
+                </span>
+                <strong>Find a parcel</strong>
+                <span>Type or scan a tracking ID or CN, a phone number, or a zone / area name to see the hub that serves it.</span>
+                <span className="gs-keys">
+                  <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close
+                </span>
+              </div>
+            ) : text.length < 3 ? (
+              <div className="gs-empty">
+                <span>Type at least 3 characters.</span>
+              </div>
+            ) : (
+              <>
+                {error ? <div className="callout bad" style={{ margin: "0 0 10px" }}>{error}</div> : null}
+                <div className="gs-section">{results ? (list.length ? `Parcels · ${list.length}${list.length >= 20 ? "+" : ""}` : busy ? "Searching…" : "No parcel found") : "Searching…"}</div>
+                <ul className="gs-list" role="listbox" aria-label="Parcels">
+                  {list.map((p, i) => (
+                    <li key={p.trackingId} role="option" aria-selected={p.trackingId === picked}>
+                      <button
+                        type="button"
+                        className={`gs-item${p.trackingId === picked ? " picked" : ""}${i === active ? " active" : ""}`}
+                        onClick={() => (setActive(i), setPicked(p.trackingId))}
+                        style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}
+                      >
+                        <span className="gs-item-top">
+                          <strong className="gs-id">{p.trackingId}</strong>
+                          <span className={`pill ${TONE[p.status] ?? ""}`}>{p.statusLabel}</span>
                         </span>
-                        <span style={{ textAlign: "right" }}>{p.hub ? <strong>{p.hub.name}</strong> : <small>No hub set for this zone</small>}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-            </>
-          )}
+                        <span className="gs-item-line">
+                          <Icon name="users" size={13} />
+                          {[p.recipient?.name, p.recipient?.phone].filter(Boolean).join(" · ") || "Recipient not set"}
+                        </span>
+                        <span className="gs-item-line">
+                          <Icon name="box" size={13} />
+                          {p.merchant?.name ?? p.sender?.name ?? "Customer"}
+                          {money(p.codAmount) ? <b className="gs-cod">{`COD ${money(p.codAmount)}`}</b> : null}
+                        </span>
+                        <span className="gs-item-line">
+                          <Icon name="pin" size={13} />
+                          {[p.delivery?.zone, p.delivery?.district].filter(Boolean).join(", ") || "Destination not set"}
+                          {p.currentHub?.name ? <span className="gs-hub">{p.currentHub.name}</span> : null}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {places.length ? (
+                  <>
+                    <div className="gs-section">Which hub serves it</div>
+                    <ul className="gs-list">
+                      {places.map(p => (
+                        <li key={`${p.district}|${p.zone}|${p.area}`} className="gs-place">
+                          <span>
+                            <strong>{p.area || p.zone}</strong>
+                            <small>{p.area ? `${p.zone}, ${p.district}` : p.district}</small>
+                          </span>
+                          <span style={{ textAlign: "right" }}>{p.hub ? <strong>{p.hub.name}</strong> : <small>No hub set for this zone</small>}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            )}
+          </div>
+          <div className="gs-detail">
+            {picked ? (
+              <div className="gs-detail-inner" key={picked}>
+                <button type="button" className="gs-back" onClick={() => setPicked(null)}>
+                  ← Results
+                </button>
+                <DrawerContent id={picked} matches={[]} close={() => setPicked(null)} closeRef={detailClose} />
+              </div>
+            ) : (
+              <div className="gs-empty gs-detail-empty">
+                <span className="gs-empty-icon">
+                  <Icon name="box" size={26} />
+                </span>
+                <strong>Parcel details</strong>
+                <span>Choose a parcel on the left to see everything about it here: status, recipient, charges, messages, history and its actions.</span>
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>,

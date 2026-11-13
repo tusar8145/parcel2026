@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.51.1 — 2026-11-14
+- Courier Operations search: the search icon no longer overlaps the text in the top bar.
+- The search window is larger, with a rounded search box: results on the left, and the chosen parcel's full details on the right (everything the side panel shows, with its actions). The first match opens at once; arrow keys move between results. On a phone the details open over the results with a back button.
+
 ## 1.51.0 — 2026-11-14
 - Courier Operations: the top search (Tracking ID, CN, phone or zone) opens a larger search window, with the search box ready to type in. Matching parcels show as cards as you type (status, recipient, merchant, destination, hub, COD); use the arrow keys and Enter, or click one to open it in the side panel as before. A zone or area name shows the hub that serves it. Closes with Esc, the ✕ or a click outside; press / to open it.
 

@@ -1,0 +1,20 @@
+/* A proof image in place (click to enlarge) and the large view over the page. */
+.iz-thumb { position: relative; display: block; width: 100%; max-width: 360px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2, #f6f8fb); cursor: zoom-in; overflow: hidden; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+.iz-thumb.light { background: #fff; }
+.iz-thumb:hover { border-color: var(--primary); box-shadow: 0 6px 18px -10px rgba(47, 85, 201, 0.6); }
+.iz-thumb img { display: block; width: 100%; max-height: 190px; object-fit: contain; border-radius: 6px; transition: transform 0.25s ease; }
+.iz-thumb:hover img { transform: scale(1.02); }
+.iz-hint { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: rgba(16, 24, 40, 0.65); color: #fff; font-size: 11px; font-weight: 600; opacity: 0; transition: opacity 0.18s ease; }
+.iz-thumb:hover .iz-hint, .iz-thumb:focus-visible .iz-hint { opacity: 1; }
+.iz-loading { display: block; padding: 30px 0; text-align: center; color: var(--faint); font-size: 12.5px; }
+
+.iz-backdrop { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 24px; background: rgba(16, 24, 40, 0); transition: background 0.2s ease; }
+.iz-backdrop.in { background: rgba(16, 24, 40, 0.78); }
+.iz-frame { position: relative; display: grid; gap: 10px; justify-items: center; max-width: min(1100px, 100%); opacity: 0; transform: scale(0.94); transition: opacity 0.2s ease, transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.iz-backdrop.in .iz-frame { opacity: 1; transform: none; }
+.iz-frame img { display: block; max-width: 100%; max-height: calc(100vh - 110px); border-radius: 10px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45); cursor: zoom-out; }
+.iz-frame img.light { background: #fff; padding: 10px; }
+.iz-tools { display: flex; gap: 8px; }
+.iz-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 0; border-radius: 9px; background: rgba(255, 255, 255, 0.92); color: #101828; font: 600 13px/1 inherit; cursor: pointer; }
+.iz-btn:hover { background: #fff; }
+@media (prefers-reduced-motion: reduce) { .iz-backdrop, .iz-frame, .iz-thumb img { transition: none; } }

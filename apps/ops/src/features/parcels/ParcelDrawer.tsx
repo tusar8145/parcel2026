@@ -6,7 +6,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, describe, download } from "@panel/lib/api";
+import { api, ApiError, describe } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
 import { localPhone, money, when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
@@ -18,6 +18,7 @@ import { CLOSED, PICKUP_STAGE, awaitingDropOff, failedDelivery, failureBadge, fa
 import { useParcelActions } from "./useParcelActions";
 import { MessagePlanView } from "@panel/ui/MessagePlan";
 import { CnPhotos, DeliveredMap } from "./CnDetails";
+import { ImageZoom } from "./ImageZoom";
 
 const PositionMap = lazy(() => import("@panel/ui/PositionMap"));
 
@@ -554,11 +555,9 @@ function Proof({ p }: { p: Parcel }) {
       <KV rows={rows} />
       {q.isError ? <p className="muted">{describe(q.error)}</p> : null}
       {full?.image ? (
-        <p style={{ margin: "8px 0 0" }}>
-          <Button size="sm" onClick={() => download(`/files/${encodeURIComponent(full.image!.fileId)}`, "proof-of-delivery")}>
-            Open {p.proof.method === "SIGNATURE" ? "signature" : "photo"}
-          </Button>
-        </p>
+        <div style={{ marginTop: 10 }}>
+          <ImageZoom path={`/files/${encodeURIComponent(full.image.fileId)}`} alt={p.proof.method === "SIGNATURE" ? "Signature" : "Proof photo"} fileName={`${p.trackingId}-proof`} light={p.proof.method === "SIGNATURE"} />
+        </div>
       ) : null}
     </>
   );

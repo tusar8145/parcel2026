@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.52.1 — 2026-11-14
+- Courier Operations parcel details › Proof of delivery: the signature or photo shows in place; click it to open it large (close with a click, Esc or ✕), with a Download button.
+
 ## 1.52.0 — 2026-11-14
 - Courier Operations moves smoothly: dialogs rise and fade in and fade out when closed, the parcel side panel slides in and out, the selected menu item's highlight slides to the item you click, menu items nudge on hover (as in the super admin panel), dropdowns and notifications ease in, and a new page fades in (changing tabs has no effect).
 - Search window: Messages shows each message as in the side panel, with the message that was sent right inside its box (text with codes hidden, to whom, when); messages outside the plan follow. Proof of delivery sits under the map; the tracking history takes 90% of the width with View more on the right.

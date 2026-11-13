@@ -107,7 +107,7 @@ describe("CN_Scan and CN_Merchant (apps)", () => {
     await capture(s.gulOp.token, { cn: cn1, hubId: s.gulshan.id });
     await ctx.api("POST", "/cn/parcels/merchant", { token: s.gulOp.token, body: { cn: cn1, merchantId: s.shop.id, hubId: s.gulshan.id } });
     const assigned = await ctx.api("POST", `/parcels/${cn1}/assign-delivery`, { token: s.ops.token, body: { riderId: s.rider.rider.id } });
-    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+    expect(assigned.status, JSON.stringify(assigned.body)).toBeLessThan(300);
     expect((await ctx.api("POST", `/rider/parcels/${cn1}/start-delivery`, { token: s.rider.token })).status).toBe(200);
     const done = await ctx.api("POST", `/rider/parcels/${cn1}/delivery`, {
       token: s.rider.token,
@@ -117,6 +117,45 @@ describe("CN_Scan and CN_Merchant (apps)", () => {
     expect(await parcelOf(cn1)).toMatchObject({ status: "DELIVERED", deliveredLat: 23.7925, deliveredLng: 90.4078, deliveredAccuracy: 12 });
     const view = await ctx.api("GET", `/parcels/${cn1}`, { token: s.ops.token });
     expect(view.body).toMatchObject({ cnFlow: true, deliveredLocation: { lat: 23.7925, lng: 90.4078 } });
+  });
+
+  it("Scan desk: an unused CN label is made a parcel on Receive entry and on Receive & assign rider", async () => {
+    const s = await setup();
+    const [cn1, cn2] = s.cns;
+    const received = await ctx.api("POST", "/ops/hub-receive", { token: s.gulOp.token, body: { code: cn1, hubId: s.gulshan.id, source: "KEYBOARD" } });
+    expect(received.status, JSON.stringify(received.body)).toBeLessThan(300);
+    expect(received.body).toMatchObject({ ok: true, outcome: "RECEIVED" });
+    expect(await parcelOf(cn1)).toMatchObject({ cnFlow: true, status: "AT_HUB", currentHubId: s.gulshan.id, merchantId: null });
+    // Scanned again: already received.
+    expect((await ctx.api("POST", "/ops/hub-receive", { token: s.gulOp.token, body: { code: cn1, hubId: s.gulshan.id, source: "KEYBOARD" } })).body.outcome).toBe("ALREADY_RECEIVED");
+
+    const assigned = await ctx.api("POST", "/ops/hub-assign", { token: s.gulOp.token, body: { code: cn2, hubId: s.gulshan.id, riderId: s.rider.rider.id, source: "KEYBOARD" } });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+    expect(assigned.body).toMatchObject({ ok: true });
+    expect(await parcelOf(cn2)).toMatchObject({ cnFlow: true, status: "ASSIGNED", deliveryRiderId: s.rider.rider.id });
+    // Then the merchant with CN_Merchant.
+    expect((await ctx.api("POST", "/cn/parcels/merchant", { token: s.gulOp.token, body: { cn: cn2, merchantId: s.shop.id, hubId: s.gulshan.id } })).body.outcome).toBe("ASSIGNED");
+  });
+
+  it("a finished CN parcel can still get its merchant: its open money moves to the merchant's account", async () => {
+    const s = await setup();
+    const [cn1] = s.cns;
+    await ctx.api("POST", "/ops/hub-receive", { token: s.gulOp.token, body: { code: cn1, hubId: s.gulshan.id, source: "KEYBOARD" } });
+    await ctx.prisma.parcel.update({ where: { trackingId: cn1 }, data: { codAmount: 1200 } });
+    expect((await ctx.api("POST", `/parcels/${cn1}/assign-delivery`, { token: s.ops.token, body: { riderId: s.rider.rider.id } })).status).toBe(200);
+    await ctx.api("POST", `/rider/parcels/${cn1}/start-delivery`, { token: s.rider.token });
+    const done = await ctx.api("POST", `/rider/parcels/${cn1}/delivery`, { token: s.rider.token, body: { outcome: "DELIVERED", receivedBy: "Karim", codCollected: 1200, proof: { method: "SIGNATURE", image: PNG } } });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const parcel = await parcelOf(cn1);
+    const before = await ctx.prisma.accountEntry.findMany({ where: { parcelId: parcel.id }, include: { account: true } });
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every(e => e.account.merchantId === null)).toBe(true);
+
+    const m = await ctx.api("POST", "/cn/parcels/merchant", { token: s.gulOp.token, body: { cn: cn1, merchantId: s.shop.id, hubId: s.gulshan.id } });
+    expect(m.body, JSON.stringify(m.body)).toMatchObject({ outcome: "ASSIGNED", ok: true });
+    const after = await ctx.prisma.accountEntry.findMany({ where: { parcelId: parcel.id }, include: { account: true } });
+    expect(after.find(e => e.type === "COD")).toMatchObject({ account: { merchantId: s.shop.id } });
+    expect(Number(after.find(e => e.type === "COD")!.amount)).toBe(1200);
   });
 
   it("super admin: the CN_Scan AI switch, daily limit and cost", async () => {

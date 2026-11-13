@@ -1,0 +1,9 @@
+/* Scan desk › CN_Merchant / CN_Scan. */
+.cn-log { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 5px; max-height: 360px; overflow: auto; }
+.cn-log li { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+.cn-log li.good { background: var(--good-soft); color: var(--good); }
+.cn-log li.bad { background: var(--bad-soft); color: var(--bad); }
+.cn-log li.info { background: var(--surface-3); color: var(--ink-2); }
+.cn-log li span { flex: 1; min-width: 0; }
+.cn-log li .link-button { flex: none; }
+

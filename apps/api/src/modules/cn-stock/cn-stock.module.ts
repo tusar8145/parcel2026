@@ -12,6 +12,6 @@ import { CnParcelsService } from "./cn-parcels.service";
   imports: [ParcelsModule, PricingModule, ParcelScansModule],
   controllers: [CnStockController, CnParcelsController],
   providers: [CnStockService, CnParcelsService],
-  exports: [CnStockService],
+  exports: [CnStockService, CnParcelsService],
 })
 export class CnStockModule {}

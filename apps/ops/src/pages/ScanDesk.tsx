@@ -18,6 +18,8 @@ import { printLabels } from "@/features/parcels/actions";
 import { findParcels } from "@/features/parcels/search";
 import { useParcelActions } from "@/features/parcels/useParcelActions";
 import { OperationTimeBar } from "@/features/scan/OperationTime";
+import { CnMerchantDesk } from "@/features/scan/CnDesk";
+import "@/features/scan/cn-desk.css";
 import { normalizeScan, ScanInput, type ScanInputHandle, type ScanSource } from "@/features/scan/scanner";
 import type { Handoff } from "@/features/parcels/useParcelActions";
 import { useLocation } from "react-router";
@@ -120,7 +122,8 @@ const TABS: Record<Part, TabCfg> = {
     hint: "Received by and the note stay set for the next scans (one shop usually takes the whole run). A parcel the sender didn't take is received back on Receive entry.",
   },
 };
-const TAB_PART: Record<string, Part | "receive" | "collect"> = {
+const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant"> = {
+  CN_Merchant: "cnmerchant",
   "Receive entry": "receive",
   "Pickup entry": "pickup",
   "Receive & assign rider": "assign",
@@ -164,7 +167,7 @@ export default function ScanDesk({ tab }: { tab: string }) {
       <p className="faint" style={{ margin: "-6px 0 12px", fontSize: 12 }}>
         Keyboard: <kbd>/</kbd> find a parcel · <kbd>F2</kbd> scan box · <kbd>Esc</kbd> close the dialog or drawer
       </p>
-      {part === "receive" ? <ReceiveDesk /> : part === "collect" ? <CollectCounter /> : <HubDeskTab key={part} part={part} />}
+      {part === "receive" ? <ReceiveDesk /> : part === "collect" ? <CollectCounter /> : part === "cnmerchant" ? <CnMerchantDesk /> : <HubDeskTab key={part} part={part} />}
     </>
   );
 }

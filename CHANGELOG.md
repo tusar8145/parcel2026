@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.53.0 — 2026-11-14
+- Courier Operations › Scan desk: an unused pre-printed CN label scanned on Receive entry or Receive & assign rider becomes its parcel at once and is received at the hub (and given to the rider); after that it works like any parcel. No separate step first.
+- Scan desk › CN_Merchant: choose the hub and the merchant, then scan CN labels; each becomes (or is given to) that merchant's parcel.
+- CN_Merchant also works on a finished parcel (delivered, returned, cancelled): its open money moves to the merchant's account (not once settled). CN_Scan still fills in a finished parcel's recipient details (not COD).
+
 ## 1.52.2 — 2026-11-14
 - Courier Operations parcel details: Proof of delivery is now just above Messages (side panel and search window).
 

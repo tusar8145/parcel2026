@@ -21,6 +21,7 @@ import { PackagesService } from "../packages/packages.service";
 import { PricingService } from "../pricing/pricing.service";
 import { ScanClaudeService } from "../parcel-scans/scan-claude";
 import { forClaude } from "../parcel-scans/scan-image";
+import { postParcelEntries } from "../money/entries";
 
 const SETTINGS_KEY = "cn-scan";
 const QUEUE = "cn-capture-read";
@@ -328,16 +329,34 @@ export class CnParcelsService implements OnApplicationBootstrap {
     this.realtime.publish({ type, id: parcel.trackingId, merchantId: parcel.merchantId, hubIds: [parcel.currentHubId, parcel.dropOffHubId] });
   }
 
+  /**
+   * Scan desk (Receive entry, Receive & assign rider): an unused CN label scanned there becomes its parcel (the label
+   * batch's merchant, if any; otherwise set later with CN_Merchant), received at that hub. Null when it isn't an unused
+   * label of our stock (the desk then says what it is).
+   */
+  async fromLabel(actor: Actor, rawCn: string, hubId: string, meta: RequestMeta) {
+    if (actor.kind !== "user" || !actor.permissions.has("parcel:dispatch")) return null;
+    const cn = normalizeTrackingId(rawCn);
+    const stock = await this.prisma.cnStock.findUnique({ where: { cn }, select: { status: true } });
+    if (!stock || stock.status !== "AVAILABLE") return null;
+    const hub = await this.hubOf(actor, hubId);
+    const { parcel, created } = await this.prisma.$transaction(tx => this.parcelOf(tx, actor, cn, hub, "Scan desk"));
+    if (created) await this.receiveAtHub(actor, parcel, hub.id, meta);
+    this.publish(parcel, created ? "parcel.created" : "parcel.updated");
+    return { trackingId: parcel.trackingId, created, merchant: parcel.merchantId };
+  }
+
   // ───────────── CN_Merchant ─────────────
 
-  /** Active merchants to choose in CN_Merchant / CN_Scan (name, code or phone; at most 30). */
+  /** Active merchants to choose in CN_Merchant / CN_Scan (name, code or phone: at most 30; no search: all). */
   async merchants(actor: Actor, q?: string) {
     this.assertCanScan(actor);
     const term = (q ?? "").trim();
     const rows = await this.prisma.merchant.findMany({
       where: { status: "ACTIVE", ...(term ? { OR: [{ name: { contains: term, mode: "insensitive" } }, { code: { contains: term, mode: "insensitive" } }, { contactPhone: { contains: term.replace(/D/g, "").slice(-8) || term } }] } : {}) },
       orderBy: { name: "asc" },
-      take: 30,
+      // A search: the best 30; none (the web Scan desk's list): every active merchant.
+      take: term ? 30 : 2000,
       select: { id: true, code: true, name: true, type: true },
     });
     return { items: rows };
@@ -358,7 +377,12 @@ export class CnParcelsService implements OnApplicationBootstrap {
         return { outcome: "OTHER_MERCHANT" as const, parcel, message: `${parcel.trackingId} belongs to ${other?.name ?? "another merchant"}. Not changed.` };
       }
       if (!parcel.cnFlow) throw new AppError("NOT_A_CN_PARCEL", `${parcel.trackingId} was booked as a customer parcel; it can't be given to a merchant here`, HttpStatus.CONFLICT);
-      if (TERMINAL_STATUSES.includes(parcel.status as ParcelStatus)) throw new AppError("PARCEL_CLOSED", `${parcel.trackingId} is already finished`, HttpStatus.CONFLICT);
+      // Already delivered / returned / cancelled: allowed while its money isn't settled (its lines move to the merchant).
+      const closed = TERMINAL_STATUSES.includes(parcel.status as ParcelStatus);
+      if (closed) {
+        const lines = await tx.accountEntry.findMany({ where: { parcelId: parcel.id }, select: { payoutId: true, billId: true } });
+        if (lines.some(l => l.payoutId || l.billId)) throw new AppError("PARCEL_SETTLED", `${parcel.trackingId} is already settled; its merchant can't be changed now`, HttpStatus.CONFLICT);
+      }
       const updated = await tx.parcel.update({
         where: { id: parcel.id },
         data: {
@@ -373,8 +397,14 @@ export class CnParcelsService implements OnApplicationBootstrap {
           events: { create: { status: parcel.status, title: "Merchant set", description: `${merchant.name} (${merchant.code}), scanned with CN_Merchant.`, visibility: "INTERNAL", actorUserId: actor.userId, actorLabel: actor.riderId ? "Rider" : "Operations" } },
         },
       });
-      await this.audit.record(actor, { action: "cn.merchant", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, merchantId: merchant.id, hubId: hub.id } }, meta, tx);
-      return { outcome: "ASSIGNED" as const, parcel: await this.price(tx, updated), message: `${parcel.trackingId} is now ${merchant.name}'s parcel.` };
+      const priced = await this.price(tx, updated);
+      // Finished: its statement lines (posted without a merchant) are posted again on the merchant's account.
+      if (closed) {
+        await tx.accountEntry.deleteMany({ where: { parcelId: parcel.id, payoutId: null, billId: null } });
+        await postParcelEntries(tx, priced);
+      }
+      await this.audit.record(actor, { action: "cn.merchant", entityType: "parcel", entityId: parcel.id, data: { trackingId: parcel.trackingId, merchantId: merchant.id, hubId: hub.id, ...(closed ? { finished: parcel.status } : {}) } }, meta, tx);
+      return { outcome: "ASSIGNED" as const, parcel: priced, message: `${parcel.trackingId} is now ${merchant.name}'s parcel.` };
     });
     if (result.outcome === "CREATED") await this.receiveAtHub(actor, result.parcel, hub.id, meta);
     this.publish(result.parcel, result.outcome === "CREATED" ? "parcel.created" : "parcel.updated");
@@ -470,7 +500,8 @@ export class CnParcelsService implements OnApplicationBootstrap {
     const catalog = await this.pricing.catalog();
     return this.prisma.$transaction(async tx => {
       const p = await tx.parcel.findUniqueOrThrow({ where: { id: parcelId } });
-      if (["DELIVERED", "RETURNED", "PICKUP_CANCELLED"].includes(p.status)) return [];
+      // Finished: the details are still kept for the record, but not COD and no new price.
+      const finished = ["DELIVERED", "RETURNED", "PICKUP_CANCELLED"].includes(p.status);
       const conflicts: { field: string; parcel: string; read: string }[] = [];
       const data: Record<string, unknown> = {};
       const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -493,7 +524,7 @@ export class CnParcelsService implements OnApplicationBootstrap {
       }
       put("deliveryArea", "area", p.deliveryArea, text(cells.area).slice(0, 120), () => (data.deliveryArea = text(cells.area).slice(0, 120)));
       const cod = Number(text(cells.cod_amount).replace(/[^\d.]/g, ""));
-      if (Number.isFinite(cod) && cod > 0 && cod < 10_000_000) {
+      if (!finished && Number.isFinite(cod) && cod > 0 && cod < 10_000_000) {
         if (Number(p.codAmount) === 0) data.codAmount = cod;
         else if (Number(p.codAmount) !== cod) conflicts.push({ field: "COD", parcel: String(Number(p.codAmount)), read: String(cod) });
       }
@@ -512,7 +543,7 @@ export class CnParcelsService implements OnApplicationBootstrap {
         },
       });
       // Re-priced to the destination / COD now known (with its merchant's plan).
-      if (updated.merchantId && (data.deliveryDistrict || data.codAmount !== undefined)) updated = await this.price(tx, updated);
+      if (!finished && updated.merchantId && (data.deliveryDistrict || data.codAmount !== undefined)) updated = await this.price(tx, updated);
       return conflicts;
     });
   }

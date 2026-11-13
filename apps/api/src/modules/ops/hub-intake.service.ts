@@ -13,6 +13,7 @@ import { opsHubScope } from "../parcels/ops-scope";
 import { ScansService } from "../scans/scans.service";
 import { HubDeskService } from "../parcels/hub-desk.service";
 import { LinehaulService } from "../linehaul/linehaul.service";
+import { CnParcelsService } from "../cn-stock/cn-parcels.service";
 import { assertHubInScope, codeVariants } from "./ops-common";
 import type { hubAssignSchema, hubReceiveSchema, labelsSchema, listBatchesQuerySchema } from "./hub-intake.schemas";
 
@@ -39,6 +40,7 @@ export class HubIntakeService {
     private readonly audit: AuditService,
     private readonly linehaul: LinehaulService,
     private readonly desk: HubDeskService,
+    private readonly cn: CnParcelsService,
   ) {}
 
   // ───────────── receive desk ─────────────
@@ -101,6 +103,15 @@ export class HubIntakeService {
 
     let parcel = await find();
     if (parcel?.status === "IN_TRANSIT" && (await this.prisma.linehaulBagItem.count({ where: { parcelId: parcel.id, state: "LOADED", bag: { status: "IN_TRANSIT", destHubId: hub.id } } }))) return viaLinehaul();
+    // An unused pre-printed CN label: its parcel is made here and received at this hub (merchant: the label's, or set
+    // later with CN_Merchant).
+    if (!parcel) {
+      const made = await this.cn.fromLabel(actor, variants[0], hub.id, meta).catch(() => null);
+      if (made?.created) {
+        parcel = await find();
+        if (parcel) return result("RECEIVED", `${made.trackingId}: new parcel from the CN label, received at ${hub.name}.${made.merchant ? "" : " Set its merchant with CN_Merchant."}`, parcel);
+      }
+    }
     if (!parcel) {
       const label = await this.prisma.cnStock.findFirst({ where: { cn: { in: variants } }, select: { cn: true, status: true } });
       const message = label ? `${label.cn} is a pre-printed label that hasn't been booked yet. Book the parcel first.` : `No parcel found for ${variants[0]}.`;
@@ -163,7 +174,12 @@ export class HubIntakeService {
     const variants = codeVariants(input.code);
     const find = () => this.prisma.parcel.findFirst({ where: { trackingId: { in: variants } }, select: { trackingId: true, status: true, currentHubId: true, deliveryRiderId: true, deliveryRider: { select: { user: { select: { name: true } } } } } });
     let parcel = await find();
-    if (!parcel) return { ok: false, outcome: "NOT_FOUND", message: `No parcel found for ${variants[0]}.`, code: variants[0] };
+    // An unused CN label: received here first (which makes its parcel), then given to the rider.
+    if (!parcel) {
+      const r = await this.receive(actor, { code: variants[0], hubId: input.hubId, source: input.source, note: undefined }, meta);
+      if (r.ok) parcel = await find();
+      if (!parcel) return { ok: false, outcome: r.outcome === "NOT_FOUND" ? "NOT_FOUND" : r.outcome, message: r.ok ? `No parcel found for ${variants[0]}.` : r.message, code: variants[0] };
+    }
     const id = parcel.trackingId;
     if (parcel.status === "OUT_FOR_DELIVERY")
       return { ok: false, outcome: "OUT_FOR_DELIVERY", message: `${id} is out for delivery with ${parcel.deliveryRider?.user.name ?? "a rider"}: record the attempt or receive it back first.`, code: id };

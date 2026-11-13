@@ -56,8 +56,11 @@ export default function ParcelDrawer() {
   );
 }
 
-/** A parcel's full details (the side panel's content; also the search window's right pane). */
-export function DrawerContent({ id, matches, close, closeRef }: { id: string; matches: string[]; close: () => void; closeRef: React.RefObject<HTMLButtonElement | null> }) {
+/**
+ * A parcel's full details: the side panel's content, and (`wide`) the search window's, in three columns without the
+ * header (the window shows the status under its search box).
+ */
+export function DrawerContent({ id, matches, close, closeRef, wide = false }: { id: string; matches: string[]; close: () => void; closeRef: React.RefObject<HTMLButtonElement | null>; wide?: boolean }) {
   const qc = useQueryClient();
   const actions = useParcelActions();
   const q = useQuery({ queryKey: ["parcel", id], queryFn: () => api<Parcel>(`/parcels/${encodeURIComponent(id)}`), staleTime: 5_000 });
@@ -79,6 +82,104 @@ export function DrawerContent({ id, matches, close, closeRef }: { id: string; ma
       </>
     );
   const badge = p && failureBadge(p);
+  if (wide)
+    return (
+      <div className="drawer-body pd-wide">
+        {!p ? (
+          <div className="stack">
+            <span className="skeleton" style={{ width: "60%" }} />
+            <span className="skeleton" />
+            <span className="skeleton" style={{ width: "80%" }} />
+          </div>
+        ) : (
+          <>
+            <section className="pd-steps">
+              <h3 className="section-title">Tracking</h3>
+              <Steps p={p} />
+              <HistoryRows p={p} />
+            </section>
+            <div className="pd-col">
+              <Actions p={p} />
+              <FailedSection p={p} />
+              <PartialSection p={p} />
+              <section>
+                <h3 className="section-title">Where is it now</h3>
+                <Suspense fallback={<span className="faint">Finding the parcel…</span>}>
+                  <PositionMap trackingId={p.trackingId} status={`${p.status}:${p.updatedAt}`} />
+                </Suspense>
+              </section>
+              {p.chargesOff ? null : (
+                <section>
+                  <h3 className="section-title">Price</h3>
+                  <Price p={p} />
+                </section>
+              )}
+            </div>
+            <div className="pd-col">
+      <section>
+        <h3 className="section-title">Parcel</h3>
+        <KV
+          rows={[
+            ["Merchant / sender", p.merchant?.name || p.sender?.name || "—"],
+            ["Recipient", [p.recipient?.name, localPhone(p.recipient?.phone)].filter(Boolean).join(" · ") || "—"],
+            ["Deliver to", p.delivery?.label || "—"],
+            ["Pickup from", p.intake === "DROP_OFF" ? `Drop-off at ${p.dropOffHub?.name || "hub"}` : p.pickup?.label || "—"],
+            ["Service", [p.serviceLevelLabel, p.type === "DOCUMENT" ? "Document" : "Parcel", p.weightKg != null ? `${p.weightKg} kg` : ""].filter(Boolean).join(" · ")],
+            ["Delivery type", p.deliveryType || p.service?.speedLabel || ""],
+            ["Priority", p.priority || ""],
+            ["Delivery proof", proofText(p)],
+            [
+              "Product",
+              p.product ? (
+                <span key="product">
+                  {p.product}
+                  {p.systemProduct && p.systemProduct.toLowerCase() !== p.product.toLowerCase() ? (
+                    <small className="faint" style={{ display: "block", fontSize: 11 }} title="The system product this name was matched to">{`System product: ${p.systemProduct}`}</small>
+                  ) : null}
+                </span>
+              ) : (
+                ""
+              ),
+            ],
+            ["Rider", riderOf(p)],
+            ["Hub", p.currentHub?.name || "—"],
+            ["Order ref", p.merchantOrderRef || ""],
+            ["Booked", when(p.createdAt)],
+            ["Promised by", p.estimatedDeliveryAt ? when(p.estimatedDeliveryAt) : ""],
+            ["Missing", p.incomplete ? (p.missingLabels || []).join(", ") : ""],
+            ["Return", p.returnInfo ? [p.returnInfo.reason, p.returnInfo.runId ? "in a return run" : "awaiting a return run"].filter(Boolean).join(" · ") : ""],
+          ]}
+        />
+      </section>
+              <section>
+                <h3 className="section-title">Proof of delivery</h3>
+                <Proof p={p} />
+              </section>
+              <Notes p={p} onSaved={fresh => qc.setQueryData(["parcel", id], fresh)} />
+              {p.deliveredLocation ? (
+                <section>
+                  <h3 className="section-title">Delivered at</h3>
+                  <DeliveredMap at={p.deliveredLocation} />
+                </section>
+              ) : null}
+            </div>
+            <div className="pd-col">
+              <section>
+                <h3 className="section-title">Messages (SMS · email · push)</h3>
+                <MessagePlanView plan={p.messagePlan} hideSkipped />
+              </section>
+              <Messages id={p.trackingId} />
+              {p.cnFlow ? (
+                <section>
+                  <h3 className="section-title">CN photos (CN_Scan)</h3>
+                  <CnPhotos trackingId={p.trackingId} />
+                </section>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+    );
   return (
     <>
       <header className="drawer-head">
@@ -172,7 +273,7 @@ export function DrawerContent({ id, matches, close, closeRef }: { id: string; ma
             )}
             <section>
               <h3 className="section-title">Messages (SMS · email · push)</h3>
-              <MessagePlanView plan={p.messagePlan} />
+              <MessagePlanView plan={p.messagePlan} hideSkipped />
             </section>
             <section>
               <h3 className="section-title">Proof of delivery</h3>
@@ -575,6 +676,86 @@ function Messages({ id }: { id: string }) {
         })}
       </div>
     </section>
+  );
+}
+
+/** The journey as steps (the search window's top card). */
+const STEP_DEFS: { label: string; statuses: string[] }[] = [
+  { label: "Booked", statuses: ["PENDING_CONFIRMATION", "PICKUP_ASSIGNED", "PICKUP_CONFIRMED"] },
+  { label: "Picked up / at hub", statuses: ["PICKED_UP", "AT_HUB"] },
+  { label: "In transit", statuses: ["IN_TRANSIT"] },
+  { label: "Out for delivery", statuses: ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"] },
+];
+function Steps({ p }: { p: Parcel }) {
+  const events = [...(p.events || [])].sort((x, y) => new Date(x.at).getTime() - new Date(y.at).getTime());
+  const first = (statuses: string[]) => events.find(e => statuses.includes(e.status));
+  const end =
+    p.status === "RETURNED" || p.status === "RETURN_SCHEDULED"
+      ? { label: p.status === "RETURNED" ? "Returned" : "Returning", statuses: ["RETURN_SCHEDULED", "RETURNED"], tone: "warn" }
+      : p.status === "PICKUP_CANCELLED"
+        ? { label: "Cancelled", statuses: ["PICKUP_CANCELLED"], tone: "bad" }
+        : { label: "Delivered", statuses: ["DELIVERED"], tone: "good" };
+  const list = [...STEP_DEFS, end].map(d => ({ ...d, event: first(d.statuses) }));
+  // A step is done when it happened, or a later one did (e.g. no transit leg).
+  let lastDone = -1;
+  list.forEach((d, i) => d.event && (lastDone = i));
+  return (
+    <div>
+      <ol className="pd-stepper">
+        {list.map((d, i) => {
+          const state = i < lastDone ? "done" : i === lastDone ? "current" : "todo";
+          return (
+            <li key={d.label} className={`pd-step ${state}${i === list.length - 1 && d.event ? ` end-${(d as { tone?: string }).tone ?? "good"}` : ""}`}>
+              <span className="pd-dot">{state === "todo" ? i + 1 : "✓"}</span>
+              <span className="pd-step-label">{d.label}</span>
+              <small className="pd-step-time">{d.event ? when(d.event.at) : i < lastDone ? "—" : ""}</small>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+/** Every tracking event, newest first, one per row (the search window's last section, full width). */
+function HistoryRows({ p }: { p: Parcel }) {
+  const [open, setOpen] = useState(false);
+  const events = [...(p.events || [])].sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
+  if (!events.length) return <p className="faint" style={{ margin: "12px 0 0" }}>No tracking events yet.</p>;
+  const row = (e: (typeof events)[number], latest = false) => (
+    <li key={e.id} className={latest ? "latest" : ""}>
+      <span className="pd-h-time">{when(e.at)}</span>
+      <span className="pd-h-dot" aria-hidden="true" />
+      <span className="pd-h-main">
+        <strong>
+          {e.title}
+          {e.internal ? <span className="pd-h-tag">internal</span> : null}
+        </strong>
+        {e.location || e.description ? <span className="pd-h-desc">{[e.location, e.description].filter(Boolean).join(" · ")}</span> : null}
+      </span>
+      <span className="pd-h-actor">{e.actor || ""}</span>
+    </li>
+  );
+  const rest = events.slice(1);
+  return (
+    <div className="pd-history-box">
+      <ol className="pd-history">{row(events[0], true)}</ol>
+      {rest.length ? (
+        <>
+          <div className={`pd-more${open ? " open" : ""}`} inert={!open}>
+            <ol className="pd-history pd-history-rest">{rest.map(e => row(e))}</ol>
+          </div>
+          <div className="pd-more-bar">
+            <button type="button" className="pd-more-btn" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+              {open ? "View less" : `View more (${rest.length})`}
+              <span className={`pd-more-chev${open ? " up" : ""}`} aria-hidden="true">
+                ⌄
+              </span>
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 

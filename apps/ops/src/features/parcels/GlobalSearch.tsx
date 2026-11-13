@@ -1,23 +1,24 @@
 /**
  * The top bar's search: a box that opens the search window (click it, or press "/"). Type or scan a tracking ID, CN
- * or phone: matching parcels show on the left as you type, and the chosen one's full details (everything the side
- * panel shows, with its actions) on the right. A zone or area name also shows the hub that serves it. The window
- * closes with Esc, the ✕ or a click outside. Parcels opened anywhere else still open in the side panel.
+ * or phone: the parcel's full details open at once over the whole window (three columns), with its status under the
+ * search box; other matches show there as tags, one click away. A zone or area name shows the hub that serves it. The
+ * window closes with Esc, the ✕ or a click outside. Parcels opened anywhere else still open in the side panel.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useQuery } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
+import { when } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
 import { Icon } from "@panel/ui/Icon";
 import { focusScanBox } from "@/features/scan/scanner";
 import { toast } from "@panel/ui/toast";
 import { findParcels, useCatalog } from "./search";
 import { DrawerContent } from "./ParcelDrawer";
-import type { Parcel } from "./model";
+import { failureBadge, failureText, slaOf, type Parcel } from "./model";
 import "./global-search.css";
 
 type Place = { district: string; zone: string; area?: string; hub: { name: string } | null };
-const money = (v: number | null | undefined) => (v ? `৳${Number(v).toLocaleString("en-BD")}` : "");
 const TONE: Record<string, string> = { DELIVERED: "good", RETURNED: "warn", PICKUP_CANCELLED: "bad", EXCEPTION: "bad", OUT_FOR_DELIVERY: "info", AT_HUB: "info" };
 
 export default function GlobalSearch() {
@@ -50,6 +51,22 @@ export default function GlobalSearch() {
   );
 }
 
+/** The chosen parcel's status, under the search box (the details below have no header of their own). */
+function StatusLine({ id }: { id: string }) {
+  const q = useQuery({ queryKey: ["parcel", id], queryFn: () => api<Parcel>(`/parcels/${encodeURIComponent(id)}`), staleTime: 5_000 });
+  const p = q.data;
+  if (!p) return <span className="gs-status faint">Loading…</span>;
+  const badge = failureBadge(p);
+  return (
+    <span className="gs-status">
+      <span className={`pill ${TONE[p.status] ?? ""}`}>{p.statusLabel}</span>
+      <span className="pill">{slaOf(p)}</span>
+      {badge ? <span className="pill bad" title={failureText(p, when)}>{`Failed ×${badge.count}${badge.reason ? ` · ${badge.reason.slice(0, 26)}` : ""}`}</span> : null}
+      <span className="gs-status-meta">{[p.merchant?.name ?? p.sender?.name, p.currentHub?.name].filter(Boolean).join(" · ")}</span>
+    </span>
+  );
+}
+
 function SearchDialog({ onClose }: { onClose: () => void }) {
   const catalog = useCatalog();
   const { hubs } = useOps();
@@ -61,7 +78,6 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [active, setActive] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -86,18 +102,22 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     const mine = ++seq.current;
     if (text.length < 3) {
       setResults(null);
+      setPicked(null);
       setError("");
-      return;
+      return [] as Parcel[];
     }
     setBusy(true);
     try {
       const found = await findParcels(text);
-      if (mine !== seq.current) return;
+      if (mine !== seq.current) return found;
       setResults(found);
-      setActive(0);
+      // The first match's details at once.
+      setPicked(found[0]?.trackingId ?? null);
       setError("");
+      return found;
     } catch (e) {
       if (mine === seq.current) setError(describe(e));
+      return [] as Parcel[];
     } finally {
       if (mine === seq.current) setBusy(false);
     }
@@ -142,128 +162,101 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     };
   }, [value, catalog, hubs]);
 
+  // Enter (a scanner's, too): search now.
   const onKey = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const list = results ?? [];
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive(Math.min(active + 1, Math.max(0, list.length - 1)));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive(Math.max(0, active - 1));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const raw = value.trim();
-      if (!raw) return;
-      // Scanned / typed and Enter at once: search now.
-      const found = !results || busy ? await findParcels(raw).catch(err => (setError(describe(err)), [] as Parcel[])) : list;
-      if (found !== list) setResults(found);
-      if (!found.length) return toast(`No parcel found for “${raw}”.`);
-      setPicked(found[Math.min(active, found.length - 1)]?.trackingId ?? found[0].trackingId);
-    }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const raw = value.trim();
+    if (!raw) return;
+    const found = await run(raw);
+    if (!found.length) toast(`No parcel found for “${raw}”.`);
+    input.current?.select();
   };
 
   const text = value.trim();
   const list = results ?? [];
   return createPortal(
     <div className={`gs-backdrop${shown ? " in" : ""}`} role="presentation" onMouseDown={e => e.target === e.currentTarget && close()}>
-      <section className={`gs-panel${picked ? " has-detail" : ""}`} role="dialog" aria-modal="true" aria-label="Search parcels">
+      <section className="gs-panel" role="dialog" aria-modal="true" aria-label="Search parcels">
         <header className="gs-head">
-          <label className="gs-field">
-            <Icon name="search" size={20} />
-            <input ref={input} className="gs-input" type="search" autoComplete="off" placeholder="Tracking ID, CN, phone or zone…" aria-label="Tracking ID, CN, phone or zone" value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => void onKey(e)} />
-            {busy ? <span className="gs-spin" aria-label="Searching" /> : text ? (
-              <button type="button" className="gs-clear" aria-label="Clear" onClick={() => (setValue(""), setResults(null), setPicked(null), input.current?.focus())}>
-                Clear
-              </button>
-            ) : null}
-          </label>
-          <button type="button" className="gs-close" aria-label="Close" onClick={close}>
-            <Icon name="x" />
-          </button>
-        </header>
-        {picked ? (
-          <div className="gs-full" key={picked}>
-            <div className="gs-full-bar">
-              <button type="button" className="gs-back-btn" onClick={() => (setPicked(null), input.current?.focus())}>
-                ← Back to results{list.length ? ` (${list.length})` : ""}
-              </button>
+          <div className="gs-head-row">
+            <label className="gs-field">
+              <Icon name="search" size={18} />
+              <input ref={input} className="gs-input" type="search" autoComplete="off" placeholder="Tracking ID, CN, phone or zone…" aria-label="Tracking ID, CN, phone or zone" value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => void onKey(e)} />
+              {busy ? <span className="gs-spin" aria-label="Searching" /> : text ? (
+                <button type="button" className="gs-clear" aria-label="Clear" onClick={() => (setValue(""), setResults(null), setPicked(null), input.current?.focus())}>
+                  Clear
+                </button>
+              ) : null}
+            </label>
+            <button type="button" className="gs-close" aria-label="Close" onClick={close}>
+              <Icon name="x" />
+            </button>
+          </div>
+          {picked ? (
+            <div className="gs-head-row gs-sub">
+              <StatusLine id={picked} />
               {list.length > 1 ? (
-                <div className="gs-chips" aria-label="Other matches">
+                <span className="gs-chips" aria-label="Other matches">
+                  <small className="faint">{`${list.length} matches:`}</small>
                   {list.slice(0, 12).map(p => (
                     <button key={p.trackingId} type="button" className={`gs-chip${p.trackingId === picked ? " on" : ""}`} onClick={() => setPicked(p.trackingId)}>
                       {p.trackingId}
                     </button>
                   ))}
-                </div>
+                </span>
               ) : null}
             </div>
-            <DrawerContent id={picked} matches={[]} close={() => (setPicked(null), input.current?.focus())} closeRef={detailClose} />
+          ) : null}
+        </header>
+        {picked ? (
+          <div className="gs-full" key={picked}>
+            <DrawerContent id={picked} matches={[]} close={() => setPicked(null)} closeRef={detailClose} wide />
           </div>
         ) : (
           <div className="gs-results">
+            {error ? <div className="callout bad" style={{ margin: "0 0 10px" }}>{error}</div> : null}
             {!text ? (
               <div className="gs-empty">
                 <span className="gs-empty-icon">
                   <Icon name="search" size={26} />
                 </span>
                 <strong>Find a parcel</strong>
-                <span>Type or scan a tracking ID or CN, a phone number, or a zone / area name to see the hub that serves it.</span>
+                <span>Type or scan a tracking ID or CN, or a phone number: the parcel opens here. A zone or area name shows the hub that serves it.</span>
                 <span className="gs-keys">
-                  <kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close
+                  <kbd>Enter</kbd> search · <kbd>Esc</kbd> close
                 </span>
               </div>
             ) : text.length < 3 ? (
               <div className="gs-empty">
                 <span>Type at least 3 characters.</span>
               </div>
-            ) : (
+            ) : busy || !results ? (
+              <div className="gs-empty">
+                <span>Searching…</span>
+              </div>
+            ) : !places.length ? (
+              <div className="gs-empty">
+                <strong>No parcel found</strong>
+                <span>{`Nothing matches “${text}”. Check the tracking ID, CN or phone number.`}</span>
+              </div>
+            ) : null}
+            {places.length && !busy ? (
               <>
-                {error ? <div className="callout bad" style={{ margin: "0 0 10px" }}>{error}</div> : null}
-                <div className="gs-section">{results ? (list.length ? `Parcels · ${list.length}${list.length >= 20 ? "+" : ""}` : busy ? "Searching…" : "No parcel found") : "Searching…"}</div>
-                <ul className="gs-grid" role="listbox" aria-label="Parcels">
-                  {list.map((p, i) => (
-                    <li key={p.trackingId} role="option" aria-selected={i === active}>
-                      <button type="button" className={`gs-item${i === active ? " active" : ""}`} onMouseEnter={() => setActive(i)} onClick={() => setPicked(p.trackingId)} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}>
-                        <span className="gs-item-top">
-                          <strong className="gs-id">{p.trackingId}</strong>
-                          <span className={`pill ${TONE[p.status] ?? ""}`}>{p.statusLabel}</span>
-                        </span>
-                        <span className="gs-item-line">
-                          <Icon name="users" size={13} />
-                          {[p.recipient?.name, p.recipient?.phone].filter(Boolean).join(" · ") || "Recipient not set"}
-                        </span>
-                        <span className="gs-item-line">
-                          <Icon name="box" size={13} />
-                          {p.merchant?.name ?? p.sender?.name ?? "Customer"}
-                          {money(p.codAmount) ? <b className="gs-cod">{`COD ${money(p.codAmount)}`}</b> : null}
-                        </span>
-                        <span className="gs-item-line">
-                          <Icon name="pin" size={13} />
-                          {[p.delivery?.zone, p.delivery?.district].filter(Boolean).join(", ") || "Destination not set"}
-                          {p.currentHub?.name ? <span className="gs-hub">{p.currentHub.name}</span> : null}
-                        </span>
-                      </button>
+                <div className="gs-section">Which hub serves it</div>
+                <ul className="gs-grid">
+                  {places.map(p => (
+                    <li key={`${p.district}|${p.zone}|${p.area}`} className="gs-place">
+                      <span>
+                        <strong>{p.area || p.zone}</strong>
+                        <small>{p.area ? `${p.zone}, ${p.district}` : p.district}</small>
+                      </span>
+                      <span style={{ textAlign: "right" }}>{p.hub ? <strong>{p.hub.name}</strong> : <small>No hub set for this zone</small>}</span>
                     </li>
                   ))}
                 </ul>
-                {places.length ? (
-                  <>
-                    <div className="gs-section">Which hub serves it</div>
-                    <ul className="gs-grid">
-                      {places.map(p => (
-                        <li key={`${p.district}|${p.zone}|${p.area}`} className="gs-place">
-                          <span>
-                            <strong>{p.area || p.zone}</strong>
-                            <small>{p.area ? `${p.zone}, ${p.district}` : p.district}</small>
-                          </span>
-                          <span style={{ textAlign: "right" }}>{p.hub ? <strong>{p.hub.name}</strong> : <small>No hub set for this zone</small>}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
               </>
-            )}
+            ) : null}
           </div>
         )}
       </section>

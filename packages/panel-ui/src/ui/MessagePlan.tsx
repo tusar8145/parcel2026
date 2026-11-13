@@ -34,7 +34,8 @@ function StateTag({ channel, state }: { channel: string; state: State }) {
   return <Pill tone={tone}>{`${channel} ${label.toLowerCase()}`}</Pill>;
 }
 
-export function MessagePlanView({ plan, booked }: { plan?: MessagePlan | null; booked?: boolean }) {
+/** `hideSkipped`: leave out "Not for this parcel" (the search window). */
+export function MessagePlanView({ plan, booked, hideSkipped = false }: { plan?: MessagePlan | null; booked?: boolean; hideSkipped?: boolean }) {
   if (!plan) return <p className="faint" style={{ margin: 0 }}>Loading…</p>;
   if (booked === false) return <p className="faint" style={{ margin: 0 }}>Booked before service packages: the account's standard delivery messages.</p>;
   const { channels } = plan;
@@ -74,7 +75,7 @@ export function MessagePlanView({ plan, booked }: { plan?: MessagePlan | null; b
       ) : (
         <p className="faint" style={{ margin: 0 }}>No messages were ticked for this parcel.</p>
       )}
-      {plan.skipped?.length ? (
+      {plan.skipped?.length && !hideSkipped ? (
         <div>
           <div className="faint" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 0 4px" }}>{`Not for this parcel (${plan.skipped.length})`}</div>
           <div className="stack" style={{ gap: 2 }}>

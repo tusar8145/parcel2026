@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.51.3 — 2026-11-14
+- Courier Operations search window: the first matching parcel opens at once (other matches as tags), with its status under the search box. Wider window that scrolls up and down like a page (nothing scrolls sideways).
+- Its details in three columns: actions, map and price on the left; the parcel, proof of delivery and staff notes in the middle; messages and messages sent on the right.
+- Tracking at the top: a step bar (Booked, Picked up / at hub, In transit, Out for delivery, Delivered), then the latest event with View more on the right, which slides the full history open.
+- Parcel details no longer show the "Not for this parcel" message list (side panel and search window).
+
 ## 1.51.2 — 2026-11-14
 - Courier Operations search window: a smaller search box with a single border when you type in it. Results fill the window as cards; choosing one shows its full details over the whole window, laid out as cards in columns (long ones scroll inside their card), with Back to results and the other matches one click away.
 

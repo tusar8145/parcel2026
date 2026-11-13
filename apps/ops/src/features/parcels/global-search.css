@@ -61,7 +61,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #f7f9fe 0%, #fff 100%);
 }
@@ -69,39 +69,64 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  height: 54px;
-  padding: 0 10px 0 18px;
+  max-width: 720px;
+  height: 44px;
+  padding: 0 8px 0 14px;
   border: 1.5px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
   color: var(--faint);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.gs-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 4px rgb(36 83 211 / 14%), 0 1px 2px rgba(16, 24, 40, 0.05); color: var(--primary); }
-.gs-field > svg { flex: none; }
-.gs-input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 500; }
+.gs-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(36 83 211 / 12%); color: var(--primary); }
+.gs-field > svg { flex: none; width: 18px; height: 18px; }
+.gs-field .gs-input,
+.gs-field .gs-input:focus,
+.gs-field .gs-input:focus-visible { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; box-shadow: none; background: transparent; color: var(--ink); font-family: inherit; font-size: 15.5px; font-weight: 500; }
 .gs-input::placeholder { color: var(--faint); font-weight: 400; }
 .gs-input::-webkit-search-cancel-button { display: none; }
 .gs-clear { flex: none; padding: 6px 10px; border: 0; border-radius: 8px; background: var(--surface-3, #f2f4f7); color: var(--muted); font: 600 12px/1 inherit; cursor: pointer; }
 .gs-clear:hover { background: #e4e7ec; color: var(--ink); }
-.gs-close { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 12px; background: var(--surface-3, #f2f4f7); color: var(--muted); cursor: pointer; transition: background 0.15s ease, transform 0.2s ease, color 0.15s ease; }
+.gs-close { flex: none; display: grid; place-items: center; width: 36px; height: 36px; margin-left: auto; border: 0; border-radius: 10px; background: var(--surface-3, #f2f4f7); color: var(--muted); cursor: pointer; transition: background 0.15s ease, transform 0.2s ease, color 0.15s ease; }
 .gs-close:hover { background: #fee4e2; color: #b42318; transform: rotate(90deg); }
 .gs-spin { flex: none; width: 20px; height: 20px; margin-right: 6px; border: 2px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: gs-spin 0.7s linear infinite; }
 
-.gs-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); }
-.gs-results { min-height: 0; overflow-y: auto; padding: 14px 14px 20px; border-right: 1px solid var(--line); background: #fafbfd; }
-.gs-detail { min-height: 0; display: flex; flex-direction: column; background: #fff; }
-.gs-detail-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: gs-detail-in 0.25s ease; }
-.gs-detail-inner .drawer-body { flex: 1; overflow: auto; }
-.gs-back { display: none; }
+.gs-results { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 22px; background: #fafbfd; }
+.gs-grid { list-style: none; margin: 0 0 18px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+
+/* The chosen parcel over the whole window: its sections as cards in columns. */
+.gs-full { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #f6f8fc; animation: gs-detail-in 0.25s ease; }
+.gs-full-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: #fff; overflow-x: auto; }
+.gs-back-btn { flex: none; padding: 7px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); font: 600 13px/1 inherit; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
+.gs-back-btn:hover { border-color: var(--primary); color: var(--primary); }
+.gs-chips { display: flex; gap: 6px; }
+.gs-chip { flex: none; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
+.gs-chip.on { border-color: var(--primary); background: var(--primary-soft, #e8eefc); color: var(--primary); }
+.gs-full .drawer-head { padding: 14px 22px; background: #fff; border-bottom: 1px solid var(--line); }
+.gs-full .drawer-head h2 { font-size: 20px; }
+.gs-full .drawer-body { flex: 1; min-height: 0; overflow: auto; display: block; column-count: 3; column-gap: 14px; padding: 14px 20px 20px; }
+.gs-full .drawer-body > section,
+.gs-full .drawer-body > .stack {
+  display: block;
+  break-inside: avoid;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.gs-full .drawer-body > section > .section-title { margin-top: 0; }
+/* Long sections (history, messages) scroll inside their card, so the window itself rarely needs to. */
+.gs-full .drawer-body > section { max-height: 46vh; overflow: auto; }
+@media (max-width: 1200px) { .gs-full .drawer-body { column-count: 2; } }
+@media (max-width: 760px) { .gs-full .drawer-body { column-count: 1; } .gs-full .drawer-body > section { max-height: none; } }
 
 .gs-empty { display: grid; gap: 8px; justify-items: center; padding: 48px 18px; color: var(--muted); text-align: center; }
 .gs-empty strong { color: var(--ink); font-size: 16px; }
 .gs-empty-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: var(--primary-soft, #e8eefc); color: var(--primary); margin-bottom: 4px; }
-.gs-detail-empty { margin: auto; max-width: 360px; }
 .gs-keys { margin-top: 10px; font-size: 12px; color: var(--faint); }
 .gs-section { margin: 4px 4px 10px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
 .gs-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
@@ -122,7 +147,7 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .gs-item:hover { border-color: #b8c4da; transform: translateY(-1px); box-shadow: 0 6px 16px -12px rgba(16, 24, 40, 0.5); }
-.gs-item.picked { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), 0 8px 18px -12px rgba(47, 85, 201, 0.7); }
+.gs-item.active, .gs-item.picked { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), 0 8px 18px -12px rgba(47, 85, 201, 0.7); }
 .gs-item-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .gs-id { font: 700 14.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }
 .gs-item-line { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.8px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -137,12 +162,6 @@
 @media (max-width: 860px) {
   .gs-backdrop { padding: 0; }
   .gs-panel { height: 100vh; border-radius: 0; }
-  .gs-main { grid-template-columns: minmax(0, 1fr); }
-  .gs-results { border-right: 0; }
-  .gs-detail { display: none; }
-  .gs-panel.has-detail .gs-results { display: none; }
-  .gs-panel.has-detail .gs-detail { display: flex; }
-  .gs-back { display: block; margin: 10px 14px 0; padding: 6px 10px; border: 0; border-radius: 8px; background: var(--surface-3, #f2f4f7); color: var(--ink); font: 600 13px/1 inherit; justify-self: start; align-self: flex-start; cursor: pointer; }
 }
 @media (max-width: 640px) {
   .gs-trigger { width: auto; flex: 1; }
@@ -152,5 +171,5 @@
 @keyframes gs-detail-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 @keyframes gs-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .gs-backdrop, .gs-panel, .gs-item, .gs-close, .gs-detail-inner { transition: none; animation: none; }
+  .gs-backdrop, .gs-panel, .gs-item, .gs-close, .gs-full { transition: none; animation: none; }
 }

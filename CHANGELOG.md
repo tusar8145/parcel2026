@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.51.2 — 2026-11-14
+- Courier Operations search window: a smaller search box with a single border when you type in it. Results fill the window as cards; choosing one shows its full details over the whole window, laid out as cards in columns (long ones scroll inside their card), with Back to results and the other matches one click away.
+
 ## 1.51.1 — 2026-11-14
 - Courier Operations search: the search icon no longer overlaps the text in the top bar.
 - The search window is larger, with a rounded search box: results on the left, and the chosen parcel's full details on the right (everything the side panel shows, with its actions). The first match opens at once; arrow keys move between results. On a phone the details open over the results with a back button.

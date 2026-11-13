@@ -95,8 +95,6 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
       if (mine !== seq.current) return;
       setResults(found);
       setActive(0);
-      // The first match's details at once (a scan opens straight to it).
-      setPicked(found[0]?.trackingId ?? null);
       setError("");
     } catch (e) {
       if (mine === seq.current) setError(describe(e));
@@ -148,14 +146,10 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
     const list = results ?? [];
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const i = Math.min(active + 1, Math.max(0, list.length - 1));
-      setActive(i);
-      if (list[i]) setPicked(list[i].trackingId);
+      setActive(Math.min(active + 1, Math.max(0, list.length - 1)));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      const i = Math.max(0, active - 1);
-      setActive(i);
-      if (list[i]) setPicked(list[i].trackingId);
+      setActive(Math.max(0, active - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
       const raw = value.trim();
@@ -187,7 +181,25 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
             <Icon name="x" />
           </button>
         </header>
-        <div className="gs-main">
+        {picked ? (
+          <div className="gs-full" key={picked}>
+            <div className="gs-full-bar">
+              <button type="button" className="gs-back-btn" onClick={() => (setPicked(null), input.current?.focus())}>
+                ← Back to results{list.length ? ` (${list.length})` : ""}
+              </button>
+              {list.length > 1 ? (
+                <div className="gs-chips" aria-label="Other matches">
+                  {list.slice(0, 12).map(p => (
+                    <button key={p.trackingId} type="button" className={`gs-chip${p.trackingId === picked ? " on" : ""}`} onClick={() => setPicked(p.trackingId)}>
+                      {p.trackingId}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <DrawerContent id={picked} matches={[]} close={() => (setPicked(null), input.current?.focus())} closeRef={detailClose} />
+          </div>
+        ) : (
           <div className="gs-results">
             {!text ? (
               <div className="gs-empty">
@@ -208,15 +220,10 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
               <>
                 {error ? <div className="callout bad" style={{ margin: "0 0 10px" }}>{error}</div> : null}
                 <div className="gs-section">{results ? (list.length ? `Parcels · ${list.length}${list.length >= 20 ? "+" : ""}` : busy ? "Searching…" : "No parcel found") : "Searching…"}</div>
-                <ul className="gs-list" role="listbox" aria-label="Parcels">
+                <ul className="gs-grid" role="listbox" aria-label="Parcels">
                   {list.map((p, i) => (
-                    <li key={p.trackingId} role="option" aria-selected={p.trackingId === picked}>
-                      <button
-                        type="button"
-                        className={`gs-item${p.trackingId === picked ? " picked" : ""}${i === active ? " active" : ""}`}
-                        onClick={() => (setActive(i), setPicked(p.trackingId))}
-                        style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}
-                      >
+                    <li key={p.trackingId} role="option" aria-selected={i === active}>
+                      <button type="button" className={`gs-item${i === active ? " active" : ""}`} onMouseEnter={() => setActive(i)} onClick={() => setPicked(p.trackingId)} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}>
                         <span className="gs-item-top">
                           <strong className="gs-id">{p.trackingId}</strong>
                           <span className={`pill ${TONE[p.status] ?? ""}`}>{p.statusLabel}</span>
@@ -242,7 +249,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
                 {places.length ? (
                   <>
                     <div className="gs-section">Which hub serves it</div>
-                    <ul className="gs-list">
+                    <ul className="gs-grid">
                       {places.map(p => (
                         <li key={`${p.district}|${p.zone}|${p.area}`} className="gs-place">
                           <span>
@@ -258,25 +265,7 @@ function SearchDialog({ onClose }: { onClose: () => void }) {
               </>
             )}
           </div>
-          <div className="gs-detail">
-            {picked ? (
-              <div className="gs-detail-inner" key={picked}>
-                <button type="button" className="gs-back" onClick={() => setPicked(null)}>
-                  ← Results
-                </button>
-                <DrawerContent id={picked} matches={[]} close={() => setPicked(null)} closeRef={detailClose} />
-              </div>
-            ) : (
-              <div className="gs-empty gs-detail-empty">
-                <span className="gs-empty-icon">
-                  <Icon name="box" size={26} />
-                </span>
-                <strong>Parcel details</strong>
-                <span>Choose a parcel on the left to see everything about it here: status, recipient, charges, messages, history and its actions.</span>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </section>
     </div>,
     document.body,

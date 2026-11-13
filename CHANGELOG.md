@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.50.3 — 2026-11-14
+- Courier Operations live network map (and the Operations app's map): franchise hubs and their riders are no longer shown.
+- Courier Operations › System guide shows Numbers, Money flow and Roles (Parcel lifecycle, Notifications and Where to change removed).
+
 ## 1.50.2 — 2026-11-14
 - Super admin menu: hovering an item no longer shows a background box or shadow.
 

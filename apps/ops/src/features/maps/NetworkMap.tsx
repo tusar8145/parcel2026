@@ -4,7 +4,7 @@
  * + "vehicle.location"). Riders and vehicles move as events arrive; parcel pins reload a little after parcel changes.
  * `children` can draw extra layers (the Delivery route planner) through the map handle.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -116,6 +116,13 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Franchise hubs and their riders are not shown (a franchise's own account still sees its hub and riders).
+  const franchiseAccount = ops.menu.roles.has("FRANCHISE");
+  const shownRiders = useMemo(() => {
+    const franchiseRiders = new Set(franchiseAccount ? [] : ops.riders.filter(r => r.hub?.type === "FRANCHISE").map(r => r.id));
+    return (riders.data || []).filter(r => !franchiseRiders.has(r.riderId));
+  }, [riders.data, ops.riders, franchiseAccount]);
+
   useEffect(() => {
     const l = layers.current;
     if (!l) return;
@@ -125,7 +132,7 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
     l.vehicles.clearLayers();
     const bounds: L.LatLngExpression[] = [];
     const mine = ops.me?.hubIds;
-    for (const h of ops.hubs.filter(h => h.lat != null && h.lng != null)) {
+    for (const h of ops.hubs.filter(h => h.lat != null && h.lng != null && (h.type !== "FRANCHISE" || franchiseAccount))) {
       L.marker([h.lat!, h.lng!], { icon: pin("H", "#101828", 24), zIndexOffset: 500 }).bindTooltip(esc(h.name)).addTo(l.hubs);
       if (!mine || mine.includes(h.id)) bounds.push([h.lat!, h.lng!]);
     }
@@ -137,7 +144,7 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
         .addTo(l.parcels);
       bounds.push([p.lat, p.lng]);
     }
-    for (const r of vehiclesOnly ? [] : riders.data || []) {
+    for (const r of vehiclesOnly ? [] : shownRiders) {
       L.marker([r.lat, r.lng], { icon: pin("R", r.stale ? "#98a2ae" : r.status === "ON_BREAK" ? "#8a5300" : "#0a7a3c"), zIndexOffset: 1000 })
         .bindTooltip(`${esc(r.label)} · ${r.stale ? `last seen ${esc(ago(r.at))}` : "live"}`)
         .addTo(l.riders);
@@ -153,9 +160,9 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
       l.map.fitBounds(L.latLngBounds(bounds), { padding: [24, 24], maxZoom: 14 });
       l.fitted = true;
     }
-  }, [ready, ops.hubs, ops.me, pins.data, riders.data, vehicles.data, showParcels, onParcel, vehiclesOnly]);
+  }, [ready, ops.hubs, ops.me, pins.data, shownRiders, vehicles.data, showParcels, onParcel, vehiclesOnly, franchiseAccount]);
 
-  const liveRiders = (riders.data || []).filter(r => !r.stale).length;
+  const liveRiders = shownRiders.filter(r => !r.stale).length;
   const liveVehicles = (vehicles.data || []).filter(v => !v.stale).length;
   const parcels = pins.data?.parcels.length ?? 0;
   return (

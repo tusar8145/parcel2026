@@ -143,8 +143,17 @@ export class RiderLocationService implements OnApplicationBootstrap {
     const scope = opsHubScope(actor);
     if (query.hubId && scope && !scope.includes(query.hubId)) throw forbidden("You can only see riders of your own hub");
     const hubFilter = query.hubId ? { hubId: query.hubId } : scope ? { hubId: { in: scope } } : {};
+    // Franchise hubs' riders are left out of the operations map (a franchise account, or a franchise hub asked for, sees them).
+    const hideFranchise = !query.hubId && !(actor.kind === "user" && actor.roles.some(r => r.role === "FRANCHISE"));
     const rows = await this.prisma.riderLocation.findMany({
-      where: { rider: { active: true, ...hubFilter, ...(query.includeOffShift ? {} : { status: { not: "OFFLINE" } }) } },
+      where: {
+        rider: {
+          active: true,
+          ...hubFilter,
+          ...(query.includeOffShift ? {} : { status: { not: "OFFLINE" } }),
+          ...(hideFranchise ? { OR: [{ hubId: null }, { hub: { is: { type: { not: "FRANCHISE" as const } } } }] } : {}),
+        },
+      },
       include: { rider: { select: { id: true, code: true, status: true, vehicle: true, zone: true, user: { select: { name: true, phone: true } }, hub: { select: { id: true, code: true, name: true } } } } },
       orderBy: { at: "desc" },
     });

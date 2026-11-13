@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, describe } from "@panel/lib/api";
 import { openCustom } from "@panel/ui/dialogs";
 
-type Guide = { mount: (el: HTMLElement) => Promise<void> | void };
+type Guide = { mount: (el: HTMLElement, options?: { hide?: string[] }) => Promise<void> | void };
 const w = window as unknown as { DF?: Record<string, unknown> & { systemGuide?: Guide } };
 let loading: Promise<Guide> | null = null;
 
@@ -34,7 +34,7 @@ function GuideDialog({ close }: { close: () => void }) {
   const [error, setError] = useState("");
   useEffect(() => {
     loadGuide()
-      .then(g => host.current && g.mount(host.current))
+      .then(g => host.current && g.mount(host.current, { hide: ["lifecycle", "notifications", "settings"] }))
       .catch(e => setError((e as Error).message));
   }, []);
   return (

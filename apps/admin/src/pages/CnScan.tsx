@@ -1,5 +1,5 @@
 /**
- * CN_Scan AI (Operational settings): the apps' CN_Scan reads parcel photos with the AI. On / off, a daily limit, today's
+ * AI CN_Scan (Operational settings): the apps' CN_Scan reads parcel photos with the AI. On / off, a daily limit, today's
  * readings, and this month's photos, readings and estimated cost (GET/PUT /cn/settings, GET /cn/usage). Off (or over
  * the limit): the photo and the CN are still kept; the details are typed in Courier Operations.
  */
@@ -51,7 +51,7 @@ export default function CnScan() {
     try {
       await api("/cn/settings", { method: "PUT", body: { aiEnabled: on, dailyLimit } });
       await qc.invalidateQueries({ queryKey: ["admin", "cn-settings"] });
-      toast("CN_Scan AI settings saved.", "good");
+      toast("AI CN_Scan settings saved.", "good");
     } catch (err) {
       toastError(err);
     } finally {
@@ -62,7 +62,7 @@ export default function CnScan() {
   const u = usage.data;
   return (
     <>
-      <PageHeading eyebrow="Operational settings" title="CN_Scan AI" subtitle="The Ops and Rider apps' CN_Scan: a photo of the parcel with its CN label; the AI reads the recipient, phone, address and COD into the parcel." />
+      <PageHeading eyebrow="Operational settings" title="AI CN_Scan" subtitle="The Ops and Rider apps' CN_Scan: a photo of the parcel with its CN label; the AI reads the recipient, phone, address and COD into the parcel." />
       <Panel title="AI reading" subtitle="Off, or over today's limit: the photo and the CN are still kept, and the details are typed in Courier Operations.">
         <div className="panel-body" style={{ display: "grid", gap: 14, maxWidth: 560 }}>
           {s && !s.aiAvailable ? <div className="callout warn">The AI isn't set up on the server (no Claude key), so photos are kept but not read.</div> : null}

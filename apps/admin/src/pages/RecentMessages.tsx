@@ -83,7 +83,7 @@ export default function RecentMessages() {
 
   return (
     <>
-      <PageHeading eyebrow="Notification settings" title="Recent messages" subtitle="What was sent, to whom and how it went, and how many SMS each merchant's parcels got." />
+      <PageHeading eyebrow="Send Message" title="Recent messages" subtitle="What was sent, to whom and how it went, and how many SMS each merchant's parcels got." />
       <div style={{ marginBottom: 12 }}>
         <Tabs
           label="View"

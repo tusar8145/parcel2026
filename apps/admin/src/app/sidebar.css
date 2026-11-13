@@ -21,26 +21,15 @@
 }
 .admin-sidebar .nav-item:hover svg { transform: scale(1.12); color: var(--primary); }
 .admin-sidebar .nav-item[aria-current="page"] {
-  background: linear-gradient(95deg, var(--primary) 0%, #4a7ff0 100%);
+  background: transparent;
   color: #fff;
   font-weight: 620;
   transform: none;
-  box-shadow: 0 8px 18px -8px rgba(47, 85, 201, 0.7);
-  animation: df-nav-in 0.35s ease;
+  box-shadow: none;
+  transition: color 0.3s ease 0.08s;
 }
+.admin-sidebar .nav-item[aria-current="page"]:hover { background: transparent; box-shadow: none; transform: none; }
 .admin-sidebar .nav-item[aria-current="page"] svg { color: #fff; transform: none; }
-.admin-sidebar .nav-item[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  left: -10px;
-  top: 7px;
-  bottom: 7px;
-  width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--primary);
-  transform-origin: center;
-  animation: df-nav-bar 0.35s ease;
-}
 .admin-sidebar .nav-item[aria-current="page"] .nav-count { background: rgba(255, 255, 255, 0.95); color: var(--primary); }
 .admin-sidebar .nav-sub-toggle.has-active { color: var(--primary); font-weight: 620; }
 .admin-sidebar .nav-sub-toggle > svg:last-child { transition: transform 0.28s ease; }
@@ -87,4 +76,38 @@
   .admin-sidebar .nav-item[aria-current="page"]::before,
   .admin-sidebar .nav-sub-wrap.open > .nav-sub-items .nav-item { animation: none; }
   .admin-sidebar .nav-item:hover { transform: none; }
+}
+
+/* One highlight box that slides to the selected item. */
+.admin-sidebar .nav-track { position: relative; }
+.admin-sidebar .nav-track > .nav-group,
+.admin-sidebar .nav-track .nav-item { position: relative; z-index: 1; }
+.admin-sidebar .nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 8px;
+  background: linear-gradient(95deg, var(--primary) 0%, #4a7ff0 100%);
+  box-shadow: 0 8px 18px -8px rgba(47, 85, 201, 0.7);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.admin-sidebar .nav-indicator.shown { opacity: 1; }
+.admin-sidebar .nav-indicator.ready {
+  transition: transform 0.42s cubic-bezier(0.65, 0, 0.25, 1), width 0.42s cubic-bezier(0.65, 0, 0.25, 1), height 0.42s cubic-bezier(0.65, 0, 0.25, 1), opacity 0.2s ease;
+}
+.admin-sidebar .nav-indicator::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 7px;
+  bottom: 7px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar .nav-indicator.ready { transition: none; }
 }

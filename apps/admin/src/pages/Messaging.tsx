@@ -17,7 +17,7 @@ import { People, PushMessages } from "@/features/push";
 export function PushMessagesPage() {
   return (
     <>
-      <PageHeading eyebrow="Messaging" title="Push messages" subtitle="A message in the apps' notifications and as a push on the phones of merchants, riders or chosen people. The history is below." />
+      <PageHeading eyebrow="Send Message" title="Push messages" subtitle="A message in the apps' notifications and as a push on the phones of merchants, riders or chosen people. The history is below." />
       <PushMessages />
     </>
   );
@@ -120,7 +120,7 @@ function ChannelMessages({ channel }: { channel: "sms" | "email" }) {
   return (
     <>
       <PageHeading
-        eyebrow="Messaging"
+        eyebrow="Send Message"
         title={`${label} messages`}
         subtitle={`An ${sms ? "SMS" : "email"} to every merchant and rider, a group or chosen people, sent through the ${sms ? "mram SMS" : "Mailjet email"} gateway. The history is below.`}
       />

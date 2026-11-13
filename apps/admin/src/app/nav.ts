@@ -11,7 +11,7 @@ export interface PageDef {
   icon: IconName;
   group: "governance" | "merchants" | "riders" | "monitoring" | "platform";
   /** A collapsible sub-menu inside Platform control. */
-  sub?: "Notification settings" | "Messaging" | "Operational settings" | "Hub settings";
+  sub?: "Notification settings" | "Send Message" | "Operational settings" | "Hub settings";
   /** Other classic ?page= values that open this page. */
   legacy?: string[];
 }
@@ -30,10 +30,10 @@ export const PAGES: PageDef[] = [
   { id: "Audit log", label: "Audit & security log", slug: "audit-log", icon: "lock", group: "monitoring", legacy: ["audit-and-security-log"] },
   { id: "Admin users", label: "Admin users & roles", slug: "admin-users", icon: "users", group: "platform", legacy: ["admin-users-and-roles"] },
   { id: "Platform settings", label: "Global notifications", slug: "global-notifications", icon: "bell", group: "platform", sub: "Notification settings", legacy: ["platform-settings", "parcel-notifications"] },
-  { id: "Recent messages", label: "Recent messages", slug: "recent-messages", icon: "message", group: "platform", sub: "Notification settings" },
-  { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "push", group: "platform", sub: "Messaging", legacy: ["push-messages"] },
-  { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "sms", group: "platform", sub: "Messaging" },
-  { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "mail", group: "platform", sub: "Messaging" },
+  { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "push", group: "platform", sub: "Send Message", legacy: ["push-messages"] },
+  { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "sms", group: "platform", sub: "Send Message" },
+  { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "mail", group: "platform", sub: "Send Message" },
+  { id: "Recent messages", label: "Recent messages", slug: "recent-messages", icon: "message", group: "platform", sub: "Send Message" },
   { id: "Mobile apps", label: "Mobile apps", slug: "mobile-apps", icon: "phone", group: "platform" },
   { id: "Website settings", label: "Website & branding", slug: "website-settings", icon: "edit", group: "platform", legacy: ["website-and-branding"] },
   { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh", group: "platform", sub: "Operational settings" },
@@ -45,7 +45,7 @@ export const PAGES: PageDef[] = [
   { id: "Invoice settings", label: "Invoice settings", slug: "invoice-settings", icon: "file", group: "platform", sub: "Operational settings" },
   { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", group: "platform", sub: "Operational settings", legacy: ["import-template-settings"] },
   { id: "Scan usage", label: "AI Scan with phone", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
-  { id: "CN scan", label: "CN_Scan AI", slug: "cn-scan", icon: "camera", group: "platform", sub: "Operational settings" },
+  { id: "CN scan", label: "AI CN_Scan", slug: "cn-scan", icon: "camera", group: "platform", sub: "Operational settings" },
   { id: "AI import", label: "AI Product & Address", slug: "ai-import", icon: "sheet", group: "platform", sub: "Operational settings" },
   { id: "AI address reading", label: "AI best route", slug: "ai-address-reading", icon: "pin", group: "platform", sub: "Operational settings" },
   { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Hub settings" },

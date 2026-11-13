@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.50.1 — 2026-11-14
+- Super admin menu: the selected item's highlight now slides to the item you click instead of switching off and on.
+- Super admin menu: CN_Scan AI is now AI CN_Scan; Messaging is now Send Message, and Recent messages is under it.
+
 ## 1.50.0 — 2026-11-14
 - Super admin menu: its own background, smooth hover and selection effects, and sub-menus that slide open and closed.
 - Super admin menu names: AI address reading is now AI best route, AI import is AI Product & Address, Scan with phone usage is AI Scan with phone.

@@ -3,7 +3,7 @@
  * Hub settings), the top bar (merchant search, notifications) and the signed-in person; the Operations
  * console is one click away at the bottom of the menu, as in the classic panel.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -56,6 +56,9 @@ function Sidebar() {
   const { user, logout } = useAuth();
   const counts = useCounts();
   const nav = useRef<HTMLElement>(null);
+  // The selected item's box: one highlight that slides from the old item to the new one (sidebar.css .nav-indicator).
+  const track = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; width: number; height: number; shown: boolean; ready: boolean }>({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
   const { pathname } = useLocation();
   const activeSub = PAGES.find(p => `/${p.slug}` === pathname)?.sub;
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -64,6 +67,26 @@ function Sidebar() {
     const t = setTimeout(() => nav.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" }), 50);
     return () => clearTimeout(t);
   }, [pathname, activeSub]);
+  useLayoutEffect(() => {
+    const host = track.current;
+    if (!host) return;
+    const place = () => {
+      const el = host.querySelector<HTMLElement>('.nav-item[aria-current="page"]');
+      const hidden = !el || !!el.closest(".nav-sub-wrap:not(.open)");
+      if (!el || hidden) return setBox(b => ({ ...b, shown: false }));
+      const h = host.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setBox(b => ({ top: r.top - h.top, left: r.left - h.left, width: r.width, height: r.height, shown: true, ready: b.shown || b.ready }));
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(host);
+    host.addEventListener("transitionend", place);
+    return () => {
+      ro.disconnect();
+      host.removeEventListener("transitionend", place);
+    };
+  }, [pathname, open]);
   const signOut = async () => {
     if (await confirm({ title: "Sign out?", message: `Sign out ${user?.name ?? "this account"} on this device?`, ok: "Sign out" })) await logout();
   };
@@ -84,6 +107,8 @@ function Sidebar() {
         <small>Platform administration</small>
       </div>
       <nav className="nav" ref={nav}>
+        <div className="nav-track" ref={track}>
+        <div className={`nav-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
         {GROUPS.map(g => {
           const pages = PAGES.filter(p => p.group === g.id);
           const seen = new Set<string>();
@@ -100,7 +125,7 @@ function Sidebar() {
                 return (
                   <div key={sub} className="nav-sub">
                     <button type="button" className={`nav-item nav-sub-toggle${children.some(c => `/${c.slug}` === pathname) ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [sub]: !isOpen }))}>
-                      <Icon name={sub === "Hub settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Messaging" ? "message" : "settings"} />
+                      <Icon name={sub === "Hub settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Send Message" ? "message" : "settings"} />
                       <span>{sub}</span>
                       <Icon name="chevronRight" size={14} />
                     </button>
@@ -114,6 +139,7 @@ function Sidebar() {
             </div>
           );
         })}
+        </div>
         <div className="nav-extras">
           <a className="foot-link" href="/ops/" title="Open operations console" style={{ padding: "6px 8px", fontSize: 11.5, gap: 6 }}>
             <Icon name="truck" size={14} />

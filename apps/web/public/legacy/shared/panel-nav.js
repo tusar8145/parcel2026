@@ -3,8 +3,8 @@
  * panels and the rider app (Courier Operations has its own views and tabs in courier-operation/bridge-nav.js).
  * Loaded last. Connects the panel's renderer to DF.nav (shared/api.js):
  *
- *   /super-admin?page=approval-center · /super-admin?page=import-settings&tab=e-commerce
- *   /ecommerce-merchant?page=payments · /banking-merchant?page=billing · /rider?page=scan-parcel
+ *   /rider?page=scan-parcel
+ *   (the staff and merchant panels are React apps: /ops, /admin, /merchant)
  *   ?page=notifications (every panel) · ?page=support&ticket=<number> · ?parcel=<tracking ID> (merchant panels: the
  *   parcel drawer, shared/merchant-parcel.js; kept in the address while it is open)
  *

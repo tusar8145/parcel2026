@@ -31,7 +31,7 @@ async function panel(browser: Browser) {
     const setup = await (await page.request.post(apiUrl("/api/v1/auth/mfa/setup"), { headers: WEB, data: { mfaToken: login.mfaToken } })).json();
     await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
   }
-  await page.goto("/super-admin");
+  await page.goto("/admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   return { page, errors };
 }
@@ -100,9 +100,9 @@ test("the menu: groups open and close, every moved page opens, and old links sti
   expect(await page.locator("#genericBody tr").count()).toBeLessThanOrEqual(20);
 
   // A saved link to a moved page opens its new home.
-  await page.goto("/super-admin?page=branding-and-company");
+  await page.goto("/admin?page=branding-and-company");
   await expect(page.locator("#brName")).toBeVisible({ timeout: 20_000 });
-  await page.goto("/super-admin?page=catalogs-and-locations");
+  await page.goto("/admin?page=catalogs-and-locations");
   await expect(page.locator("#breadcrumbPage")).toHaveText("Address", { timeout: 20_000 });
   await expect(page.locator('[data-nav-sub="location"] .nav-sub-items')).toBeVisible();
   expect(errors).toEqual([]);

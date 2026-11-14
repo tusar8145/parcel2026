@@ -5,15 +5,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
-const pages = [
-  "courier-operation",
-  "rider",
-  "ecommerce-merchant",
-  "banking-merchant",
-  "super-admin",
-  "franchise",
-  "application",
-];
+const pages = ["rider", "franchise", "application"];
 
 // The API runs separately (apps/api). Proxying it under /api keeps the browser on one
 // origin, so the refresh-token cookie is first-party and no CORS is needed.
@@ -122,46 +114,7 @@ export default function nextConfig(phase: string): NextConfig {
     async redirects() {
       return [
         { source: "/website.html", destination: "/", permanent: true },
-        { source: "/courier.html", destination: "/courier-operation", permanent: true },
-        // Staff use the new Operations console (apps/ops): sign-in, notifications and panel links to /courier-operation
-        // open it, with the query kept (?page=&tab=&parcel= opens the same view there). The classic console stays at
-        // /courier-operation?classic=1; the df-classic cookie (set by its link) keeps it on reload.
-        {
-          source: "/courier-operation",
-          missing: [
-            { type: "query", key: "classic" },
-            { type: "cookie", key: "df-classic" },
-          ],
-          destination: "/ops",
-          permanent: false,
-        },
-        // Merchants (Banking & Financial and E-commerce) use the new merchant panel (apps/merchant): sign-in,
-        // notifications and links to the classic panels open it, query kept (?page=&parcel=&merchant= open the same
-        // place). The classic panels stay at ?classic=1; the df-classic-merchant cookie (set by the link) keeps them on reload.
-        ...["/banking-merchant", "/ecommerce-merchant"].map(source => ({
-          source,
-          missing: [
-            { type: "query" as const, key: "classic" },
-            { type: "cookie" as const, key: "df-classic-merchant" },
-          ],
-          destination: "/merchant",
-          permanent: false,
-        })),
-        // Super admins use the new super admin panel (apps/admin): sign-in, notifications and links to /super-admin open
-        // it, query kept (?page=&tab= open the same page there). The classic panel stays at /super-admin?classic=1.
-        {
-          source: "/super-admin",
-          missing: [
-            { type: "query", key: "classic" },
-            { type: "cookie", key: "df-classic-admin" },
-          ],
-          destination: "/admin",
-          permanent: false,
-        },
         ...pages.map(page => ({ source: `/${page}.html`, destination: `/${page}`, permanent: true })),
-        // The document merchant panel became the Banking & Financial merchant panel.
-        { source: "/document-merchant", destination: "/banking-merchant", permanent: true },
-        { source: "/document-merchant.html", destination: "/banking-merchant", permanent: true },
       ];
     },
   };

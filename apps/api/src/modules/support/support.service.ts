@@ -321,7 +321,7 @@ export class SupportService {
   /** People a ticket can be assigned to: active support agents, operations managers and super admins. */
   /** Staff alert in the bell: the ticket's assignee, else the support desk (support agents and operations managers). */
   private async alertStaff(tx: Db, ticket: Pick<SupportTicket, "number" | "assigneeId">, title: string, body: string, except: string) {
-    const item = { type: "staff.ticket", title, body, target: { ticket: ticket.number }, panel: "/courier-operation" as const };
+    const item = { type: "staff.ticket", title, body, target: { ticket: ticket.number }, panel: "/ops" as const };
     if (ticket.assigneeId && ticket.assigneeId !== except) await this.inbox.add(tx, [ticket.assigneeId], item);
     else if (!ticket.assigneeId) await this.inbox.toStaff(tx, { roles: ["SUPPORT_AGENT", "OPS_MANAGER"], except }, item);
   }

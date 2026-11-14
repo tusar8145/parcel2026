@@ -183,7 +183,7 @@ export class SlaService implements OnApplicationBootstrap {
       }),
     ]);
     const managers = [...new Set(staff.filter(s => s.role === "OPS_MANAGER").map(s => s.userId))];
-    const link = `${env().APP_URL.replace(/\/$/, "")}/courier-operation`;
+    const link = `${env().APP_URL.replace(/\/$/, "")}/ops`;
     const ids: string[] = [];
     let sent = 0;
     await this.prisma.$transaction(async tx => {

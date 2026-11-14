@@ -12,7 +12,7 @@ import type { NotificationEvent } from "./events";
  * delivery codes, guest and email verification) never get one, and the copies never contain codes.
  */
 
-export type Panel = "/super-admin" | "/courier-operation" | "/rider" | "/ecommerce-merchant" | "/banking-merchant" | "/account" | "/franchise" | "/application";
+export type Panel = "/admin" | "/ops" | "/rider" | "/merchant" | "/account" | "/franchise" | "/application";
 
 /** Where an item opens: a page / tab of the panel (slugs from the panels' URL scheme), a parcel or a ticket. */
 export interface Target {
@@ -46,9 +46,7 @@ export function panelUrl(panel: Panel, target: Target = {}): string {
 /** The panel a person signs in to (the same rule as the session's `panel`). */
 export function panelOf(roles: { role: Role | string; merchant?: { type: string } | null }[]): Panel {
   const names = roles.map(r => r.role);
-  const panel = (PANEL_FOR_ROLE.find(([role]) => names.includes(role))?.[1] ?? "/account") as Panel;
-  if (panel === "/ecommerce-merchant" && roles.find(r => r.merchant)?.merchant?.type === "BANKING_FINANCIAL") return "/banking-merchant";
-  return panel;
+  return (PANEL_FOR_ROLE.find(([role]) => names.includes(role))?.[1] ?? "/account") as Panel;
 }
 
 type Vars = Record<string, string | number | null | undefined>;
@@ -98,11 +96,11 @@ export const IN_APP: Partial<Record<NotificationEvent, (v: Vars, panel: Panel) =
   "merchant.address_change": v => ({ title: `Address change ${s(v.status)}`, body: s(v.details) || s(v.businessName) || null, target: { page: "settings" } }),
   "merchant.kyc_status": v => ({ title: `KYC: ${s(v.status)}`, body: s(v.details) || s(v.businessName) || null, target: { page: "settings" } }),
   "finance.settlement_paid": v => ({ title: `Settlement ${s(v.number)} paid`, body: join(money(v.amount), s(v.reference) ? `Ref ${s(v.reference)}` : ""), target: { page: "payments" } }),
-  "finance.invoice_issued": (v, panel) => ({ title: `Invoice ${s(v.number)} issued`, body: join(money(v.amount), s(v.dueDate) ? `due ${s(v.dueDate)}` : ""), target: { page: panel === "/banking-merchant" ? "billing" : "payments" } }),
+  "finance.invoice_issued": (v, panel) => ({ title: `Invoice ${s(v.number)} issued`, body: join(money(v.amount), s(v.dueDate) ? `due ${s(v.dueDate)}` : ""), target: { page: "payments" } }),
   "import.completed": (v, panel) => ({
     title: `Import ${s(v.number)} finished`,
     body: join(s(v.fileName), `${s(v.created) || 0} created`, Number(v.incomplete) ? `${s(v.incomplete)} need info` : "", Number(v.notCreated) ? `${s(v.notCreated)} not created` : ""),
-    target: { page: panel === "/courier-operation" ? "all-parcels" : "orders" },
+    target: { page: panel === "/ops" ? "all-parcels" : "orders" },
   }),
   // riders
   "rider.application_status": v => ({ title: `Rider application: ${s(v.status)}`, body: s(v.details) || null }),

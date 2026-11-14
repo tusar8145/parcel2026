@@ -50,7 +50,7 @@ describe("in-app notifications", () => {
     const list = await ctx.api("GET", "/me/notifications", { token: staff.token });
     expect(list.status).toBe(200);
     expect(list.body.unread).toBe(1);
-    expect(list.body.items[0]).toMatchObject({ type: "parcel.cancelled", title: `${trackingId} was cancelled`, link: `/banking-merchant?parcel=${trackingId}`, readAt: null });
+    expect(list.body.items[0]).toMatchObject({ type: "parcel.cancelled", title: `${trackingId} was cancelled`, link: `/merchant?parcel=${trackingId}`, readAt: null });
     expect((await ctx.api("GET", "/me/notifications/count", { token: owner.token })).body).toEqual({ unread: 1 });
     // Other workspaces see nothing.
     expect((await ctx.api("GET", "/me/notifications/count", { token: other.owner.token })).body).toEqual({ unread: 0 });
@@ -118,7 +118,7 @@ describe("in-app notifications", () => {
     const hubOp = await userWithRoles(ctx, [{ role: "HUB_OPERATOR" }], "Hub Op");
     const ticket = (await ctx.api("POST", "/support/tickets", { token: customer.token, body: { category: "Delivery issue", subject: "Parcel is late", message: "Where is it?" } })).body;
     const desk = await ctx.api("GET", "/me/notifications", { token: agent.token });
-    expect(desk.body.items[0]).toMatchObject({ type: "staff.ticket", title: `New ticket ${ticket.number}`, body: "Rahim Uddin: Parcel is late", link: `/courier-operation?page=support&ticket=${ticket.number}` });
+    expect(desk.body.items[0]).toMatchObject({ type: "staff.ticket", title: `New ticket ${ticket.number}`, body: "Rahim Uddin: Parcel is late", link: `/ops?page=support&ticket=${ticket.number}` });
     expect((await ctx.api("GET", "/me/notifications/count", { token: ops.token })).body.unread).toBe(1);
     expect((await ctx.api("GET", "/me/notifications/count", { token: hubOp.token })).body.unread).toBe(0);
 
@@ -142,7 +142,7 @@ describe("in-app notifications", () => {
     const run = await ctx.api("POST", "/sla/monitor", { token: ops.token });
     expect(run.body.breached, JSON.stringify(run.body)).toBe(1);
     const list = await ctx.api("GET", "/me/notifications", { token: ops.token });
-    expect(list.body.items[0]).toMatchObject({ type: "ops.sla_breach", title: "1 parcel breached SLA", link: "/courier-operation?page=problems&tab=sla-late-risk" });
+    expect(list.body.items[0]).toMatchObject({ type: "ops.sla_breach", title: "1 parcel breached SLA", link: "/ops?page=problems&tab=sla-late-risk" });
     // The customer's own booking notice is theirs alone.
     expect((await ctx.api("GET", "/me/notifications", { token: customer.token })).body.items.map((n: { type: string }) => n.type)).not.toContain("ops.sla_breach");
   });
@@ -156,7 +156,7 @@ describe("in-app notifications", () => {
     });
     if (apply.status === 201) {
       const list = await ctx.api("GET", "/me/notifications", { token: admin.token });
-      expect(list.body.items.find((n: { type: string }) => n.type === "staff.merchant_application")).toMatchObject({ title: "New merchant registration: Fresh Shop", link: "/super-admin?page=registrations" });
+      expect(list.body.items.find((n: { type: string }) => n.type === "staff.merchant_application")).toMatchObject({ title: "New merchant registration: Fresh Shop", link: "/admin?page=registrations" });
       // The applicant's own copy of "application received".
       expect((await ctx.api("GET", "/me/notifications", { token: applicant.token })).body.items[0]).toMatchObject({ type: "merchant.application_received" });
     } else expect(apply.status, JSON.stringify(apply.body)).toBe(201);

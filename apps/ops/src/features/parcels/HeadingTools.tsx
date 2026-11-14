@@ -1,15 +1,13 @@
-/** Parcel list heading tools: Print… (formats), Export (Excel), and links to tools still served by the classic console. */
+/** Parcel list heading tools: Printâ€¦ (formats), Export (Excel). */
 import { Select } from "@panel/ui/Select";
-import { chooseClassic } from "@/app/links";
 import { useState } from "react";
-import { Icon, type IconName } from "@panel/ui/Icon";
 import { Button } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
 import { num } from "@panel/lib/format";
 import { PDF_LIMITS, PRINT_FORMATS, printFormat } from "./actions";
 import type { ParcelListState } from "./useParcelList";
 
-/** "Print…": prints the ticked rows, else every parcel the filters match (up to the PDF limit). */
+/** "Printâ€¦": prints the ticked rows, else every parcel the filters match (up to the PDF limit). */
 export function PrintMenu({ list, line, title }: { list: ParcelListState; line?: string; title: string }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -40,7 +38,7 @@ export function PrintMenu({ list, line, title }: { list: ParcelListState; line?:
           }
         }}
       >
-        <option value="" hidden>{busy ? "Preparing…" : "Print…"}</option>
+        <option value="" hidden>{busy ? "Preparingâ€¦" : "Printâ€¦"}</option>
         {PRINT_FORMATS.map(f => (
           <option key={f.value} value={f.value} disabled={!!f.line && !!line && f.line !== line}>
             {f.label}
@@ -56,17 +54,5 @@ export function ExportButton({ list }: { list: ParcelListState }) {
     <Button icon="download" onClick={() => list.exportExcel()}>
       Export
     </Button>
-  );
-}
-
-/** A tool still served by the classic console (opens there, same session, same data). */
-export function ClassicLink({ page, tab, label, icon, primary }: { page: string; tab?: string; label: string; icon?: IconName; primary?: boolean }) {
-  const href = `/courier-operation?classic=1&page=${encodeURIComponent(page)}${tab ? `&tab=${encodeURIComponent(tab)}` : ""}`;
-  return (
-    <a className={`button ${primary ? "primary" : ""}`} href={href} target="_blank" rel="noopener" title={`${label} (opens the classic console in a new tab)`} onClick={chooseClassic}>
-      {icon ? <Icon name={icon} /> : null}
-      {label}
-      <Icon name="external" size={12} />
-    </a>
   );
 }

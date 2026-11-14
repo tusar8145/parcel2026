@@ -223,7 +223,7 @@ interface Notification {
   createdAt: string;
 }
 
-/** "/super-admin?page=registrations" (a notification's link) → "/registrations" inside this panel. */
+/** "/admin?page=registrations" (a notification's link) → "/registrations" inside this panel. */
 export function internalLink(link: string): string | null {
   let url: URL;
   try {
@@ -232,8 +232,9 @@ export function internalLink(link: string): string | null {
     return null;
   }
   if (url.origin !== location.origin) return null;
-  if (url.pathname.startsWith("/admin")) return url.pathname.slice(6) + url.search || "/";
-  if (url.pathname !== "/super-admin") return null;
+  const root = url.pathname.replace(/\/$/, "") === "/admin";
+  if (url.pathname.startsWith("/admin") && !(root && url.searchParams.has("page"))) return url.pathname.slice(6) + url.search || "/";
+  if (!root) return null;
   const page = url.searchParams.get("page");
   const keep = new URLSearchParams();
   const tab = url.searchParams.get("tab");

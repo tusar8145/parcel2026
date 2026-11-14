@@ -184,7 +184,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
       await this.inbox.toStaff(
         tx,
         { roles: ["HUB_OPERATOR"], hubIds: [hub.id] },
-        { type: "staff.franchise_deposit", title: `Franchise deposit: ${f.name}`, body: `Tk ${n(created.net).toFixed(2)} to receive · ${created.number}`, target: { page: "accounts", tab: "franchise" }, panel: "/courier-operation" },
+        { type: "staff.franchise_deposit", title: `Franchise deposit: ${f.name}`, body: `Tk ${n(created.net).toFixed(2)} to receive · ${created.number}`, target: { page: "accounts", tab: "franchise" }, panel: "/ops" },
       );
       return created;
     });
@@ -319,7 +319,7 @@ export class FranchiseMoneyService implements OnApplicationBootstrap {
         await this.inbox.toStaff(
           tx,
           { roles: ["FINANCE"] },
-          { type: "staff.franchise_invoice", title: `Franchise invoice to approve: ${created.franchise.name}`, body: `${created.number} · Tk ${amount.toFixed(2)}`, target: { page: "accounts", tab: "franchise" }, panel: "/courier-operation" },
+          { type: "staff.franchise_invoice", title: `Franchise invoice to approve: ${created.franchise.name}`, body: `${created.number} · Tk ${amount.toFixed(2)}`, target: { page: "accounts", tab: "franchise" }, panel: "/ops" },
         );
       return created;
     });

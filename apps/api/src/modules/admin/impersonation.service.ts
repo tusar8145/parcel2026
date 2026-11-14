@@ -272,7 +272,7 @@ export class ImpersonationService {
         phone: u.phone,
         role: grant?.role ?? null,
         roleLabel: (grant && ROLE_LABEL[grant.role]) || "Member",
-        panel: query.riderId ? "/rider" : grant?.merchant?.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant",
+        panel: query.riderId ? "/rider" : "/merchant",
         allowed: !refused,
         ...(refused ? { refusal: refused.message } : {}),
       };

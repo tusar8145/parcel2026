@@ -261,7 +261,7 @@ export class MerchantsService {
         tx,
       );
       // Super admins' bell: a registration to review.
-      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"] }, { type: "staff.merchant_application", title: `New merchant registration: ${created.name}`, body: `${code} · ${created.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`, target: { page: "registrations" }, panel: "/super-admin" });
+      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"] }, { type: "staff.merchant_application", title: `New merchant registration: ${created.name}`, body: `${code} · ${created.type === "BANKING_FINANCIAL" ? "Banking & Financial" : "E-commerce"}`, target: { page: "registrations" }, panel: "/admin" });
       return created;
     });
     await this.outbox.flush(outbox);
@@ -581,7 +581,7 @@ export class MerchantsService {
         title: `Address change to approve: ${current.name}`,
         body: `${current.code} · ${this.addressSnapshot(proposed).pickup}${moved ? " · the serving hub changes" : ""}`,
         target: { page: "merchants" },
-        panel: "/courier-operation",
+        panel: "/ops",
       },
     );
     return request;

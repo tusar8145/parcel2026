@@ -7,8 +7,6 @@ import { queryClient } from "@panel/lib/queryClient";
 import App from "@/app/App";
 import "@panel/styles.css";
 
-// Opening this panel ends the "classic panel" choice (next.config.ts sends /super-admin here otherwise).
-document.cookie = "df-classic-admin=; path=/; max-age=0";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -14,7 +14,6 @@ import { legacyPath, pageBySlug } from "./nav";
 import { prefetchOverview } from "@/lib/admin";
 import Overview from "@/pages/Overview";
 import { periodQueryOf } from "@panel/lib/period";
-import { Classic } from "./Classic";
 
 const Notifications = lazy(() => import("@/pages/Notifications"));
 /** The pages rebuilt so far, by menu id; the others open in the classic panel. */
@@ -136,5 +135,5 @@ function PageRoute() {
   }
   const Page = PAGES[page.id];
   const tab = new URLSearchParams(location.search).get("tab") || undefined;
-  return Page ? <Page key={page.id} tab={tab} /> : <Classic id={page.id} />;
+  return Page ? <Page key={page.id} tab={tab} /> : <Navigate to="/overview" replace />;
 }

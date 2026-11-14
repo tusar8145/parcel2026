@@ -66,7 +66,7 @@ async function signInAdmin(page: Page) {
   const login = await (await page.request.post(apiUrl("/api/v1/auth/login"), { headers: WEB, data: { identifier: admin.phone, password: admin.password } })).json();
   const setup = await (await page.request.post(apiUrl("/api/v1/auth/mfa/setup"), { headers: WEB, data: { mfaToken: login.mfaToken } })).json();
   await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
-  await page.goto("/super-admin");
+  await page.goto("/admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
 }
 async function token(page: Page, identifier: string, password: string) {

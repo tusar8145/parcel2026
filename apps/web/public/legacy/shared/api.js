@@ -942,8 +942,8 @@
   // ───────────── panel URLs (DF.nav): every page and tab has its own address ─────────────
   //
   // One scheme for every panel: /<panel>?page=<page-slug>[&tab=<tab-slug>], kebab-case slugs of the
-  // menu names (e.g. /courier-operation?page=hub-desk&tab=receive, /super-admin?page=approval-center,
-  // /ecommerce-merchant?page=payments). Old page names and old slugs still open the page and the
+  // menu names (e.g. /rider?page=scan-parcel, /franchise?page=…).
+  // Old page names and old slugs still open the page and the
   // address is rewritten to the new slug. Deep links: ?parcel=<tracking ID> opens the parcel,
   // ?ticket=<number> the support ticket. Other parameters (period, from, to, filters) are kept.
   // Navigating pushes a history entry (Back / Forward work); redraws replace it. The title follows:
@@ -1123,7 +1123,7 @@
       requested,
       setParam,
       extras,
-      /** Opens a panel link ("/courier-operation?page=…&tab=…", "…?parcel=…"): in place when it is this panel, else loads it. */
+      /** Opens a panel link ("/rider?page=…&tab=…", "…?parcel=…"): in place when it is this panel, else loads it. */
       go(link) {
         const target = new URL(link, location.href);
         if (target.origin !== location.origin || target.pathname !== location.pathname || !adapter) return void location.assign(target.href);

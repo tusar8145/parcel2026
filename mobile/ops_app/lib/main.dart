@@ -22,7 +22,7 @@ void configureOpsApp() {
   AppConfig.appName = 'Operations';
   AppConfig.version = '1.6.0';
   // Courier Operations staff: operations managers and hub operators (and custom roles built on them), and franchise hubs.
-  AppConfig.allows = (user) => user['panel'] == '/courier-operation' || user['panel'] == '/franchise';
+  AppConfig.allows = (user) => user['panel'] == '/ops' || user['panel'] == '/franchise';
   AppConfig.notAllowed = 'This app is for operations staff (operations managers, hub operators and franchise hubs).';
   AppConfig.home = () => Session.user?['panel'] == '/franchise' ? FranchiseShell(key: franchiseShell) : OpsShell(key: opsShell);
   onSignedOut = openSignIn;

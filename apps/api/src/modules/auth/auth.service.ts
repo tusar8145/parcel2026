@@ -84,8 +84,7 @@ export function toUserView(user: Pick<UserRecord, "id" | "name" | "phone" | "ema
     rider: user.rider ? { id: user.rider.id, code: user.rider.code } : null,
     customRoles: user.roles.flatMap(r => (r.customRole?.active ? [{ id: r.customRole.id, name: r.customRole.name, baseRole: r.role }] : [])),
     mfa: { enabled: !!user.mfa?.enabledAt, required: mfaRequiredFor(roles) },
-    // Banking & Financial merchants have their own panel.
-    panel: merchantRole?.merchant?.type === "BANKING_FINANCIAL" && panel === "/ecommerce-merchant" ? "/banking-merchant" : panel,
+    panel,
   };
 }
 

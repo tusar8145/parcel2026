@@ -13,7 +13,6 @@ import Login from "@panel/ui/Login";
 import { MERCHANT_ROLES, MerchantProvider, useMerchant } from "@/lib/merchant";
 import Shell from "./Shell";
 import { labelOf, legacyPath, pageBySlug } from "./nav";
-import { Classic } from "./Classic";
 import ParcelDrawer from "@/features/parcels/ParcelDrawer";
 
 const Verification = lazy(() => import("@/pages/Verification"));
@@ -163,6 +162,6 @@ function PageRoute() {
     case "All requests":
       return <AllRequests />;
     default:
-      return <Classic id={page.id} />;
+      return <Navigate to="/overview" replace />;
   }
 }

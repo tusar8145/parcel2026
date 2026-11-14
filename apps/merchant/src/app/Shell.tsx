@@ -123,12 +123,6 @@ function Sidebar() {
             })}
           </div>
         ))}
-        <div className="nav-group">
-          <a className="nav-item" href={`${m.panel.classic}?classic=1`} title="The previous merchant panel (same data)" onClick={() => (document.cookie = "df-classic-merchant=1; path=/; SameSite=Lax")}>
-            <Icon name="external" />
-            <span>Classic panel</span>
-          </a>
-        </div>
         <div className="nav-extras">
           <a className="app-card" href="/apps" target="_blank" rel="noopener" title="Download the Android apps">
             <span className="app-card-icon" aria-hidden="true">
@@ -193,7 +187,7 @@ interface Notification {
   createdAt: string;
 }
 
-/** "/banking-merchant?page=orders&parcel=FD-1" (a notification's link) → "/all-requests?parcel=FD-1" inside this panel. */
+/** "/merchant?page=orders&parcel=FD-1" (a notification's link) → "/all-requests?parcel=FD-1" inside this panel. */
 export function internalLink(link: string, doc = true): string | null {
   let url: URL;
   try {
@@ -202,8 +196,9 @@ export function internalLink(link: string, doc = true): string | null {
     return null;
   }
   if (url.origin !== location.origin) return null;
-  if (url.pathname.startsWith("/merchant")) return url.pathname.slice(9) + url.search || "/";
-  if (url.pathname !== "/banking-merchant" && url.pathname !== "/ecommerce-merchant") return null;
+  const root = url.pathname.replace(/\/$/, "") === "/merchant";
+  if (url.pathname.startsWith("/merchant") && !(root && url.searchParams.has("page"))) return url.pathname.slice(9) + url.search || "/";
+  if (!root) return null;
   const keep = new URLSearchParams();
   for (const k of ["parcel", "ticket"]) if (url.searchParams.get(k)) keep.set(k, url.searchParams.get(k)!);
   const page = url.searchParams.get("page");

@@ -128,7 +128,7 @@ export class RiderKycService {
       await tx.riderOnboarding.upsert({ where: { riderId }, create: { riderId, status: "UNDER_REVIEW", submittedAt: new Date() }, update: { status: "UNDER_REVIEW", submittedAt: new Date() } });
       await this.audit.record(actor, { action: "rider.kyc.submit", entityType: "rider", entityId: riderId }, meta, tx);
       // Operations managers' bell: documents to review (Courier Operations › Riders).
-      await this.inbox.toStaff(tx, { roles: ["OPS_MANAGER"] }, { type: "staff.kyc_review", title: `Rider documents to review: ${actor.name}`, body: "Submitted for verification", target: { page: "riders" }, panel: "/courier-operation" });
+      await this.inbox.toStaff(tx, { roles: ["OPS_MANAGER"] }, { type: "staff.kyc_review", title: `Rider documents to review: ${actor.name}`, body: "Submitted for verification", target: { page: "riders" }, panel: "/ops" });
     });
     this.publish(riderId, "UNDER_REVIEW");
     return this.state(riderId);

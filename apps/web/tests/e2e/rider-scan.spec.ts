@@ -225,7 +225,7 @@ test("the recipient and the merchant see the rider's live location only with Liv
   const mp = await merchant.newPage();
   const login = await mp.request.post(apiUrl("/api/v1/auth/login"), { data: { identifier: owner.login, password: owner.password }, headers: { "x-df-client": "web" } });
   expect(login.status(), await login.text()).toBe(200);
-  await mp.goto("/ecommerce-merchant");
+  await mp.goto("/merchant");
   await mp.waitForSelector("html.legacy-ready", { state: "attached" });
   const openDetails = async (id: string) => {
     await mp.click('#navigation [data-page="Orders"]');

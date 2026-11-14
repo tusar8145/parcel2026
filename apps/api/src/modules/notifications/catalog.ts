@@ -404,7 +404,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Finance",
     audience: "Merchant owner",
     vars: ["number", "amount", "dueDate", "link"],
-    sample: { number: "INV-2026-10-0042", amount: "12,400.00", dueDate: "31 Oct 2026", link: "https://deliveryfast.example/ecommerce-merchant" },
+    sample: { number: "INV-2026-10-0042", amount: "12,400.00", dueDate: "31 Oct 2026", link: "https://deliveryfast.example/merchant" },
     sms: "Delivery Fast invoice {{number}} for Tk {{amount}} is due {{dueDate}}.",
     email: {
       subject: "Invoice {{number}}",
@@ -491,7 +491,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Operations",
     audience: "Operations staff",
     vars: ["count", "hub", "link"],
-    sample: { count: "7", hub: "Gulshan hub", link: "https://deliveryfast.example/courier-operation" },
+    sample: { count: "7", hub: "Gulshan hub", link: "https://deliveryfast.example/ops" },
     sms: "Delivery Fast: {{count}} parcels breached SLA{{#hub}} at {{hub}}{{/hub}}. {{link}}",
     email: {
       subject: "SLA alert: {{count}} parcels{{#hub}} at {{hub}}{{/hub}}",
@@ -504,7 +504,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Operations",
     audience: "Staff",
     vars: ["report", "period", "link"],
-    sample: { report: "Daily delivery summary", period: "15 Oct 2026", link: "https://deliveryfast.example/courier-operation" },
+    sample: { report: "Daily delivery summary", period: "15 Oct 2026", link: "https://deliveryfast.example/ops" },
     email: {
       subject: "{{report}} · {{period}}",
       text: "Hi {{name}},\n\nYour scheduled report \"{{report}}\" for {{period}} is ready: {{link}}",
@@ -562,7 +562,7 @@ export const EVENT_CATALOG: Record<NotificationEvent, EventDefinition> = {
     group: "Support",
     audience: "Support agents and operations managers",
     vars: ["ticketNumber", "subject", "breach", "priority", "link"],
-    sample: { ticketNumber: "DF-SUP-261016-0007", subject: "Parcel delayed", breach: "first response", priority: "High", link: "https://deliveryfast.example/courier-operation" },
+    sample: { ticketNumber: "DF-SUP-261016-0007", subject: "Parcel delayed", breach: "first response", priority: "High", link: "https://deliveryfast.example/ops" },
     sms: "SLA breach ({{breach}}) on ticket {{ticketNumber}} [{{priority}}]. {{link}}",
     email: {
       subject: "SLA breach: {{ticketNumber}} ({{breach}})",

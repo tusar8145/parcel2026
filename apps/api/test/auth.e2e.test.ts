@@ -129,6 +129,6 @@ describe("auth", () => {
   it("routes each role to its panel", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }]);
     const me = await ctx.api("GET", "/auth/me", { token: admin.token });
-    expect(me.body.panel).toBe("/super-admin");
+    expect(me.body.panel).toBe("/admin");
   });
 });

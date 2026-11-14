@@ -292,7 +292,7 @@ export class CashService {
           title: `${from.name} sent ${taka(transfer.amount)}`,
           body: `${transfer.number} by ${input.method}${input.reference ? ` · ${input.reference}` : ""}. Receive it in Accounts › Hub transfers.`,
           target: { page: "accounts", tab: "hub-transfers" },
-          panel: "/courier-operation",
+          panel: "/ops",
         });
         return transfer.id;
       },
@@ -324,7 +324,7 @@ export class CashService {
         title: `Central hub received ${t.number}`,
         body: short.gt(0) ? `${taka(received)} of ${taka(t.amount)} received; ${taka(short)} is due from your hub.` : `${taka(received)} received.`,
         target: { page: "accounts", tab: "hub-transfers" },
-        panel: "/courier-operation",
+        panel: "/ops",
       });
     });
     this.realtime.publish({ type: "cash.transfer", id, hubIds: [t.fromHubId, t.toHubId], staffPermission: "finance:manage" });

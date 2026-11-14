@@ -69,6 +69,11 @@ Setup and run instructions: `docs/development.md`.
 - Tests are e2e against a real database (`apps/api/test`, helpers in `test/helpers.ts`).
 
 ## Web conventions (apps/web)
+- The staff and merchant panels are React apps built into `apps/web/public`: Courier Operations `apps/ops`
+  (/ops), merchants `apps/merchant` (/merchant), super admin `apps/admin` (/admin), shared UI `packages/panel-ui`.
+  The classic HTML panels and their addresses were removed in 1.54.0 (no redirects; the API sends /ops, /merchant,
+  /admin as the panel; ?page=… links open the same page there). Still on legacy scripts:
+  the website, the rider web app, franchise and application pages.
 - `app/(<page>)/` – one route group per page, each with its own root layout so page CSS never
   leaks between pages. `/api/*` is proxied to the API (`next.config.ts`, `API_ORIGIN`).
 - `src/features/<page>/` – `components/*.tsx` (markup), `styles.css` (verbatim, inlined into
@@ -78,38 +83,27 @@ Setup and run instructions: `docs/development.md`.
   page's actions to the API. See `public/legacy/README.md`.
 - Live data in pages: `DF.live(["parcel.updated", "parcel.created"], reload)` (events + reconnect
   + slow safety poll) instead of fast polling. `DF.events.on(type, handler)` for custom use.
-- Excel/CSV imports in every panel: `shared/importer.js` (`DFImport.open/history/template/complete`) on the
-  one import engine (`modules/imports`, `/imports`); see docs/architecture-contracts.md. Downloads and
-  uploads that aren't JSON: `DF.apiRaw(path, { method, body: FormData })`, `DF.download(path)`.
-- Bulk operations by Excel in Courier Operations: `DFImport.bulk/bulkHistory` (the same dialog in bulk mode)
-  on `modules/bulk-updates` (`/bulk-updates`: export with action columns → validate → apply through the
-  parcel services); see docs/architecture-contracts.md.
+- Excel/CSV imports: the one import engine (`modules/imports`, `/imports`); bulk operations by Excel:
+  `modules/bulk-updates`; see docs/architecture-contracts.md. Downloads and uploads that aren't JSON:
+  `DF.apiRaw(path, { method, body: FormData })`, `DF.download(path)`.
 - Forms in panels: `DF.phoneInput(input)` (fixed +880 prefix, 17…/017… accepted) and
   `DF.validate(form, { fieldId: value => message || "" })` for inline errors. Website forms
   are React components with the same rules.
 - Markup is static and the legacy scripts change it by id/class. Keep ids, classes and element
   order they depend on, or move that behaviour into React first.
 - Every JSX text node is a single string (`{" text "}` where whitespace matters).
-- Every panel runs on the API: website (`website/bridge.js`), Courier Operations
-  (`courier-operation/bridge.js`, `bridge-pages.js`), Rider (`rider/bridge.js`), both merchant
-  panels (`shared/merchant-bridge.js` + per-panel `bridge.js`), super admin
-  (`super-admin/bridge.js`) and support tickets on every page (`shared/support.js`). Super-admin
-  platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
+- The legacy pages run on the API: website (`website/bridge.js`), Rider (`rider/bridge.js`) and
+  support tickets (`shared/support.js`). Super-admin platform settings are stored server-side (`GET/PUT /settings/platform-config`) and overlaid on
   the `deliveryfast-demo-config` key for every page. Widgets with no backing data (maps,
   traffic charts, some report rows) remain decorative.
-- Merchant New orders / All orders (`shared/merchant-orders.js`): server-paged, filters by merchant type, and
-  `GET /merchants/me/parcels/export` (merchantExportColumns: nothing internal, charges for owners only). The
-  `Orders` page name is All orders; `Shipments` opens it. Reports come from `GET /merchants/me/reports`.
-- Buttons doing slow or bulk work: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy). Courier
-  Operations does this for every `.button` that starts API work (`trackButtons` in shared/api.js).
+- Merchant exports: `GET /merchants/me/parcels/export` (merchantExportColumns: nothing internal, charges for owners
+  only). Reports come from `GET /merchants/me/reports`.
+- Buttons doing slow or bulk work in legacy pages: `DF.busy(button, work, text?)` (spinner, disabled, aria-busy).
 - Website settings (`modules/website`, `GET/PUT /website`): sign-up switches, "Send a parcel", page texts and FAQs,
   enforced by the API, not only hidden. The public pages read `siteContent()` (`src/features/website/siteContent.ts`,
   cached with a tag); after saving, call `DF.clearSiteCache()` (`app/site-cache/route.ts`).
-- Long tables: `shared/table-pager.js` pages any table with more than 25 rows; server-paged lists are left alone.
-- Super admin menu: collapsible groups and the pages that show part of another page are in `bridge-menu.js`.
-- Money screens have their own design: Courier Operations › Accounts (`courier-operation/bridge-accounts.js`),
-  merchant › Balance (`shared/merchant-balance.js`), rider › Earnings › My cash (`rider/bridge.js`),
-  website customer › Payments (`website/customer-payments.js`).
+- Money screens in legacy pages: rider › Earnings › My cash (`rider/bridge.js`), website customer › Payments
+  (`website/customer-payments.js`).
 
 ## Commands (from repo root)
 - Docker, whole stack: `docker compose --env-file .env.docker up -d --build` (web on :8080)

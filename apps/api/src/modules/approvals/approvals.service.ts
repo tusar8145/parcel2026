@@ -156,7 +156,7 @@ export class ApprovalsService implements OnModuleInit {
       });
       await this.audit.record(actor, { action: "change.request", entityType: "change", entityId: created.id, data: { kind, summary } }, meta, tx);
       // The other super admins' bell: a change waiting for a second approver (Approval center).
-      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"], except: actor.userId }, { type: "staff.change_approval", title: "Change waiting for your approval", body: `${actor.name}: ${summary}`, target: { page: "approval-center" }, panel: "/super-admin" });
+      await this.inbox.toStaff(tx, { roles: ["SUPER_ADMIN"], except: actor.userId }, { type: "staff.change_approval", title: "Change waiting for your approval", body: `${actor.name}: ${summary}`, target: { page: "approval-center" }, panel: "/admin" });
       return created;
     });
     this.realtime.publish({ type: "change.updated", id: request.id, staffPermission: "change:approve" });

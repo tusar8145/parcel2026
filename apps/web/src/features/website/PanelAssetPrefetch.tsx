@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { scripts as courierScripts } from "@/features/courier-operation/scripts";
 import { scripts as riderScripts } from "@/features/rider/scripts";
-import { scripts as superAdminScripts } from "@/features/super-admin/scripts";
 import { scripts as franchiseScripts } from "@/features/franchise/scripts";
-import { scripts as ecommerceScripts } from "@/features/ecommerce-merchant/scripts";
-import { scripts as bankingScripts } from "@/features/banking-merchant/scripts";
 import { scripts as applicationScripts } from "@/features/application/scripts";
 import { scripts as websiteScripts } from "./scripts";
 
 const ASSET_VERSIONS: Record<string, string> = JSON.parse(process.env.LEGACY_ASSET_VERSIONS || "{}");
-const PANELS = [courierScripts, riderScripts, superAdminScripts, franchiseScripts, ecommerceScripts, bankingScripts, applicationScripts];
+const PANELS = [riderScripts, franchiseScripts, applicationScripts];
 
 function versioned(src: string) {
   const version = ASSET_VERSIONS[src];

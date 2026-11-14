@@ -130,7 +130,7 @@ describe("riders on several hubs, account messages and passwords, hub locations"
     expect(await ctx.prisma.outboxMessage.count({ where: { template: "merchant.approved", to: "+8801913000041" } })).toBe(0);
     const owner = await login("+8801913000041", PASSWORD);
     expect(owner.status, JSON.stringify(owner.body)).toBe(200);
-    expect(owner.body.user).toMatchObject({ panel: "/ecommerce-merchant" });
+    expect(owner.body.user).toMatchObject({ panel: "/merchant" });
     // The same mobile can't own a second merchant.
     expect((await ctx.api("POST", "/merchants/onboard", { token: admin.token, body: { ...body, name: "Another" } })).body.error.code).toBe("ALREADY_MERCHANT_OWNER");
     // An invitation's account (with a password) is a customer account: it has a page to open (no redirect loop).

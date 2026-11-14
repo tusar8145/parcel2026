@@ -24,7 +24,7 @@ without a connection; the rider app is also an installable PWA: `/rider.webmanif
    `-customer-address-book`) are served from memory, so the page scripts keep their synchronous
    reads and nothing personal stays in the browser.
 2. The page's original scripts.
-3. `<page>/bridge.js` (every page; merchant panels share `shared/merchant-bridge.js`) — capture-phase listeners on `window`
+3. `<page>/bridge.js` (every page) — capture-phase listeners on `window`
    that run before the original handlers. They perform the action through the API, then refresh
    the data, and the page re-renders through its own `storage` event listener.
 

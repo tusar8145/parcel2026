@@ -234,7 +234,7 @@
       if(type==="login"){
         const role=document.getElementById("loginRole").value,identity=document.getElementById("loginIdentity").value;
         if(role==="Customer"){const email=identity.includes("@")?identity:"",phone=email?"":identity,name=email?identity.split("@")[0]:identity;if(saveCustomerSession({name,email,phone,identity,updatedAt:new Date().toISOString()})){const destination=takeCustomerReturnRoute();navigate(destination==="home"?"account":destination);showToast("Customer demo sign-in complete.");}}
-        else{showToast(`${role} demo workspace is opening.`);setTimeout(()=>location.href=role==="Merchant"?"/ecommerce-merchant":role==="Rider"?"/rider":"/courier-operation",450)}
+        else{showToast(`${role} demo workspace is opening.`);setTimeout(()=>location.href=role==="Merchant"?"/merchant":role==="Rider"?"/rider":"/ops",450)}
         return
       }
       if(type==="signup"){const session={name:document.getElementById("signupName").value.trim(),phone:document.getElementById("signupPhone").value.trim(),email:document.getElementById("signupEmail").value.trim(),updatedAt:new Date().toISOString()};if(saveCustomerSession(session)){const destination=takeCustomerReturnRoute();navigate(destination==="home"?"account":destination);showToast("Your customer demo account is ready.");}return}

@@ -22,7 +22,7 @@ export default function Settings() {
   const hubs = ops.hubs.filter(h => h.active !== false).length;
   const admin = (page: string, label: string) =>
     superAdmin ? (
-      <a className="button sm" href={`/super-admin?page=${encodeURIComponent(page)}`}>
+      <a className="button sm" href={`/admin?page=${encodeURIComponent(page)}`}>
         {label}
       </a>
     ) : (

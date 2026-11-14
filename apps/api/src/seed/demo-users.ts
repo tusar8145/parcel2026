@@ -23,11 +23,11 @@ import { merchantCodePrefix } from "@delivery-fast/shared";
 
 type Group = "SUPER_ADMIN" | "OPS" | "HUB" | "FINANCE" | "SUPPORT" | "RIDER" | "MERCHANT" | "CUSTOMER";
 const PANEL: Record<Group, string> = {
-  SUPER_ADMIN: "/super-admin",
-  OPS: "/courier-operation",
-  HUB: "/courier-operation",
-  FINANCE: "/courier-operation",
-  SUPPORT: "/courier-operation",
+  SUPER_ADMIN: "/admin",
+  OPS: "/ops",
+  HUB: "/ops",
+  FINANCE: "/ops",
+  SUPPORT: "/ops",
   RIDER: "/rider",
   MERCHANT: "",
   CUSTOMER: "/ (website: Sign in)",
@@ -201,7 +201,7 @@ async function main() {
             }
             merchant = await tx.merchant.create({ data: { ...data, code } });
           }
-          const panel = m.type === "ECOMMERCE" ? "/ecommerce-merchant" : "/banking-merchant";
+          const panel = "/merchant";
           const ownerId = await account(m.owner);
           await grant(ownerId, "MERCHANT_OWNER", { merchantId: merchant.id });
           rows.push({ role: `${m.owner.label} · ${merchant.name} (${merchant.code})`, name: m.owner.name, email: m.owner.email, phone: m.owner.phone, group: "MERCHANT", panel });

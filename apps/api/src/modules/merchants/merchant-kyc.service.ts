@@ -193,7 +193,7 @@ export class MerchantKycService {
       await this.inbox.toStaff(
         tx,
         { roles: ["SUPER_ADMIN"] },
-        { type: "staff.kyc_review", title: `KYC to review: ${current.name}`, body: `${docs.length} document${docs.length === 1 ? "" : "s"} submitted`, target: { page: current.type === "BANKING_FINANCIAL" ? "banking-and-financial-merchants" : "e-commerce-merchants" }, panel: "/super-admin" },
+        { type: "staff.kyc_review", title: `KYC to review: ${current.name}`, body: `${docs.length} document${docs.length === 1 ? "" : "s"} submitted`, target: { page: current.type === "BANKING_FINANCIAL" ? "banking-and-financial-merchants" : "e-commerce-merchants" }, panel: "/admin" },
       );
     });
     await this.outbox.flush(outbox);

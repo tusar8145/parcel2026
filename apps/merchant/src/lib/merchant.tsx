@@ -12,17 +12,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, describe } from "@panel/lib/api";
 import { useLive } from "@panel/lib/events";
 
-/** Each merchant type's words (banking-merchant/bridge.js, ecommerce-merchant/bridge.js) and its classic panel. */
+/** Each merchant type's words (banking-merchant/bridge.js, ecommerce-merchant/bridge.js) */
 export interface PanelWords {
   type: "BANKING_FINANCIAL" | "ECOMMERCE";
   typeLabel: string;
   ownerLabel: string;
   staffLabel: string;
-  classic: string;
 }
 const WORDS: Record<PanelWords["type"], PanelWords> = {
-  BANKING_FINANCIAL: { type: "BANKING_FINANCIAL", typeLabel: "Banking & Financial merchant", ownerLabel: "Corporate owner", staffLabel: "Operations staff", classic: "/banking-merchant" },
-  ECOMMERCE: { type: "ECOMMERCE", typeLabel: "E-commerce merchant", ownerLabel: "Store owner", staffLabel: "Store staff", classic: "/ecommerce-merchant" },
+  BANKING_FINANCIAL: { type: "BANKING_FINANCIAL", typeLabel: "Banking & Financial merchant", ownerLabel: "Corporate owner", staffLabel: "Operations staff" },
+  ECOMMERCE: { type: "ECOMMERCE", typeLabel: "E-commerce merchant", ownerLabel: "Store owner", staffLabel: "Store staff" },
 };
 export const panelFor = (type: string) => WORDS[type === "BANKING_FINANCIAL" ? "BANKING_FINANCIAL" : "ECOMMERCE"];
 /** Who may open the panel: PANEL_ROLES["banking-merchant"] / ["ecommerce-merchant"] in shared/api.js. */

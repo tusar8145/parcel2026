@@ -165,7 +165,7 @@ export class ReportsService implements OnApplicationBootstrap {
       },
     });
     if (!table) return run;
-    const link = `${env().APP_URL.replace(/\/$/, "")}/courier-operation?report=${run.id}`;
+    const link = `${env().APP_URL.replace(/\/$/, "")}/ops?report=${run.id}`;
     const period = from === to ? from : `${from} to ${to}`;
     const ids: string[] = [];
     await this.prisma.$transaction(async tx => {

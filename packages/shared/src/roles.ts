@@ -156,15 +156,15 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string 
 
 /** Which web panel a role signs in to, in priority order. */
 export const PANEL_FOR_ROLE: [Role, string][] = [
-  ["SUPER_ADMIN", "/super-admin"],
-  ["OPS_MANAGER", "/courier-operation"],
-  ["HUB_OPERATOR", "/courier-operation"],
-  ["FINANCE", "/courier-operation"],
-  ["SUPPORT_AGENT", "/courier-operation"],
+  ["SUPER_ADMIN", "/admin"],
+  ["OPS_MANAGER", "/ops"],
+  ["HUB_OPERATOR", "/ops"],
+  ["FINANCE", "/ops"],
+  ["SUPPORT_AGENT", "/ops"],
   ["FRANCHISE", "/franchise"],
   ["RIDER", "/rider"],
-  ["MERCHANT_OWNER", "/ecommerce-merchant"],
-  ["MERCHANT_STAFF", "/ecommerce-merchant"],
+  ["MERCHANT_OWNER", "/merchant"],
+  ["MERCHANT_STAFF", "/merchant"],
   ["APPLICANT", "/application"],
   ["CUSTOMER", "/account"],
 ];

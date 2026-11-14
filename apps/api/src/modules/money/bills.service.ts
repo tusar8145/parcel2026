@@ -80,7 +80,7 @@ export class BillsService {
               ...(await this.notify.notify(tx, {
                 event: "finance.invoice_issued",
                 to: { phone: m.contactPhone, email: m.contactEmail, name: m.contactName },
-                vars: { number: bill.number, amount: Number(total).toLocaleString("en-BD", { minimumFractionDigits: 2 }), dueDate: due.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Dhaka" }), link: `${env().APP_URL}/banking-merchant?page=balance` },
+                vars: { number: bill.number, amount: Number(total).toLocaleString("en-BD", { minimumFractionDigits: 2 }), dueDate: due.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Dhaka" }), link: `${env().APP_URL}/merchant?page=balance` },
               })),
             );
         }
@@ -193,7 +193,7 @@ export class BillsService {
             title: `${account.name} says they paid ${taka(input.amount)}`,
             body: `${payment.number} · ${input.method}${input.reference ? ` · ${input.reference}` : ""}. Confirm it in Accounts › Financial.`,
             target: { page: "accounts", tab: "financial" },
-            panel: "/courier-operation",
+            panel: "/ops",
           });
         await this.audit.record(actor, { action: staff ? "payment.record" : "payment.submit", entityType: "account_payment", entityId: payment.id, data: { number: payment.number, accountId, amount: input.amount, method: input.method } }, meta, tx);
         return payment.id;

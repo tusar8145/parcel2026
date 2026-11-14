@@ -13,7 +13,6 @@ import { Loading } from "@panel/ui/kit";
 import Login from "@panel/ui/Login";
 import Shell from "./Shell";
 import { allowedViews, legacyPath, pathFor, tabBySlug, viewBySlug, type ViewDef } from "./nav";
-import { Classic } from "./Classic";
 import ParcelDrawer from "@/features/parcels/ParcelDrawer";
 
 // Today is the first page: part of the main code (no lazy load), so it shows at once.
@@ -150,6 +149,6 @@ function View({ view, tab }: { view: ViewDef; tab: string }) {
     case "Settings":
       return <Settings />;
     default:
-      return <Classic view={view} tab={tab} page={view.id} />;
+      return <Navigate to="/today" replace />;
   }
 }

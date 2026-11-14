@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.54.0 — 2026-11-14
+- The old (classic) Courier Operations, merchant and super admin panels are removed.
+- The "Classic console" / "Classic panel" links are gone from the menus.
+- The old addresses are gone: the panels are /ops (Courier Operations), /merchant (merchants) and /admin (super admin). Sign-in, notifications and e-mails open them directly.
+- Operations app 1.6.1: works with the new address (install it again from /apps; older versions can no longer sign in).
+
 ## 1.53.0 — 2026-11-14
 - Courier Operations › Scan desk: an unused pre-printed CN label scanned on Receive entry or Receive & assign rider becomes its parcel at once and is received at the hub (and given to the rider); after that it works like any parcel. No separate step first.
 - Scan desk › CN_Merchant: choose the hub and the merchant, then scan CN labels; each becomes (or is given to) that merchant's parcel.

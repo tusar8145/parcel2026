@@ -30,7 +30,7 @@ test("super admin changes the company; the website shows its name, contact, tab 
   const login = await (await page.request.post(apiUrl("/api/v1/auth/login"), { headers: WEB, data: { identifier: ADMIN.phone, password: ADMIN.password } })).json();
   const setup = await (await page.request.post(apiUrl("/api/v1/auth/mfa/setup"), { headers: WEB, data: { mfaToken: login.mfaToken } })).json();
   await page.request.post(apiUrl("/api/v1/auth/mfa/enable"), { headers: WEB, data: { mfaToken: login.mfaToken, code: authenticator.generate(setup.secret) } });
-  await page.goto("/super-admin");
+  await page.goto("/admin");
   await page.waitForSelector("html.legacy-ready", { state: "attached" });
   await page.click('#navigation [data-page="Website settings"]');
   await expect(page.locator("#brName")).toBeVisible({ timeout: 20_000 });

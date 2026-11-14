@@ -133,7 +133,7 @@ export class InboxService implements OnModuleDestroy {
       }),
     ]);
     if (!merchant || !members.length) return 0;
-    const panel: Panel = merchant.type === "BANKING_FINANCIAL" ? "/banking-merchant" : "/ecommerce-merchant";
+    const panel: Panel = "/merchant";
     return this.add(
       db,
       members.map(m => m.userId),
@@ -145,7 +145,7 @@ export class InboxService implements OnModuleDestroy {
   merchantCopy(event: NotificationEvent, vars: Record<string, string | number | null | undefined>): (InboxItem & { event: NotificationEvent }) | null {
     const build = IN_APP[event];
     if (!build) return null;
-    const copy = build(vars, "/ecommerce-merchant");
+    const copy = build(vars, "/merchant");
     return { event, type: event, title: copy.title, body: copy.body, target: copy.target ?? {} };
   }
 

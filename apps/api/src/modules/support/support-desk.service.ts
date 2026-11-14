@@ -245,7 +245,7 @@ export class SupportDeskService implements OnApplicationBootstrap {
           event: "support.sla_escalation",
           to: { userId },
           pkg,
-          vars: { ticketNumber: t.number, subject: t.subject, breach, priority: PRIORITY_LABEL[t.priority], link: `${env().APP_URL}/courier-operation` },
+          vars: { ticketNumber: t.number, subject: t.subject, breach, priority: PRIORITY_LABEL[t.priority], link: `${env().APP_URL}/ops` },
         })),
       );
     }

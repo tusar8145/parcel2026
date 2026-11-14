@@ -76,7 +76,7 @@ export { expect };
 // ───────────── Courier Operations navigation ─────────────
 
 /**
- * Where each Courier Operations area lives in the menu: [view, tab?] (public/legacy/courier-operation/
+ * Where each Courier Operations area lives in the menu: [view, tab?] (apps/ops/src/app/nav.ts; formerly public/legacy/courier-operation/
  * bridge-nav.js). Specs navigate by these keys, so a rename in the menu is a one-line change here.
  */
 export const OPS_NAV = {

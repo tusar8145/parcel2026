@@ -17,7 +17,7 @@ import { confirm } from "@panel/ui/dialogs";
 import { Select } from "@panel/ui/Select";
 import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
 import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, VIEWS, type ViewDef } from "./nav";
-import { chooseClassic, internalLink } from "./links";
+import { internalLink } from "./links";
 import { PhoneScannerButton } from "@/features/scan/PhoneScanner";
 import { openShareFiles } from "@/features/account/ShareFiles";
 import GlobalSearch from "@/features/parcels/GlobalSearch";
@@ -192,21 +192,17 @@ function Sidebar() {
               </span>
             ) : null}
           </NavLink>
-          <a className="nav-item" href="/courier-operation?classic=1" title="The previous Operations console (same data)" onClick={chooseClassic}>
-            <Icon name="external" />
-            <span>Classic console</span>
-          </a>
         </div>
         </div>
         {/* At the end of the menu (they scroll with it), like the super admin panel's "Open operations console". */}
         <div className="nav-extras">
           {hasRole("SUPER_ADMIN") ? (
-            <a className="foot-link" href="/super-admin" title="Back to the super admin panel">
+            <a className="foot-link" href="/admin" title="Back to the super admin panel">
               <Icon name="lock" />
               <span>Open admin console ↗</span>
             </a>
           ) : null}
-          {/* Same as the classic console's "Get the apps" card: /apps lists the Merchant, Rider and Operations APKs. */}
+          {/* "Get the apps": /apps lists the Merchant, Rider and Operations APKs. */}
           <a className="app-card" href="/apps" target="_blank" rel="noopener" title="Download the Android apps">
             <span className="app-card-icon" aria-hidden="true">
               <Icon name="phoneScan" size={18} />

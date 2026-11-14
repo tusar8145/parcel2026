@@ -44,12 +44,12 @@ describe("log in as (operations managers and super admins)", () => {
     // The member choice for the merchant: owner first, both can be opened.
     const targets = await ctx.api("GET", `/admin/impersonations/targets?merchantId=${merchant.id}`, { token: ops.token });
     expect(targets.status, JSON.stringify(targets.body)).toBe(200);
-    expect(targets.body).toMatchObject({ fullAccess: false, items: [{ userId: owner.user.id, role: "MERCHANT_OWNER", roleLabel: "Owner", panel: "/ecommerce-merchant", allowed: true }, { userId: staff.user.id, allowed: true }] });
+    expect(targets.body).toMatchObject({ fullAccess: false, items: [{ userId: owner.user.id, role: "MERCHANT_OWNER", roleLabel: "Owner", panel: "/merchant", allowed: true }, { userId: staff.user.id, allowed: true }] });
 
     // Read-only is the only option; the notice can't be turned off.
     const started = await start(ops.token, { merchantId: merchant.id, minutes: 15, notifyUser: false });
     expect(started.status, JSON.stringify(started.body)).toBe(201);
-    expect(started.body).toMatchObject({ expiresIn: 900, impersonation: { readOnly: true, notifiedUser: true, target: { id: owner.user.id, name: "Shop Owner" }, admin: { id: ops.user.id } }, user: { name: "Shop Owner", panel: "/ecommerce-merchant" } });
+    expect(started.body).toMatchObject({ expiresIn: 900, impersonation: { readOnly: true, notifiedUser: true, target: { id: owner.user.id, name: "Shop Owner" }, admin: { id: ops.user.id } }, user: { name: "Shop Owner", panel: "/merchant" } });
     const imp = started.body.accessToken as string;
     const me = await ctx.api("GET", "/auth/me", { token: imp });
     expect(me.body).toMatchObject({ name: "Shop Owner", impersonation: { adminName: "Olivia Ops", readOnly: true } });

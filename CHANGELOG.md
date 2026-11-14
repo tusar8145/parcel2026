@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.55.0 — 2026-11-14
+- Scan desk › Receive from rider (new tab): at the end of the day choose the rider; the list shows the failed deliveries they still hold, with the reason and their choice (try again / return to sender). Scan each one to receive it at the hub, to deliver again or to send back. A parcel of another rider is refused.
+- Rider app 1.7.1: a failed delivery with "Return to sender" shows as "Return to sender" (not "Retry scheduled"), with the reason and "Hand it in at the hub".
+- Operations app 1.7.0: Receive from rider asks for the rider and counts down what they still hold.
+
 ## 1.54.0 — 2026-11-14
 - The old (classic) Courier Operations, merchant and super admin panels are removed.
 - The "Classic console" / "Classic panel" links are gone from the menus.

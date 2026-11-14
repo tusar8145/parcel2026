@@ -74,7 +74,7 @@ export const VIEWS: ViewDef[] = [
     icon: "scan",
     group: "queue",
     subtitle: "Quick updates by scanning, one tab per job: receive, pickups, transfers, deliveries, failed deliveries and returns.",
-    tabs: tabs("Receive entry", "Receive & assign rider", "Pickup entry", "Transfer out", "Collect from hub", "Out for delivery entry", "Delivery entry", "Failed delivery entry", "Return rider assign", "Return entry", "CN_Merchant"),
+    tabs: tabs("Receive entry", "Receive & assign rider", "Pickup entry", "Transfer out", "Collect from hub", "Out for delivery entry", "Delivery entry", "Failed delivery entry", "Receive from rider", "Return rider assign", "Return entry", "CN_Merchant"),
   },
   { id: "Pickup", label: "Pickup", icon: "clock", group: "journey", step: "2", stage: "pickup", subtitle: "Assign pickup riders to accepted orders and follow merchants' scheduled pickups.", tabs: tabs("Assign pickup rider", "Scheduled pickups") },
   { id: "Hub desk", label: "Hub desk", icon: "pin", group: "journey", step: "3", stage: "hubDesk", subtitle: "Parcels at your hub with their next step, and the day's reconciliation. Scanning work is on Scan desk.", tabs: tabs("At my hub", "End of day") },

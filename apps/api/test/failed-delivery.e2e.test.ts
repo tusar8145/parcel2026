@@ -103,6 +103,37 @@ describe("failed deliveries: views, filters, counts and return to sender", () =>
     expect(await fail(s, back, "RETURN_TO_HUB", "Incorrect address")).toMatchObject({ failedAttempts: 2, returnedAfterFailure: true, lastFailedAttempt: { reason: "Incorrect address" } });
   });
 
+  it("receive from rider: lists what the rider holds, follows the rider's choice and refuses another rider's parcel", async () => {
+    const s = await setup();
+    const again = await withRider(s);
+    const back = await withRider(s);
+    const fail2 = (id: string, nextAction: "RETRY" | "RETURN", reason: string) => ctx.api("POST", `/rider/parcels/${id}/delivery`, { token: s.rider.token, body: { outcome: "FAILED", reason, nextAction } });
+    expect((await fail2(again, "RETRY", "Recipient unavailable")).body.status).toBe("RETRY_SCHEDULED");
+    expect((await fail2(back, "RETURN", "Recipient refused")).body.status).toBe("RETRY_SCHEDULED");
+
+    // The rider app shows each one's reason and choice.
+    const tasks = (await ctx.api("GET", "/rider/tasks", { token: s.rider.token })).body.deliveries as { trackingId: string; lastFailed: unknown }[];
+    expect(tasks.find(p => p.trackingId === back)?.lastFailed).toEqual({ reason: "Recipient refused", nextAction: "RETURN" });
+    expect(tasks.find(p => p.trackingId === again)?.lastFailed).toEqual({ reason: "Recipient unavailable", nextAction: "RETRY" });
+
+    const list = await ctx.api("GET", `/hub-desk/with-rider?riderId=${s.rider.rider.id}`, { token: s.ops.token });
+    expect(list.status, JSON.stringify(list.body)).toBe(200);
+    expect(list.body.items.map((i: { trackingId: string; riderChose: string }) => [i.trackingId, i.riderChose]).sort()).toEqual([[again, "RETRY"], [back, "RETURN"]].sort());
+
+    // Another rider's parcel is refused when receiving from this one.
+    const other = await riderUser(ctx, "R-7002", s.gulshan.id);
+    const wrong = await ctx.api("POST", "/hub-desk/receive-back", { token: s.ops.token, body: { code: back, hubId: s.gulshan.id, riderId: other.rider.id, decision: "RIDER", source: "KEYBOARD" } });
+    expect(wrong.body).toMatchObject({ ok: false, outcome: "OTHER_RIDER" });
+
+    for (const id of [again, back]) {
+      const r = await ctx.api("POST", "/hub-desk/receive-back", { token: s.ops.token, body: { code: id, hubId: s.gulshan.id, riderId: s.rider.rider.id, decision: "RIDER", source: "KEYBOARD" } });
+      expect(r.body, JSON.stringify(r.body)).toMatchObject({ ok: true, outcome: "RECEIVED" });
+    }
+    expect((await ctx.api("GET", `/parcels/${back}`, { token: s.ops.token })).body).toMatchObject({ status: "AT_HUB", returnInfo: { reason: "Recipient refused" } });
+    expect((await ctx.api("GET", `/parcels/${again}`, { token: s.ops.token })).body).toMatchObject({ status: "AT_HUB" });
+    expect((await ctx.api("GET", `/hub-desk/with-rider?riderId=${s.rider.rider.id}`, { token: s.ops.token })).body.items).toEqual([]);
+  });
+
   it("shows merchants their own parcels' failures without staff details", async () => {
     const s = await setup();
     const own = await withRider(s);

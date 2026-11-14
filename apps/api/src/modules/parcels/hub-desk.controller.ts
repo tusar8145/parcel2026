@@ -1,11 +1,11 @@
 import type { z } from "zod";
-import { Controller, HttpCode, Post } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post } from "@nestjs/common";
 import { ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import { CurrentActor, ReqMeta, RequirePermissions, type RequestMeta } from "../../common/auth/decorators";
 import type { Actor } from "../../common/auth/actor";
-import { ApiZodBody, ZBody } from "../../common/zod";
-import { HubDeskService, deskDeliverySchema, deskDispatchSchema, deskFailedSchema, deskPickupSchema, deskReceiveBackSchema, deskReturnSchema, deskTransferSchema } from "./hub-desk.service";
+import { ApiZodBody, ApiZodQuery, ZBody, ZQuery } from "../../common/zod";
+import { HubDeskService, deskDeliverySchema, deskDispatchSchema, deskFailedSchema, deskPickupSchema, deskReceiveBackSchema, deskReturnSchema, deskTransferSchema, deskWithRiderQuerySchema } from "./hub-desk.service";
 
 /** Hub desk scans (Courier Operations → Hub desk): delivered entry from signed slips, and out for delivery. */
 @ApiTags("hub desk")
@@ -66,6 +66,15 @@ export class HubDeskController {
   @ApiOkResponse({ description: "{ ok, outcome: RECEIVED | ALREADY_RECEIVED | RECORD_FAILED_FIRST | NOT_WITH_RIDER | HUB_REQUIRED | NOT_FOUND | REFUSED, message, code }" })
   receiveBack(@CurrentActor() actor: Actor, @ZBody(deskReceiveBackSchema) body: z.infer<typeof deskReceiveBackSchema>, @ReqMeta() meta: RequestMeta) {
     return this.desk.receiveBack(actor, body, meta);
+  }
+
+  /** Receive from rider: the failed deliveries and unfinished returns a rider still has to hand in. */
+  @RequirePermissions("parcel:dispatch")
+  @Get("with-rider")
+  @ApiZodQuery(deskWithRiderQuerySchema)
+  @ApiOkResponse({ description: "{ rider, items: [{ trackingId, kind: FAILED | RETURN_RUN, recipient, destination, merchant, codAmount, reason, riderChose: RETRY | RETURN | null, failedAt, returnRun }] }" })
+  withRider(@CurrentActor() actor: Actor, @ZQuery(deskWithRiderQuerySchema) query: z.infer<typeof deskWithRiderQuerySchema>) {
+    return this.desk.withRider(actor, query.riderId);
   }
 
   /** A parcel at this hub sent to another hub (in transit); default destination: the hub serving its delivery zone. */

@@ -122,8 +122,9 @@ const TABS: Record<Part, TabCfg> = {
     hint: "Received by and the note stay set for the next scans (one shop usually takes the whole run). A parcel the sender didn't take is received back on Receive entry.",
   },
 };
-const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant"> = {
+const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant" | "fromrider"> = {
   CN_Merchant: "cnmerchant",
+  "Receive from rider": "fromrider",
   "Receive entry": "receive",
   "Pickup entry": "pickup",
   "Receive & assign rider": "assign",
@@ -167,7 +168,7 @@ export default function ScanDesk({ tab }: { tab: string }) {
       <p className="faint" style={{ margin: "-6px 0 12px", fontSize: 12 }}>
         Keyboard: <kbd>/</kbd> find a parcel · <kbd>F2</kbd> scan box · <kbd>Esc</kbd> close the dialog or drawer
       </p>
-      {part === "receive" ? <ReceiveDesk /> : part === "collect" ? <CollectCounter /> : part === "cnmerchant" ? <CnMerchantDesk /> : <HubDeskTab key={part} part={part} />}
+      {part === "receive" ? <ReceiveDesk /> : part === "fromrider" ? <ReceiveFromRider /> : part === "collect" ? <CollectCounter /> : part === "cnmerchant" ? <CnMerchantDesk /> : <HubDeskTab key={part} part={part} />}
     </>
   );
 }
@@ -503,6 +504,171 @@ export function shrink(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
+}
+
+// ───────────── Receive from rider ─────────────
+
+interface WithRider {
+  trackingId: string;
+  kind: "FAILED" | "RETURN_RUN";
+  recipient: string | null;
+  destination: string;
+  merchant: string | null;
+  codAmount: number;
+  reason: string | null;
+  riderChose: "RETRY" | "RETURN" | null;
+  returnRun: string | null;
+}
+const back = { hubId: "", riderId: "", decision: "RIDER", log: [] as LogEntry[], received: 0, queue: Promise.resolve() as Promise<unknown> };
+
+/**
+ * End of the day: a rider hands in the parcels they couldn't deliver (and returns the sender didn't take). Choose the
+ * rider: the list shows what they still hold, with their reason and choice; each scan receives one at the hub (deliver
+ * again, or back to the sender) and ticks it off.
+ */
+function ReceiveFromRider() {
+  const ops = useOps();
+  const own = useOwnHub();
+  const box = useRef<ScanInputHandle>(null);
+  const [, force] = useState(0);
+  const redraw = () => force(n => n + 1);
+  const hubs = ops.myHubs || ops.hubs.filter(h => h.active !== false);
+  const riders = ops.riders.filter(r => r.active !== false);
+  const hubId = own?.id || back.hubId;
+  const list = useQuery({
+    queryKey: ["hub-desk", "with-rider", back.riderId],
+    queryFn: () => api<{ items: WithRider[] }>(`/hub-desk/with-rider?riderId=${encodeURIComponent(back.riderId)}`),
+    enabled: !!back.riderId,
+  });
+  useLive(["parcel.updated"], () => back.riderId && void list.refetch(), { debounceMs: 1500 });
+  const items = list.data?.items || [];
+  const toReturn = items.filter(i => i.riderChose === "RETURN").length;
+
+  function add(entry: LogEntry) {
+    back.log = [entry, ...back.log].slice(0, 100);
+    redraw();
+  }
+
+  function scan(code: string, source: ScanSource) {
+    if (!ops.require("dispatch", "receive parcels")) return;
+    if (!back.riderId) {
+      box.current?.feedback(false, "Choose the rider first, then scan.");
+      return add({ tone: "bad", message: "Choose the rider first, then scan.", at: new Date() });
+    }
+    if (!hubId) {
+      box.current?.feedback(false, "Choose the hub you are receiving at.");
+      return add({ tone: "bad", message: "Choose the hub you are receiving at.", at: new Date() });
+    }
+    const body = { code, hubId, riderId: back.riderId, decision: back.decision, source };
+    back.queue = back.queue.then(async () => {
+      let r: { ok: boolean; outcome?: string; message: string };
+      try {
+        r = await api("/hub-desk/receive-back", { method: "POST", body });
+      } catch (error) {
+        r = { ok: false, message: describe(error) };
+      }
+      box.current?.feedback(r.ok, r.message);
+      if (r.ok && r.outcome === "RECEIVED") back.received++;
+      add({ tone: !r.ok ? "bad" : r.outcome === "RECEIVED" ? "" : "info", message: r.message, at: new Date() });
+      void list.refetch();
+    });
+  }
+
+  return (
+    <div className="grid-2" style={{ alignItems: "start" }}>
+      <Panel
+        title={`Receive from rider${own ? ` · ${own.name}` : ""}`}
+        subtitle="End of the day: the rider hands in what they couldn't deliver. Choose the rider, then scan each parcel. It's received at the hub, to deliver again or to go back to the sender. The rider doesn't need to scan."
+        tools={<span className="pill good">{`${back.received} received`}</span>}
+      >
+        <div className="panel-body stack">
+          {!own ? (
+            <label className="field">
+              <span>Hub you're working at</span>
+              <Select className="select" value={back.hubId} onChange={e => ((back.hubId = e.target.value), redraw())}>
+                <option value="">— Choose the hub —</option>
+                {hubs.map(h => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
+          <label className="field">
+            <span>Rider</span>
+            <Select className="select" value={back.riderId} onChange={e => ((back.riderId = e.target.value), redraw())}>
+              <option value="">— Choose the rider —</option>
+              {riders.map(r => (
+                <option key={r.id} value={r.id}>
+                  {`${r.label || `${r.code} · ${r.name}`}${r.hub?.name ? ` · ${r.hub.name}` : ""}`}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span>What next</span>
+            <Select className="select" value={back.decision} onChange={e => ((back.decision = e.target.value), redraw())}>
+              <option value="RIDER">As the rider chose (deliver again / return to sender)</option>
+              <option value="REATTEMPT">Deliver again (all scanned parcels)</option>
+              <option value="RETURN">Return to the sender (all scanned parcels)</option>
+            </Select>
+          </label>
+          <ScanInput ref={box} id="rrCode" label="Tracking ID / CN" placeholder="Scan or type, then Enter" cameraTitle="Receive parcels from the rider" onScan={scan} />
+          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+            Deliver again: the parcel is at the hub, ready to give to a rider tomorrow (Receive & assign rider). Return to the sender: it's on the returns list (Return rider assign).
+          </p>
+          <LogList entries={back.log} />
+        </div>
+      </Panel>
+      <Panel
+        title="Still with the rider"
+        subtitle={back.riderId ? "Failed deliveries and returns this rider hasn't handed in yet. Each one leaves the list when it's scanned." : "Choose a rider to see what they have to hand in."}
+        tools={back.riderId ? <span className="pill warn">{`${items.length} to hand in${toReturn ? ` · ${toReturn} return` : ""}`}</span> : null}
+      >
+        <div className="panel-body">
+          {!back.riderId ? (
+            <Empty title="No rider chosen">The rider's failed deliveries appear here.</Empty>
+          ) : list.isLoading ? (
+            <p className="muted">Loading…</p>
+          ) : list.error ? (
+            <p className="muted">{describe(list.error)}</p>
+          ) : !items.length ? (
+            <Empty title="Nothing to hand in">This rider holds no failed delivery or unfinished return.</Empty>
+          ) : (
+            <div className="table-wrap" style={{ maxHeight: 520 }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Parcel</th>
+                    <th>Recipient</th>
+                    <th>Reason</th>
+                    <th>Rider chose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(i => (
+                    <tr key={i.trackingId}>
+                      <td className="tracking">
+                        {i.trackingId}
+                        <span className="sub">{i.merchant || ""}</span>
+                      </td>
+                      <td>
+                        {i.recipient || "—"}
+                        <span className="sub">{i.destination}</span>
+                      </td>
+                      <td>{i.kind === "RETURN_RUN" ? `Return run ${i.returnRun} not completed` : i.reason || "—"}</td>
+                      <td>{i.kind === "RETURN_RUN" ? <Pill tone="neutral">Return</Pill> : i.riderChose === "RETURN" ? <Pill tone="bad">Return to sender</Pill> : <Pill tone="warn">Try again</Pill>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Panel>
+    </div>
+  );
 }
 
 // ───────────── Receive entry ─────────────

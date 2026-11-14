@@ -84,8 +84,13 @@ export const deskReceiveBackSchema = z.object({
    * deliver again, RETURN = goes back to the sender (on the returns list). Default RIDER.
    */
   decision: z.enum(["RIDER", "REATTEMPT", "RETURN"]).default("RIDER"),
+  /** Receiving from this rider: a parcel with another rider is refused. */
+  riderId: z.uuid().optional(),
   source: scanSourceSchema,
 });
+
+/** Hub desk → Receive from rider: what the rider has to hand in. */
+export const deskWithRiderQuerySchema = z.object({ riderId: z.uuid() });
 
 const DELIVERABLE: ParcelStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED"];
 const AWAITING_PICKUP: ParcelStatus[] = ["PICKUP_ASSIGNED", "PICKUP_CONFIRMED"];
@@ -357,6 +362,52 @@ export class HubDeskService {
     }
   }
 
+  /**
+   * Receive from rider: what the rider still holds and must hand in at the hub: failed deliveries (with the rider's
+   * reason and choice: try again / return to sender) and parcels of a return run out with them.
+   */
+  async withRider(actor: Actor, riderId: string) {
+    const rider = await this.prisma.rider.findUnique({ where: { id: riderId }, select: { id: true, code: true, hubId: true, user: { select: { name: true } } } });
+    if (!rider) throw new AppError("RIDER_NOT_FOUND", "Rider not found", 404);
+    const scope = opsHubScope(actor);
+    if (scope && !(rider.hubId && scope.includes(rider.hubId))) throw new AppError("OTHER_HUB", "This rider belongs to another hub.", 403);
+    const parcels = await this.prisma.parcel.findMany({
+      where: { OR: [{ deliveryRiderId: riderId, status: "RETRY_SCHEDULED" }, { status: "RETURN_SCHEDULED", returnRun: { riderId, status: "OUT_FOR_RETURN" } }] },
+      select: {
+        trackingId: true,
+        status: true,
+        recipientName: true,
+        deliveryArea: true,
+        deliveryZone: true,
+        codAmount: true,
+        merchant: { select: { name: true } },
+        returnRun: { select: { number: true } },
+        attempts: { where: { outcome: "FAILED" }, orderBy: { createdAt: "desc" }, take: 1, select: { reason: true, nextAction: true, createdAt: true } },
+      },
+      orderBy: { statusChangedAt: "asc" },
+      take: 500,
+    });
+    return {
+      rider: { id: rider.id, code: rider.code, name: rider.user.name },
+      items: parcels.map(p => {
+        const last = p.attempts[0];
+        return {
+          trackingId: p.trackingId,
+          kind: p.status === "RETRY_SCHEDULED" ? "FAILED" : "RETURN_RUN",
+          recipient: p.recipientName,
+          destination: [p.deliveryArea, p.deliveryZone].filter(Boolean).join(", "),
+          merchant: p.merchant?.name ?? null,
+          codAmount: Number(p.codAmount),
+          reason: last?.reason ?? null,
+          /** The rider's choice: RETRY (deliver again) or RETURN (back to the sender). */
+          riderChose: p.status === "RETRY_SCHEDULED" ? (last?.nextAction === "RETURN" ? "RETURN" : "RETRY") : null,
+          failedAt: last?.createdAt ?? null,
+          returnRun: p.returnRun?.number ?? null,
+        };
+      }),
+    };
+  }
+
   /** Parcels a rider brings back: after a failed delivery (re-attempt scheduled, or never taken out) or an unfinished return. */
   async receiveBack(actor: Actor, input: z.infer<typeof deskReceiveBackSchema>, meta: RequestMeta) {
     const { parcel, problem } = await this.find(actor, input.code, { anyHub: true });
@@ -370,6 +421,13 @@ export class HubDeskService {
       const unreturned = parcel.status === "RETURN_SCHEDULED" && run?.status === "OUT_FOR_RETURN";
       if (!failed && !unreturned)
         return { ok: false, outcome: "NOT_WITH_RIDER", message: `${parcel.trackingId} is ${parcelStatusLabel(parcel.status as ParcelStatus).toLowerCase()}; it isn't coming back from a rider.`, code: parcel.trackingId };
+      if (input.riderId) {
+        const holder = failed ? parcel.deliveryRiderId : (await this.prisma.returnRun.findUnique({ where: { id: parcel.returnRunId! }, select: { riderId: true } }))?.riderId;
+        if (holder && holder !== input.riderId) {
+          const who = failed && parcel.deliveryRider ? `${parcel.deliveryRider.user.name} (${parcel.deliveryRider.code})` : "another rider";
+          return { ok: false, outcome: "OTHER_RIDER", message: `${parcel.trackingId} is with ${who}, not this rider.`, code: parcel.trackingId };
+        }
+      }
       const { hub, problem: hubProblem } = await this.hubFor(actor, input.hubId, [parcel.currentHubId, parcel.deliveryRider?.hubId]);
       if (!hub) return { ok: false, outcome: "HUB_REQUIRED", message: `${parcel.trackingId}: ${hubProblem}`, code: parcel.trackingId };
       // The rider's last failed attempt: their choice (RETRY / RETURN) and reason; the hub may follow or change it.

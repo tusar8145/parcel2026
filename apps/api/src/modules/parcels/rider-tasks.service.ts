@@ -103,6 +103,12 @@ export class RiderTasksService {
       this.prisma.rider.findUnique({ where: { id: riderId }, select: { hubId: true } }),
     ]);
     const direct = await directDeliveryAllowed(this.prisma, pickups, rider?.hubId ?? null);
+    // Failed deliveries: the rider's last reason and choice (try again / return to sender), shown on the card.
+    const retry = deliveries.filter(p => p.status === "RETRY_SCHEDULED").map(p => p.id);
+    const lastFailed = new Map<string, { reason: string | null; nextAction: string }>();
+    if (retry.length)
+      for (const a of await this.prisma.deliveryAttempt.findMany({ where: { parcelId: { in: retry }, outcome: "FAILED" }, orderBy: { createdAt: "asc" }, select: { parcelId: true, reason: true, nextAction: true } }))
+        lastFailed.set(a.parcelId, { reason: a.reason, nextAction: a.nextAction === "RETURN" ? "RETURN" : "RETRY" });
     const stop = (p: ParcelWithRelations) => ({
       key: pickupStopKey(p),
       name: p.merchant?.name ?? p.senderName,
@@ -112,7 +118,8 @@ export class RiderTasksService {
       // canDeliverDirect: "Collect & deliver now" is offered (the same hub picks it up and delivers it).
       pickups: pickups.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p), canDeliverDirect: direct.get(p.id) ?? false })),
       // deliveryCodeSent: the recipient holds a valid code (sent when the delivery started), so OTP proof works.
-      deliveries: deliveries.map(p => ({ ...parcelView(p, { internal: false }), deliveryCodeSent: Boolean(p.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(p) })),
+      // lastFailed: { reason, nextAction: RETRY | RETURN } for a failed delivery (RETURN: hand it in at the hub).
+      deliveries: deliveries.map(p => ({ ...parcelView(p, { internal: false }), deliveryCodeSent: Boolean(p.deliveryOtpEncrypted), devDeliveryCode: this.workflow.devDeliveryCode(p), lastFailed: lastFailed.get(p.id) ?? null })),
       carrying: carrying.map(p => ({ ...parcelView(p, { internal: false }), pickupStop: stop(p), handover: currentHandover(p.events) })),
     };
   }

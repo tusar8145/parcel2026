@@ -91,14 +91,38 @@ class ScanPage extends StatelessWidget {
   /// A rider brings parcels back (failed deliveries, unfinished returns): no scan by the rider needed.
   Future<void> _receiveBack(BuildContext context) async {
     if (!await _needHub(context) || !context.mounted) return;
+    final rider = await pickRider(context, title: 'Which rider is handing in?');
+    if (rider == null || !context.mounted) return;
     final decision = await pickFromList(context, title: 'Failed deliveries: what next?', items: backDecisions.keys.toList(), selected: 'RIDER', labelOf: (k) => backDecisions[k]!);
     if (decision == null || !context.mounted) return;
-    await _session(
+    // What the rider still holds (failed deliveries, unfinished returns): counted down as they are scanned.
+    Future<String> left() async {
+      try {
+        final items = ((await Api.get('/hub-desk/with-rider?riderId=${Uri.encodeComponent(rider)}')) as Map)['items'] as List? ?? [];
+        final ret = items.where((i) => (i as Map)['riderChose'] == 'RETURN').length;
+        return items.isEmpty ? 'Nothing left with the rider.' : '${items.length} still with the rider${ret > 0 ? ' ($ret to return)' : ''}';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    final start = await left();
+    if (!context.mounted) return;
+    final status = ValueNotifier(start);
+    var n = 0;
+    await scanBarcode(
       context,
       title: 'Receive from rider',
       hint: 'Scan each parcel the rider brings back: ${backDecisions[decision]!.toLowerCase()}.',
-      action: (code, source) => deskScan('/ops/hub-receive', {'code': code, 'hubId': Ops.hubId, 'decision': decision, 'source': source}),
+      continuous: true,
+      status: status,
+      onCode: (code, source) async {
+        final r = await deskScan('/hub-desk/receive-back', {'code': code, 'hubId': Ops.hubId, 'riderId': rider, 'decision': decision, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'});
+        if (r.ok) status.value = '${++n} received · ${await left()}';
+        return r;
+      },
     );
+    opsChanged.value++;
   }
 
   Future<void> _dispatch(BuildContext context) async {

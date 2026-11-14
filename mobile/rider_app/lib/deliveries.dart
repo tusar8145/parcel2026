@@ -26,6 +26,16 @@ Future<void> loadFailureReasons() async {
 /// stays with the rider until the hub scans it in (the hub may change the choice).
 String nextActionLabel(String next) => next == 'RETRY' ? 'try again' : 'return to sender';
 
+/// After a failed attempt: 'RETRY' or 'RETURN' (what the rider chose, also when it's saved and not sent yet); null otherwise.
+String? failedChoice(Map<String, dynamic> p) {
+  if (localStatus(p) != 'RETRY_SCHEDULED') return null;
+  final o = Outbox.of('${p['trackingId']}');
+  if (o != null && o.error == null && o.kind == 'failed') return o.body['nextAction'] == 'RETURN' ? 'RETURN' : 'RETRY';
+  final last = p['lastFailed'];
+  if (last is Map) return last['nextAction'] == 'RETURN' ? 'RETURN' : 'RETRY';
+  return 'RETRY';
+}
+
 /// The parcel's status as the rider sees it, with what's saved in the outbox and not sent yet.
 String localStatus(Map<String, dynamic> p) {
   final o = Outbox.of('${p['trackingId']}');
@@ -149,6 +159,8 @@ class _DeliveryCard extends StatelessWidget {
     final d = (p['delivery'] as Map?) ?? {};
     final status = localStatus(p);
     final saved = Outbox.of('${p['trackingId']}');
+    final choice = failedChoice(p);
+    final reason = (p['lastFailed'] is Map ? p['lastFailed']['reason'] : null) ?? (saved?.kind == 'failed' ? saved?.body['reason'] : null);
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -182,9 +194,20 @@ class _DeliveryCard extends StatelessWidget {
                       padding: EdgeInsets.only(right: 6),
                       child: StatusChip('PENDING', label: 'On-demand'),
                     ),
-                  StatusChip(status, label: status == '${p['status']}' ? '${p['statusLabel'] ?? humanize(status)}' : humanize(status)),
+                  if (choice == 'RETURN')
+                    StatusChip('RETURN_SCHEDULED', label: 'Return to sender')
+                  else
+                    StatusChip(status, label: status == '${p['status']}' ? '${p['statusLabel'] ?? humanize(status)}' : humanize(status)),
                 ],
               ),
+              if (choice != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${reason != null ? 'Not delivered: $reason. ' : ''}${choice == 'RETURN' ? 'Hand it in at the hub; it goes back to the sender.' : 'Hand it in at the hub at the end of the day, or try again.'}',
+                    style: const TextStyle(color: warn, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
               const SizedBox(height: 6),
               Text('${r['name'] ?? ''} · ${phoneText(r['phone'])}', style: const TextStyle(fontWeight: FontWeight.w600)),
               Text(

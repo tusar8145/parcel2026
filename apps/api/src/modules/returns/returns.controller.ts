@@ -16,6 +16,9 @@ import {
   returnRequestSchema,
   deskReturnAssignSchema,
   deskReturnRunsQuerySchema,
+  deskReturnIssueSchema,
+  deskReturnTransferSchema,
+  deskReturnsSummaryQuerySchema,
 } from "./returns.service";
 
 @ApiTags("returns")
@@ -119,6 +122,32 @@ export class ReturnsController {
   @ApiZodBody(deskReturnAssignSchema)
   deskAssign(@CurrentActor() actor: Actor, @ZBody(deskReturnAssignSchema) body: z.infer<typeof deskReturnAssignSchema>, @ReqMeta() meta: RequestMeta) {
     return this.returns.deskAssign(actor, body, meta);
+  }
+
+  /** Scan desk → Return issue: the parcel goes back to its sender (a rider takes it from here, or it goes to the central hub). */
+  @RequirePermissions("parcel:dispatch")
+  @Post("hub-desk/return-issue")
+  @HttpCode(200)
+  @ApiZodBody(deskReturnIssueSchema)
+  deskIssue(@CurrentActor() actor: Actor, @ZBody(deskReturnIssueSchema) body: z.infer<typeof deskReturnIssueSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.returns.deskIssue(actor, body, meta);
+  }
+
+  /** Scan desk → Return transfer: a parcel going back to its sender leaves this hub for the central hub. */
+  @RequirePermissions("parcel:dispatch")
+  @Post("hub-desk/return-transfer")
+  @HttpCode(200)
+  @ApiZodBody(deskReturnTransferSchema)
+  deskTransfer(@CurrentActor() actor: Actor, @ZBody(deskReturnTransferSchema) body: z.infer<typeof deskReturnTransferSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.returns.deskTransfer(actor, body, meta);
+  }
+
+  /** The returns at a hub, step by step: held here (to send on, or to put on a run), coming to the central hub, runs. */
+  @RequirePermissions("parcel:dispatch")
+  @Get("hub-desk/returns-summary")
+  @ApiZodQuery(deskReturnsSummaryQuerySchema)
+  deskSummary(@CurrentActor() actor: Actor, @ZQuery(deskReturnsSummaryQuerySchema) query: z.infer<typeof deskReturnsSummaryQuerySchema>) {
+    return this.returns.deskSummary(actor, query);
   }
 
   /** Scan desk: the planned return runs of the hub, to send out (POST /returns/runs/:id/dispatch). */

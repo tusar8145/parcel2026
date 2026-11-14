@@ -20,6 +20,8 @@ import { assertRiderAssignable, opsHubScope } from "../parcels/ops-scope";
 import { recordFranchiseReturn } from "../franchise/franchise-commission";
 import { returnChargeFor } from "./return-charge";
 import { codeVariants } from "../ops/ops-common";
+import { HubDeskService } from "../parcels/hub-desk.service";
+import { centralHubId } from "../money/accounts-config";
 
 /** Standard reasons (free text is also accepted). */
 export const RETURN_REASONS = [
@@ -49,6 +51,29 @@ export const deskReturnAssignSchema = z.object({
   source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("KEYBOARD"),
 });
 export const deskReturnRunsQuerySchema = z.object({ hubId: z.uuid().optional() });
+/**
+ * Scan desk → Return issue: the scanned parcel goes back to its sender. With a rider, it joins that rider's return run
+ * here (the rider takes it straight to the merchant); without one it's on the returns list, and with `toCentral` it is
+ * sent on to the central hub in the same scan (where the return runs are made).
+ */
+export const deskReturnIssueSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  reason: reason,
+  riderId: z.uuid().optional(),
+  toCentral: z.boolean().default(false),
+  hubId: z.uuid().optional(),
+  source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("KEYBOARD"),
+});
+/** Scan desk → Return transfer: a parcel going back to its sender leaves this hub for the central hub. */
+export const deskReturnTransferSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  hubId: z.uuid().optional(),
+  /** For a parcel without a return yet: it's issued with this reason first. */
+  reason: reason.optional(),
+  source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("KEYBOARD"),
+});
+/** The returns at one hub, step by step (Scan desk and the Operations app). */
+export const deskReturnsSummaryQuerySchema = z.object({ hubId: z.uuid().optional() });
 export const returnRequestSchema = z.object({ reason });
 export const listReturnsQuerySchema = pageQuerySchema.extend({
   /** requested: asked for (or scheduled for return), not yet on a run · scheduled: on a run · returned: back with the merchant · received: merchant confirmed. */
@@ -171,6 +196,7 @@ export class ReturnsService {
 
   /** In-app / push notifications (property injection keeps the constructor stable). */
   @Inject(InboxService) private readonly inbox!: InboxService;
+  @Inject(HubDeskService) private readonly desk!: HubDeskService;
 
   /** The rider of a return run hears about it (bell and rider app push). */
   private notifyRunRider(db: Db, riderId: string | null | undefined, number: string, parcels: number) {
@@ -564,6 +590,118 @@ export class ReturnsService {
         const rider = riders.find(x => x.id === r.riderId);
         return { id: r.id, number: r.number, merchant: r.merchant, rider: rider ? `${rider.user.name} (${rider.code})` : null, parcels: r._count.parcels, createdAt: r.createdAt };
       }),
+    };
+  }
+
+  /** The desk's hub: chosen, else the operator's only hub (hub staff only at their own hubs). */
+  private deskHubId(actor: Actor, chosen: string | undefined, fallback?: string | null) {
+    const scope = opsHubScope(actor);
+    if (scope && chosen && !scope.includes(chosen)) throw forbidden("You can only work at your own hub");
+    return chosen ?? (scope?.length === 1 ? scope[0] : (fallback ?? undefined));
+  }
+
+  private problemOf(error: AppError) {
+    const res = error.getResponse() as { message?: string; error?: { message?: string; details?: { problems?: { message: string }[] } }; details?: { problems?: { message: string }[] } };
+    return res.details?.problems?.[0]?.message ?? res.error?.details?.problems?.[0]?.message ?? res.message ?? res.error?.message ?? error.message;
+  }
+
+  /**
+   * Return issue (Scan desk / Operations app): the parcel goes back to its sender. With a rider: on that rider's return
+   * run (Return rider assign; the rider takes it straight to the merchant). Without: the return is requested (on the
+   * returns list); with toCentral and a central hub that isn't this one, it also leaves for the central hub (Return
+   * transfer). Never throws for a parcel problem.
+   */
+  async deskIssue(actor: Actor, input: z.infer<typeof deskReturnIssueSchema>, meta: RequestMeta) {
+    const variants = codeVariants(input.code);
+    const parcel = await this.prisma.parcel.findFirst({ where: { trackingId: { in: variants } }, select: { trackingId: true, merchantId: true, currentHubId: true, status: true, returnRequestedAt: true } });
+    if (!parcel) return { ok: false, outcome: "NOT_FOUND", message: `No parcel found for ${variants[0]}.`, code: variants[0] };
+    const id = parcel.trackingId;
+    if (!parcel.merchantId) return { ok: false, outcome: "NOT_MERCHANT", message: `${id} isn't a merchant parcel; returns go to merchants.`, code: id };
+    if (parcel.status === "RETURNED") return { ok: true, outcome: "ALREADY_RETURNED", message: `${id} is already returned to the sender.`, code: id };
+    const scope = opsHubScope(actor);
+    if (scope && !(parcel.currentHubId && scope.includes(parcel.currentHubId))) return { ok: false, outcome: "OTHER_HUB", message: `${id} isn't at your hub.`, code: id };
+    if (input.riderId) return this.deskAssign(actor, { code: id, riderId: input.riderId, hubId: input.hubId, reason: input.reason, source: input.source }, meta);
+    if (parcel.status === "RETURN_SCHEDULED") return { ok: true, outcome: "ALREADY_ON_RETURN", message: `${id} is already going back to the sender.`, code: id };
+    let issued = false;
+    if (!parcel.returnRequestedAt) {
+      try {
+        await this.request(actor, id, { reason: input.reason }, meta);
+        issued = true;
+      } catch (error) {
+        if (error instanceof AppError) return { ok: false, outcome: "REFUSED", message: `${id}: ${this.problemOf(error)}`, code: id };
+        throw error;
+      }
+    }
+    const done = issued ? "return issued" : "return already issued";
+    const central = await centralHubId(this.prisma);
+    const atCentral = !central || parcel.currentHubId === central;
+    if (input.toCentral && !atCentral && parcel.status === "AT_HUB") {
+      const sent = await this.deskTransfer(actor, { code: id, hubId: input.hubId, source: input.source }, meta);
+      return sent.ok ? { ...sent, outcome: "ISSUED_SENT", message: `${id}: ${done}, ${sent.message.replace(`${id} `, "")}` } : { ...sent, message: `${id}: ${done}, but ${sent.message.replace(`${id}: `, "").replace(`${id} `, "it ")}` };
+    }
+    const next = atCentral ? "assign a return rider (Return rider assign)" : "send it to the central hub (Return transfer)";
+    return { ok: true, outcome: issued ? "ISSUED" : "ALREADY_ISSUED", message: `${id}: ${done}; next ${next}.`, code: id };
+  }
+
+  /**
+   * Return transfer: a parcel going back to its sender, held at this hub, leaves for the central hub (in transit; the
+   * central hub receives it with Receive at hub). A parcel without a return is issued first when a reason is given.
+   */
+  async deskTransfer(actor: Actor, input: z.infer<typeof deskReturnTransferSchema>, meta: RequestMeta) {
+    const variants = codeVariants(input.code);
+    const parcel = await this.prisma.parcel.findFirst({ where: { trackingId: { in: variants } }, select: { trackingId: true, merchantId: true, currentHubId: true, status: true, returnRequestedAt: true } });
+    if (!parcel) return { ok: false, outcome: "NOT_FOUND", message: `No parcel found for ${variants[0]}.`, code: variants[0] };
+    const id = parcel.trackingId;
+    const central = await centralHubId(this.prisma);
+    if (!central) return { ok: false, outcome: "NO_CENTRAL_HUB", message: "No central hub is set yet: a super admin chooses it in Platform settings.", code: id };
+    if (parcel.status === "IN_TRANSIT" && parcel.currentHubId === central && parcel.returnRequestedAt)
+      return { ok: true, outcome: "ALREADY_IN_TRANSIT", message: `${id} is already on its way to the central hub.`, code: id };
+    if (parcel.status !== "AT_HUB") return { ok: false, outcome: "NOT_AT_HUB", message: `${id} isn't held at a hub; receive it first.`, code: id };
+    if (parcel.currentHubId === central) return { ok: false, outcome: "AT_CENTRAL", message: `${id} is already at the central hub: assign a return rider.`, code: id };
+    const hubId = this.deskHubId(actor, input.hubId, parcel.currentHubId);
+    if (hubId && parcel.currentHubId !== hubId) return { ok: false, outcome: "OTHER_HUB", message: `${id} isn't at this hub.`, code: id };
+    if (!parcel.returnRequestedAt) {
+      if (!parcel.merchantId) return { ok: false, outcome: "NOT_MERCHANT", message: `${id} isn't a merchant parcel; returns go to merchants.`, code: id };
+      if (!input.reason) return { ok: false, outcome: "NO_RETURN", message: `${id} isn't going back to the sender: issue the return first (Return issue).`, code: id };
+      try {
+        await this.request(actor, id, { reason: input.reason }, meta);
+      } catch (error) {
+        if (error instanceof AppError) return { ok: false, outcome: "REFUSED", message: `${id}: ${this.problemOf(error)}`, code: id };
+        throw error;
+      }
+    }
+    const r = (await this.desk.transfer(actor, { code: id, toHubId: central, source: input.source }, meta)) as { ok: boolean; outcome: string; message: string; code?: string };
+    return r.ok ? { ...r, outcome: "SENT_TO_CENTRAL" } : r;
+  }
+
+  /**
+   * The returns at a hub, in the order of the work: issued and held here (to send to the central hub, or at the
+   * central hub to put on a run), on the way to the central hub, planned runs to send out, runs out with riders.
+   */
+  async deskSummary(actor: Actor, query: z.infer<typeof deskReturnsSummaryQuerySchema>) {
+    const hubId = this.deskHubId(actor, query.hubId);
+    if (!hubId) throw new AppError("HUB_REQUIRED", "Choose the hub", HttpStatus.UNPROCESSABLE_ENTITY);
+    const central = await centralHubId(this.prisma);
+    const centralHub = central ? await this.prisma.hub.findUnique({ where: { id: central }, select: { id: true, name: true, code: true } }) : null;
+    const isCentral = !!central && central === hubId;
+    const select = { trackingId: true, returnReason: true, returnRequestedAt: true, recipientName: true, merchant: { select: { name: true, code: true } } } as const;
+    const [waiting, coming, planned, out] = await Promise.all([
+      this.prisma.parcel.findMany({ where: { currentHubId: hubId, status: "AT_HUB", returnRequestedAt: { not: null }, merchantId: { not: null } }, select, orderBy: { returnRequestedAt: "asc" }, take: 300 }),
+      isCentral ? this.prisma.parcel.findMany({ where: { currentHubId: hubId, status: "IN_TRANSIT", returnRequestedAt: { not: null } }, select, orderBy: { updatedAt: "asc" }, take: 300 }) : Promise.resolve([]),
+      this.prisma.returnRun.count({ where: { hubId, status: "PLANNED" } }),
+      this.prisma.returnRun.count({ where: { hubId, status: "OUT_FOR_RETURN" } }),
+    ]);
+    const view = (p: (typeof waiting)[number]) => ({ trackingId: p.trackingId, merchant: p.merchant?.name ?? null, reason: p.returnReason, recipient: p.recipientName, requestedAt: p.returnRequestedAt });
+    return {
+      hubId,
+      centralHub,
+      isCentral,
+      /** Issued and held here: at the central hub (or with no central hub set) to put on a run, elsewhere to send on. */
+      waiting: { count: waiting.length, next: isCentral || !central ? "ASSIGN_RIDER" : "TRANSFER", items: waiting.map(view) },
+      /** On the way to this (the central) hub: receive them with Receive at hub. */
+      coming: { count: coming.length, items: coming.map(view) },
+      plannedRuns: planned,
+      outForReturn: out,
     };
   }
 

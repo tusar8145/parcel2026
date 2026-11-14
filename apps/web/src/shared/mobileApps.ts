@@ -4,9 +4,9 @@
  * the file and its numbers here (the APKs run on phones (ARM 32/64-bit) and the Android emulator (x86_64)).
  */
 export const MOBILE_APPS = {
-  merchant: { href: "/downloads/merchant.apk", fileName: "Merchant-1.4.3.apk", version: "1.4.3", sizeMb: 69 },
-  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.7.1.apk", version: "1.7.1", sizeMb: 69 },
-  operations: { href: "/downloads/operations.apk", fileName: "Operations-1.7.0.apk", version: "1.7.0", sizeMb: 71 },
+  merchant: { href: "/downloads/merchant.apk", fileName: "Merchant-1.4.4.apk", version: "1.4.4", sizeMb: 69 },
+  rider: { href: "/downloads/rider.apk", fileName: "Rider-1.7.2.apk", version: "1.7.2", sizeMb: 69 },
+  operations: { href: "/downloads/operations.apk", fileName: "Operations-1.8.0.apk", version: "1.8.0", sizeMb: 71 },
 } as const;
 
 export type MobileApp = keyof typeof MOBILE_APPS;

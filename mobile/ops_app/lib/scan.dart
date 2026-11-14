@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'home.dart';
 import 'ops.dart';
 import 'parcels.dart';
+import 'returns.dart';
 
 /// Why a delivery failed and why a parcel goes back: the super admin's lists (GET /delivery/fail-reasons,
 /// GET /returns/reasons, in their order); these until they load.
@@ -225,6 +226,82 @@ class ScanPage extends StatelessWidget {
     );
   }
 
+  /// Return issue: the reason once, a rider (optional: takes them straight to the merchant), or send them on to the
+  /// central hub in the same scan. Then scan parcel after parcel.
+  Future<void> _returnIssue(BuildContext context) async {
+    if (!await _needHub(context) || !context.mounted) return;
+    await loadReasons();
+    Map<String, dynamic>? summary;
+    try {
+      summary = await loadReturnsSummary();
+    } catch (_) {}
+    if (!context.mounted) return;
+    final setup = await showModalBottomSheet<_IssueSetup>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => _ReturnIssueSheet(summary: summary));
+    if (setup == null || !context.mounted) return;
+    final central = (summary?['centralHub'] as Map?)?['name'];
+    final then = setup.riderId != null ? 'joins ${setup.riderLabel}\'s return run' : (setup.toCentral ? 'goes to $central' : 'on the returns list');
+    await _session(
+      context,
+      title: 'Return issue',
+      hint: 'Scan each parcel going back: ${setup.reason}; it $then.',
+      action: (code, source) => deskScan('/hub-desk/return-issue', {
+        'code': code,
+        'hubId': Ops.hubId,
+        'reason': setup.reason,
+        if (setup.riderId != null) 'riderId': setup.riderId,
+        'toCentral': setup.riderId == null && setup.toCentral,
+        'source': source,
+      }),
+    );
+  }
+
+  /// Return transfer: returns held here leave for the central hub; counted down as they are scanned.
+  Future<void> _returnTransfer(BuildContext context) async {
+    if (!await _needHub(context) || !context.mounted) return;
+    Map<String, dynamic> summary;
+    try {
+      summary = await loadReturnsSummary();
+    } catch (e) {
+      if (context.mounted) snack(context, errorText(e));
+      return;
+    }
+    if (!context.mounted) return;
+    final central = summary['centralHub'] as Map?;
+    if (central == null) return snack(context, 'No central hub is set yet: a super admin chooses it in Platform settings.');
+    if (summary['isCentral'] == true) return snack(context, 'This is the central hub: put the returns on runs with Return rider assign.');
+    Future<String> left() async {
+      try {
+        final n = toNum(((await loadReturnsSummary())['waiting'] as Map?)?['count']).toInt();
+        return n == 0 ? 'No return left to send.' : '$n return${n == 1 ? '' : 's'} still held here';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    final status = ValueNotifier(await left());
+    if (!context.mounted) return;
+    var n = 0;
+    await scanBarcode(
+      context,
+      title: 'Return transfer',
+      hint: 'Scan each return leaving for ${central['name']}. It receives them with Receive at hub.',
+      continuous: true,
+      status: status,
+      onCode: (code, source) async {
+        final r = await deskScan('/hub-desk/return-transfer', {'code': code, 'hubId': Ops.hubId, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'});
+        if (r.ok) status.value = '${++n} sent · ${await left()}';
+        return r;
+      },
+    );
+    opsChanged.value++;
+  }
+
+  Future<void> _returnsHub(BuildContext context) async {
+    if (!await _needHub(context) || !context.mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReturnsHubPage()));
+    opsChanged.value++;
+  }
+
   /// Hub Pickup counter: each scan opens the parcel's hand-over (collection code, who collects, COD).
   Future<void> _collect(BuildContext context) async {
     if (!await _needHub(context) || !context.mounted) return;
@@ -249,21 +326,27 @@ class ScanPage extends StatelessWidget {
           padding: EdgeInsets.only(bottom: 10),
           child: Text('Choose the task, then scan the parcels one after another with the camera or a handheld scanner.', style: TextStyle(color: muted)),
         ),
+        const _Group('Receive at hub', 'Parcels arriving at the hub.'),
         _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Every arrival: pickups, drop-offs, transfers, parcels coming back.', () => _receive(context)),
-        _Task(Icons.person_add_alt_1_outlined, good, 'Receive & assign rider', 'Choose the rider, then scan: received (if needed) and given to them.', () => _assign(context)),
-        _Task(Icons.keyboard_return, warn, 'Receive from rider', 'Failed deliveries and returns a rider brings back.', () => _receiveBack(context)),
-        _Task(Icons.local_shipping_outlined, brand, 'Out for delivery', 'Choose the rider, then scan what they take.', () => _dispatch(context)),
         _Task(Icons.storefront_outlined, warn, 'Pickup entry', 'A pickup rider brings what they collected.', () => _pickupEntry(context)),
-        _Task(Icons.swap_horiz, brand, 'Transfer out', 'Parcels leaving for another hub.', () => _transfer(context)),
+        const _Group('Delivery', 'Parcels leaving the hub for the recipient.'),
+        _Task(Icons.person_add_alt_1_outlined, good, 'Receive & assign rider', 'Choose the rider, then scan: received (if needed) and given to them.', () => _assign(context)),
+        _Task(Icons.local_shipping_outlined, brand, 'Out for delivery', 'Choose the rider, then scan what they take.', () => _dispatch(context)),
+        _Task(Icons.inventory_outlined, brand, 'Collect from hub', 'Hub Pickup counter: code, who collects, COD.', () => _collect(context)),
+        const _Group('Rider back at the hub', 'End of the day: what the rider hands in.'),
         _Task(Icons.check_circle_outline, good, 'Delivery entry', 'Signed slips a rider hands in.', () => _delivered(context)),
         _Task(Icons.report_gmailerrorred_outlined, bad, 'Failed delivery entry', 'Choose the reason once, then scan.', () => _failed(context)),
-        _Task(Icons.inventory_outlined, brand, 'Collect from hub', 'Hub Pickup counter: code, who collects, COD.', () => _collect(context)),
-        _Task(Icons.assignment_return_outlined, bad, 'Return rider assign', 'Parcels going back join a rider\'s return run.', () => _returnAssign(context)),
-        _Task(Icons.undo, bad, 'Return entry', 'Parcels the merchant took back.', () => _returnEntry(context)),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(2, 14, 2, 6),
-          child: Text('CN labels', style: TextStyle(fontWeight: FontWeight.w800, color: muted)),
-        ),
+        _Task(Icons.keyboard_return, warn, 'Receive from rider', 'Failed deliveries and returns a rider brings back.', () => _receiveBack(context)),
+        const _Group('Hub to hub', 'Parcels another hub delivers.'),
+        _Task(Icons.swap_horiz, brand, 'Transfer out', 'Parcels leaving for another hub.', () => _transfer(context)),
+        const _Group('Returns to merchant', 'Step by step: issue → central hub → rider → merchant.'),
+        const _ReturnsStatus(),
+        _Task(Icons.assignment_late_outlined, bad, '1 · Return issue', 'Reason once; a rider takes them straight to the merchant, or they go to the central hub.', () => _returnIssue(context)),
+        _Task(Icons.move_up_outlined, brand, '2 · Return transfer', 'Returns held here leave for the central hub.', () => _returnTransfer(context)),
+        _Task(Icons.assignment_return_outlined, bad, '3 · Return rider assign', 'Parcels going back join a rider\'s return run.', () => _returnAssign(context)),
+        _Task(Icons.outbox_outlined, brand, '4 · Send out return runs', 'Planned runs leave with their rider; returns held here.', () => _returnsHub(context), scan: false),
+        _Task(Icons.undo, good, '5 · Return entry', 'Parcels the merchant took back.', () => _returnEntry(context)),
+        const _Group('CN labels', 'Pre-printed labels to parcels.'),
         _Task(Icons.qr_code_2, brand, 'CN_Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
           if (await _needHub(context) && context.mounted) await openCnMerchant(context, hubId: Ops.hubId);
           opsChanged.value++;
@@ -277,13 +360,73 @@ class ScanPage extends StatelessWidget {
   }
 }
 
+/// A group heading on the scan desk: the work in the order it happens.
+class _Group extends StatelessWidget {
+  const _Group(this.title, this.text);
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 16, 2, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, color: brand, fontSize: 12.5, letterSpacing: .6)),
+          Text(text, style: const TextStyle(color: muted, fontSize: 12.5)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The returns at this hub in one line (held here and the next step, runs to send out); reloads after any scan.
+class _ReturnsStatus extends StatelessWidget {
+  const _ReturnsStatus();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: opsChanged,
+      builder: (_, version, _) => ValueListenableBuilder<Map<String, dynamic>?>(
+        valueListenable: Ops.hub,
+        builder: (_, hub, _) => hub == null
+            ? const SizedBox.shrink()
+            : FutureBuilder<Map<String, dynamic>>(
+                key: ValueKey('returns-${hub['id']}-$version'),
+                future: loadReturnsSummary(),
+                builder: (_, snap) {
+                  if (!snap.hasData) return const SizedBox.shrink();
+                  final s = snap.data!;
+                  final central = s['centralHub'] as Map?;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      decoration: BoxDecoration(color: warn.withValues(alpha: .08), borderRadius: BorderRadius.circular(10)),
+                      child: Text(
+                        '${returnsLine(s)}${central == null ? '' : s['isCentral'] == true ? ' · this is the central hub' : ' · central hub: ${central['name']}'}',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
 class _Task extends StatelessWidget {
-  const _Task(this.icon, this.color, this.title, this.text, this.onTap);
+  const _Task(this.icon, this.color, this.title, this.text, this.onTap, {this.scan = true});
   final IconData icon;
   final Color color;
   final String title;
   final String text;
   final VoidCallback onTap;
+  /// Opens a scanner (else a list).
+  final bool scan;
 
   @override
   Widget build(BuildContext context) {
@@ -311,7 +454,7 @@ class _Task extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.qr_code_scanner, color: Color(0xFF98A2B3)),
+              Icon(scan ? Icons.qr_code_scanner : Icons.chevron_right, color: const Color(0xFF98A2B3)),
             ],
           ),
         ),
@@ -637,6 +780,98 @@ class _CollectPageState extends State<CollectPage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Return issue: what the sheet set up for the scans.
+class _IssueSetup {
+  const _IssueSetup(this.reason, this.riderId, this.riderLabel, this.toCentral);
+  final String reason;
+  final String? riderId;
+  final String? riderLabel;
+  final bool toCentral;
+}
+
+/// Return issue: the reason, a rider (optional) and, at a hub that isn't the central hub, "send to the central hub".
+class _ReturnIssueSheet extends StatefulWidget {
+  const _ReturnIssueSheet({required this.summary});
+  final Map<String, dynamic>? summary;
+  @override
+  State<_ReturnIssueSheet> createState() => _ReturnIssueSheetState();
+}
+
+class _ReturnIssueSheetState extends State<_ReturnIssueSheet> {
+  String _reason = returnReasons.first;
+  String _rider = '';
+  bool _toCentral = true;
+  List<Map<String, dynamic>> _riders = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    Api.get('/riders', {'active': 'true', if (Ops.hubId != null) 'hubId': Ops.hubId})
+        .then((r) {
+          if (mounted) setState(() => _riders = (r as List).cast<Map<String, dynamic>>());
+        })
+        .catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final central = widget.summary?['centralHub'] as Map?;
+    final canSend = central != null && widget.summary?['isCentral'] != true;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Return issue', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: _reason,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Why does it go back?'),
+                items: [for (final r in returnReasons) DropdownMenuItem(value: r, child: Text(r))],
+                onChanged: (v) => setState(() => _reason = v ?? _reason),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                key: ValueKey('riders-${_riders.length}'),
+                initialValue: _rider,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Rider (optional)', helperText: 'Only when this rider takes them straight to the merchant'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('No rider')),
+                  for (final r in _riders) DropdownMenuItem(value: '${r['id']}', child: Text('${r['label'] ?? r['code']}', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setState(() => _rider = v ?? ''),
+              ),
+              if (canSend && _rider.isEmpty)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Send to ${central['name']} now'),
+                  subtitle: const Text('The central hub puts returns on runs'),
+                  value: _toCentral,
+                  onChanged: (v) => setState(() => _toCentral = v),
+                ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () {
+                  final rider = _riders.where((r) => '${r['id']}' == _rider).toList();
+                  Navigator.pop(context, _IssueSetup(_reason, _rider.isEmpty ? null : _rider, rider.isEmpty ? null : '${rider.first['label'] ?? rider.first['code']}', canSend && _toCentral));
+                },
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Start scanning'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

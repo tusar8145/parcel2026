@@ -28,7 +28,7 @@ import { useLocation } from "react-router";
 const REASONS = ["Recipient unavailable", "Incorrect address", "Recipient refused", "Unable to contact recipient", "Access / safety issue", "Other"];
 const RETURN_REASONS = ["Recipient refused", "Recipient unreachable", "Wrong or incomplete address", "Recipient asked to cancel", "Damaged in transit", "Merchant cancelled the order", "Delivery attempts exhausted"];
 
-type Part = "pickup" | "assign" | "transfer" | "dispatch" | "delivered" | "failed" | "returnassign" | "returns";
+type Part = "pickup" | "assign" | "transfer" | "dispatch" | "delivered" | "failed" | "returnissue" | "returntransfer" | "returnassign" | "returns";
 interface TabCfg {
   path: string;
   /** Another endpoint than /hub-desk/<path>. */
@@ -47,6 +47,10 @@ interface TabCfg {
   returnReason?: boolean;
   runs?: boolean;
   handover?: boolean;
+  /** Return issue: the reason is required, the rider optional, "send on to the central hub" offered. */
+  issue?: boolean;
+  /** Shows the returns held at this hub (GET /hub-desk/returns-summary). */
+  waiting?: boolean;
 }
 const TABS: Record<Part, TabCfg> = {
   assign: {
@@ -99,6 +103,30 @@ const TABS: Record<Part, TabCfg> = {
     hub: true,
     hint: "Try again: the parcel stays with the rider for another attempt. Back at the hub: it's received here for another delivery or a return. A parcel the rider brings back later is received on Receive entry. Re-attempt charges apply as usual.",
   },
+  returnissue: {
+    path: "return-issue",
+    title: "Return issue",
+    subtitle: "A parcel at this hub goes back to its merchant: choose the reason, then scan. With a rider chosen, it joins that rider's return run and the rider takes it straight to the merchant. Without a rider, it's on the returns list and, at any hub but the central hub, can leave for the central hub in the same scan.",
+    done: ["ISSUED", "ISSUED_SENT", "ASSIGNED"],
+    counter: "issued",
+    rider: true,
+    returnReason: true,
+    issue: true,
+    hub: true,
+    waiting: true,
+    hint: "Returns are put on runs at the central hub (Return rider assign). Choose a rider here only when that rider takes the parcels to the merchant from this hub. Merchants' own return requests are already on the list below: no need to issue them again.",
+  },
+  returntransfer: {
+    path: "return-transfer",
+    title: "Return transfer",
+    subtitle: "Returns held at this hub leave for the central hub: scan each one and it's on its way (in transit). The central hub receives them on Receive entry, then puts them on return runs.",
+    done: ["SENT_TO_CENTRAL"],
+    counter: "sent",
+    returnReason: true,
+    hub: true,
+    waiting: true,
+    hint: "Only parcels going back to their merchant. A parcel nobody asked to return yet is issued with the reason above first; leave it empty to send only the returns already issued.",
+  },
   returnassign: {
     path: "return-assign",
     title: "Return rider assign",
@@ -133,6 +161,8 @@ const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant" | "fr
   "Out for delivery entry": "dispatch",
   "Delivery entry": "delivered",
   "Failed delivery entry": "failed",
+  "Return issue": "returnissue",
+  "Return transfer": "returntransfer",
   "Return rider assign": "returnassign",
   "Return entry": "returns",
 };
@@ -153,6 +183,8 @@ const desk = {
   returnBy: "",
   returnNote: "",
   returnReason: "",
+  issueReason: "",
+  toCentral: true,
   log: Object.fromEntries(Object.keys(TABS).map(k => [k, [] as LogEntry[]])) as Record<Part, LogEntry[]>,
   count: Object.fromEntries(Object.keys(TABS).map(k => [k, 0])) as Record<Part, number>,
   queue: Promise.resolve() as Promise<unknown>,
@@ -218,6 +250,14 @@ function HubDeskTab({ part }: { part: Part }) {
     queryFn: () => api<{ items: { id: string; number: string; merchant?: { name: string }; rider?: string; parcels: number }[] }>(`/hub-desk/return-runs${hubId ? `?hubId=${encodeURIComponent(hubId)}` : ""}`),
     enabled: !!t.runs,
   });
+  const summary = useQuery({
+    queryKey: ["hub-desk", "returns-summary", hubId],
+    queryFn: () => api<ReturnsSummary>(`/hub-desk/returns-summary?hubId=${encodeURIComponent(hubId)}`),
+    enabled: !!t.waiting && !!hubId,
+  });
+  useLive(["parcel.updated", "return_run.updated"], () => void (t.waiting && hubId && summary.refetch()));
+  const central = summary.data?.centralHub;
+  const atCentral = !!summary.data?.isCentral;
   const photoInput = useRef<HTMLInputElement>(null);
 
   function add(entry: LogEntry) {
@@ -234,7 +274,10 @@ function HubDeskTab({ part }: { part: Part }) {
       return add({ tone: "bad", message: "Choose the rider first, then scan.", at: new Date() });
     }
     if (t.rider && desk.riderId) body.riderId = desk.riderId;
-    if (t.returnReason && desk.returnReason.trim()) body.reason = desk.returnReason.trim();
+    if (t.issue) {
+      const reason = desk.issueReason.trim() || (returnReasons.data ?? RETURN_REASONS)[0];
+      Object.assign(body, { reason, toCentral: !desk.riderId && desk.toCentral && !atCentral });
+    } else if (t.returnReason && desk.returnReason.trim()) body.reason = desk.returnReason.trim();
     if (t.toHub && desk.toHubId) body.toHubId = desk.toHubId;
     if (t.handover) Object.assign(body, { receivedBy: desk.returnBy.trim() || undefined, note: desk.returnNote.trim() || undefined });
     if (t.failure) Object.assign(body, { reason: desk.reason, nextAction: desk.nextAction, note: desk.failNote.trim() || undefined });
@@ -260,6 +303,7 @@ function HubDeskTab({ part }: { part: Part }) {
       if (r.ok && t.done.includes(r.outcome || "")) desk.count[part]++;
       add({ tone, message: r.message, at: new Date() });
       if (t.runs && r.ok) void runs.refetch();
+      if (t.waiting && r.ok) void summary.refetch();
       // Not done: the receiver / note / photo come back for another try.
       if (sent && !r.ok) setProof(sent);
     });
@@ -314,9 +358,9 @@ function HubDeskTab({ part }: { part: Part }) {
           ) : null}
           {t.rider ? (
             <label className="field">
-              <span>{t.riderRequired ? "Rider taking the returns" : "Rider"}</span>
+              <span>{t.riderRequired ? "Rider taking the returns" : t.issue ? "Rider (optional)" : "Rider"}</span>
               <Select className="select" value={desk.riderId} onChange={e => set({ riderId: e.target.value })}>
-                <option value="">{t.riderRequired ? "— Choose the rider —" : "— Only for parcels still at the hub —"}</option>
+                <option value="">{t.riderRequired ? "— Choose the rider —" : t.issue ? "— No rider: on the returns list —" : "— Only for parcels still at the hub —"}</option>
                 {riders.map(r => (
                   <option key={r.id} value={r.id}>
                     {`${r.label || `${r.code} · ${r.name}`}${r.hub?.name ? ` · ${r.hub.name}` : ""}`}
@@ -354,7 +398,26 @@ function HubDeskTab({ part }: { part: Part }) {
               </label>
             </>
           ) : null}
-          {t.returnReason ? (
+          {t.issue ? (
+            <>
+              <label className="field">
+                <span>Return reason</span>
+                <Select className="select" value={desk.issueReason || (returnReasons.data ?? RETURN_REASONS)[0]} onChange={e => set({ issueReason: e.target.value })}>
+                  {(returnReasons.data ?? RETURN_REASONS).map(r => (
+                    <option key={r}>{r}</option>
+                  ))}
+                </Select>
+              </label>
+              {central && !atCentral ? (
+                <div className="field">
+                  <span className="field-label">Then</span>
+                  <label className="check" style={{ padding: "7px 11px", border: "1px solid var(--line)", borderRadius: 9, opacity: desk.riderId ? 0.5 : 1 }}>
+                    <input type="checkbox" disabled={!!desk.riderId} checked={desk.toCentral && !desk.riderId} onChange={e => set({ toCentral: e.target.checked })} /> {`Send to the central hub (${central.name}) in the same scan`}
+                  </label>
+                </div>
+              ) : null}
+            </>
+          ) : t.returnReason ? (
             <label className="field">
               <span>Return reason (if none yet)</span>
               <input className="input" maxLength={300} list="hdReasons" placeholder="e.g. Recipient refused" value={desk.returnReason} onChange={e => set({ returnReason: e.target.value })} />
@@ -436,9 +499,68 @@ function HubDeskTab({ part }: { part: Part }) {
           {t.hint}
         </p>
         <LogList entries={desk.log[part]} />
+        {t.waiting ? <ReturnsWaiting data={summary.data} error={summary.error} loading={summary.isLoading} hubChosen={!!hubId} /> : null}
         {t.runs ? <ReturnRuns runs={runs.data?.items} error={runs.error} loading={runs.isLoading} onSent={(n: string) => (add({ tone: "", message: `Return run ${n} is out with its rider.`, at: new Date() }), void runs.refetch())} /> : null}
       </div>
     </Panel>
+  );
+}
+
+interface ReturnsSummary {
+  centralHub: { id: string; name: string; code: string } | null;
+  isCentral: boolean;
+  waiting: { count: number; next: "TRANSFER" | "ASSIGN_RIDER"; items: { trackingId: string; merchant: string | null; reason: string | null; recipient: string | null }[] };
+  coming: { count: number; items: { trackingId: string; merchant: string | null; reason: string | null }[] };
+  plannedRuns: number;
+  outForReturn: number;
+}
+
+/** The returns held at this hub, with their next step (the central hub also sees what's on its way). */
+function ReturnsWaiting({ data, error, loading, hubChosen }: { data?: ReturnsSummary; error: unknown; loading: boolean; hubChosen: boolean }) {
+  if (!hubChosen) return <p className="muted" style={{ marginTop: 16 }}>Choose the hub to see the returns held there.</p>;
+  if (loading) return <p className="muted">Loading the returns at this hub…</p>;
+  if (error) return <p className="muted">{describe(error)}</p>;
+  if (!data) return null;
+  const next = data.waiting.next === "TRANSFER" ? `send to ${data.centralHub?.name ?? "the central hub"} (Return transfer)` : "put on a return run (Return rider assign)";
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <Pill tone={data.waiting.count ? "warn" : "neutral"}>{`${data.waiting.count} held here`}</Pill>
+        {data.isCentral ? <Pill tone={data.coming.count ? "info" : "neutral"}>{`${data.coming.count} on the way here`}</Pill> : null}
+        <Pill tone="neutral">{`${data.plannedRuns} planned run${data.plannedRuns === 1 ? "" : "s"}`}</Pill>
+        <Pill tone="neutral">{`${data.outForReturn} out for return`}</Pill>
+        <small className="faint">{data.centralHub ? (data.isCentral ? "This is the central hub." : `Central hub: ${data.centralHub.name}`) : "No central hub is set (super admin › Platform settings)."}</small>
+      </div>
+      {data.waiting.count ? (
+        <>
+          <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>{`Returns held here · next: ${next}`}</h3>
+          <div className="table-wrap" style={{ maxHeight: 320, overflow: "auto" }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Parcel</th>
+                  <th>Merchant</th>
+                  <th>Reason</th>
+                  <th>Recipient</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.waiting.items.map(p => (
+                  <tr key={p.trackingId}>
+                    <td className="strong">{p.trackingId}</td>
+                    <td>{p.merchant || "—"}</td>
+                    <td>{p.reason || "—"}</td>
+                    <td>{p.recipient || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <p className="muted">No return held at this hub.</p>
+      )}
+    </div>
   );
 }
 

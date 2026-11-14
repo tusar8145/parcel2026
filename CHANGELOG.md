@@ -7,6 +7,12 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.56.0 — 2026-11-15
+- Returns go through the central hub: Scan desk has two new tabs, Return issue (choose the reason and scan; choose a rider only when that rider takes the parcels straight to the merchant, or send them to the central hub in the same scan) and Return transfer (returns held at a hub leave for the central hub, which receives them on Receive entry and puts them on return runs).
+- Return issue and Return transfer show the returns held at the hub with their next step, what's on the way to the central hub, and the return runs planned and out.
+- Operations app 1.8.0: the Scan tab is grouped by the work (Receive at hub, Delivery, Rider back at the hub, Hub to hub, Returns to merchant in 5 steps, CN labels), with Return issue, Return transfer and a new "Send out return runs" screen; More is grouped too.
+- The sign-in page of the Merchant (1.4.4), Rider (1.7.2) and Operations (1.8.0) apps no longer shows the company logo. Install the new apps from /apps.
+
 ## 1.55.1 — 2026-11-14
 - Rider app 1.7.1 and Operations app 1.7.0 now report their real version, so they no longer show "no longer works" after installing. Install them again from /apps.
 

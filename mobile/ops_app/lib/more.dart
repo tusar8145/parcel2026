@@ -22,6 +22,11 @@ class MorePage extends StatelessWidget {
     ),
   );
 
+  Widget _group(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 14, 2, 6),
+    child: Text(title.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, color: brand, fontSize: 12.5, letterSpacing: .6)),
+  );
+
   void _open(BuildContext context, Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
   @override
@@ -59,12 +64,15 @@ class MorePage extends StatelessWidget {
           ),
         ),
         if (Ops.allowed('dispatch')) ...[
+          _group('Assign riders'),
           _item(context, Icons.fiber_new_outlined, 'Assign pickup riders', 'New orders and pickup requests', () => _open(context, const AssignPage(mode: AssignMode.pickup))),
           _item(context, Icons.person_search_outlined, 'Assign delivery riders', 'Parcels at the hub waiting for a rider', () => _open(context, const AssignPage(mode: AssignMode.delivery))),
         ],
+        _group('Riders & parcels'),
         if (Ops.addsRiders) _item(context, Icons.two_wheeler, 'Riders', 'Add a rider, set a new password', () => _open(context, const RidersPage())),
         _item(context, Icons.error_outline, 'Problems', 'Exceptions, failed deliveries, needs info, late-risk', () => _open(context, const ProblemsPage())),
         _item(context, Icons.search, 'Find a parcel', 'Scan or type the tracking ID', () => findParcel(context)),
+        _group('Account'),
         _item(context, Icons.warehouse_outlined, 'Change hub', 'The hub this phone works at', () => pickHub(context).then((ok) => ok ? opsChanged.value++ : null)),
         _item(context, Icons.support_agent, 'Help & support', Branding.name.isEmpty ? 'Ask our team' : 'Ask the ${Branding.name} team', () => _open(context, const SupportPage())),
         _item(context, Icons.lock_reset, 'Change password', 'Use a new password to sign in', () => _open(context, const ChangePasswordPage())),

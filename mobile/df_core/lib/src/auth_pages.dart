@@ -105,8 +105,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const BrandMark(),
-                    const SizedBox(height: 28),
+                    // No company logo on the sign-in page (removed on purpose, 2026-11-15): the title opens the page.
                     Text('${AppConfig.role} sign in', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     Text('Use the phone number (or email) and password of your ${AppConfig.role.toLowerCase()} account.', style: const TextStyle(color: muted)),

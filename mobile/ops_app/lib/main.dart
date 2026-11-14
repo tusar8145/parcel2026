@@ -20,7 +20,7 @@ Future<void> main() async {
 void configureOpsApp() {
   AppConfig.role = 'Operations';
   AppConfig.appName = 'Operations';
-  AppConfig.version = '1.6.0';
+  AppConfig.version = '1.7.0';
   // Courier Operations staff: operations managers and hub operators (and custom roles built on them), and franchise hubs.
   AppConfig.allows = (user) => user['panel'] == '/ops' || user['panel'] == '/franchise';
   AppConfig.notAllowed = 'This app is for operations staff (operations managers, hub operators and franchise hubs).';

@@ -16,6 +16,10 @@ new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 
 - Courier Operations menu: Parcel journey folds like the super admin's sub-menus. Closed it is one item with everything waiting across its steps; tap it to slide open steps 1–7, and it opens by itself on one of those pages.
 - Courier Operations menu: the open page is shown as in the super admin menu, a blue box with white text, icon and count that slides from item to item (it stays white under the mouse too).
 - Scan desk: CN_Merchant is now called CN Merchant (the tab, its panel and the messages; the page address stays the same). The Operations and Rider apps show the new name from their next version.
+- Courier Operations: Scan desk's tabs are a vertical list on the left of the page, like a menu, with the open tab in blue (on a phone a row on top that scrolls to the open tab). Reports and Accounts have no tab row any more: their tabs are sub-items of the menu, folding open like Parcel journey (Accounts with its counts). Other pages keep their tabs on top.
+- The Print button above parcel lists reads "Print…" again (it showed "Printâ€¦").
+- Security: the website runs on Next.js 16.4.6 (16.4.1 had known moderate issues: cache data leaking between requests, an image SVG check bypass, response injection on self-hosted sites).
+- Courier Operations: the parcel details panel on the right closes when you click outside it (not when a dialog, menu or photo it opened is in front; clicking another parcel shows that parcel instead).
 
 ## 1.56.1 — 2026-11-21
 - Live network map (Today, Delivery, Transfers) opens zoomed in on where the work is: riders, parcels and vehicles (and your own hub), instead of the whole country. A rider or vehicle far from the rest no longer zooms it out.

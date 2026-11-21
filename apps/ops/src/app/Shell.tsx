@@ -4,7 +4,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useLocation, useNavigate } from "react-router";
+import { Link, NavLink, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@panel/lib/api";
 import { useAuth } from "@panel/lib/auth";
@@ -16,7 +16,7 @@ import { toastError } from "@panel/ui/toast";
 import { confirm } from "@panel/ui/dialogs";
 import { Select } from "@panel/ui/Select";
 import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
-import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, viewBySlug, VIEWS, type ViewDef } from "./nav";
+import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, tabBySlug, viewBySlug, VIEWS, type ViewDef } from "./nav";
 import { internalLink } from "./links";
 import { PhoneScannerButton } from "@/features/scan/PhoneScanner";
 import { openShareFiles } from "@/features/account/ShareFiles";
@@ -53,7 +53,11 @@ export default function Shell({ children, crumb }: { children: ReactNode; crumb:
       <div className="main">
         <Topbar crumb={crumb} onMenu={() => setMenuOpen(o => !o)} />
         <main className="content" id="main" ref={content}>
-          {children}
+          {/* A page's tabs (ViewTabs) go in the left column, like a menu; pages without tabs leave it empty (hidden). */}
+          <div className="page-cols">
+            <div className="view-tabs-col" id="view-tabs" />
+            <div className="page-col">{children}</div>
+          </div>
         </main>
       </div>
     </div>
@@ -124,13 +128,25 @@ function Sidebar() {
   const nav = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
   // Parcel journey folds like the super admin's sub-menus: closed, and open by itself on one of its pages.
-  const onJourney = viewBySlug(pathname.split("/")[1])?.group === "journey";
+  const currentView = viewBySlug(pathname.split("/")[1]);
+  const onJourney = currentView?.group === "journey";
   const [journeyOpen, setJourneyOpen] = useState(onJourney);
+  // Reports and Accounts (tabsAt "menu"): their tabs are sub-items here, folded the same way.
+  const [subOpen, setSubOpen] = useState<Record<string, boolean>>(() => (currentView?.tabsAt === "menu" ? { [currentView.id]: true } : {}));
+  const accountsTabCounts = useQuery({
+    queryKey: ["acc", "tab-counts"],
+    queryFn: () => api<Record<string, { count?: number; amount?: number; hint?: string }>>("/accounts/tab-counts"),
+    enabled: allowed.has("Accounts"),
+    staleTime: 15_000,
+    retry: false,
+  });
+  useLive(["account.updated", "cash.slip", "cash.transfer"], () => void qc.invalidateQueries({ queryKey: ["acc", "tab-counts"] }));
   useEffect(() => {
     if (onJourney) setJourneyOpen(true);
+    if (currentView?.tabsAt === "menu") setSubOpen(o => (o[currentView.id] ? o : { ...o, [currentView.id]: true }));
     const t = setTimeout(() => nav.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" }), 50);
     return () => clearTimeout(t);
-  }, [pathname, onJourney]);
+  }, [pathname, onJourney, currentView]);
   // The selected item's box slides from item to item (app/motion.css .nav-indicator).
   const track = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
@@ -153,7 +169,7 @@ function Sidebar() {
       ro.disconnect();
       host.removeEventListener("transitionend", place);
     };
-  }, [pathname, journeyOpen]);
+  }, [pathname, journeyOpen, subOpen]);
   const groups = (["today", "journey", "queue", "money", "find", "manage"] as const).filter(g => VIEWS.some(v => v.group === g && allowed.has(v.id)));
   if (financeFirst(ops.menu.roles)) groups.sort((a, b) => (a === "money" ? -1 : b === "money" ? 1 : 0));
   const initials = (user?.name || "?")
@@ -178,6 +194,41 @@ function Sidebar() {
           const views = VIEWS.filter(v => v.group === g && allowed.has(v.id));
           const items = views.map(v => {
             const n = countOf(v);
+            const subTabs = v.tabsAt === "menu" ? v.tabs.filter(t => !t.show || t.show(ops.menu)) : [];
+            if (subTabs.length > 1) {
+              // A fold-out item: its tabs below it (the page shows no tab row).
+              const here = currentView?.id === v.id;
+              const open = !!subOpen[v.id];
+              const activeTab = here ? (tabBySlug(v, pathname.split("/")[2]) ?? subTabs[0]) : null;
+              return (
+                <div key={v.id} className="nav-sub">
+                  <button type="button" className={`nav-item nav-sub-toggle${here ? " has-active" : ""}`} aria-expanded={open} onClick={() => setSubOpen(o => ({ ...o, [v.id]: !open }))}>
+                    <Icon name={v.icon} />
+                    <span>{v.label}</span>
+                    {!open && n != null && n > 0 ? (
+                      <span className="nav-count" title={`${num(n)} waiting`}>
+                        {num(n)}
+                      </span>
+                    ) : null}
+                    <Icon name="chevronRight" size={14} />
+                  </button>
+                  <div className={`nav-sub-wrap${open ? " open" : ""}`} inert={!open}>
+                    <div className="nav-sub-items">
+                      {subTabs.map(t => {
+                        const c = v.id === "Accounts" ? accountsTabCounts.data?.[t.id] : undefined;
+                        const current = activeTab?.id === t.id;
+                        return (
+                          <Link key={t.id} to={pathFor(v.id, t.id)} className={`nav-item${current ? " active" : ""}`} aria-current={current ? "page" : undefined} title={c?.hint || undefined}>
+                            <span>{t.id}</span>
+                            {c?.count ? <span className="nav-count">{c.count > 99 ? "99+" : num(c.count)}</span> : null}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
             return (
               <NavLink key={v.id} to={pathFor(v.id)} className={`nav-item${v.step ? " journey" : ""}`}>
                 <Icon name={v.icon} />

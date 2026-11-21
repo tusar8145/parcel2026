@@ -55,8 +55,23 @@ export default function ParcelDrawer() {
     if (!id) return;
     closeRef.current?.focus({ preventScroll: true });
     const key = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("dialog[open]") && close();
+    // A click outside the panel closes it, except: in what the panel opened (a dialog, menu, photo, notice), on an
+    // element the click removed (a menu item), or when the click opened another parcel (the panel then shows that one).
+    // Listening on the document runs after React's own click handlers, so a newly opened parcel is in the address already.
+    const outside = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (!target || !target.isConnected) return;
+      if (target.closest(".drawer, dialog, [role='dialog'], [role='menu'], [role='listbox'], .menu, .dropdown-menu, .toasts, .iz-backdrop")) return;
+      if (document.querySelector("dialog[open]")) return;
+      if (new URLSearchParams(window.location.search).get("parcel") !== id) return;
+      close();
+    };
     document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
+    document.addEventListener("click", outside);
+    return () => {
+      document.removeEventListener("keydown", key);
+      document.removeEventListener("click", outside);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
   if (!id) return null;

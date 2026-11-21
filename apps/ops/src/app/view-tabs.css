@@ -1,0 +1,26 @@
+/* A page's tabs as a vertical list on the left of the page content (Shell: .page-cols), like the menu. */
+.page-cols { display: flex; gap: 20px; align-items: flex-start; }
+.page-col { flex: 1 1 auto; min-width: 0; }
+.view-tabs-col { flex: 0 0 214px; position: sticky; top: 12px; }
+.view-tabs-col:empty { display: none; }
+
+.vtabs { display: grid; gap: 2px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; max-height: calc(100vh - 96px); overflow: auto; }
+.vtabs-title { padding: 4px 10px 6px; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.vtab { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; font-size: 13.5px; font-weight: 520; text-align: left; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+.vtab-label { flex: 1 1 auto; min-width: 0; }
+.vtab .count { margin-left: auto; flex: none; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--ink-2); font-size: 11.5px; font-weight: 650; text-align: center; }
+.vtab:hover { background: var(--surface-3); color: var(--ink); }
+.vtab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* The open tab: as the menu's selected item. */
+.vtab[aria-selected="true"] { background: linear-gradient(95deg, var(--primary) 0%, #4a7ff0 100%); color: #fff; font-weight: 620; box-shadow: 0 8px 18px -10px rgba(47, 85, 201, 0.7); }
+.vtab[aria-selected="true"] .count { background: rgba(255, 255, 255, 0.95); color: var(--primary); }
+
+/* Narrow screens: the tabs are a row on top that scrolls sideways. */
+@media (max-width: 900px) {
+  .page-cols { flex-direction: column; gap: 12px; }
+  .view-tabs-col { position: static; flex: none; width: 100%; }
+  .vtabs { display: flex; gap: 4px; max-height: none; overflow-x: auto; padding: 6px; }
+  .vtabs-title { display: none; }
+  .vtab { width: auto; flex: none; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { .vtab { transition: none; } }

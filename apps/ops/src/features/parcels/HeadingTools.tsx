@@ -1,4 +1,4 @@
-/** Parcel list heading tools: Printâ€¦ (formats), Export (Excel). */
+/** Parcel list heading tools: Print… (formats), Export (Excel). */
 import { Select } from "@panel/ui/Select";
 import { useState } from "react";
 import { Button } from "@panel/ui/kit";
@@ -7,7 +7,7 @@ import { num } from "@panel/lib/format";
 import { PDF_LIMITS, PRINT_FORMATS, printFormat } from "./actions";
 import type { ParcelListState } from "./useParcelList";
 
-/** "Printâ€¦": prints the ticked rows, else every parcel the filters match (up to the PDF limit). */
+/** "Print…": prints the ticked rows, else every parcel the filters match (up to the PDF limit). */
 export function PrintMenu({ list, line, title }: { list: ParcelListState; line?: string; title: string }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -38,7 +38,7 @@ export function PrintMenu({ list, line, title }: { list: ParcelListState; line?:
           }
         }}
       >
-        <option value="" hidden>{busy ? "Preparingâ€¦" : "Printâ€¦"}</option>
+        <option value="" hidden>{busy ? "Preparing…" : "Print…"}</option>
         {PRINT_FORMATS.map(f => (
           <option key={f.value} value={f.value} disabled={!!f.line && !!line && f.line !== line}>
             {f.label}

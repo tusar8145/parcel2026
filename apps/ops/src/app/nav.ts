@@ -26,6 +26,8 @@ export interface ViewDef {
   title?: string;
   subtitle?: string;
   tabs: TabDef[];
+  /** Where the tabs show: "side" = a vertical list left of the page (Scan desk), "menu" = sub-items in the main menu (Reports, Accounts); default a row on top. */
+  tabsAt?: "side" | "menu";
 }
 
 export interface MenuContext {
@@ -71,6 +73,7 @@ export const VIEWS: ViewDef[] = [
   {
     id: "Scan desk",
     label: "Scan desk",
+    tabsAt: "side",
     icon: "scan",
     group: "queue",
     subtitle: "Quick updates by scanning, one tab per job: receive, pickups, transfers, deliveries, failed deliveries and returns.",
@@ -97,9 +100,10 @@ export const VIEWS: ViewDef[] = [
     icon: "wallet",
     group: "money",
     count: "accounts",
+    tabsAt: "menu",
     tabs: Object.entries(ACCOUNTS_TABS).map(([id, show]) => ({ id, show })),
   },
-  { id: "Reports", label: "Reports", icon: "chart", group: "find", tabs: tabs("Reports", "Analytics & SLA", "Rider report", "Hub transfer report") },
+  { id: "Reports", label: "Reports", icon: "chart", group: "find", tabsAt: "menu", tabs: tabs("Reports", "Analytics & SLA", "Rider report", "Hub transfer report") },
   { id: "Riders", label: "Riders", icon: "users", group: "manage", tabs: tabs("Riders", "Shifts & attendance", "Verification") },
   { id: "Merchants", label: "Merchants", icon: "users", group: "manage", tabs: tabs("Merchants") },
   { id: "CN stock", label: "CN stock", icon: "box", group: "manage", tabs: tabs("CN stock") },

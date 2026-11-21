@@ -1,7 +1,9 @@
 import 'package:df_core/df_core.dart';
+import 'package:flutter/material.dart';
 
 import 'home.dart';
 import 'offline.dart';
+import 'phone.dart';
 
 /// The rider's parcel actions, each sent through the outbox (now, or saved until online with its
 /// Idempotency-Key) and answered as a scan result. Every lifecycle rule stays on the server; these only
@@ -120,4 +122,59 @@ Future<ScanFeedback> returnParcel(Map<String, dynamic> run, String code, String 
   } on ApiError catch (e) {
     return ScanFeedback(false, e.message);
   }
+}
+
+/// Directions in Google Maps to the merchant of a return run (its map position, else its address).
+Future<void> merchantDirections(BuildContext context, Map run) {
+  final m = (run['merchant'] as Map?) ?? {};
+  final lat = m['lat'], lng = m['lng'];
+  return openDirections(context, lat: lat == null ? null : toNum(lat).toDouble(), lng: lng == null ? null : toNum(lng).toDouble(), address: '${m['address'] ?? ''}');
+}
+
+/// Returned to merchant, the step before scanning: where the merchant is (directions, call), then "At the merchant".
+Future<bool> goToMerchant(BuildContext context, Map run) async {
+  final m = (run['merchant'] as Map?) ?? {};
+  final n = ((run['parcels'] as List?) ?? []).length;
+  final go = await showModalBottomSheet<bool>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('${run['number']} · ${m['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+            if ('${m['address'] ?? ''}'.isNotEmpty) Text('${m['address']}', style: const TextStyle(color: muted)),
+            Text('$n parcel(s) to give back', style: const TextStyle(color: muted)),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () => merchantDirections(context, run),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+              icon: const Icon(Icons.directions),
+              label: const Text('Directions in Google Maps'),
+            ),
+            if (m['phone'] != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => callPhone(context, '${m['phone']}'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                icon: const Icon(Icons.call_outlined),
+                label: const Text('Call the merchant'),
+              ),
+            ],
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46), foregroundColor: good),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('At the merchant: scan the parcels'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return go == true;
 }

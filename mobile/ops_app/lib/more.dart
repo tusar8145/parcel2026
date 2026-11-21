@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'home.dart';
 import 'ops.dart';
-import 'parcels.dart';
 import 'riders.dart';
 
-/// More: riders (add, new password), problems, find a parcel, hub, support, password, sign out (assigning riders is on Scan).
+/// More: riders (add, new password), hub, support, password, sign out (assigning riders is on Scan).
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
 
@@ -62,10 +61,7 @@ class MorePage extends StatelessWidget {
             ],
           ),
         ),
-        _group('Riders & parcels'),
-        if (Ops.addsRiders) _item(context, Icons.two_wheeler, 'Riders', 'Add a rider, set a new password', () => _open(context, const RidersPage())),
-        _item(context, Icons.error_outline, 'Problems', 'Exceptions, failed deliveries, needs info, late-risk', () => _open(context, const ProblemsPage())),
-        _item(context, Icons.search, 'Find a parcel', 'Scan or type the tracking ID', () => findParcel(context)),
+        if (Ops.addsRiders) ...[_group('Riders'), _item(context, Icons.two_wheeler, 'Riders', 'Add a rider, set a new password', () => _open(context, const RidersPage()))],
         _group('Account'),
         _item(context, Icons.warehouse_outlined, 'Change hub', 'The hub this phone works at', () => pickHub(context).then((ok) => ok ? opsChanged.value++ : null)),
         _item(context, Icons.support_agent, 'Help & support', Branding.name.isEmpty ? 'Ask our team' : 'Ask the ${Branding.name} team', () => _open(context, const SupportPage())),

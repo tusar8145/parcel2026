@@ -376,7 +376,10 @@ export class NetworkService {
 
   async myRiderProfile(actor: UserActor) {
     if (!actor.riderId) throw notFound("Rider profile");
-    return this.getRider(actor.riderId);
+    const rider = await this.getRider(actor.riderId);
+    // The rider app's Today shows the hub on the map, with directions there.
+    const at = rider.hub ? await this.prisma.hub.findUnique({ where: { id: rider.hub.id }, select: { address: true, lat: true, lng: true } }) : null;
+    return { ...rider, hubLocation: at ? { address: at.address, lat: at.lat, lng: at.lng } : null };
   }
 
   async setMyStatus(actor: UserActor, status: "OFFLINE" | "ONLINE" | "ON_BREAK") {

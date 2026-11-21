@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'branding.dart';
+import 'update.dart';
 import 'widgets.dart';
 
 /// The app's look: brand colours, white app bars, outlined inputs (both apps).
@@ -38,10 +39,20 @@ class _StartPageState extends State<StartPage> {
   @override
   void initState() {
     super.initState();
-    Session.restore().then((ok) {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ok ? AppConfig.home() : const LoginPage()));
-    });
+    _start();
+  }
+
+  /// First the forced-update check (an outdated app gets the download page, never the sign-in), then the session.
+  Future<void> _start() async {
+    try {
+      await Api.get('/app-versions');
+    } catch (_) {
+      // No network or a server error: carry on; the next request checks again.
+    }
+    if (AppUpdate.shown) return;
+    final ok = await Session.restore();
+    if (!mounted || AppUpdate.shown) return;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ok ? AppConfig.home() : const LoginPage()));
   }
 
   @override

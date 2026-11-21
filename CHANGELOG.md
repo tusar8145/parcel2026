@@ -7,6 +7,19 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.59.0 — 2026-11-22
+- Operations, Rider and Merchant apps: an app that needs the forced update now shows the update page with its download button as soon as it opens, before the sign-in page.
+- Operations app: the search (top bar) works like the web panel's search: type or scan a tracking ID, CN or phone and the parcel's details open at once (status, tracking steps and history, price, parcel details, proof of delivery), other matches as tags; a zone or area name shows the hub that serves it.
+- Operations app: the Add rider form has proper space between its fields.
+- Operations app: Problems and Find a parcel removed from More (the search covers them; Problems stays on the Today page).
+- Operations app: Riders (More) shows when each rider was last seen, a Directions button to them in Google Maps and the riders on the map; on the Map tab, a rider's card has Directions in Google Maps.
+- Rider app: Today shows your hub and its address, with Directions there in Google Maps.
+- Rider app: Returned to merchant, after choosing the return run: the merchant's address with Directions in Google Maps and Call, then scan the parcels there; Returns' Map button is now Directions.
+- Operations app 1.10.0, Rider app 1.9.0, Merchant app 1.4.5.
+
+## 1.58.1 — 2026-11-22
+- Scan desk: the group headings in the left list (At the hub, Hub collection, CN labels, Rider operation) are in the panels' disabled grey, so they read as labels, not tabs.
+
 ## 1.58.0 — 2026-11-22
 - Operations app 1.9.0, Scan made simple, in groups. At the hub: Receive at hub (every arrival: first mile, failed deliveries back, hub transfers, returns), Hub transfer, Hub return, Delivery rider assign, Return rider assign, Assign pickup rider. Hub collection. CN labels: CN Assign Merchant, CN Scan Details. Rider operation.
 - Rider operation (Operations app and Scan desk): choose a rider and do their rider app steps for them, with the rider app's own rules: Pickup from merchant, Receive from hub, Start deliveries, Deliver (code, signature or photo; cash; partial), Could not deliver (try again or return to sender), Returned to merchant. You are recorded as the one who entered each step; the rider's pay and cash are as if the rider did it.

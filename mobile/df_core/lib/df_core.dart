@@ -13,3 +13,4 @@ export 'src/support.dart';
 export 'src/widgets.dart';
 export 'src/update.dart';
 export 'src/presence.dart';
+export 'src/directions.dart';

@@ -34,6 +34,15 @@ describe("rider app: location, proof, pay, cash handover requests and KYC", () =
     return trackingId as string;
   };
 
+  it("GET /rider/me: the hub's address and map position for Today's directions", async () => {
+    const s = await setup();
+    await ctx.prisma.hub.update({ where: { id: s.h.id }, data: { address: "House 1, Road 2, Gulshan", lat: 23.79, lng: 90.41 } });
+    const me = await ctx.api("GET", "/rider/me", { token: s.rider.token });
+    expect(me.status, JSON.stringify(me.body)).toBe(200);
+    expect(me.body.hub.id).toBe(s.h.id);
+    expect(me.body.hubLocation).toEqual({ address: "House 1, Road 2, Gulshan", lat: 23.79, lng: 90.41 });
+  });
+
   it("Collect & deliver now: only parcels the rider's hub also delivers", async () => {
     const s = await setup();
     const other = await hub(ctx, "HUB-T2");

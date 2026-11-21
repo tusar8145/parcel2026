@@ -104,9 +104,9 @@ class _ReturnsPageState extends State<ReturnsPage> {
                           ],
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => openMap(context, '${(run['merchant'] as Map?)?['address'] ?? ''}'),
-                              icon: const Icon(Icons.map_outlined, size: 18),
-                              label: const Text('Map'),
+                              onPressed: () => merchantDirections(context, run),
+                              icon: const Icon(Icons.directions, size: 18),
+                              label: const Text('Directions'),
                             ),
                           ),
                           const SizedBox(width: 8),

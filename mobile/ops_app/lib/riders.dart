@@ -4,6 +4,7 @@ import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'map.dart';
 import 'ops.dart';
 
 /// Adding riders and setting their passwords from the app: operations managers and Hub Managers (POST /riders/app,
@@ -63,12 +64,15 @@ Future<Map<String, String>?> riderForm(BuildContext context, {required String ti
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (note != null) Text(note, style: const TextStyle(color: muted)),
-              TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
-              TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile (01XXXXXXXXX)')),
-              TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email (optional)')),
+              if (note != null) ...[Text(note, style: const TextStyle(color: muted)), const SizedBox(height: 16)],
+              TextField(controller: name, textCapitalization: TextCapitalization.words, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Name')),
+              const SizedBox(height: 14),
+              TextField(controller: phone, keyboardType: TextInputType.phone, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Mobile (01XXXXXXXXX)')),
+              const SizedBox(height: 14),
+              TextField(controller: email, keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next, decoration: const InputDecoration(labelText: 'Email (optional)')),
+              const SizedBox(height: 14),
               _PasswordField(controller: password),
-              if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: const TextStyle(color: bad))),
+              if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: bad))),
             ],
           ),
         ),
@@ -105,6 +109,7 @@ Future<String?> askNewPassword(BuildContext context, String who) async {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('They are signed out everywhere and sign in with their mobile number and this password.', style: TextStyle(color: muted)),
+            const SizedBox(height: 16),
             _PasswordField(controller: password, label: 'New password'),
             if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: const TextStyle(color: bad))),
           ],
@@ -228,8 +233,17 @@ class RidersPage extends StatefulWidget {
 class _RidersPageState extends State<RidersPage> {
   late Future<List<Map<String, dynamic>>> _riders = _load();
 
-  Future<List<Map<String, dynamic>>> _load() async =>
-      ((await Api.get('/riders', {if (Ops.hubId != null) 'hubId': Ops.hubId})) as List).cast<Map<String, dynamic>>();
+  /// Where each rider was last seen (GET /ops/rider-locations), by rider id.
+  Map<String, Map<String, dynamic>> _at = {};
+
+  Future<List<Map<String, dynamic>>> _load() async {
+    final r = await Future.wait([
+      Api.get('/riders', {if (Ops.hubId != null) 'hubId': Ops.hubId}),
+      Api.get('/ops/rider-locations').catchError((_) => <String, dynamic>{'items': []}),
+    ]);
+    _at = {for (final l in ((((r[1] as Map)['items'] as List?) ?? []).cast<Map<String, dynamic>>())) if (l['lat'] != null) '${l['riderId']}': l};
+    return (r[0] as List).cast<Map<String, dynamic>>();
+  }
 
   void _reload() => setState(() => _riders = _load());
 
@@ -243,7 +257,23 @@ class _RidersPageState extends State<RidersPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Riders · ${Ops.hubName}')),
+      appBar: AppBar(
+        title: Text('Riders · ${Ops.hubName}'),
+        actions: [
+          IconButton(
+            tooltip: 'Riders on the map',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Riders on the map')),
+                  body: const MapPage(visible: true),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.map_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(onPressed: _add, icon: const Icon(Icons.person_add_alt_1), label: const Text('Add rider')),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _riders,
@@ -269,13 +299,23 @@ class _RidersPageState extends State<RidersPage> {
                           ],
                         ),
                         Text([phoneText(r['phone']), if ((r['email'] ?? '') != '') '${r['email']}'].join(' · '), style: const TextStyle(color: muted)),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: () => resetRiderPasswordVia(context, path: '/riders/${r['id']}/password', rider: r),
-                            icon: const Icon(Icons.lock_reset),
-                            label: const Text('New password'),
-                          ),
+                        if (_at['${r['id']}'] case final l?)
+                          Text('Last seen ${dateTimeText(l['at'])}${l['stale'] == true ? ' (old)' : ''}', style: const TextStyle(color: muted, fontSize: 12.5)),
+                        Wrap(
+                          spacing: 4,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () => resetRiderPasswordVia(context, path: '/riders/${r['id']}/password', rider: r),
+                              icon: const Icon(Icons.lock_reset),
+                              label: const Text('New password'),
+                            ),
+                            if (_at['${r['id']}'] case final l?)
+                              TextButton.icon(
+                                onPressed: () => openDirections(context, lat: toNum(l['lat']).toDouble(), lng: toNum(l['lng']).toDouble()),
+                                icon: const Icon(Icons.directions),
+                                label: const Text('Directions'),
+                              ),
+                          ],
                         ),
                       ],
                     ),

@@ -10,6 +10,9 @@ import 'widgets.dart';
 class AppUpdate {
   static bool _shown = false;
 
+  /// The update page is up: nothing else may open.
+  static bool get shown => _shown;
+
   static void required(String message, String? url) {
     if (_shown) return;
     _shown = true;

@@ -217,7 +217,7 @@ void main() {
     await phone(tester);
     await open(tester);
     await tab(tester, 'Scan');
-    for (final t in ['Pickup from merchant', 'Hand over at hub', 'Start deliveries', 'Deliver', 'Could not deliver', 'Return to merchant']) {
+    for (final t in ['Pickup from merchant', 'Hand over at hub (optional)', 'Receive from hub (optional)', 'Start deliveries', 'Deliver', 'Could not deliver', 'Returned to merchant']) {
       await scrollTo(tester, find.text(t));
       expect(find.text(t), findsOneWidget);
     }

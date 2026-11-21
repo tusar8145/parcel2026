@@ -10,6 +10,7 @@ import 'more.dart';
 import 'ops.dart';
 import 'parcels.dart';
 import 'scan.dart';
+import 'search.dart';
 
 /// The shell, so a tapped push can switch tabs.
 final opsShell = GlobalKey<OpsShellState>();
@@ -127,6 +128,7 @@ class OpsShellState extends State<OpsShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    Presence.stop();
     super.dispose();
   }
 
@@ -168,7 +170,7 @@ class OpsShellState extends State<OpsShell> with WidgetsBindingObserver {
           ),
         ),
         actions: [
-          IconButton(tooltip: 'Find a parcel', onPressed: () => findParcel(context), icon: const Icon(Icons.search)),
+          IconButton(tooltip: 'Search', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SearchPage())), icon: const Icon(Icons.search)),
           const NotificationBell(onOpen: openOpsNotification),
           const SizedBox(width: 6),
         ],

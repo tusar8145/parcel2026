@@ -131,13 +131,21 @@ class _MapPageState extends State<MapPage> {
                 KeyValue('Health', '${load['health'] ?? ''}'),
               ],
               const SizedBox(height: 10),
-              if (r['phone'] != null)
-                FilledButton.icon(
+              FilledButton.icon(
+                onPressed: () => openDirections(context, lat: toNum(r['lat']).toDouble(), lng: toNum(r['lng']).toDouble()),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                icon: const Icon(Icons.directions),
+                label: const Text('Directions in Google Maps'),
+              ),
+              if (r['phone'] != null) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   onPressed: () => callPhone(context, '${r['phone']}'),
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(46)),
                   icon: const Icon(Icons.call),
                   label: const Text('Call the rider'),
                 ),
+              ],
             ],
           ),
         ),

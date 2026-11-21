@@ -471,7 +471,7 @@ export class RiderTasksService {
       where: { riderId, status: { in: ["PLANNED", "OUT_FOR_RETURN"] } },
       orderBy: [{ dispatchedAt: "asc" }, { createdAt: "asc" }],
       include: {
-        merchant: { select: { id: true, name: true, pickupAddress: true, pickupArea: true, contactPhone: true } },
+        merchant: { select: { id: true, name: true, pickupAddress: true, pickupArea: true, contactPhone: true, pickupLat: true, pickupLng: true } },
         parcels: { where: { status: "RETURN_SCHEDULED" }, select: { trackingId: true, recipientName: true, returnReason: true, merchantOrderRef: true }, orderBy: { trackingId: "asc" } },
       },
     });
@@ -481,7 +481,7 @@ export class RiderTasksService {
         number: r.number,
         status: r.status,
         dispatchedAt: r.dispatchedAt,
-        merchant: { id: r.merchant.id, name: r.merchant.name, address: addressText(r.merchant.pickupAddress, r.merchant.pickupArea), phone: r.merchant.contactPhone },
+        merchant: { id: r.merchant.id, name: r.merchant.name, address: addressText(r.merchant.pickupAddress, r.merchant.pickupArea), phone: r.merchant.contactPhone, lat: r.merchant.pickupLat, lng: r.merchant.pickupLng },
         parcels: r.parcels,
       })),
     };

@@ -284,6 +284,8 @@ class ScanPage extends StatelessWidget {
           );
     if (id == null || !context.mounted) return;
     final run = runs.firstWhere((r) => '${r['id']}' == id);
+    // Next: on the way to the merchant (directions), then scan there.
+    if (!await goToMerchant(context, run) || !context.mounted) return;
     final total = ((run['parcels'] as List?) ?? []).length;
     final status = ValueNotifier('0 of $total returned');
     await _session(

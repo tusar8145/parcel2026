@@ -101,7 +101,7 @@ void main() {
     await settle(tester);
 
     await tab(tester, 'Scan');
-    for (final t in ['Receive at hub', 'Out for delivery', 'Pickup entry', 'Transfer out', 'Delivery entry']) {
+    for (final t in ['Receive at hub', 'Hub transfer', 'Delivery rider assign']) {
       expect(find.text(t), findsOneWidget);
     }
     final r = (await tester.runAsync(() => deskScan('/ops/hub-receive', {'code': 'PP-261024-RSDM2', 'hubId': Ops.hubId, 'source': 'CAMERA'})))!;
@@ -117,7 +117,7 @@ void main() {
     expect(find.textContaining('central hub'), findsWidgets);
 
     await tab(tester, 'More');
-    expect(find.text('Assign delivery riders'), findsOneWidget);
+    expect(find.text('Change hub'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Help & support'), 200, scrollable: find.byType(Scrollable).hitTestable().first);
     expect(find.text('Help & support'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());

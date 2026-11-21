@@ -151,6 +151,7 @@ class RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     Outbox.synced.removeListener(Tasks.load);
+    Presence.stop();
     super.dispose();
   }
 
@@ -351,6 +352,7 @@ class _TodayPageState extends State<TodayPage> {
   Map<String, dynamic>? _summary;
   Map<String, dynamic>? _shift;
   List<Map<String, dynamic>> _runs = [];
+  Map<String, dynamic>? _me;
   String? _error;
   bool _busy = false;
 
@@ -369,12 +371,18 @@ class _TodayPageState extends State<TodayPage> {
 
   Future<void> _load() async {
     try {
-      final r = await Future.wait([cachedGet('/rider/summary'), cachedGet('/rider/shift'), cachedGet('/rider/return-runs').catchError((_) => <String, dynamic>{})]);
+      final r = await Future.wait([
+        cachedGet('/rider/summary'),
+        cachedGet('/rider/shift'),
+        cachedGet('/rider/return-runs').catchError((_) => <String, dynamic>{}),
+        cachedGet('/rider/me').catchError((_) => <String, dynamic>{}),
+      ]);
       if (!mounted) return;
       setState(() {
         _summary = (r[0] as Map).cast<String, dynamic>();
         _shift = (r[1] as Map).cast<String, dynamic>();
         _runs = (((r[2] as Map?)?['items'] as List?) ?? []).cast<Map<String, dynamic>>();
+        _me = (r[3] as Map?)?.cast<String, dynamic>();
         _error = null;
       });
     } catch (e) {
@@ -412,6 +420,37 @@ class _TodayPageState extends State<TodayPage> {
     } catch (e) {
       if (mounted) snack(context, errorText(e));
     }
+  }
+
+  /// Your hub: where it is, and directions there in Google Maps.
+  Widget _hubCard(Map<String, dynamic> hub, Map<String, dynamic>? at) {
+    final lat = at?['lat'], lng = at?['lng'];
+    final address = '${at?['address'] ?? ''}'.trim();
+    return Panel(
+      child: Row(
+        children: [
+          const CircleAvatar(backgroundColor: Color(0x14000000), child: Icon(Icons.warehouse_outlined, color: brand)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Your hub', style: TextStyle(color: muted, fontSize: 12.5)),
+                Text('${hub['name']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                if (address.isNotEmpty) Text(address, style: const TextStyle(color: muted, fontSize: 12.5)),
+                if (lat == null || lng == null) const Text('Location not set for this hub yet.', style: TextStyle(color: muted, fontSize: 12)),
+              ],
+            ),
+          ),
+          if (lat != null && lng != null)
+            FilledButton.icon(
+              onPressed: () => openDirections(context, lat: toNum(lat).toDouble(), lng: toNum(lng).toDouble(), address: address),
+              icon: const Icon(Icons.directions, size: 18),
+              label: const Text('Directions'),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -480,6 +519,7 @@ class _TodayPageState extends State<TodayPage> {
               ],
             ),
           ),
+          if (_me?['hub'] is Map) _hubCard((_me!['hub'] as Map).cast<String, dynamic>(), (_me!['hubLocation'] as Map?)?.cast<String, dynamic>()),
           ValueListenableBuilder<Map<String, dynamic>?>(
             valueListenable: Tasks.data,
             builder: (context, _, _) => TilePairs(

@@ -130,11 +130,13 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
     l.parcels.clearLayers();
     l.riders.clearLayers();
     l.vehicles.clearLayers();
-    const bounds: L.LatLngExpression[] = [];
+    // Where the work is (parcels, riders, vehicles) and, for hub staff, their own hubs: the map opens zoomed on it.
+    const bounds: [number, number][] = [];
+    const ownHubs: [number, number][] = [];
     const mine = ops.me?.hubIds;
     for (const h of ops.hubs.filter(h => h.lat != null && h.lng != null && (h.type !== "FRANCHISE" || franchiseAccount))) {
       L.marker([h.lat!, h.lng!], { icon: pin("H", "#101828", 24), zIndexOffset: 500 }).bindTooltip(esc(h.name)).addTo(l.hubs);
-      if (!mine || mine.includes(h.id)) bounds.push([h.lat!, h.lng!]);
+      if (mine?.includes(h.id)) ownHubs.push([h.lat!, h.lng!]);
     }
     for (const p of showParcels ? pins.data?.parcels || [] : []) {
       const color = p.status === "EXCEPTION" ? "#c0292b" : PARCEL_COLOR[p.sla || ""] || "#2453d3";
@@ -156,11 +158,16 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
         .addTo(l.vehicles);
       bounds.push([v.lat, v.lng]);
     }
-    if (!l.fitted && bounds.length) {
-      l.map.fitBounds(L.latLngBounds(bounds), { padding: [24, 24], maxZoom: 14 });
+    // Fit once, after what the map shows has loaded (fitting on the hubs alone showed the whole country).
+    const loading = (showParcels && pins.isLoading) || riders.isLoading || vehicles.isLoading;
+    if (!l.fitted && !loading) {
+      const focus = cluster([...bounds, ...ownHubs]);
+      if (focus.length > 1) l.map.fitBounds(L.latLngBounds(focus), { padding: [24, 24], maxZoom: 15 });
+      else if (focus.length === 1) l.map.setView(focus[0], 14);
+      else l.map.setView(DHAKA, 13);
       l.fitted = true;
     }
-  }, [ready, ops.hubs, ops.me, pins.data, shownRiders, vehicles.data, showParcels, onParcel, vehiclesOnly, franchiseAccount]);
+  }, [ready, ops.hubs, ops.me, pins.data, pins.isLoading, riders.isLoading, vehicles.isLoading, shownRiders, vehicles.data, showParcels, onParcel, vehiclesOnly, franchiseAccount]);
 
   const liveRiders = shownRiders.filter(r => !r.stale).length;
   const liveVehicles = (vehicles.data || []).filter(v => !v.stale).length;
@@ -183,6 +190,19 @@ export default function NetworkMap({ height = 420, onParcel, onReady, showParcel
       </div> : null}
     </div>
   );
+}
+
+/**
+ * The points around where most of them are: within about 25 km of the median point. A rider or vehicle in another
+ * city doesn't zoom the map out to the whole country.
+ */
+function cluster(points: [number, number][]) {
+  if (points.length < 3) return points;
+  const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  const lat = median(points.map(p => p[0]));
+  const lng = median(points.map(p => p[1]));
+  const near = points.filter(p => Math.abs(p[0] - lat) < 0.23 && Math.abs(p[1] - lng) < 0.25);
+  return near.length ? near : points;
 }
 
 function Legend({ color, text, square }: { color: string; text: string; square?: boolean }) {

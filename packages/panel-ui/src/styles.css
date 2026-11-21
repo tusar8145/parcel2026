@@ -86,10 +86,19 @@ h1, h2, h3, h4 { color: var(--ink); margin: 0; font-weight: 650; letter-spacing:
 .nav-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--muted); font-size: 12px; font-weight: 620; text-align: center; }
 .nav-item[aria-current="page"] .nav-count { background: #fff; color: var(--primary); }
 /* Collapsible sub-menus (super admin: Notification / Operational / Location settings). */
-.nav-sub-toggle { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+/* The same weight as the menu's links (font: inherit alone made sub-menu headings lighter). */
+.nav-sub-toggle { width: 100%; border: 0; background: none; font: inherit; font-weight: 520; text-align: left; cursor: pointer; }
 .nav-sub-toggle > svg:last-child { margin-left: auto; width: 14px; height: 14px; }
 .nav-sub-toggle.has-active { color: var(--primary); }
 .nav-sub-items { display: grid; gap: 2px; margin: 2px 0 4px 18px; padding-left: 8px; border-left: 1px solid var(--line); }
+/* Sub-menus slide open and closed (the chevron turns down when open). */
+.nav-sub-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .32s ease, opacity .25s ease; }
+.nav-sub-wrap.open { grid-template-rows: 1fr; opacity: 1; }
+.nav-sub-wrap > .nav-sub-items { min-height: 0; overflow: hidden; }
+.nav-sub-toggle > svg:last-child { transition: transform .28s ease; }
+.nav-sub-toggle[aria-expanded="true"] > svg:last-child { transform: rotate(90deg); }
+.nav-sub-toggle > .nav-count + svg:last-child { margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .nav-sub-wrap, .nav-sub-toggle > svg:last-child { transition: none; } }
 .sidebar-foot { border-top: 1px solid var(--line); padding: 10px; display: grid; gap: 8px; }
 /* "Paste a message" box at the top of a booking form (merchant panel). */
 .paste-box { margin-bottom: 14px; padding: 10px 12px; border: 1px dashed var(--primary-line, #c7d4f5); border-radius: 10px; background: var(--surface-2); }
@@ -621,6 +630,8 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-3); b
 .dropdown-button.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(36 83 211 / 14%); }
 .dropdown-button > svg { flex: none; color: var(--muted); }
 .dropdown-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In a form field the search dropdown fills the field (a long choice ends with …) instead of pushing past it. */
+.field .dropdown-button { width: 100%; max-width: 100%; min-width: 0; }
 .dropdown-button:disabled { cursor: not-allowed; }
 .dropdown-menu { display: flex; flex-direction: column; padding: 0; overflow: hidden; border-color: #dfe5ee; border-radius: 12px; box-shadow: 0 12px 32px rgb(16 24 40 / 14%), 0 2px 6px rgb(16 24 40 / 6%); animation: dropdown-in .12s ease-out; }
 @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px); } }

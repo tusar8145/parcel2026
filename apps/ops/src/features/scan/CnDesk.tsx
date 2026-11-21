@@ -142,7 +142,7 @@ export function CnMerchantDesk() {
 
   const done = cnDesk.merchantLog.filter(e => e.ok).length;
   return (
-    <Panel title="CN_Merchant" subtitle="Choose the merchant, then scan the CN labels one after another: each becomes that merchant's parcel and is received at the hub.">
+    <Panel title="CN Merchant" subtitle="Choose the merchant, then scan the CN labels one after another: each becomes that merchant's parcel and is received at the hub.">
       <div className="panel-body">
         <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
           <HubPicker {...hub} />

@@ -1,3 +1,4 @@
+import { dhakaDayKey } from "../src/common/period";
 import { DEFAULT_PACKAGE_PRICES as P } from "@delivery-fast/shared";
 import { vi } from "vitest";
 import { RealtimeService, type RealtimeEvent } from "../src/common/realtime.service";
@@ -606,6 +607,16 @@ describe("imports", () => {
       expect((await ctx.prisma.importJob.findUniqueOrThrow({ where: { id: res.body.id } })).kind).toBe("CUSTOMER");
       const history = await ctx.api("GET", "/imports?kind=customer", { token: ops.token });
       expect(history.body.items.map((i: { id: string }) => i.id)).toEqual([res.body.id]);
+      // Import history by date (Dhaka days), and the pinned imports' parcels (several booking batches at once).
+      const today = dhakaDayKey();
+      expect((await ctx.api("GET", `/imports?kind=customer&from=${today}&to=${today}`, { token: ops.token })).body.items.map((i: { id: string }) => i.id)).toEqual([res.body.id]);
+      expect((await ctx.api("GET", "/imports?kind=customer&from=2020-01-01&to=2020-01-02", { token: ops.token })).body.items).toEqual([]);
+      expect((await ctx.api("GET", "/imports?from=15-11-2026", { token: ops.token })).status).toBe(422);
+      const batchId = parcels[0].bookingBatchId!;
+      const pinned = await ctx.api("GET", `/parcels?batchIds=${batchId},01a1dbaa-e8fd-76d2-aaba-ef6eaa6cee5e&limit=50`, { token: ops.token });
+      expect(pinned.status, JSON.stringify(pinned.body)).toBe(200);
+      expect(pinned.body.items.map((i: { trackingId: string }) => i.trackingId).sort()).toEqual(parcels.map(x => x.trackingId).sort());
+      expect((await ctx.api("GET", "/parcels?batchIds=not-a-batch", { token: ops.token })).status).toBe(422);
 
       // The same file again books nothing twice.
       const again = await upload(ops.token, { kind: "customer" }, { name: "walkins.csv", data: file });

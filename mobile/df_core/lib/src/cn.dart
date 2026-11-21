@@ -113,7 +113,7 @@ Future<void> openCnMerchant(BuildContext context, {String? hubId}) async {
   if (m == null || !context.mounted) return;
   await scanBarcode(
     context,
-    title: 'CN_Merchant · ${m['name']}',
+    title: 'CN Merchant · ${m['name']}',
     hint: 'Scan each CN label: the parcel becomes ${m['name']}\'s.',
     continuous: true,
     onCode: (code, source) async {

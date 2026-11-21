@@ -1,3 +1,4 @@
+import { dhakaDayStartOf } from "../../common/period";
 import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap } from "@nestjs/common";
 import { notifyNewWork } from "../notifications/new-work";
 import { InboxService } from "../notifications/inbox.service";
@@ -23,7 +24,7 @@ import { OutboxService } from "../notifications/outbox.service";
 import { readCsv, writeCsv } from "./csv";
 import { COLUMNS, columnsFor, kindKeyOf, KIND_ENUM, KIND_LABEL, matchHeaders, merchantTypeOf, segmentOf, type ColumnKey, type ImportKindKey } from "./columns";
 import { ImportConfigService, type ImportSettings } from "./import-config.service";
-import { ImportEngineService, markKeys, productNameOfCell, productSegmentOf, setMark, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
+import { ImportEngineService, markKeys, productLabel, productNameOfCell, productSegmentOf, setMark, type Cells, type EngineContext, type ImportServiceOptions, type RowResult } from "./import-engine.service";
 import { PackagesService } from "../packages/packages.service";
 import { deliveryTypesFor, displayPriceLines, findDeliveryType, FIRST_MILE_LABEL, LAST_MILE_LABEL, PARCEL_NOTIFICATIONS, PRODUCT_TYPE_LABEL, resolveSelection } from "@delivery-fast/shared";
 import { buildTemplate, DATA_SHEET } from "./import-templates";
@@ -677,6 +678,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
         priority: services.priority ?? null,
         priorityLabel: services.priority ? ((await this.prisma.parcelPriority.findUnique({ where: { id: services.priority }, select: { name: true } }))?.name ?? null) : null,
         productType: services.productType ?? null,
+        /** The product applied to every row in the preview (null: each row's own). */
+        product: services.product ?? null,
         productTypeLabel: services.productType ? PRODUCT_TYPE_LABEL[services.productType] : null,
       },
       totals: { rows: totals._count._all, charge: Number(totals._sum.charge ?? 0) },
@@ -740,7 +743,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
     };
     return rows.map(r => {
       const errors = (r.errors as { column: string; message: string }[] | null) ?? [];
-      const { __auto: _auto, __ai: _ai, __own: _own, __label: label, ...cells } = (r.cells ?? {}) as Cells;
+      const { __auto: _auto, __ai: _ai, __own: _own, __label: label, __fileProduct: _fileProduct, __fileLabel: _fileLabel, ...cells } = (r.cells ?? {}) as Cells;
       return {
         rowNumber: r.rowNumber,
         status: r.status,
@@ -789,7 +792,8 @@ export class ImportJobsService implements OnApplicationBootstrap {
     for (const [key, value] of Object.entries(input.cells) as [ColumnKey, string | null][]) {
       const v = (value ?? "").trim();
       // Another product: the file's own name stays the parcel's (prints show it).
-      if (key === "product_type" && !cells.__label && cells.product_type?.trim() && v !== cells.product_type) cells.__label = cells.product_type.trim();
+      // The file's own name is kept (not the product applied to every row in the preview).
+      if (key === "product_type" && !cells.__label && cells.__fileProduct === undefined && cells.product_type?.trim() && v !== cells.product_type) cells.__label = cells.product_type.trim();
       if (v) cells[key] = v;
       else delete cells[key];
       auto.delete(key); // typed or chosen by the user now
@@ -845,7 +849,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
    * The import window's second screen: the delivery type, priority and messages for the whole file, changed after it
    * was checked. Every row is checked and priced again; the file's counts follow.
    */
-  async updateOptions(actor: Actor, id: string, input: { speed?: string; priority?: string; notifications?: string[] }, meta: RequestMeta) {
+  async updateOptions(actor: Actor, id: string, input: { speed?: string; priority?: string; product?: string; notifications?: string[] }, meta: RequestMeta) {
     const job = await this.load(actor, id);
     this.scopeFor(actor, job.merchantId ?? undefined);
     if (job.status !== "VALIDATED") throw new AppError("NOT_EDITABLE", "Only a checked file that is not submitted yet can be changed", HttpStatus.CONFLICT);
@@ -866,6 +870,12 @@ export class ImportJobsService implements OnApplicationBootstrap {
       services.speed = ctx.services.speed = type.code;
     }
     if (input.priority && !ctx.priorities.some(p => p.id === input.priority)) throw new AppError("UNKNOWN_PRIORITY", "Choose a priority from the list", 422);
+    // One product for every row: replaces the file's product (and the name the file wrote for it); "" = back to the rows' own.
+    const productChange = input.product !== undefined;
+    const wanted = input.product?.trim().toLowerCase();
+    const product = wanted ? ctx.products.find(p => p.name.toLowerCase() === wanted || productLabel(p).toLowerCase() === wanted) : undefined;
+    if (wanted && !product) throw new AppError("UNKNOWN_PRODUCT", "Choose a product from the list", 422);
+    if (productChange) services.product = product?.name ?? null;
     const rows = await this.prisma.importRow.findMany({ where: { jobId: job.id }, orderBy: { rowNumber: "asc" }, select: { id: true, rowNumber: true, cells: true } });
     // "Apply to every row": rows changed one by one in the preview take the file's choice again.
     const applied = [...(input.speed ? ["service_level"] : []), ...(input.priority ? ["priority"] : [])];
@@ -874,6 +884,23 @@ export class ImportJobsService implements OnApplicationBootstrap {
       rows.map(r => {
         const cells = { ...(r.cells as Cells) };
         setMark(cells, "__own", [], applied);
+        if (product) {
+          // The row's own product is kept once (the first time a product is applied), to go back to.
+          if (cells.__fileProduct === undefined) {
+            cells.__fileProduct = cells.product_type ?? "";
+            cells.__fileLabel = cells.__label ?? "";
+          }
+          cells.product_type = product.name;
+          delete cells.__label;
+          setMark(cells, "__ai", [], ["product_type"]);
+        } else if (productChange && cells.__fileProduct !== undefined) {
+          if (cells.__fileProduct) cells.product_type = cells.__fileProduct;
+          else delete cells.product_type;
+          if (cells.__fileLabel) cells.__label = cells.__fileLabel;
+          else delete cells.__label;
+          delete cells.__fileProduct;
+          delete cells.__fileLabel;
+        }
         return { rowNumber: r.rowNumber, cells };
       }),
     );
@@ -899,7 +926,7 @@ export class ImportJobsService implements OnApplicationBootstrap {
           where: { id: job.id },
           data: { validRows: count("VALID"), incompleteRows: count("INCOMPLETE"), errorRows: count("ERROR"), settings: { ...(job.settings as object), services } as unknown as Prisma.InputJsonObject },
         });
-        await this.audit.record(actor, { action: "import.options", entityType: "import", entityId: job.id, data: { number: job.number, speed: services.speed ?? null, priority: services.priority ?? null, notifications: services.notifications?.length ?? null } }, meta, tx);
+        await this.audit.record(actor, { action: "import.options", entityType: "import", entityId: job.id, data: { number: job.number, speed: services.speed ?? null, priority: services.priority ?? null, product: productChange ? (product?.name ?? "each row's own") : undefined, notifications: services.notifications?.length ?? null } }, meta, tx);
         return updated;
       },
       { timeout: 120_000 },
@@ -917,7 +944,13 @@ export class ImportJobsService implements OnApplicationBootstrap {
     else throw forbidden("Imports are for merchant accounts and operations");
     if (query.merchantId && !mine.includes(query.merchantId) && !staff) throw forbidden("You're not a member of this merchant");
     const rows = await this.prisma.importJob.findMany({
-      where: { ...where, status: { not: "DISCARDED" }, ...(query.kind ? { kind: KIND_ENUM[query.kind] } : {}) },
+      where: {
+        ...where,
+        status: { not: "DISCARDED" },
+        ...(query.kind ? { kind: KIND_ENUM[query.kind] } : {}),
+        // Uploaded on these Dhaka days.
+        ...(query.from || query.to ? { createdAt: { ...(query.from ? { gte: dhakaDayStartOf(query.from) } : {}), ...(query.to ? { lt: new Date(dhakaDayStartOf(query.to).getTime() + 86_400_000) } : {}) } } : {}),
+      },
       ...pageArgs(query),
     });
     const page = toPage(rows, query.limit);

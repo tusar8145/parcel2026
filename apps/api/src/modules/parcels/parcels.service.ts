@@ -457,7 +457,7 @@ export class ParcelsService {
           currentHubId: query.hubId,
           intake: query.intake,
           dropOffHubId: query.dropOffHubId,
-          bookingBatchId: query.batchId,
+          bookingBatchId: query.batchIds?.length ? { in: query.batchIds } : query.batchId,
           incomplete: query.incomplete,
           ...(query.riderId ? { OR: [{ pickupRiderId: query.riderId }, { deliveryRiderId: query.riderId }] } : {}),
         },

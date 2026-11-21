@@ -15,18 +15,20 @@ import { openScanWithPhone } from "@/features/imports/ScanWithPhone";
 import { useImportConfig } from "@/features/imports/ImportButtons";
 import ViewTabs from "@/app/ViewTabs";
 import { SlaAlerts } from "./Reports";
-import { BulkUpdateButton, ImportButtons } from "@/features/imports/ImportButtons";
+import { BulkUpdateButton, ImportButtons, PinnedChips } from "@/features/imports/ImportButtons";
 import type { ListFilters } from "@/features/parcels/useParcelList";
 import { parseParcelStatus } from "@delivery-fast/shared/dist/parcel-status.js";
-import { pinName, useImportPin } from "@/features/imports/importPin";
+import { pinName, useImportPins } from "@/features/imports/importPin";
 
 export function NewOrders() {
   const view = viewById("New orders")!;
-  // A pinned import (Import history › Pin): only its parcels, whatever their status or date.
-  const pin = useImportPin();
+  // Pinned imports (Import history › Pin): only their parcels, whatever their status or date.
+  const pins = useImportPins();
+  const pin = pins.length ? pins : null;
+  const batchIds = pins.map(p => p.batchId).join(",");
   const list = useParcelList(
     pin
-      ? { id: `new-orders-pin-${pin.batchId}`, params: { batchId: pin.batchId }, allTime: true, noun: "order", empty: "This import has no parcels you can see." }
+      ? { id: `new-orders-pin-${batchIds}`, params: { batchIds }, allTime: true, noun: "order", empty: pins.length > 1 ? "These imports have no parcels you can see." : "This import has no parcels you can see." }
       : { id: "new-orders", params: { stage: "new" }, noun: "order", empty: "No orders are waiting for operations." },
   );
   const ops = useOps();
@@ -56,11 +58,12 @@ export function NewOrders() {
           </>
         }
       />
+      <PinnedChips />
       <ParcelTable
         list={list}
         options={{
-          title: pin ? `Pinned import ${pinName(pin)}` : "Orders waiting for operations",
-          subtitle: pin ? "Only this import's parcels, whatever their status (this device; unpin to see every new order)" : "Newest first · 100 a page · tick orders to accept and assign them together",
+          title: pin ? (pins.length === 1 ? `Pinned import ${pinName(pins[0])}` : `${pins.length} pinned imports`) : "Orders waiting for operations",
+          subtitle: pin ? `Only ${pins.length === 1 ? "this import's" : "these imports'"} parcels, whatever their status (this device; unpin to see every new order)` : "Newest first · 100 a page · tick orders to accept and assign them together",
           lines: true,
           merchants: true,
           dates: true,
@@ -97,7 +100,14 @@ function bulkFilters(f: ListFilters) {
 export function AllParcels({ tab }: { tab: string }) {
   const t = ALL_TABS[tab] ?? ALL_TABS.All;
   const ops = useOps();
-  const list = useParcelList({ id: `all-${tab}`, params: t.line ? { line: t.line } : {}, register: true, empty: "No parcels match." });
+  // Pinned imports (Import history › Pin): only their parcels here too (in this tab's line), whatever their status or date.
+  const pins = useImportPins();
+  const batchIds = pins.map(p => p.batchId).join(",");
+  const list = useParcelList(
+    pins.length
+      ? { id: `all-${tab}-pin-${batchIds}`, params: { ...(t.line ? { line: t.line } : {}), batchIds }, allTime: true, register: true, empty: pins.length > 1 ? "These imports have no parcels in this tab." : "This import has no parcels in this tab." }
+      : { id: `all-${tab}`, params: t.line ? { line: t.line } : {}, register: true, empty: "No parcels match." },
+  );
   const s = ops.overview?.shipments;
   const active = t.activeKey ? ops.overview?.serviceLines?.[t.activeKey] : null;
   const periodText = ops.period.value === "all" ? "every date" : ops.period.label.toLowerCase();
@@ -140,12 +150,15 @@ export function AllParcels({ tab }: { tab: string }) {
           </div>
         </div>
       ) : null}
+      <PinnedChips />
       <ParcelTable
         key={tab}
         list={list}
         options={{
-          title: tab === "All" ? "Network shipment register" : `${t.page} shipment queue`,
-          subtitle: `${active == null ? "" : `${num(active)} active · `}newest first · ${periodText} unless you choose other dates · a search finds older parcels too`,
+          title: pins.length ? (pins.length === 1 ? `Pinned import ${pinName(pins[0])}` : `${pins.length} pinned imports`) : tab === "All" ? "Network shipment register" : `${t.page} shipment queue`,
+          subtitle: pins.length
+            ? `Only ${pins.length === 1 ? "this import's" : "these imports'"} parcels${t.line ? ` (${t.page})` : ""}, whatever their status or date (this device; unpin to see every parcel)`
+            : `${active == null ? "" : `${num(active)} active · `}newest first · ${periodText} unless you choose other dates · a search finds older parcels too`,
           statuses: "register",
           dates: true,
           merchants: t.merchants !== false,

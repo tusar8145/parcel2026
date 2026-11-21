@@ -18,7 +18,7 @@ import { num } from "@panel/lib/format";
 import { openBulk, openBulkHistory, openImport, openImportHistory, type BulkFilters, type ImportConfig, type MerchantRef, type TransferResult } from "@panel/ui/Importer";
 import { useNavigate } from "react-router";
 import { pathFor } from "@/app/nav";
-import { pinImport, pinName, unpinImport, useImportPin, PIN_HOURS } from "./importPin";
+import { MAX_PINS, pinImport, pinName, pinnedImports, unpinImport, useImportPins, PIN_HOURS } from "./importPin";
 
 const PAGE_OF: Record<string, string> = { new_orders: "New orders", pickup: "Pickup", hub_desk: "Hub desk", delivery: "Delivery", problems: "Problems", returns: "Returns", transfers: "Transfers", all: "All parcels" };
 export const bulkLabel = (kind: string) => `Bulk update ${PAGE_OF[kind] || "All parcels"} by Excel`;
@@ -51,25 +51,59 @@ export function useImportConfig(kind: "customer" | "ecommerce" | "document", kin
         void printLabels(ids.slice(0, PDF_LIMITS.labels));
       },
       onDone: () => refreshParcels(),
-      // Pin: New orders shows only this import's parcels (this browser, 6 hours).
+      // Pin: New orders and All parcels show only the pinned imports' parcels (this browser, 6 hours each); several at once.
       onPin: job => {
-        pinImport({ batchId: job.batch.id, batch: job.batch.number, number: job.number });
-        toast(`New orders shows only ${pinName({ number: job.number, batch: job.batch.number })} on this device for ${PIN_HOURS} hours, or until you unpin it.`, "good");
-        navigate(pathFor("New orders"));
+        const name = pinName({ number: job.number, batch: job.batch.number });
+        if (!pinImport({ batchId: job.batch.id, batch: job.batch.number, number: job.number })) return toast(`At most ${MAX_PINS} imports can be pinned at once: unpin one first.`, "bad");
+        const n = pinnedImports().length;
+        toast(`${name} pinned${n > 1 ? ` (${n} pinned)` : ""}: New orders and All parcels show only ${n > 1 ? "their" : "its"} parcels on this device for ${PIN_HOURS} hours, or until unpinned.`, "good");
       },
+      isPinned: batchId => pinnedImports().some(p => p.batchId === batchId),
+      onUnpin: batchId => unpinImport(batchId),
+      pinnedCount: () => pinnedImports().length,
+      onShowPinned: () => navigate(pathFor("New orders")),
     };
   };
 }
 
-/** New orders: the pinned import's Unpin button (with its number). */
+const timeLeft = (pinnedAt: number) => {
+  const left = Math.max(1, Math.round((pinnedAt + PIN_HOURS * 3600_000 - Date.now()) / 60_000));
+  return left >= 60 ? `${Math.floor(left / 60)} h ${left % 60} min` : `${left} min`;
+};
+
+/** New orders: Unpin for the pinned import (with its number), or Unpin all when several are pinned. */
 export function UnpinButton() {
-  const pin = useImportPin();
-  if (!pin) return null;
-  const left = Math.max(1, Math.round((pin.pinnedAt + PIN_HOURS * 3600_000 - Date.now()) / 60_000));
+  const pins = useImportPins();
+  if (!pins.length) return null;
+  if (pins.length === 1)
+    return (
+      <Button icon="pin" variant="primary" title={`Pinned on this device; ends by itself in ${timeLeft(pins[0].pinnedAt)}`} onClick={() => (unpinImport(), toast("Unpinned: New orders and All parcels show every parcel again."))}>
+        {`Unpin ${pinName(pins[0])}`}
+      </Button>
+    );
   return (
-    <Button icon="pin" variant="primary" title={`Pinned on this device; ends by itself in ${left >= 60 ? `${Math.floor(left / 60)} h ${left % 60} min` : `${left} min`}`} onClick={() => (unpinImport(), toast("Unpinned: New orders shows every new order again."))}>
-      {`Unpin ${pinName(pin)}`}
+    <Button icon="pin" variant="primary" title={`${pins.map(p => `${pinName(p)} (${timeLeft(p.pinnedAt)} left)`).join(" · ")}. Unpin one with its × above the table, or all here.`} onClick={() => (unpinImport(), toast("Unpinned: New orders and All parcels show every parcel again."))}>
+      {`Unpin all ${pins.length}`}
     </Button>
+  );
+}
+
+/** New orders with several pinned imports: one chip per import, each with its own ×. */
+export function PinnedChips() {
+  const pins = useImportPins();
+  if (pins.length < 2) return null;
+  return (
+    <div className="row" style={{ gap: 6, flexWrap: "wrap", margin: "0 0 10px" }}>
+      <span className="faint" style={{ fontSize: 12.5 }}>Pinned on this device:</span>
+      {pins.map(p => (
+        <span key={p.batchId} className="pill" title={`${timeLeft(p.pinnedAt)} left`} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          {pinName(p)}
+          <button type="button" aria-label={`Unpin ${pinName(p)}`} onClick={() => unpinImport(p.batchId)} style={{ border: 0, background: "none", cursor: "pointer", padding: 0, font: "inherit", lineHeight: 1 }}>
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
   );
 }
 

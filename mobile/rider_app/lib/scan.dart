@@ -85,7 +85,7 @@ class ScanPage extends StatelessWidget {
               _TaskCard(
                 icon: Icons.qr_code_2,
                 color: brand,
-                title: 'CN_Merchant',
+                title: 'CN Merchant',
                 text: "Choose the merchant, then scan CN labels: they become that merchant's parcels. Bring them to your hub.",
                 onTap: () => openCnMerchant(context),
               ),

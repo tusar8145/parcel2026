@@ -45,7 +45,8 @@ import type { ImportSettings } from "./import-config.service";
  * `__own`: delivery type / priority chosen for this row in the preview: the window's choice for the file doesn't
  * overwrite them (until "Apply to every row").
  */
-export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label" | "__ai" | "__own", string>>;
+/** __fileProduct / __fileLabel: the row's own product (and the name the file wrote) while one product is applied to every row. */
+export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label" | "__ai" | "__own" | "__fileProduct" | "__fileLabel", string>>;
 
 /** The keys listed in a marker cell (`__auto`, `__ai`, `__own`). */
 export const markKeys = (cells: Cells, marker: "__auto" | "__ai" | "__own") => new Set((cells[marker] ?? "").split(",").filter(Boolean));
@@ -91,6 +92,8 @@ export interface ImportServiceOptions {
   priority?: string | null;
   /** E-commerce / customer: the product type every row is priced as (overwrites its product's type). */
   productType?: ProductType | null;
+  /** The preview's product for every row (replaces the file's; the rows keep their own to go back to). */
+  product?: string | null;
   /** The modal's "Delivery proof required" for every row (default on). */
   proofRequired?: boolean | null;
   /** The modal's "Set specific proof" for every row (PHOTO, OTP or SIGNATURE); empty = any the package offers. */

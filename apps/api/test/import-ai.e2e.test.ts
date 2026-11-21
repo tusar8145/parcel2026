@@ -189,6 +189,50 @@ describe("AI import", () => {
     expect(parcel).toMatchObject({ speedOption: "REGULAR", priorityName: "Fragile", productName: "Books" });
   });
 
+  it("one product for every row replaces the file's products (and the names it wrote); back to each row's own", async () => {
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const merchant = await shop();
+    await ctx.api("GET", "/packages/effective?segment=ECOMMERCE", { token: ops.token });
+    const checked = await validate(ops.token, merchant.id, [
+      row(1, { address: "House 9, Dhanmondi", district: "Dhaka Central", zone: "Dhanmondi", product_type: "Blue cotton shirt x2" }),
+      row(2, { address: "House 4, Dhanmondi", district: "Dhaka Central", zone: "Dhanmondi" }),
+    ]);
+    const cellsOf = (b: { rows: { items: { rowNumber: number; cells: Record<string, string>; productLabel: string | null }[] } }) => b.rows.items.map(r => [r.cells.product_type, r.productLabel]);
+    // A product that isn't in the list is refused.
+    expect((await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "Spaceship" } })).body.error.code).toBe("UNKNOWN_PRODUCT");
+    const res = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "Books" } });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(cellsOf(res.body)).toEqual([
+      ["Books", null],
+      ["Books", null],
+    ]);
+    expect(res.body.services.product).toBe("Books");
+    // Back to each row's own: the file's product (and its name) return; a row without one has none again.
+    const own = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "" } });
+    expect(own.status, JSON.stringify(own.body)).toBe(200);
+    expect(cellsOf(own.body)).toEqual([
+      ["Shirt", "Blue cotton shirt x2"],
+      [undefined, null],
+    ]);
+    expect(own.body.services.product).toBeNull();
+    expect(JSON.stringify(own.body.rows)).not.toContain("__file");
+    // Applied again, and another product on top keeps the file's own to go back to.
+    await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "Books" } });
+    const shirt = await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "Shirt" } });
+    expect(cellsOf(shirt.body)).toEqual([
+      ["Shirt", null],
+      ["Shirt", null],
+    ]);
+    expect(cellsOf((await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "" } })).body)).toEqual([
+      ["Shirt", "Blue cotton shirt x2"],
+      [undefined, null],
+    ]);
+    await ctx.api("PATCH", `/imports/${checked.id}/options`, { token: ops.token, body: { product: "Books" } });
+    expect((await ctx.api("POST", `/imports/${checked.id}/commit`, { token: ops.token })).body).toMatchObject({ status: "COMPLETED" });
+    const parcels = await ctx.prisma.parcel.findMany({ where: { merchantId: merchant.id }, select: { productName: true } });
+    expect(parcels.map(p => p.productName)).toEqual(["Books", "Books"]);
+  });
+
   it("a merchant's own import uses it too", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     const merchant = await shop();

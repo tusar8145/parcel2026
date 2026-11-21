@@ -1,80 +1,96 @@
 /**
- * A pinned import (Import history › Pin): New orders shows only that import's parcels, whatever their status, until
- * it is unpinned or 6 hours pass. Kept in this browser only (localStorage); other devices don't see it.
+ * Pinned imports (Import history › Pin): New orders and All parcels show only the pinned imports' parcels, whatever their status,
+ * until they are unpinned or 6 hours pass (each pin on its own). Several imports can be pinned at once (at most 20).
+ * Kept in this browser only (localStorage); other devices don't see them.
  */
 import { useSyncExternalStore } from "react";
 
 export interface ImportPin {
-  /** The import's booking batch (GET /parcels?batchId=…). */
+  /** The import's booking batch (GET /parcels?batchIds=…). */
   batchId: string;
-  /** The batch number (BB-…) and the import number (IMP-…) for the Unpin button. */
+  /** The batch number (BB-…) and the import number (IMP-…) for the Unpin buttons. */
   batch: string;
   number: string;
   pinnedAt: number;
 }
 
-const KEY = "ops.importPin";
+const KEY = "ops.importPins";
+/** The single pin kept before several were allowed: taken over once. */
+const OLD_KEY = "ops.importPin";
 const EVENT = "ops:import-pin";
 export const PIN_HOURS = 6;
+export const MAX_PINS = 20;
 /** "IMP-…" or "IMP-… · BB-…" (the batch number when it differs from the import's). */
 export const pinName = (pin: Pick<ImportPin, "number" | "batch">) => (pin.batch && pin.batch !== pin.number ? `${pin.number} · ${pin.batch}` : pin.number);
 
-function read(): ImportPin | null {
+const live = (p: ImportPin) => !!p?.batchId && !!p.pinnedAt && Date.now() - p.pinnedAt <= PIN_HOURS * 3600_000;
+
+function load(): ImportPin[] {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const pin = JSON.parse(raw) as ImportPin;
-    if (!pin?.batchId || !pin.pinnedAt || Date.now() - pin.pinnedAt > PIN_HOURS * 3600_000) {
-      localStorage.removeItem(KEY);
-      return null;
+    const old = localStorage.getItem(OLD_KEY);
+    if (old) {
+      localStorage.removeItem(OLD_KEY);
+      const pin = JSON.parse(old) as ImportPin;
+      if (live(pin) && !localStorage.getItem(KEY)) localStorage.setItem(KEY, JSON.stringify([pin]));
     }
-    return pin;
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return [];
+    const list = (JSON.parse(raw) as ImportPin[]).filter(live);
+    return list;
   } catch {
-    return null;
+    return [];
   }
 }
 
-let cached: ImportPin | null = null;
-let cachedRaw: string | null | undefined;
-function snapshot() {
-  let raw: string | null = null;
+function save(list: ImportPin[]) {
   try {
-    raw = localStorage.getItem(KEY);
-  } catch {
-    raw = null;
-  }
-  if (raw !== cachedRaw) {
-    cachedRaw = raw;
-    cached = read();
-  } else if (cached && Date.now() - cached.pinnedAt > PIN_HOURS * 3600_000) {
-    cached = read();
-    cachedRaw = null;
-  }
-  return cached;
-}
-
-export function pinImport(pin: Omit<ImportPin, "pinnedAt">) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ ...pin, pinnedAt: Date.now() }));
+    if (list.length) localStorage.setItem(KEY, JSON.stringify(list));
+    else localStorage.removeItem(KEY);
   } catch {
     /* storage blocked: nothing to keep */
   }
   window.dispatchEvent(new Event(EVENT));
 }
 
-export function unpinImport() {
+const EMPTY: ImportPin[] = [];
+let cached: ImportPin[] = EMPTY;
+let cachedRaw: string | null | undefined;
+function snapshot() {
+  let raw: string | null = null;
   try {
-    localStorage.removeItem(KEY);
+    raw = localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY);
   } catch {
-    /* nothing kept */
+    raw = null;
   }
-  window.dispatchEvent(new Event(EVENT));
+  if (raw !== cachedRaw || cached.some(p => !live(p))) {
+    cached = load();
+    if (!cached.length) cached = EMPTY;
+    try {
+      cachedRaw = localStorage.getItem(KEY);
+    } catch {
+      cachedRaw = null;
+    }
+  }
+  return cached;
+}
+
+/** Pins one more import (already pinned: its 6 hours start again). False when 20 are pinned already. */
+export function pinImport(pin: Omit<ImportPin, "pinnedAt">) {
+  const list = load().filter(p => p.batchId !== pin.batchId);
+  if (list.length >= MAX_PINS) return false;
+  save([...list, { ...pin, pinnedAt: Date.now() }]);
+  return true;
+}
+
+/** Unpins one import (by its booking batch), or every pinned import. */
+export function unpinImport(batchId?: string) {
+  save(batchId ? load().filter(p => p.batchId !== batchId) : []);
 }
 
 function subscribe(change: () => void) {
   window.addEventListener(EVENT, change);
   window.addEventListener("storage", change);
-  // The pin runs out after 6 hours, also while the page stays open.
+  // Pins run out after 6 hours, also while the page stays open.
   const timer = window.setInterval(change, 60_000);
   return () => {
     window.removeEventListener(EVENT, change);
@@ -83,7 +99,10 @@ function subscribe(change: () => void) {
   };
 }
 
-/** The pinned import (null: none, or it ran out). */
-export function useImportPin() {
-  return useSyncExternalStore(subscribe, snapshot, () => null);
+/** The pinned imports, oldest pin first (empty: none, or they ran out). */
+export function useImportPins() {
+  return useSyncExternalStore(subscribe, snapshot, () => EMPTY);
 }
+
+/** The pinned imports now (outside React). */
+export const pinnedImports = () => load();

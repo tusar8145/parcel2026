@@ -16,7 +16,7 @@ import { toastError } from "@panel/ui/toast";
 import { confirm } from "@panel/ui/dialogs";
 import { Select } from "@panel/ui/Select";
 import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
-import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, VIEWS, type ViewDef } from "./nav";
+import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, viewBySlug, VIEWS, type ViewDef } from "./nav";
 import { internalLink } from "./links";
 import { PhoneScannerButton } from "@/features/scan/PhoneScanner";
 import { openShareFiles } from "@/features/account/ShareFiles";
@@ -123,10 +123,14 @@ function Sidebar() {
   // keeps where it was scrolled.
   const nav = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
+  // Parcel journey folds like the super admin's sub-menus: closed, and open by itself on one of its pages.
+  const onJourney = viewBySlug(pathname.split("/")[1])?.group === "journey";
+  const [journeyOpen, setJourneyOpen] = useState(onJourney);
   useEffect(() => {
+    if (onJourney) setJourneyOpen(true);
     const t = setTimeout(() => nav.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" }), 50);
     return () => clearTimeout(t);
-  }, [pathname]);
+  }, [pathname, onJourney]);
   // The selected item's box slides from item to item (app/motion.css .nav-indicator).
   const track = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
@@ -135,7 +139,8 @@ function Sidebar() {
     if (!host) return;
     const place = () => {
       const el = host.querySelector<HTMLElement>('.nav-item[aria-current="page"]');
-      if (!el) return setBox(b => ({ ...b, shown: false }));
+      // Inside the folded Parcel journey: no box (it would sit on the folded items).
+      if (!el || el.closest(".nav-sub-wrap:not(.open)")) return setBox(b => ({ ...b, shown: false }));
       const h = host.getBoundingClientRect();
       const r = el.getBoundingClientRect();
       setBox(b => ({ top: r.top - h.top, left: r.left - h.left, width: r.width, height: r.height, shown: true, ready: b.shown || b.ready }));
@@ -143,8 +148,12 @@ function Sidebar() {
     place();
     const ro = new ResizeObserver(place);
     ro.observe(host);
-    return () => ro.disconnect();
-  }, [pathname]);
+    host.addEventListener("transitionend", place);
+    return () => {
+      ro.disconnect();
+      host.removeEventListener("transitionend", place);
+    };
+  }, [pathname, journeyOpen]);
   const groups = (["today", "journey", "queue", "money", "find", "manage"] as const).filter(g => VIEWS.some(v => v.group === g && allowed.has(v.id)));
   if (financeFirst(ops.menu.roles)) groups.sort((a, b) => (a === "money" ? -1 : b === "money" ? 1 : 0));
   const initials = (user?.name || "?")
@@ -165,22 +174,50 @@ function Sidebar() {
       <nav className="nav" ref={nav}>
         <div className="nav-track" ref={track}>
         <div className={`nav-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
-        {groups.map(g => (
-          <div className="nav-group" key={g}>
-            {GROUP_LABEL[g] ? <div className="nav-label">{GROUP_LABEL[g]}</div> : null}
-            {VIEWS.filter(v => v.group === g && allowed.has(v.id)).map(v => {
-              const n = countOf(v);
-              return (
-                <NavLink key={v.id} to={pathFor(v.id)} className={`nav-item${v.step ? " journey" : ""}`}>
-                  <Icon name={v.icon} />
-                  {v.step ? <span className="nav-step" aria-hidden="true">{v.step}</span> : null}
-                  <span>{v.label}</span>
-                  {n != null && (v.stage || n > 0) ? <span className={`nav-count${v.id === "Merchants" ? " amber" : ""}`} title={v.id === "Merchants" ? `${num(n)} address change${n === 1 ? "" : "s"} to approve` : `${num(n)} waiting`}>{num(n)}</span> : null}
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+        {groups.map(g => {
+          const views = VIEWS.filter(v => v.group === g && allowed.has(v.id));
+          const items = views.map(v => {
+            const n = countOf(v);
+            return (
+              <NavLink key={v.id} to={pathFor(v.id)} className={`nav-item${v.step ? " journey" : ""}`}>
+                <Icon name={v.icon} />
+                {v.step ? <span className="nav-step" aria-hidden="true">{v.step}</span> : null}
+                <span>{v.label}</span>
+                {n != null && (v.stage || n > 0) ? <span className={`nav-count${v.id === "Merchants" ? " amber" : ""}`} title={v.id === "Merchants" ? `${num(n)} address change${n === 1 ? "" : "s"} to approve` : `${num(n)} waiting`}>{num(n)}</span> : null}
+              </NavLink>
+            );
+          });
+          if (g === "journey") {
+            // Folded: one "Parcel journey" item with everything waiting across its steps; open: steps 1–7 below it.
+            const waiting = views.reduce((sum, v) => sum + (countOf(v) ?? 0), 0);
+            return (
+              <div className="nav-group" key={g}>
+                <div className="nav-sub">
+                  <button type="button" className={`nav-item nav-sub-toggle${onJourney ? " has-active" : ""}`} aria-expanded={journeyOpen} onClick={() => setJourneyOpen(o => !o)}>
+                    <Icon name="route" />
+                    <span>{GROUP_LABEL.journey}</span>
+                    {!journeyOpen && waiting > 0 ? (
+                      <span className="nav-count" title={`${num(waiting)} waiting across the journey`}>
+                        {num(waiting)}
+                      </span>
+                    ) : null}
+                    <Icon name="chevronRight" size={14} />
+                  </button>
+                  {/* Always there, so it can slide open and closed; closed: not reachable by keyboard. */}
+                  <div className={`nav-sub-wrap${journeyOpen ? " open" : ""}`} inert={!journeyOpen}>
+                    <div className="nav-sub-items">{items}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="nav-group" key={g}>
+              {GROUP_LABEL[g] ? <div className="nav-label">{GROUP_LABEL[g]}</div> : null}
+              {items}
+            </div>
+          );
+        })}
         <div className="nav-group">
           <div className="nav-label">Help</div>
           <NavLink to="/support" className="nav-item">

@@ -99,8 +99,14 @@ export interface ImportConfig {
   file?: File;
   printLabels?: (ids: string[]) => void;
   onDone?: () => void;
-  /** Import history › Pin (Courier Operations): show only this import's parcels in New orders. */
+  /** Import history › Pin (Courier Operations): New orders and All parcels show only the pinned imports' parcels (several at once). */
   onPin?: (job: { id: string; number: string; batch: { id: string; number: string } }) => void;
+  /** Whether this import's booking batch is pinned now (the button then reads Unpin). */
+  isPinned?: (batchId: string) => boolean;
+  onUnpin?: (batchId: string) => void;
+  /** How many imports are pinned, and opening New orders with them. */
+  pinnedCount?: () => number;
+  onShowPinned?: () => void;
   // bulk
   bulkKind?: string;
   bulkAction?: string;
@@ -120,7 +126,7 @@ interface Job {
   counts: { rows: number; valid: number; incomplete: number; errors: number; toApply: number; warnings: number; alreadyDone: number; ignored: number };
   result: { created: number; createdIncomplete: number; notCreated: number; applied: number; alreadyDone: number; notApplied: number };
   progress: { processed: number; total: number; percent: number };
-  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: string[] | null; speed?: string | null; speedLabel?: string | null; productTypeLabel?: string | null; priority?: string | null; priorityLabel?: string | null };
+  services?: { firstMileLabel?: string; lastMileLabel?: string; notifications?: string[] | null; speed?: string | null; speedLabel?: string | null; productTypeLabel?: string | null; product?: string | null; priority?: string | null; priorityLabel?: string | null };
   intake?: string;
   dropOffHub?: { name: string } | null;
   batch?: { id: string; number: string } | null;
@@ -226,6 +232,15 @@ export async function downloadTemplate(kind: string, merchantId?: string) {
   toast(`${name} downloaded. Required columns have red headers with *; the Instructions sheet explains every column.`, "good");
 }
 
+/** Import window, first screen: the merchant gets the room, the other choices stay short. */
+const SIZE = {
+  wide: { flex: "1 1 280px", minWidth: 0 },
+  small: { flex: "0 0 140px", minWidth: 0 },
+  /** Category: its dropdown is about 170px at the least (narrower, it ran into the Merchant box). */
+  category: { flex: "0 0 175px", minWidth: 0 },
+  hub: { flex: "0 0 212px", minWidth: 0 },
+} as const;
+
 type Step = "loading" | "actions" | "choose" | "analyzing" | "map" | "checking" | "preview" | "booking" | "result" | "history";
 
 function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "open" | "history"; close: () => void }) {
@@ -268,6 +283,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
   const [history, setHistory] = useState<Job[] | null>(null);
   const [historyKind, setHistoryKind] = useState<string | null>(null);
   const [historyAction, setHistoryAction] = useState("");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [, setPinTick] = useState(0);
   const [busy, setBusy] = useState(false);
   const autoPicked = useRef(false);
   const stepRef = useRef(step);
@@ -547,7 +565,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     cfg.printLabels?.(trackingIds);
   }
 
-  async function openHistory(kindFilter = historyKind, actionFilter = historyAction) {
+  async function openHistory(kindFilter = historyKind, actionFilter = historyAction, from = historyFrom, to = historyTo) {
     setStep("history");
     setJob(null);
     setHistory(null);
@@ -562,7 +580,8 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
         // Pages that import several kinds (Operations › New orders, All parcels) show every import, of any kind;
         // filtering by the kind on screen hid an import of another kind after it was booked.
         const many = (initial.kinds?.length ?? 0) > 1;
-        setHistory((await api<{ items: Job[] }>(qs("/imports", { merchantId: cfg.merchantId, kind: many ? undefined : cfg.kind, limit: 50 }))).items);
+        const dated = !!(from || to);
+        setHistory((await api<{ items: Job[] }>(qs("/imports", { merchantId: cfg.merchantId, kind: many ? undefined : cfg.kind, from: from || undefined, to: to || undefined, limit: dated ? 200 : 50 }))).items);
       }
     } catch (e) {
       toast(describe(e), "bad");
@@ -670,6 +689,14 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
     setRows(next.rows);
     setFilter("all");
     toast("Every row was checked and priced again.", "good");
+  };
+  /** Product (optional): applied to every row at once; "" = back to each row's own product (as the file gave it). */
+  const applyProduct = async (j: Job, value: string) => {
+    const next = await api<Job & { rows: Rows }>(`${base}/${j.id}/options`, { method: "PATCH", body: { product: value } });
+    setJob(next);
+    setRows(next.rows);
+    setFilter("all");
+    toast(value ? `Every row is now ${value}, checked and priced again.` : "Each row has its own product again (as in the file).", "good");
   };
 
   if (step === "loading") {
@@ -839,9 +866,10 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
           <br />
           First mile, the drop-off hub, last mile and the messages are chosen here for the whole file{cfg.forOps ? (cfg.kind === "customer" ? " (Customer package); the sender and pickup are in each row" : " (the merchant's package)") : ""}.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        {/* The merchant takes most of the row; the other choices are short. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
           {cfg.forOps && (cfg.kinds?.length ?? 0) > 1 ? (
-            <label className="field">
+            <label className="field" style={SIZE.category}>
               <span>Category</span>
               <Select
                 className="select"
@@ -863,7 +891,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             </label>
           ) : null}
           {needsMerchant ? (
-            <label className="field">
+            <label className="field" style={SIZE.wide}>
               <span>Merchant</span>
               <SearchSelect
                 label="Merchant"
@@ -879,7 +907,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             </label>
           ) : null}
           {pkg && (pkg.options.firstMiles.length > 1 || cfg.forOps) ? (
-            <label className="field">
+            <label className="field" style={SIZE.small}>
               <span>First mile</span>
               <Select className="select" value={firstMile} onChange={e => setFirstMile(e.target.value)}>
                 {pkg.options.firstMiles.map(f => (
@@ -891,7 +919,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             </label>
           ) : null}
           {pkg?.options.firstMiles.includes("HUB_DROP") ? (
-            <label className="field">
+            <label className="field" style={SIZE.hub}>
               <span>Drop-off hub</span>
               <Select className="select" value={hubId} disabled={firstMile !== "HUB_DROP"} onChange={e => setHubId(e.target.value)}>
                 {!cfg.forOps || !hubId ? <option value="">Choose the hub</option> : null}
@@ -904,7 +932,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             </label>
           ) : null}
           {pkg && pkg.options.lastMiles.length > 1 ? (
-            <label className="field">
+            <label className="field" style={SIZE.small}>
               <span>Last mile</span>
               <Select className="select" value={lastMile} onChange={e => setLastMile(e.target.value)}>
                 {pkg.options.lastMiles.map(l => (
@@ -916,7 +944,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
             </label>
           ) : null}
           {pkg && cfg.kind !== "document" ? (
-            <label className="field">
+            <label className="field" style={SIZE.small}>
               <span>Product type</span>
               <Select className="select" value={productType} onChange={e => setProductType(e.target.value)}>
                 <option value="">From the file</option>
@@ -1187,6 +1215,28 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                       </Select>
                     </label>
                   ) : null}
+                  {job.choices ? (
+                    // Always shown; without products for this merchant type, greyed out with where to add them.
+                    <label className="field" style={{ minWidth: 220 }} title={job.choices.products.length ? undefined : "No products are set up for this kind of merchant yet: a super admin adds them in Operational settings › Products."}>
+                      <span>Product (optional)</span>
+                      <Select
+                        className="select"
+                        value={job.services?.product ? (job.choices.products.find(p => p === job.services!.product || p.startsWith(`${job.services!.product} (`)) ?? job.services.product) : ""}
+                        disabled={!job.choices.products.length || busy}
+                        onChange={e => {
+                          const value = e.target.value;
+                          void run(() => applyProduct(job, value))();
+                        }}
+                      >
+                        <option value="">{job.choices.products.length ? "Each row's own (from the file)" : "No products set up yet"}</option>
+                        {job.choices.products.map(p => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  ) : null}
                   {changed ? (
                     <button type="button" className="button primary" disabled={busy} aria-busy={busy || undefined} onClick={run(() => applyOptions(job))}>
                       Apply to every row
@@ -1195,6 +1245,7 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                     <span className="muted" style={{ fontSize: 12.5, paddingBottom: 8 }}>For every row (the price follows the delivery type).</span>
                   )}
                 </div>
+                {job.services?.product ? <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>{`Every row is ${job.services.product}, also the rows whose file gave another product (the price and messages follow it). Choose "Each row's own" to go back to the file's products.`}</p> : null}
                 {messagesBox}
               </>
             ) : null}
@@ -1370,7 +1421,9 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
       ? "Loading…"
       : bulk
         ? `${items.length ? `The last ${num(items.length)} bulk update${items.length === 1 ? "" : "s"}` : "No bulk updates yet"} · each has its own number, recorded on every change in the audit log.`
-        : `${items.length ? `Your last ${num(items.length)} import${items.length === 1 ? "" : "s"}` : "No imports yet"} · each import is a booking batch with its own number.`;
+        : `${items.length ? (historyFrom || historyTo ? `${num(items.length)} import${items.length === 1 ? "" : "s"} ${historyFrom && historyTo ? (historyFrom === historyTo ? `on ${historyFrom}` : `from ${historyFrom} to ${historyTo}`) : historyFrom ? `since ${historyFrom}` : `until ${historyTo}`}` : `Your last ${num(items.length)} import${items.length === 1 ? "" : "s"}`) : historyFrom || historyTo ? "No imports on these dates" : "No imports yet"} · each import is a booking batch with its own number.`;
+    const pinned = cfg.pinnedCount?.() ?? 0;
+    const setDates = (from: string, to: string) => (setHistoryFrom(from), setHistoryTo(to), void openHistory(historyKind, historyAction, from, to));
     const statuses = bulk ? BULK_JOB_STATUS : JOB_STATUS;
     const actionOptions = [...new Map((historyKind ? kinds.filter(k => k.kind === historyKind) : kinds).flatMap(k => k.actions).map(a => [a.action, a.label])).entries()];
     body = (
@@ -1400,7 +1453,28 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
               </Select>
             </label>
           </div>
-        ) : null}
+        ) : (
+          <div className="row" style={{ gap: 12, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 13 }}>
+              From
+              <input className="input sm" type="date" value={historyFrom} max={historyTo || undefined} onChange={e => setDates(e.target.value, historyTo)} />
+            </label>
+            <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 13 }}>
+              To
+              <input className="input sm" type="date" value={historyTo} min={historyFrom || undefined} onChange={e => setDates(historyFrom, e.target.value)} />
+            </label>
+            {historyFrom || historyTo ? (
+              <button type="button" className="button sm" onClick={() => setDates("", "")}>
+                Clear dates
+              </button>
+            ) : null}
+            {cfg.onShowPinned && pinned ? (
+              <button type="button" className="button sm primary" style={{ marginLeft: "auto" }} onClick={() => (cfg.onShowPinned!(), close())}>
+                {`Show ${num(pinned)} pinned in New orders`}
+              </button>
+            ) : null}
+          </div>
+        )}
         <div className="table-wrap" style={{ maxHeight: "60vh" }}>
           <table className="table">
             <thead>
@@ -1457,17 +1531,25 @@ function Importer({ cfg: initial, start, close }: { cfg: ImportConfig; start: "o
                             </button>
                           ) : null}
                           {!bulk && cfg.onPin && j.batch && j.result.created ? (
-                            <button
-                              type="button"
-                              className="button sm"
-                              title="Show only this import's parcels in New orders (this device, for 6 hours)"
-                              onClick={() => {
-                                cfg.onPin!({ id: j.id, number: j.number, batch: j.batch! });
-                                close();
-                              }}
-                            >
-                              Pin
-                            </button>
+                            cfg.isPinned?.(j.batch.id) ? (
+                              <button
+                                type="button"
+                                className="button sm primary"
+                                title="Pinned: New orders and All parcels show its parcels. Tap to unpin."
+                                onClick={() => (cfg.onUnpin?.(j.batch!.id), setPinTick(n => n + 1))}
+                              >
+                                Unpin
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="button sm"
+                                title="Pin: New orders and All parcels show only the pinned imports' parcels (this device, for 6 hours). Pin several to see them together."
+                                onClick={() => (cfg.onPin!({ id: j.id, number: j.number, batch: j.batch! }), setPinTick(n => n + 1))}
+                              >
+                                Pin
+                              </button>
+                            )
                           ) : null}
                           {!bulk && j.result.created && cfg.forOps ? (
                             <PrintImport jobId={j.id} number={j.number} kind={j.kind} size="sm" />

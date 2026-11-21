@@ -32,7 +32,7 @@
 .admin-sidebar .nav-item[aria-current="page"]:hover { background: transparent; box-shadow: none; transform: none; }
 .admin-sidebar .nav-item[aria-current="page"] svg { color: #fff; transform: none; }
 .admin-sidebar .nav-item[aria-current="page"] .nav-count { background: rgba(255, 255, 255, 0.95); color: var(--primary); }
-.admin-sidebar .nav-sub-toggle.has-active { color: var(--primary); font-weight: 620; }
+.admin-sidebar .nav-sub-toggle.has-active { color: var(--primary); }
 .admin-sidebar .nav-sub-toggle > svg:last-child { transition: transform 0.28s ease; }
 .admin-sidebar .nav-sub-toggle[aria-expanded="true"] > svg:last-child { transform: rotate(90deg); }
 .admin-sidebar .nav-sub-toggle:hover > svg:last-child { transform: translateX(2px); }

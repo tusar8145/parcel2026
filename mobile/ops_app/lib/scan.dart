@@ -347,7 +347,7 @@ class ScanPage extends StatelessWidget {
         _Task(Icons.outbox_outlined, brand, '4 · Send out return runs', 'Planned runs leave with their rider; returns held here.', () => _returnsHub(context), scan: false),
         _Task(Icons.undo, good, '5 · Return entry', 'Parcels the merchant took back.', () => _returnEntry(context)),
         const _Group('CN labels', 'Pre-printed labels to parcels.'),
-        _Task(Icons.qr_code_2, brand, 'CN_Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
+        _Task(Icons.qr_code_2, brand, 'CN Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
           if (await _needHub(context) && context.mounted) await openCnMerchant(context, hubId: Ops.hubId);
           opsChanged.value++;
         }),

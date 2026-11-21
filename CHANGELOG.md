@@ -7,6 +7,19 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.57.0 — 2026-11-21
+- Import history: pin several imports at once. Pin now stays in the history (the button turns to Unpin), and "Show N pinned in New orders" opens New orders with all their parcels together; each pinned import has its own × there, and "Unpin all" clears them. All parcels follows the pins too (each tab shows only the pinned imports' parcels in its line, and its export follows them).
+- Import history can be filtered by date: From and To (the days the files were uploaded), with Clear dates.
+- Excel import preview: a Product (optional) choice next to Delivery type and Priority, always shown (greyed out when no products are set up for that kind of merchant). Choosing a product applies it to every row at once, also the rows whose file gave another one (the price and messages follow it); "Each row's own (from the file)" brings the file's products back.
+- Import from Excel window: the Merchant choice is wide (the full name shows) and Category, First mile, Drop-off hub, Last mile and Product type are short, all on one line.
+- Menus: items with a sub-menu (Notification settings, Send Message, Operational settings, Hub settings) have the same weight as the other items; only the open page stands out.
+- Courier Operations menu: Parcel journey folds like the super admin's sub-menus. Closed it is one item with everything waiting across its steps; tap it to slide open steps 1–7, and it opens by itself on one of those pages.
+- Courier Operations menu: the open page is shown as in the super admin menu, a blue box with white text, icon and count that slides from item to item (it stays white under the mouse too).
+- Scan desk: CN_Merchant is now called CN Merchant (the tab, its panel and the messages; the page address stays the same). The Operations and Rider apps show the new name from their next version.
+
+## 1.56.1 — 2026-11-21
+- Live network map (Today, Delivery, Transfers) opens zoomed in on where the work is: riders, parcels and vehicles (and your own hub), instead of the whole country. A rider or vehicle far from the rest no longer zooms it out.
+
 ## 1.56.0 — 2026-11-15
 - Returns go through the central hub: Scan desk has two new tabs, Return issue (choose the reason and scan; choose a rider only when that rider takes the parcels straight to the merchant, or send them to the central hub in the same scan) and Return transfer (returns held at a hub leave for the central hub, which receives them on Receive entry and puts them on return runs).
 - Return issue and Return transfer show the returns held at the hub with their next step, what's on the way to the central hub, and the return runs planned and out.

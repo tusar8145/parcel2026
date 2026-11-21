@@ -80,6 +80,9 @@ export const listImportsQuerySchema = pageQuerySchema.extend({
     .enum(["true", "false"])
     .transform(v => v === "true")
     .optional(),
+  /** Uploaded on these Dhaka days (YYYY-MM-DD, both included). */
+  from: z.iso.date("Use the date as YYYY-MM-DD").optional(),
+  to: z.iso.date("Use the date as YYYY-MM-DD").optional(),
 });
 
 export const templateQuerySchema = z.object({
@@ -107,6 +110,11 @@ export const importOptionsUpdateSchema = z.object({
   speed: z.string().trim().min(1).max(60).optional(),
   /** A priority (id) of the list. */
   priority: z.uuid().optional(),
+  /**
+   * A product of the list (name, or "Name (Type)" as the preview lists it): replaces every row's product, the file's
+   * too. "" = back to each row's own product (as the file gave it).
+   */
+  product: z.string().trim().max(160).optional(),
   /** Message codes of the package; [] = no messages. */
   notifications: z.array(z.string().trim().min(1).max(60)).max(40).optional(),
 });

@@ -127,6 +127,14 @@ export const listParcelsQuerySchema = z.object({
   dropOffHubId: z.uuid().optional(),
   /** Parcels booked in one spreadsheet import (GET /ops/booking-batches). */
   batchId: z.uuid().optional(),
+  /** Several imports at once (comma-separated booking batch ids, at most 20): New orders with pinned imports. */
+  batchIds: z
+    .string()
+    .trim()
+    .max(800)
+    .transform(v => v.split(",").map(s => s.trim()).filter(Boolean))
+    .pipe(z.array(z.uuid("Use booking batch ids")).max(20, "At most 20 imports at once"))
+    .optional(),
   /** The priority tag (its name: General, Security, Online Product…) and the product category (its name). */
   priority: optionalText(80),
   category: optionalText(80),

@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parcel Journey Steps</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #101828; --ink-2: #344054; --muted: #667085; --line: #e4e7ec;
+    --rider: #1f6feb; --rider-soft: #e8f0fe;
+    --ops: #d9480f; --ops-soft: #fff1e8;
+    --mer: #0f8a4f; --mer-soft: #e7f6ee;
+    --tip: #fdf5e6; --status: #0b5394; --status-soft: #eaf2fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1218; --card: #171b23; --ink: #f2f4f7; --ink-2: #d0d5dd; --muted: #98a2b3; --line: #2a303b;
+      --rider: #6ea8ff; --rider-soft: #15233b; --ops: #ff9257; --ops-soft: #34200f; --mer: #4fd18f; --mer-soft: #10291d;
+      --tip: #2f2412; --status: #8cc4ff; --status-soft: #13253a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 27px; margin: 0 0 4px; letter-spacing: -.4px; }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; vertical-align: 1px; }
+  .chip.rider { background: var(--rider-soft); color: var(--rider); }
+  .chip.ops { background: var(--ops-soft); color: var(--ops); }
+  .chip.mer { background: var(--mer-soft); color: var(--mer); }
+  .chip.status { background: var(--status-soft); color: var(--status); font-weight: 600; }
+  .flow { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .flow h2 { margin: 0 0 8px; font-size: 16px; }
+  .flow ol { margin: 0; padding-left: 20px; }
+  .flow li { margin: 3px 0; }
+  .flow a { color: var(--status); text-decoration: none; font-weight: 600; }
+  .flow a:hover { text-decoration: underline; }
+  .flow .alt { color: var(--muted); font-size: 13.5px; }
+  .names { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .names .box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 13.5px; color: var(--ink-2); }
+  .names h3 { margin: 0 0 6px; font-size: 14.5px; color: var(--ink); }
+  .names p { margin: 3px 0; }
+  section.part { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 8px; margin-bottom: 18px; scroll-margin-top: 12px; }
+  .part-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 6px; }
+  .part-no { flex: none; width: 38px; height: 38px; border-radius: 10px; background: var(--ink); color: var(--bg); display: grid; place-items: center; font-weight: 800; }
+  .part h2 { margin: 0; font-size: 19px; }
+  .part .sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .who { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px 50px; }
+  ol.steps { list-style: none; margin: 0 0 10px; padding: 0; counter-reset: s; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 10px 0 12px 50px; border-top: 1px solid var(--line); }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 6px; top: 10px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; background: var(--muted); }
+  ol.steps > li.rider::before { background: var(--rider); }
+  ol.steps > li.ops::before { background: var(--ops); }
+  ol.steps > li.mer::before { background: var(--mer); }
+  .step-title { font-weight: 700; margin-bottom: 4px; }
+  .where { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .tap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; }
+  .tap b { font-weight: 600; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 1px 8px; font-size: 13.5px; }
+  .tap .arr { color: var(--muted); font-size: 12px; }
+  ul.do { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+  ul.do li { margin: 2px 0; }
+  q { quotes: "“" "”"; font-weight: 600; color: var(--ink); }
+  .after { margin-top: 6px; font-size: 13.5px; color: var(--ink-2); }
+  .tip { margin: 8px 0 4px; font-size: 13.5px; padding: 8px 11px; border-radius: 9px; background: var(--tip); color: var(--ink-2); }
+  .next { margin: 4px 0 10px 50px; font-size: 13.5px; color: var(--muted); }
+  .next a { color: var(--status); }
+  .foot { margin-top: 24px; color: var(--muted); font-size: 12.5px; }
+  .g-title { margin: 18px 0 10px; font-size: 16px; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .grp { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); }
+  .grp.some { border-style: dashed; }
+  .grp.none { border-style: dashed; opacity: .85; }
+  .grp-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .grp-head b { display: block; font-size: 14.5px; }
+  .grp-head small { color: var(--muted); font-size: 12.5px; }
+  .grp ul { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-2); }
+  .grp li { margin: 3px 0; }
+  .grp li b { font-weight: 600; }
+  .gno { flex: none; min-width: 34px; height: 30px; padding: 0 6px; border-radius: 8px; display: inline-grid; place-items: center; font-weight: 800; font-size: 12.5px; color: #fff; }
+  .gno.rider { background: var(--rider); } .gno.ops { background: var(--ops); } .gno.some { background: var(--muted); } .gno.none { background: #98a2b3; }
+  .gno.sm { min-width: 0; height: 22px; font-size: 11px; margin-right: 4px; }
+  .noapp { font-size: 11.5px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; margin-bottom: 12px; }
+  table.map { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.map th, table.map td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.map th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  @media (max-width: 560px) { .who, .next { margin-left: 0; } ol.steps > li { padding-left: 42px; } }
+  @media print { section.part { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Parcel journey: who taps what</h1>
+  <p class="lead">Banking &amp; Financial merchants (documents, no cash to collect). The journey is cut into sections; each section says which app, where to tap, step by step. Names in boxes are exactly as on the screen (Rider app 1.7.2, Operations app 1.8.0).</p>
+
+  <div class="flow">
+    <h2>The sections in order</h2>
+    <ol>
+      <li><a href="#s1">Pickup: rider assigned → handed in at the hub</a> <span class="alt">· without the rider app: <a href="#s1b">1B</a></span></li>
+      <li><a href="#s2">Hub to hub transfer</a> <span class="alt">· Operations app only, no rider</span></li>
+      <li><a href="#s3">Delivery: rider assigned at the hub → delivered, or not delivered and back at the hub</a> <span class="alt">· without the rider app: <a href="#s3b">3B</a></span></li>
+      <li><a href="#s4">Return: to the central hub (hub to hub for returns)</a> <span class="alt">· Operations app only</span></li>
+      <li><a href="#s5">Return: rider assigned → returned to the merchant</a> <span class="alt">· without the rider app: <a href="#s5b">5B</a></span></li>
+      <li><a href="#s6">Grouping the actions by the work</a> <span class="alt">· rider app and Operations app groups, and what isn't needed</span></li>
+    </ol>
+  </div>
+
+  <div class="names">
+    <div class="box">
+      <h3><span class="chip rider">Rider app</span> bottom tabs</h3>
+      <p><b>Today</b> · <b>Pickups</b> · <b>Scan</b> · <b>Deliveries</b> · <b>Account</b></p>
+      <p>Scan tab: Pickup from merchant · Hand over at hub · Receive from hub (optional) · Start deliveries · Deliver · Could not deliver · Return to merchant</p>
+    </div>
+    <div class="box">
+      <h3><span class="chip ops">Operations app</span> bottom tabs</h3>
+      <p><b>Today</b> · <b>Scan</b> · <b>Map</b> · <b>Cash</b> · <b>More</b></p>
+      <p>Scan tab groups: RECEIVE AT HUB · DELIVERY · RIDER BACK AT THE HUB · HUB TO HUB · RETURNS TO MERCHANT · CN LABELS</p>
+    </div>
+    <div class="box">
+      <h3>Scanning (both apps)</h3>
+      <p>The camera opens and stays on: scan parcel after parcel. A handheld scanner works too. No barcode? Tap <b>Type it instead</b>. Each scan beeps and shows its result. Press back when done.</p>
+      <p>Operations app: the hub you work at is asked once (<q>Which hub are you working at?</q>); change it in <b>More › Change hub</b>.</p>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <section class="part" id="s1">
+    <div class="part-head"><div class="part-no">1</div><div><h2>Pickup: rider assigned → handed in at the hub</h2><p class="sub">From the merchant's booking until the documents are received at the hub.</p></div></div>
+    <div class="who"><span class="chip mer">Merchant app</span><span class="chip ops">Operations app</span><span class="chip rider">Rider app</span></div>
+    <ol class="steps">
+      <li class="mer">
+        <div class="step-title">Merchant books <span class="where">· merchant's office</span></div>
+        <div class="tap"><b>Today</b><span class="arr">›</span><b>Book a consignment</b><span class="arr">›</span>fill in the recipient<span class="arr">›</span><b>Book consignment</b></div>
+        <div class="after">Status <span class="chip status">Pending operations confirmation</span></div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Assign the pickup rider <span class="where">· anywhere</span></div>
+        <div class="tap"><b>More</b><span class="arr">›</span><b>Assign pickup riders</b></div>
+        <ul class="do">
+          <li>Tick the parcels (or <b>All</b> at the top).</li>
+          <li>Tap <b>Assign …</b> at the bottom, choose the rider in <q>Who picks them up?</q>.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Pickup assigned</span> · the rider gets a notification.</div>
+      </li>
+      <li class="rider">
+        <div class="step-title">Rider sees the pickup <span class="where">· anywhere</span></div>
+        <div class="tap"><b>Pickups</b> (tab)</div>
+        <ul class="do">
+          <li>One card per merchant: name, address, <q>N parcel(s) to collect</q>, buttons <b>Call</b>, <b>Map</b>, <b>Collect</b>.</li>
+          <li>The rider goes to the merchant's address.</li>
+        </ul>
+      </li>
+      <li class="rider">
+        <div class="step-title">Collect at the merchant <span class="where">· merchant's office</span></div>
+        <div class="tap"><b>Pickups</b><span class="arr">›</span>merchant card<span class="arr">›</span><b>Collect</b><span class="arr">›</span><b>Scan parcels</b></div>
+        <div class="tap">or <b>Scan</b><span class="arr">›</span><b>Pickup from merchant</b><span class="arr">›</span><q>Which pickup?</q> choose the merchant</div>
+        <ul class="do">
+          <li>Scan each document the merchant hands over. The screen counts <b>Expected</b> · <b>Done</b> · <b>Missing</b>.</li>
+          <li>No label to scan: tap ⋮ on the parcel › <b>Collected (no scan)</b>. Problem: ⋮ › <b>Report a problem</b>.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Picked up</span> · now under <b>Pickups › Carrying</b>.</div>
+      </li>
+      <li class="rider">
+        <div class="step-title">Hand over at the hub <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span><b>Hand over at hub</b></div>
+        <div class="tap">or <b>Pickups</b><span class="arr">›</span>Carrying card<span class="arr">›</span><b>Hand over at hub</b><span class="arr">›</span><b>Scan to hand over</b></div>
+        <ul class="do"><li>Scan each parcel as it is given to the hub. A mistake can be undone (<b>Undo</b>) until the hub scans it.</li></ul>
+        <div class="after">Shows <q>handed over, waiting for the hub to scan them in</q>.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Receive at the hub <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RECEIVE AT HUB<span class="arr">›</span><b>Receive at hub</b></div>
+        <ul class="do"><li>Scan every parcel the rider handed in.</li></ul>
+        <div class="after">Status <span class="chip status">At hub</span> · the documents are now in the hub's stock.</div>
+      </li>
+    </ol>
+    <p class="next">Next: delivered from this hub → <a href="#s3">section 3</a>; another hub delivers → <a href="#s2">section 2</a>.</p>
+  </section>
+
+  <!-- 1B -->
+  <section class="part" id="s1b">
+    <div class="part-head"><div class="part-no">1B</div><div><h2>Pickup when the rider has no app</h2><p class="sub">The rider collects on paper; the hub records it when the rider is back.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Assign the pickup rider <span class="where">· anywhere</span></div>
+        <div class="tap"><b>More</b><span class="arr">›</span><b>Assign pickup riders</b><span class="arr">›</span>tick the parcels<span class="arr">›</span><b>Assign …</b><span class="arr">›</span><q>Who picks them up?</q></div>
+        <div class="after">Give the rider the list (or the labels). Status <span class="chip status">Pickup assigned</span></div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Rider is back with the documents <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RECEIVE AT HUB<span class="arr">›</span><b>Pickup entry</b></div>
+        <ul class="do"><li>Scan each parcel: it is picked up for that rider and received at this hub in the same scan.</li></ul>
+        <div class="after">Status <span class="chip status">At hub</span></div>
+      </li>
+    </ol>
+    <p class="next">Next: <a href="#s3b">3B</a> (or <a href="#s2">section 2</a> if another hub delivers).</p>
+  </section>
+
+  <!-- 2 -->
+  <section class="part" id="s2">
+    <div class="part-head"><div class="part-no">2</div><div><h2>Hub to hub transfer</h2><p class="sub">The pickup hub doesn't serve the recipient's area. No rider in this part: hub A sends, hub B receives.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app (hub A)</span><span class="chip ops">Operations app (hub B)</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Hub A sends the parcels <span class="where">· hub A</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>HUB TO HUB<span class="arr">›</span><b>Transfer out</b></div>
+        <ul class="do">
+          <li><q>Send to which hub?</q> → <b>The hub serving each parcel's delivery area</b> (automatic, usual choice) or a hub by name.</li>
+          <li>Scan each parcel as it is packed for the vehicle.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">In transit</span> · hub B sees them on its way.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Hub B receives them <span class="where">· hub B</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RECEIVE AT HUB<span class="arr">›</span><b>Receive at hub</b></div>
+        <ul class="do"><li>Scan each parcel that arrived. (A bag number BG-… receives the whole bag.)</li></ul>
+        <div class="after">Status <span class="chip status">At hub</span> (hub B)</div>
+      </li>
+    </ol>
+    <div class="tip">Shortcut at hub B: <b>Scan › Receive &amp; assign rider</b> receives a parcel still <q>in transit</q> and gives it to the rider in one scan (section 3, step 1).</div>
+    <p class="next">Next: <a href="#s3">section 3</a> at hub B.</p>
+  </section>
+
+  <!-- 3 -->
+  <section class="part" id="s3">
+    <div class="part-head"><div class="part-no">3</div><div><h2>Delivery: rider assigned at the hub → delivered, or not delivered and back at the hub</h2><p class="sub">The rider uses the rider app.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app</span><span class="chip rider">Rider app</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Give the parcels to the delivery rider <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>DELIVERY<span class="arr">›</span><b>Receive &amp; assign rider</b><span class="arr">›</span><q>Who takes them?</q> choose the rider</div>
+        <ul class="do"><li>Scan each parcel the rider takes.</li></ul>
+        <div class="tap">or from a list: <b>More</b><span class="arr">›</span><b>Assign delivery riders</b><span class="arr">›</span>tick<span class="arr">›</span><b>Assign …</b><span class="arr">›</span><q>Who delivers them?</q></div>
+        <div class="after">Status <span class="chip status">Assigned</span> · they appear in the rider's <b>Deliveries</b>.</div>
+      </li>
+      <li class="rider">
+        <div class="step-title">Rider checks the parcels (optional) <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span><b>Receive from hub (optional)</b></div>
+        <ul class="do"><li>Each scan says whether the parcel is assigned to this rider.</li></ul>
+      </li>
+      <li class="rider">
+        <div class="step-title">Leave for delivery <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span><b>Start deliveries</b></div>
+        <div class="tap">or one by one: <b>Deliveries</b><span class="arr">›</span>parcel<span class="arr">›</span><b>Start delivery</b></div>
+        <ul class="do"><li>Scan each parcel while loading. The recipient gets the delivery code by SMS.</li></ul>
+        <div class="after">Status <span class="chip status">Out for delivery</span></div>
+      </li>
+      <li class="rider">
+        <div class="step-title">At the recipient: delivered <span class="where">· recipient's address</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span><b>Deliver</b><span class="arr">›</span>scan the parcel</div>
+        <div class="tap">or <b>Deliveries</b><span class="arr">›</span>parcel<span class="arr">›</span><b>Delivered</b></div>
+        <ul class="do">
+          <li><b>Received by</b>: the name, and who they are (Self, or a relation).</li>
+          <li><b>Proof</b>: <b>Recipient's code</b> (from the SMS), <b>Signature</b>, or <b>Photo</b> (<b>Take a photo of the signed invoice</b>), as the parcel requires.</li>
+          <li><b>Confirm delivery</b>.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Delivered</span> · the merchant sees it at once.</div>
+      </li>
+      <li class="rider">
+        <div class="step-title">At the recipient: could not deliver <span class="where">· recipient's address</span></div>
+        <div class="tap"><b>Deliveries</b><span class="arr">›</span>parcel<span class="arr">›</span><b>Could not deliver</b></div>
+        <ul class="do">
+          <li><b>Why?</b> choose the reason.</li>
+          <li><b>What next?</b> <b>Try again</b> (deliver tomorrow) or <b>Return to sender</b>.</li>
+          <li><b>Save</b>. The card now says to hand it in at the hub.</li>
+        </ul>
+        <div class="tap">Several at once: <b>Scan</b><span class="arr">›</span><b>Could not deliver</b><span class="arr">›</span>reason + <b>Try again</b> / <b>Return to sender</b><span class="arr">›</span><b>Start scanning</b></div>
+        <div class="after">Status <span class="chip status">Retry scheduled</span> (still with the rider)</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">End of the day: the rider hands in what wasn't delivered <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RIDER BACK AT THE HUB<span class="arr">›</span><b>Receive from rider</b></div>
+        <ul class="do">
+          <li><q>Which rider is handing in?</q> choose the rider.</li>
+          <li><q>Failed deliveries: what next?</q> <b>As the rider chose (deliver again / return)</b> (usual), or <b>Deliver again</b>, or <b>Return to the sender</b>.</li>
+          <li>Scan each parcel. The line on top counts what is still with the rider.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">At hub</span>. <b>Try again</b> parcels go out again tomorrow (back to step 1). <b>Return to sender</b> parcels are on the returns list → <a href="#s4">section 4</a>.</div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 3B -->
+  <section class="part" id="s3b">
+    <div class="part-head"><div class="part-no">3B</div><div><h2>Delivery when the rider has no app</h2><p class="sub">The hub does every step in the Operations app; the rider brings back signed slips.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Rider leaves with the parcels <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>DELIVERY<span class="arr">›</span><b>Out for delivery</b><span class="arr">›</span><q>Who is going out?</q> choose the rider</div>
+        <ul class="do"><li>Scan each parcel as the rider loads it. Parcels still at the hub are given to this rider and sent out in the same scan. The recipient gets the delivery code by SMS.</li></ul>
+        <div class="after">Status <span class="chip status">Out for delivery</span></div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Rider is back: the delivered ones <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RIDER BACK AT THE HUB<span class="arr">›</span><b>Delivery entry</b></div>
+        <ul class="do">
+          <li>For each signed slip: <b>Received by (optional)</b>, <b>Relation to the recipient</b>, <b>Note (optional)</b>, <b>Photo of the slip</b>.</li>
+          <li>Tap <b>Scan the slip</b> and scan it. The form clears for the next slip.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Delivered</span> (for that rider)</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Rider is back: the ones not delivered <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RIDER BACK AT THE HUB<span class="arr">›</span><b>Failed delivery entry</b></div>
+        <ul class="do">
+          <li><q>Why could they not be delivered?</q> choose the reason.</li>
+          <li><b>Try again</b> (stays with the rider) or <b>Back at the hub</b> (received here now).</li>
+          <li><b>Start scanning</b>, scan each parcel with that reason. Another reason: go back and start again.</li>
+        </ul>
+        <div class="after"><b>Back at the hub</b>: status <span class="chip status">At hub</span>. <b>Try again</b>: <span class="chip status">Retry scheduled</span>; when the rider hands it in later, use <b>Receive from rider</b> (section 3, step 6).</div>
+      </li>
+    </ol>
+    <div class="tip">A parcel that should go back to the merchant after a failed delivery: <b>Receive from rider</b> with <b>Return to the sender</b>, or <a href="#s4">section 4, step 1</a>.</div>
+  </section>
+
+  <!-- 4 -->
+  <section class="part" id="s4">
+    <div class="part-head"><div class="part-no">4</div><div><h2>Return: to the central hub (hub to hub for returns)</h2><p class="sub">Returns are put on runs at the central hub. A parcel going back that is at any other hub travels there first. Operations app only, no rider.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app (branch hub)</span><span class="chip ops">Operations app (central hub)</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Mark the parcel for return (only if nobody did yet) <span class="where">· branch hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>1 · Return issue</b></div>
+        <ul class="do">
+          <li><b>Why does it go back?</b> choose the reason.</li>
+          <li><b>Rider (optional)</b>: leave <b>No rider</b>.</li>
+          <li><b>Send to … now</b> (the central hub) switched on: the parcel also leaves for the central hub in the same scan (step 2 done).</li>
+          <li><b>Start scanning</b>, scan each parcel.</li>
+        </ul>
+        <div class="after">Not needed for parcels the rider chose <b>Return to sender</b> for, or the merchant asked to return: they are already on the list.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Send the returns to the central hub <span class="where">· branch hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>2 · Return transfer</b></div>
+        <ul class="do"><li>Scan each return as it leaves. The line on top counts the returns still held here.</li></ul>
+        <div class="after">Status <span class="chip status">In transit</span> to the central hub.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Central hub receives them <span class="where">· central hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RECEIVE AT HUB<span class="arr">›</span><b>Receive at hub</b></div>
+        <div class="after">Status <span class="chip status">At hub</span> (central) · still marked for return.</div>
+      </li>
+    </ol>
+    <div class="tip">What's waiting: the yellow line under RETURNS TO MERCHANT (<q>N held here · next: …</q>), or <b>4 · Send out return runs</b> for the list.</div>
+    <p class="next">Next: <a href="#s5">section 5</a> at the central hub.</p>
+  </section>
+
+  <!-- 5 -->
+  <section class="part" id="s5">
+    <div class="part-head"><div class="part-no">5</div><div><h2>Return: rider assigned → returned to the merchant</h2><p class="sub">At the central hub (or at a hub that returns directly to a nearby merchant). The rider uses the rider app.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app</span><span class="chip rider">Rider app</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Give the returns to a rider <span class="where">· central hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>3 · Return rider assign</b></div>
+        <ul class="do">
+          <li><q>Who takes the returns?</q> choose the rider.</li>
+          <li><q>Reason (for parcels without one)</q> choose a reason (used only if a parcel has none).</li>
+          <li>Scan each parcel. Each merchant gets one return run (RR-…) for this rider.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Return scheduled</span> · the rider gets a notification.</div>
+        <div class="tip">Returning straight from a branch hub (merchant nearby): <b>1 · Return issue</b> with a rider chosen in <b>Rider (optional)</b> does this step there, without the central hub.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Send the run out <span class="where">· central hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>4 · Send out return runs</b><span class="arr">›</span>the run<span class="arr">›</span><b>Send out</b><span class="arr">›</span><b>Send out</b></div>
+        <div class="after">The run is out with the rider. (If skipped, the run goes out by itself with the rider's first return.)</div>
+      </li>
+      <li class="rider">
+        <div class="step-title">Rider sees the returns <span class="where">· anywhere</span></div>
+        <div class="tap"><b>Today</b><span class="arr">›</span><q>N return run(s) to merchants</q></div>
+        <div class="tap">or <b>Account</b><span class="arr">›</span><b>Returns to merchants</b></div>
+        <ul class="do"><li>Each run: merchant, address, parcels, <b>Call</b>.</li></ul>
+      </li>
+      <li class="rider">
+        <div class="step-title">Hand them back to the merchant <span class="where">· merchant's office</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span><b>Return to merchant</b><span class="arr">›</span><q>Which return run?</q> (only if several)</div>
+        <div class="tap">or <b>Account</b><span class="arr">›</span><b>Returns to merchants</b><span class="arr">›</span>run<span class="arr">›</span><b>Return</b><span class="arr">›</span><q>Who is taking the parcels back?</q><span class="arr">›</span><b>Start scanning</b></div>
+        <ul class="do"><li>Scan each parcel the merchant takes. The line on top shows <q>N of M returned</q>; the run completes with the last one.</li></ul>
+        <div class="after">Status <span class="chip status">Returned</span> · the merchant confirms receipt on the merchant panel (Returns › Confirm received).</div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 5B -->
+  <section class="part" id="s5b">
+    <div class="part-head"><div class="part-no">5B</div><div><h2>Return when the rider has no app</h2><p class="sub">The hub assigns and sends out; the rider brings back the run sheet signed by the merchant.</p></div></div>
+    <div class="who"><span class="chip ops">Operations app</span></div>
+    <ol class="steps">
+      <li class="ops">
+        <div class="step-title">Give the returns to the rider <span class="where">· central hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>3 · Return rider assign</b><span class="arr">›</span><q>Who takes the returns?</q><span class="arr">›</span>reason<span class="arr">›</span>scan</div>
+        <div class="after">Status <span class="chip status">Return scheduled</span></div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Rider leaves <span class="where">· central hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>4 · Send out return runs</b><span class="arr">›</span><b>Send out</b></div>
+        <div class="after">Print or write the run (RR-…) with its parcels for the merchant to sign.</div>
+      </li>
+      <li class="ops">
+        <div class="step-title">Rider is back with the signed sheet <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RETURNS TO MERCHANT<span class="arr">›</span><b>5 · Return entry</b></div>
+        <ul class="do">
+          <li><q>Who took them back? (optional)</q> type the name, <b>Start scanning</b>.</li>
+          <li>Scan each parcel the merchant took. The run completes with its last parcel.</li>
+        </ul>
+        <div class="after">Status <span class="chip status">Returned</span></div>
+      </li>
+      <li class="ops">
+        <div class="step-title">A parcel the merchant didn't take <span class="where">· hub</span></div>
+        <div class="tap"><b>Scan</b><span class="arr">›</span>RIDER BACK AT THE HUB<span class="arr">›</span><b>Receive from rider</b></div>
+        <div class="after">Back <span class="chip status">At hub</span>; assign it again with <b>3 · Return rider assign</b>.</div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 6 -->
+  <section class="part" id="s6">
+    <div class="part-head"><div class="part-no">6</div><div><h2>Grouping the actions by the work</h2><p class="sub">A proposal: the actions of each app sorted into groups that follow the sections above, so a rider or hub operator finds the next step in the order the work happens. The last groups hold what is needed only sometimes, and what Banking &amp; Financial merchants don't need. (The apps aren't changed by this page.)</p></div></div>
+
+    <h3 class="g-title"><span class="chip rider">Rider app</span> 6 groups + 2</h3>
+    <div class="groups">
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R1</span><div><b>Pickup at the merchant</b><small>Section 1 · merchant's office</small></div></div>
+        <ul>
+          <li><b>Pickups</b> list (<b>Call</b>, <b>Map</b>)</li>
+          <li><b>Pickup from merchant</b> / <b>Collect</b> › <b>Scan parcels</b></li>
+          <li><b>Collected (no scan)</b></li>
+          <li><b>Report a problem</b> (merchant closed, not ready)</li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R2</span><div><b>Hand in at the hub</b><small>Section 1 · hub</small></div></div>
+        <ul>
+          <li><b>Hand over at hub</b> (Scan, or Pickups › Carrying)</li>
+          <li><b>Undo</b> (before the hub scans it)</li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R3</span><div><b>Leave for delivery</b><small>Section 3 · hub</small></div></div>
+        <ul>
+          <li><b>Deliveries</b> list (route, <b>Directions</b>)</li>
+          <li><b>Receive from hub (optional)</b></li>
+          <li><b>Start deliveries</b> / <b>Start delivery</b></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R4</span><div><b>At the recipient's door</b><small>Section 3 · recipient's address</small></div></div>
+        <ul>
+          <li><b>Deliver</b> / <b>Delivered</b> › <b>Received by</b>, <b>Proof</b>, <b>Confirm delivery</b></li>
+          <li><b>Could not deliver</b> › <b>Try again</b> / <b>Return to sender</b></li>
+          <li><b>Call</b> the recipient, <b>Send the code again</b></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R5</span><div><b>Return to the merchant</b><small>Section 5 · merchant's office</small></div></div>
+        <ul>
+          <li><b>Returns to merchants</b> (the runs; today shows <q>N return run(s) to merchants</q>)</li>
+          <li><b>Return to merchant</b> › <b>Return</b> › scan</li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno rider">R6</span><div><b>My day &amp; account</b><small>Any time</small></div></div>
+        <ul>
+          <li><b>Start shift</b> / location sharing</li>
+          <li><b>Saved actions</b> (work saved while offline)</li>
+          <li><b>Help &amp; support</b>, <b>Report a problem to support</b></li>
+          <li><b>Change password</b>, <b>Sign out</b></li>
+        </ul>
+      </div>
+      <div class="grp some">
+        <div class="grp-head"><span class="gno some">R7</span><div><b>Only sometimes</b><small>Not part of the daily steps</small></div></div>
+        <ul>
+          <li><b>CN Merchant</b>, <b>CN_Scan</b>: only when the merchant uses pre-printed CN labels</li>
+          <li><b>Receive from hub (optional)</b> can be skipped: the hub's scan already gives the parcels to the rider</li>
+        </ul>
+      </div>
+      <div class="grp none">
+        <div class="grp-head"><span class="gno none">R8</span><div><b>Not needed for Banking &amp; Financial</b><small>No cash to collect, no direct delivery</small></div></div>
+        <ul>
+          <li><b>My cash</b> › <b>Make handover slip</b> (no COD)</li>
+          <li><b>Cash</b> part of <b>Deliver</b> and <b>Partial delivery</b></li>
+          <li><b>Collect &amp; deliver now</b> (documents go through the hub)</li>
+          <li><b>Cash in hand</b> on Today</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="g-title"><span class="chip ops">Operations app</span> 6 groups + 2</h3>
+    <div class="groups">
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O1</span><div><b>Pickup &amp; receive</b><small>Section 1 / 1B</small></div></div>
+        <ul>
+          <li><b>Assign pickup riders</b> (now in More)</li>
+          <li><b>Receive at hub</b></li>
+          <li><b>Pickup entry</b> <span class="noapp">rider without app</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O2</span><div><b>Hub to hub</b><small>Section 2 · no rider</small></div></div>
+        <ul>
+          <li><b>Transfer out</b> (hub A)</li>
+          <li><b>Receive at hub</b> (hub B, the same action as in O1)</li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O3</span><div><b>Send out for delivery</b><small>Section 3 / 3B</small></div></div>
+        <ul>
+          <li><b>Receive &amp; assign rider</b></li>
+          <li><b>Assign delivery riders</b> (now in More, from a list)</li>
+          <li><b>Out for delivery</b> <span class="noapp">rider without app</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O4</span><div><b>Rider back at the hub</b><small>Section 3 / 3B · end of the day</small></div></div>
+        <ul>
+          <li><b>Receive from rider</b></li>
+          <li><b>Delivery entry</b> <span class="noapp">rider without app</span></li>
+          <li><b>Failed delivery entry</b> <span class="noapp">rider without app</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O5</span><div><b>Returns to merchant</b><small>Sections 4, 5 / 5B</small></div></div>
+        <ul>
+          <li><b>1 · Return issue</b></li>
+          <li><b>2 · Return transfer</b> (branch → central hub)</li>
+          <li><b>3 · Return rider assign</b></li>
+          <li><b>4 · Send out return runs</b></li>
+          <li><b>5 · Return entry</b> <span class="noapp">rider without app</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div class="grp-head"><span class="gno ops">O6</span><div><b>Follow-up &amp; manage</b><small>Any time</small></div></div>
+        <ul>
+          <li><b>Today</b> (counts per stage), <b>Find a parcel</b></li>
+          <li><b>Problems</b>, <b>Map</b> (riders live)</li>
+          <li><b>Riders</b> (add, new password), <b>Change hub</b></li>
+          <li><b>Help &amp; support</b>, <b>Change password</b></li>
+        </ul>
+      </div>
+      <div class="grp some">
+        <div class="grp-head"><span class="gno some">O7</span><div><b>Only sometimes</b><small>Not part of the daily steps</small></div></div>
+        <ul>
+          <li><b>CN Merchant</b>, <b>CN_Scan</b>: only with pre-printed CN labels</li>
+          <li><b>Pickup entry</b>, <b>Out for delivery</b>, <b>Delivery entry</b>, <b>Failed delivery entry</b>, <b>5 · Return entry</b>: only for riders without the app (could sit in their own <q>Rider without app</q> group)</li>
+        </ul>
+      </div>
+      <div class="grp none">
+        <div class="grp-head"><span class="gno none">O8</span><div><b>Not needed for Banking &amp; Financial</b><small>No cash, no Hub Pickup</small></div></div>
+        <ul>
+          <li><b>Collect from hub</b> (Hub Pickup counter)</li>
+          <li><b>Cash</b> tab: <b>Riders</b>, <b>Hub cash</b>, <b>Transfers</b> (no COD)</li>
+          <li><b>Partial delivery</b> in Delivery entry</li>
+          <li><b>Cash with riders</b> on Today</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="g-title">Where each group sits today, and what would move</h3>
+    <div class="table-wrap">
+      <table class="map">
+        <thead><tr><th>Group</th><th>Today in the app</th><th>Change for the grouping</th></tr></thead>
+        <tbody>
+          <tr><td><span class="gno rider sm">R1–R2</span> Pickup, hand in</td><td>Pickups tab + Scan tab (Pickup from merchant, Hand over at hub)</td><td>Scan tab heading <q>PICKUP</q> over both</td></tr>
+          <tr><td><span class="gno rider sm">R3–R4</span> Delivery</td><td>Deliveries tab + Scan tab (Start deliveries, Deliver, Could not deliver)</td><td>Scan tab heading <q>DELIVERY</q></td></tr>
+          <tr><td><span class="gno rider sm">R5</span> Returns</td><td>Scan › Return to merchant + Account › Returns to merchants</td><td>Scan tab heading <q>RETURN TO MERCHANT</q>; the runs list next to it</td></tr>
+          <tr><td><span class="gno rider sm">R7–R8</span></td><td>CN labels on Scan; My cash in Account</td><td>Hidden for Financial-only riders, or under <q>Other</q></td></tr>
+          <tr><td><span class="gno ops sm">O1</span> Pickup &amp; receive</td><td>Assign pickup riders in More; Receive at hub, Pickup entry on Scan</td><td>Assign pickup riders shown in this Scan group too</td></tr>
+          <tr><td><span class="gno ops sm">O3</span> Send out</td><td>Assign delivery riders in More; Receive &amp; assign rider, Out for delivery on Scan</td><td>Assign delivery riders shown in this Scan group too</td></tr>
+          <tr><td><span class="gno ops sm">O4–O5</span></td><td>Already grouped on Scan (RIDER BACK AT THE HUB, RETURNS TO MERCHANT)</td><td>No change</td></tr>
+          <tr><td><span class="gno ops sm">O7–O8</span></td><td>Collect from hub on Scan › DELIVERY; Cash tab</td><td>Collect from hub out of DELIVERY; Cash hidden for hubs with Financial merchants only</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="foot">Delivery Fast · Banking &amp; Financial merchants · Rider app 1.7.2, Operations app 1.8.0 · 15 Nov 2026. Every scan here is also on the web panel (/ops › Scan desk), as tabs with the same names.</p>
+</div>
+</body>
+</html>

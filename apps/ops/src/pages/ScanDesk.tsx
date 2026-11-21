@@ -151,7 +151,7 @@ const TABS: Record<Part, TabCfg> = {
   },
 };
 const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant" | "fromrider"> = {
-  CN_Merchant: "cnmerchant",
+  "CN Merchant": "cnmerchant",
   "Receive from rider": "fromrider",
   "Receive entry": "receive",
   "Pickup entry": "pickup",

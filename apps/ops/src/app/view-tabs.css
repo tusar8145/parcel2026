@@ -15,11 +15,10 @@
 /* The open tab: as the menu's selected item. */
 .vtab[aria-selected="true"] { background: transparent; color: #fff; font-weight: 620; transition: color 0.15s ease 0.04s; }
 .vtab[aria-selected="true"]:hover { color: #fff; transform: none; }
-/* The open tab's box: the menu's blue gradient with its bar on the left, sliding from tab to tab. */
+/* The open tab's box: the menu's blue gradient (no bar beside it), sliding from tab to tab. */
 .vtabs-indicator { position: absolute; top: 0; left: 0; z-index: 0; border-radius: 8px; background: linear-gradient(95deg, var(--primary) 0%, #4a7ff0 100%); box-shadow: 0 8px 18px -8px rgba(47, 85, 201, 0.7); opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
 .vtabs-indicator.shown { opacity: 1; }
 .vtabs-indicator.ready { transition: transform 0.2s cubic-bezier(0.65, 0, 0.25, 1), width 0.2s cubic-bezier(0.65, 0, 0.25, 1), height 0.2s cubic-bezier(0.65, 0, 0.25, 1), opacity 0.2s ease; }
-.vtabs-indicator::before { content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 4px; border-radius: 0 4px 4px 0; background: var(--primary); }
 .vtab[aria-selected="true"] .count { background: rgba(255, 255, 255, 0.95); color: var(--primary); }
 
 /* Narrow screens: the tabs are a row on top that scrolls sideways. */

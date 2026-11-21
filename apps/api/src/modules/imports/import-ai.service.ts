@@ -35,8 +35,10 @@ export const updateAiImportSettingsSchema = z.object({
 export const aiUsageQuerySchema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) });
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-const CHUNK = 60;
-const PARALLEL = 4;
+/** Items per call: small, so a file's unmatched items are answered by several calls at once (an answer is written token by token: shorter answers come back sooner). */
+const CHUNK = 15;
+/** Calls running at once; the next starts as soon as one is answered. */
+const PARALLEL = 6;
 
 interface ProductAnswer {
   i: number;
@@ -312,22 +314,27 @@ export class ImportAiService {
     let error: string | null = null;
     const answers: Answer[] = [];
     const started = Date.now();
-    for (let k = 0; k < jobs.length; k += PARALLEL) {
-      if (spent + cost >= settings.monthlyLimitUsd) {
-        error = "monthly limit reached during the file";
-        break;
-      }
-      const batch = await Promise.all(
-        jobs.slice(k, k + PARALLEL).map(job =>
-          this.call(system, this.userPrompt(job.products, job.places)).catch(err => {
-            error = (err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err)).trim().slice(0, 300);
-            return null;
-          }),
-        ),
-      );
-      for (const b of batch) {
+    // A pool of PARALLEL calls: each takes the next group as soon as it is free (the monthly limit is checked before
+    // every call). The answers are applied in the groups' order, as when they ran one round after another.
+    const byJob: (Answer | null)[] = jobs.map(() => null);
+    let nextJob = 0;
+    let stopped = false;
+    const worker = async () => {
+      while (!stopped) {
+        const k = nextJob++;
+        if (k >= jobs.length) return;
+        if (spent + cost >= settings.monthlyLimitUsd) {
+          error = "monthly limit reached during the file";
+          stopped = true;
+          return;
+        }
+        const job = jobs[k];
+        const b = await this.call(system, this.userPrompt(job.products, job.places)).catch(err => {
+          error = (err instanceof Anthropic.APIError ? `${err.status ?? ""} ${err.message}` : err instanceof Error ? err.message : String(err)).trim().slice(0, 300);
+          return null;
+        });
         if (!b) continue;
-        answers.push(b.answer);
+        byJob[k] = b.answer;
         model = b.model;
         tokens.input += b.tokens.input;
         tokens.cacheRead += b.tokens.cacheRead;
@@ -335,7 +342,9 @@ export class ImportAiService {
         tokens.output += b.tokens.output;
         cost += costUsd(b.model, b.tokens);
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, jobs.length) }, worker));
+    for (const a of byJob) if (a) answers.push(a);
 
     // ── apply ──
     const counts = { productsMatched: 0, productsCreated: 0, categoriesCreated: 0, placesMatched: 0, zonesCreated: 0 };

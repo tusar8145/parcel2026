@@ -178,5 +178,7 @@ export const listParcelsWithStageSchema = listParcelsQuerySchema.extend({
   ...stageFilterSchema.shape,
   /** Numbered pages (All parcels): the answer also has `total` and `pages`; `limit` is the page size. Without it, cursor paging. */
   page: z.coerce.number().int().min(1).optional(),
+  /** Page size: up to 1,000 here (the panels' Rows per page offers 50 … 1,000); 200 elsewhere. */
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
 });
 export const stageCountsQuerySchema = stageFilterSchema.pick({ forHubIds: true });

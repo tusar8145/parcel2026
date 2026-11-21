@@ -45,6 +45,9 @@ import type { ImportSettings } from "./import-config.service";
  * `__own`: delivery type / priority chosen for this row in the preview: the window's choice for the file doesn't
  * overwrite them (until "Apply to every row").
  */
+/** Rows priced at once while checking a file (each reads the package lists; the hub lookups are remembered per zone). */
+const PRICE_PARALLEL = 8;
+
 /** __fileProduct / __fileLabel: the row's own product (and the name the file wrote) while one product is applied to every row. */
 export type Cells = Partial<Record<ColumnKey | "__cod" | "__scan" | "__auto" | "__label" | "__ai" | "__own" | "__fileProduct" | "__fileLabel", string>>;
 
@@ -312,9 +315,18 @@ export class ImportEngineService {
    */
   private async priceRows(ctx: EngineContext, results: RowResult[], db: Db) {
     const subject = this.subjectOf(ctx);
-    for (const r of results) {
-      if (r.status === "ERROR" || !r.booking) continue;
-      const b = r.booking;
+    // Rows are independent (each reads the lists and writes only its own result): PRICE_PARALLEL at a time.
+    const todo = results.filter(r => r.status !== "ERROR" && r.booking);
+    let next = 0;
+    const worker = async () => {
+      for (let k = next++; k < todo.length; k = next++) await this.priceRow(ctx, subject, todo[k], db);
+    };
+    await Promise.all(Array.from({ length: Math.min(PRICE_PARALLEL, todo.length) }, worker));
+  }
+
+  private async priceRow(ctx: EngineContext, subject: PackageSubject, r: RowResult, db: Db) {
+    {
+      const b = r.booking!;
       try {
         const resolved = r.freeProduct ? { id: null, name: r.freeProduct, type: "REGULAR" } : await this.packages.resolveProduct(ctx.pkg.segment, b.product, db, ctx.products);
         const product = resolved ? { ...resolved, label: r.label ?? null } : null;

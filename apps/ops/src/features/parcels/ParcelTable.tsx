@@ -38,7 +38,7 @@ export interface TableOptions {
   id?: string;
 }
 
-const PAGE_SIZES = [50, 100, 200];
+const PAGE_SIZES = [50, 100, 200, 500, 1000];
 const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 interface MerchantRef {
@@ -159,6 +159,7 @@ export default function ParcelTable({ list, options }: { list: ParcelListState; 
       {options.search !== false ? (
         <input className="input sm" type="search" placeholder="Search ID, phone, name" aria-label={`Search ${typeof options.title === "string" ? options.title : "parcels"}`} value={q} onChange={e => setQ(e.target.value)} style={{ width: 200 }} />
       ) : null}
+      {list.paged ? <RowsPerPage list={list} /> : null}
     </>
   );
 
@@ -331,6 +332,22 @@ function Row({ p, list, options }: { p: Parcel; list: ParcelListState; options: 
   );
 }
 
+/** Rows per page (above the table and below it, the same choice). */
+function RowsPerPage({ list }: { list: ParcelListState }) {
+  return (
+    <label className="row" style={{ gap: 6, whiteSpace: "nowrap", fontSize: 13 }}>
+      Rows per page
+      <Select className="select sm" aria-label="Rows per page" value={list.size} onChange={e => list.setSize(Number(e.target.value))}>
+        {PAGE_SIZES.map(s => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </Select>
+    </label>
+  );
+}
+
 function Footer({ list }: { list: ParcelListState }) {
   const noun = list.cfg.noun || "parcel";
   if (!list.paged) {
@@ -345,14 +362,7 @@ function Footer({ list }: { list: ParcelListState }) {
     <div className="panel-foot">
       <span>{list.loading && !n ? "Loading…" : total ? `Showing ${num(first)}–${num(first + n - 1)} of ${num(total)} ${noun}${total === 1 ? "" : "s"} · updates live` : `No ${noun}s`}</span>
       <span className="row" style={{ gap: 6 }}>
-        <label className="row" style={{ gap: 6 }}>
-          Rows per page
-          <Select className="select sm" aria-label="Rows per page" value={size} onChange={e => list.setSize(Number(e.target.value))}>
-            {PAGE_SIZES.map(s => (
-              <option key={s}>{s}</option>
-            ))}
-          </Select>
-        </label>
+        <RowsPerPage list={list} />
         {pages > 1 ? (
           <nav className="pager" aria-label="Pages">
             <button type="button" className="button sm" disabled={page === 1 || list.fetching} onClick={() => list.setPage(1)}>

@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.57.1 — 2026-11-21
+- Excel import: checking a file with AI import on is faster. The products and addresses the lists don't match go to the AI in smaller groups that are answered at the same time (up to 6 at once), instead of one long answer; the result is the same. The rows are also priced several at a time.
+- All parcels and New orders: Rows per page is above the table too (next to the search), with 50, 100, 200, 500 and 1000 rows.
+- All parcels: the In transit, At hub and Exceptions cards above the list are gone.
+
 ## 1.57.0 — 2026-11-21
 - Import history: pin several imports at once. Pin now stays in the history (the button turns to Unpin), and "Show N pinned in New orders" opens New orders with all their parcels together; each pinned import has its own × there, and "Unpin all" clears them. All parcels follows the pins too (each tab shows only the pinned imports' parcels in its line, and its export follows them).
 - Import history can be filtered by date: From and To (the days the files were uploaded), with Clear dates.

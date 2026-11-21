@@ -63,7 +63,7 @@ export function NewOrders() {
         list={list}
         options={{
           title: pin ? (pins.length === 1 ? `Pinned import ${pinName(pins[0])}` : `${pins.length} pinned imports`) : "Orders waiting for operations",
-          subtitle: pin ? `Only ${pins.length === 1 ? "this import's" : "these imports'"} parcels, whatever their status (this device; unpin to see every new order)` : "Newest first · 100 a page · tick orders to accept and assign them together",
+          subtitle: pin ? `Only ${pins.length === 1 ? "this import's" : "these imports'"} parcels, whatever their status (this device; unpin to see every new order)` : `Newest first · ${num(list.size)} a page · tick orders to accept and assign them together`,
           lines: true,
           merchants: true,
           dates: true,
@@ -108,7 +108,6 @@ export function AllParcels({ tab }: { tab: string }) {
       ? { id: `all-${tab}-pin-${batchIds}`, params: { ...(t.line ? { line: t.line } : {}), batchIds }, allTime: true, register: true, empty: pins.length > 1 ? "These imports have no parcels in this tab." : "This import has no parcels in this tab." }
       : { id: `all-${tab}`, params: t.line ? { line: t.line } : {}, register: true, empty: "No parcels match." },
   );
-  const s = ops.overview?.shipments;
   const active = t.activeKey ? ops.overview?.serviceLines?.[t.activeKey] : null;
   const periodText = ops.period.value === "all" ? "every date" : ops.period.label.toLowerCase();
   const newLabel = tab === "Customer" ? "New walk-in order" : tab === "E-commerce" ? "New e-commerce order" : tab === "Banking & Financial" ? "New Banking & Financial order" : "New order";
@@ -134,22 +133,6 @@ export function AllParcels({ tab }: { tab: string }) {
         }
       />
       <ViewTabs view="All parcels" tab={tab} />
-      {tab === "All" && s ? (
-        <div className="mini-stats">
-          <div className="mini">
-            <span>In transit</span>
-            <strong>{num(s.inTransit + s.outForDelivery)}</strong>
-          </div>
-          <div className="mini">
-            <span>At hub</span>
-            <strong>{num(s.atHub)}</strong>
-          </div>
-          <div className="mini">
-            <span>Exceptions</span>
-            <strong>{num(s.exceptions)}</strong>
-          </div>
-        </div>
-      ) : null}
       <PinnedChips />
       <ParcelTable
         key={tab}

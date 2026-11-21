@@ -233,6 +233,34 @@ describe("AI import", () => {
     expect(parcels.map(p => p.productName)).toEqual(["Books", "Books"]);
   });
 
+  it("many unmatched items: several calls run at once, every row gets its answer", async () => {
+    const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
+    const ops = await userWithRoles(ctx, [{ role: "OPS_MANAGER" }], "Ops");
+    const merchant = await shop();
+    await ctx.api("PUT", "/imports/ai", { token: admin.token, body: { enabled: true, monthlyLimitUsd: 5 } });
+    // A slower stub that answers every address line of its call, and counts the calls running at the same time.
+    let running = 0;
+    let most = 0;
+    ai.callOverride = async (_system, user) => {
+      calls.push(user);
+      running++;
+      most = Math.max(most, running);
+      await new Promise(r => setTimeout(r, 150));
+      running--;
+      const places = [...user.matchAll(/A(\d+): [^\n]*Kazipara/g)].map(m => ({ i: Number(m[1]), district: "Dhaka Central", zone: "Mirpur", newZone: false, nearZone: "" }));
+      return { answer: { products: [], places }, model: "claude-haiku-5-5", tokens: { input: 100, cacheRead: 0, cacheWrite: 0, output: 40 } };
+    };
+    const rows = Array.from({ length: 40 }, (_, k) => row(k + 1, { recipient_phone: `0181${String(2000000 + k).padStart(7, "0")}`, address: `House ${k + 1}, Kazipara Lane ${k + 1}, Dhaka`, district: "Dhaka Central" }));
+    const checked = await validate(ops.token, merchant.id, rows);
+    expect(calls).toHaveLength(3);
+    expect(most).toBeGreaterThan(1);
+    // Each address was asked once, in one of the calls.
+    expect(calls.flatMap(c => [...c.matchAll(/^A(\d+):/gm)].map(m => Number(m[1]))).sort((x, y) => x - y)).toEqual(Array.from({ length: 40 }, (_, k) => k + 1));
+    const page = (await ctx.api("GET", `/imports/${checked.id}/rows?pageSize=100`, { token: ops.token })).body as { items: { cells: Record<string, string> }[] };
+    expect(page.items).toHaveLength(40);
+    expect(page.items.every(r => r.cells.zone === "Mirpur")).toBe(true);
+  });
+
   it("a merchant's own import uses it too", async () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     const merchant = await shop();

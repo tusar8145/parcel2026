@@ -18,7 +18,7 @@ import { dialogOpened } from "./dialogSignal";
 import { Icon } from "./Icon";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
 import { describe } from "../lib/api";
-import { toast } from "./toast";
+import { raiseToasts, toast } from "./toast";
 
 export interface FieldOption {
   value: string;
@@ -421,7 +421,7 @@ function ModalDialog({ children, onCancel, size, closing }: { children: ReactNod
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current;
-    if (el && !el.open) el.showModal();
+    if (el && !el.open) (el.showModal(), raiseToasts());
   }, []);
   return (
     <dialog

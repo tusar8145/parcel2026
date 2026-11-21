@@ -159,18 +159,27 @@ export default function ParcelTable({ list, options }: { list: ParcelListState; 
       {options.search !== false ? (
         <input className="input sm" type="search" placeholder="Search ID, phone, name" aria-label={`Search ${typeof options.title === "string" ? options.title : "parcels"}`} value={q} onChange={e => setQ(e.target.value)} style={{ width: 200 }} />
       ) : null}
-      {list.paged ? <RowsPerPage list={list} /> : null}
     </>
   );
 
   return (
     <section className="panel" id={options.id}>
       <div className="panel-head">
-        <div>
-          <h2 className="panel-title">{options.title}</h2>
-          {options.subtitle ? <p className="panel-subtitle">{options.subtitle}</p> : null}
+        {/* The title line: Rows per page in the right corner (also below the table). */}
+        <div style={{ flex: "1 1 100%", display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 className="panel-title">{options.title}</h2>
+            {options.subtitle ? <p className="panel-subtitle">{options.subtitle}</p> : null}
+          </div>
+          {list.paged ? (
+            <div style={{ marginLeft: "auto", flex: "none" }}>
+              <RowsPerPage list={list} />
+            </div>
+          ) : null}
         </div>
-        <div className="tools">{tools}</div>
+        <div className="tools" style={{ marginLeft: "auto" }}>
+          {tools}
+        </div>
       </div>
       <div className="table-wrap" style={{ opacity: list.fetching && !list.loading ? 0.7 : 1, transition: "opacity .15s" }}>
         <table className="table parcels">

@@ -7,6 +7,10 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.57.2 — 2026-11-21
+- Panels (Operations, merchant, super admin): messages at the bottom of the screen show above an open dialog instead of behind its blurred background.
+- Parcel lists (All parcels, New orders and the other journey pages): Rows per page sits in the top right corner of the table, on the title line, whatever the screen width.
+
 ## 1.57.1 — 2026-11-21
 - Excel import: checking a file with AI import on is faster. The products and addresses the lists don't match go to the AI in smaller groups that are answered at the same time (up to 6 at once), instead of one long answer; the result is the same. The rows are also priced several at a time.
 - All parcels and New orders: Rows per page is above the table too (next to the search), with 50, 100, 200, 500 and 1000 rows.

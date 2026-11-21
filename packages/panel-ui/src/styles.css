@@ -501,6 +501,10 @@ dialog.dialog::backdrop { background: rgb(16 24 40 / 45%); backdrop-filter: blur
 .timeline small { display: block; color: var(--faint); font-size: 12px; }
 
 .toasts { position: fixed; z-index: 90; left: 50%; bottom: 22px; transform: translateX(-50%); display: grid; gap: 8px; width: min(520px, calc(100vw - 24px)); pointer-events: none; }
+/* In the top layer (popover, above open dialogs): none of the popover's own box; hidden while there's no message. */
+.toasts[popover] { inset: auto auto 22px 50%; margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; color: inherit; }
+.toasts[popover]:not(:popover-open) { display: none; }
+.toasts[popover]:popover-open { display: grid; }
 .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; background: var(--ink); color: #fff; box-shadow: var(--shadow-lg); font-size: 13.5px; animation: toast-in .18s ease-out; }
 .toast.bad { background: #7a1416; }
 .toast.good { background: #0b5a2e; }

@@ -234,7 +234,7 @@ export function nextAction(p: Parcel | null | undefined, hubs: Hub[], when: (iso
     next = needsTransfer(p, hubs)
       ? { kind: "transfer", label: "Add to transfer", title: `${hub?.name} serves ${p.delivery.zone}: bag it for the transfer` }
       : { kind: "assign", label: "Assign rider", title: "Assign a delivery rider" };
-  } else if (p.status === "READY_FOR_COLLECTION") next = { kind: "handover", label: "Hand over", title: "Hand it to the receiver on Collect from hub" };
+  } else if (p.status === "READY_FOR_COLLECTION") next = { kind: "handover", label: "Hand over", title: "Hand it to the receiver on Scan desk › Hub collection" };
   else if (p.status === "RETURN_SCHEDULED" && !p.returnInfo?.runId) next = { kind: "returnRun", label: "Add to return run", title: "Plan a return run to the merchant" };
   // Failed deliveries: re-attempt with a rider (also instead of "Add to transfer": it went out from this hub).
   if (failedDelivery(p) && !p.incomplete && (!next || next.kind === "assign" || next.kind === "transfer"))

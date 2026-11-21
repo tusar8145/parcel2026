@@ -119,7 +119,7 @@ describe("CN_Scan and CN_Merchant (apps)", () => {
     expect(view.body).toMatchObject({ cnFlow: true, deliveredLocation: { lat: 23.7925, lng: 90.4078 } });
   });
 
-  it("Scan desk: an unused CN label is made a parcel on Receive entry and on Receive & assign rider", async () => {
+  it("Scan desk: an unused CN label is made a parcel on Receive at hub and on Delivery rider assign", async () => {
     const s = await setup();
     const [cn1, cn2] = s.cns;
     const received = await ctx.api("POST", "/ops/hub-receive", { token: s.gulOp.token, body: { code: cn1, hubId: s.gulshan.id, source: "KEYBOARD" } });

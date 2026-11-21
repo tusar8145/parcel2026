@@ -1,10 +1,12 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
+import 'assign.dart';
 import 'home.dart';
 import 'ops.dart';
 import 'parcels.dart';
 import 'returns.dart';
+import 'rider_op.dart';
 
 /// Why a delivery failed and why a parcel goes back: the super admin's lists (GET /delivery/fail-reasons,
 /// GET /returns/reasons, in their order); these until they load.
@@ -83,76 +85,9 @@ class ScanPage extends StatelessWidget {
     if (rider == null || !context.mounted) return;
     await _session(
       context,
-      title: 'Receive & assign rider',
+      title: 'Delivery rider assign',
       hint: 'Scan each parcel the rider takes. Not received yet? It is received here and given to the rider.',
       action: (code, source) => deskScan('/ops/hub-assign', {'code': code, 'hubId': Ops.hubId, 'riderId': rider, 'source': source}),
-    );
-  }
-
-  /// A rider brings parcels back (failed deliveries, unfinished returns): no scan by the rider needed.
-  Future<void> _receiveBack(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    final rider = await pickRider(context, title: 'Which rider is handing in?');
-    if (rider == null || !context.mounted) return;
-    final decision = await pickFromList(context, title: 'Failed deliveries: what next?', items: backDecisions.keys.toList(), selected: 'RIDER', labelOf: (k) => backDecisions[k]!);
-    if (decision == null || !context.mounted) return;
-    // What the rider still holds (failed deliveries, unfinished returns): counted down as they are scanned.
-    Future<String> left() async {
-      try {
-        final items = ((await Api.get('/hub-desk/with-rider?riderId=${Uri.encodeComponent(rider)}')) as Map)['items'] as List? ?? [];
-        final ret = items.where((i) => (i as Map)['riderChose'] == 'RETURN').length;
-        return items.isEmpty ? 'Nothing left with the rider.' : '${items.length} still with the rider${ret > 0 ? ' ($ret to return)' : ''}';
-      } catch (_) {
-        return '';
-      }
-    }
-
-    final start = await left();
-    if (!context.mounted) return;
-    final status = ValueNotifier(start);
-    var n = 0;
-    await scanBarcode(
-      context,
-      title: 'Receive from rider',
-      hint: 'Scan each parcel the rider brings back: ${backDecisions[decision]!.toLowerCase()}.',
-      continuous: true,
-      status: status,
-      onCode: (code, source) async {
-        final r = await deskScan('/hub-desk/receive-back', {'code': code, 'hubId': Ops.hubId, 'riderId': rider, 'decision': decision, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'});
-        if (r.ok) status.value = '${++n} received · ${await left()}';
-        return r;
-      },
-    );
-    opsChanged.value++;
-  }
-
-  Future<void> _dispatch(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    final rider = await pickRider(context, title: 'Who is going out?');
-    if (rider == null || !context.mounted) return;
-    await _session(
-      context,
-      title: 'Out for delivery',
-      hint: 'Scan the parcels as the rider loads them. The recipient gets the delivery code by SMS.',
-      action: (code, source) => deskScan('/hub-desk/dispatch', {'code': code, 'riderId': rider, 'source': source}),
-    );
-  }
-
-  Future<void> _delivered(BuildContext context) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DeliveryEntryPage()));
-    opsChanged.value++;
-  }
-
-  Future<void> _failed(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    final choice = await showModalBottomSheet<(String, String)>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => const _ReasonSheet());
-    if (choice == null || !context.mounted) return;
-    final (reason, next) = choice;
-    await _session(
-      context,
-      title: 'Failed delivery entry',
-      hint: 'Scan each parcel: $reason (${next == 'RETRY' ? 'try again' : 'back at the hub'}).',
-      action: (code, source) => deskScan('/hub-desk/failed', {'code': code, 'reason': reason, 'nextAction': next, 'hubId': Ops.hubId, 'source': source}),
     );
   }
 
@@ -169,19 +104,9 @@ class ScanPage extends StatelessWidget {
     if (dest == null || !context.mounted) return;
     await _session(
       context,
-      title: 'Transfer out',
+      title: 'Hub transfer',
       hint: 'Scan each parcel leaving for another hub.',
       action: (code, source) => deskScan('/hub-desk/transfer', {'code': code, if (dest.isNotEmpty) 'toHubId': dest, 'source': source}),
-    );
-  }
-
-  Future<void> _pickupEntry(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    await _session(
-      context,
-      title: 'Pickup entry',
-      hint: 'A pickup rider brings what they collected: scan each parcel. It is picked up and received here.',
-      action: (code, source) => deskScan('/hub-desk/pickup', {'code': code, 'hubId': Ops.hubId, 'source': source}),
     );
   }
 
@@ -198,60 +123,6 @@ class ScanPage extends StatelessWidget {
       title: 'Return rider assign',
       hint: 'Scan each parcel going back. It joins the rider\'s return run for its merchant.',
       action: (code, source) => deskScan('/hub-desk/return-assign', {'code': code, 'riderId': rider, 'hubId': Ops.hubId, 'reason': reason, 'source': source}),
-    );
-  }
-
-  Future<void> _returnEntry(BuildContext context) async {
-    final name = TextEditingController();
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Return entry'),
-        content: TextField(
-          controller: name,
-          decoration: const InputDecoration(labelText: 'Who took them back? (optional)'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Start scanning')),
-        ],
-      ),
-    );
-    if (go != true || !context.mounted) return;
-    await _session(
-      context,
-      title: 'Return entry',
-      hint: 'Scan each parcel the merchant took back.',
-      action: (code, source) => deskScan('/hub-desk/return', {'code': code, if (name.text.trim().isNotEmpty) 'receivedBy': name.text.trim(), 'source': source}),
-    );
-  }
-
-  /// Return issue: the reason once, a rider (optional: takes them straight to the merchant), or send them on to the
-  /// central hub in the same scan. Then scan parcel after parcel.
-  Future<void> _returnIssue(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    await loadReasons();
-    Map<String, dynamic>? summary;
-    try {
-      summary = await loadReturnsSummary();
-    } catch (_) {}
-    if (!context.mounted) return;
-    final setup = await showModalBottomSheet<_IssueSetup>(context: context, isScrollControlled: true, showDragHandle: true, builder: (_) => _ReturnIssueSheet(summary: summary));
-    if (setup == null || !context.mounted) return;
-    final central = (summary?['centralHub'] as Map?)?['name'];
-    final then = setup.riderId != null ? 'joins ${setup.riderLabel}\'s return run' : (setup.toCentral ? 'goes to $central' : 'on the returns list');
-    await _session(
-      context,
-      title: 'Return issue',
-      hint: 'Scan each parcel going back: ${setup.reason}; it $then.',
-      action: (code, source) => deskScan('/hub-desk/return-issue', {
-        'code': code,
-        'hubId': Ops.hubId,
-        'reason': setup.reason,
-        if (setup.riderId != null) 'riderId': setup.riderId,
-        'toCentral': setup.riderId == null && setup.toCentral,
-        'source': source,
-      }),
     );
   }
 
@@ -283,7 +154,7 @@ class ScanPage extends StatelessWidget {
     var n = 0;
     await scanBarcode(
       context,
-      title: 'Return transfer',
+      title: 'Hub return',
       hint: 'Scan each return leaving for ${central['name']}. It receives them with Receive at hub.',
       continuous: true,
       status: status,
@@ -296,9 +167,9 @@ class ScanPage extends StatelessWidget {
     opsChanged.value++;
   }
 
-  Future<void> _returnsHub(BuildContext context) async {
-    if (!await _needHub(context) || !context.mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReturnsHubPage()));
+  /// Assign pickup rider: new orders and pickup requests to give to a pickup rider (the list, as it was in More).
+  Future<void> _assignPickup(BuildContext context) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AssignPage(mode: AssignMode.pickup)));
     opsChanged.value++;
   }
 
@@ -307,7 +178,7 @@ class ScanPage extends StatelessWidget {
     if (!await _needHub(context) || !context.mounted) return;
     while (true) {
       if (!context.mounted) return;
-      final code = await scanBarcode(context, title: 'Collect from hub', hint: 'Scan the parcel the customer collects.');
+      final code = await scanBarcode(context, title: 'Hub collection', hint: 'Scan the parcel the customer collects.');
       if (code == null || !context.mounted) return;
       final done = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => CollectPage(trackingId: code)));
       opsChanged.value++;
@@ -326,35 +197,26 @@ class ScanPage extends StatelessWidget {
           padding: EdgeInsets.only(bottom: 10),
           child: Text('Choose the task, then scan the parcels one after another with the camera or a handheld scanner.', style: TextStyle(color: muted)),
         ),
-        const _Group('Receive at hub', 'Parcels arriving at the hub.'),
-        _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Every arrival: pickups, drop-offs, transfers, parcels coming back.', () => _receive(context)),
-        _Task(Icons.storefront_outlined, warn, 'Pickup entry', 'A pickup rider brings what they collected.', () => _pickupEntry(context)),
-        const _Group('Delivery', 'Parcels leaving the hub for the recipient.'),
-        _Task(Icons.person_add_alt_1_outlined, good, 'Receive & assign rider', 'Choose the rider, then scan: received (if needed) and given to them.', () => _assign(context)),
-        _Task(Icons.local_shipping_outlined, brand, 'Out for delivery', 'Choose the rider, then scan what they take.', () => _dispatch(context)),
-        _Task(Icons.inventory_outlined, brand, 'Collect from hub', 'Hub Pickup counter: code, who collects, COD.', () => _collect(context)),
-        const _Group('Rider back at the hub', 'End of the day: what the rider hands in.'),
-        _Task(Icons.check_circle_outline, good, 'Delivery entry', 'Signed slips a rider hands in.', () => _delivered(context)),
-        _Task(Icons.report_gmailerrorred_outlined, bad, 'Failed delivery entry', 'Choose the reason once, then scan.', () => _failed(context)),
-        _Task(Icons.keyboard_return, warn, 'Receive from rider', 'Failed deliveries and returns a rider brings back.', () => _receiveBack(context)),
-        const _Group('Hub to hub', 'Parcels another hub delivers.'),
-        _Task(Icons.swap_horiz, brand, 'Transfer out', 'Parcels leaving for another hub.', () => _transfer(context)),
-        const _Group('Returns to merchant', 'Step by step: issue → central hub → rider → merchant.'),
-        const _ReturnsStatus(),
-        _Task(Icons.assignment_late_outlined, bad, '1 · Return issue', 'Reason once; a rider takes them straight to the merchant, or they go to the central hub.', () => _returnIssue(context)),
-        _Task(Icons.move_up_outlined, brand, '2 · Return transfer', 'Returns held here leave for the central hub.', () => _returnTransfer(context)),
-        _Task(Icons.assignment_return_outlined, bad, '3 · Return rider assign', 'Parcels going back join a rider\'s return run.', () => _returnAssign(context)),
-        _Task(Icons.outbox_outlined, brand, '4 · Send out return runs', 'Planned runs leave with their rider; returns held here.', () => _returnsHub(context), scan: false),
-        _Task(Icons.undo, good, '5 · Return entry', 'Parcels the merchant took back.', () => _returnEntry(context)),
+        const _Group('At the hub', 'Parcels arriving, leaving and given to riders.'),
+        _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Every arrival: first mile pickups, failed deliveries back, hub transfers and returns.', () => _receive(context)),
+        _Task(Icons.swap_horiz, brand, 'Hub transfer', 'Parcels leaving for the hub that delivers them.', () => _transfer(context)),
+        _Task(Icons.move_up_outlined, brand, 'Hub return', 'Returns held here leave for the central hub.', () => _returnTransfer(context)),
+        _Task(Icons.person_add_alt_1_outlined, good, 'Delivery rider assign', 'Choose the rider, then scan: received (if needed) and given to them.', () => _assign(context)),
+        _Task(Icons.assignment_return_outlined, bad, 'Return rider assign', 'Parcels going back join a rider\'s return run.', () => _returnAssign(context)),
+        _Task(Icons.fiber_new_outlined, warn, 'Assign pickup rider', 'New orders and pickup requests: choose the parcels, then the rider.', () => _assignPickup(context), scan: false),
+        const _Group('Hub collection', 'The recipient collects at the hub.'),
+        _Task(Icons.inventory_outlined, brand, 'Hub collection', 'Scan the parcel; collection code, who collects, COD.', () => _collect(context)),
         const _Group('CN labels', 'Pre-printed labels to parcels.'),
-        _Task(Icons.qr_code_2, brand, 'CN Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
+        _Task(Icons.qr_code_2, brand, 'CN Assign Merchant', "Choose the merchant, then scan CN labels: they become that merchant's parcels.", () async {
           if (await _needHub(context) && context.mounted) await openCnMerchant(context, hubId: Ops.hubId);
           opsChanged.value++;
         }),
-        _Task(Icons.document_scanner_outlined, brand, 'CN_Scan', 'Camera stays on: CN barcode + recipient in the frame, tap Capture.', () async {
+        _Task(Icons.document_scanner_outlined, brand, 'CN Scan Details', 'Camera stays on: CN barcode + recipient in the frame, tap Capture.', () async {
           if (await _needHub(context) && context.mounted) await openCnScan(context, hubId: Ops.hubId);
           opsChanged.value++;
         }),
+        const _Group('Rider operation', 'Choose a rider and do their rider app steps for them.'),
+        _Task(Icons.two_wheeler, brand, 'Rider operation', 'Pickup from merchant, receive from hub, start deliveries, deliver, could not deliver, returned to merchant.', () => openRiderOperation(context), scan: false),
       ],
     );
   }
@@ -376,43 +238,6 @@ class _Group extends StatelessWidget {
           Text(title.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, color: brand, fontSize: 12.5, letterSpacing: .6)),
           Text(text, style: const TextStyle(color: muted, fontSize: 12.5)),
         ],
-      ),
-    );
-  }
-}
-
-/// The returns at this hub in one line (held here and the next step, runs to send out); reloads after any scan.
-class _ReturnsStatus extends StatelessWidget {
-  const _ReturnsStatus();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: opsChanged,
-      builder: (_, version, _) => ValueListenableBuilder<Map<String, dynamic>?>(
-        valueListenable: Ops.hub,
-        builder: (_, hub, _) => hub == null
-            ? const SizedBox.shrink()
-            : FutureBuilder<Map<String, dynamic>>(
-                key: ValueKey('returns-${hub['id']}-$version'),
-                future: loadReturnsSummary(),
-                builder: (_, snap) {
-                  if (!snap.hasData) return const SizedBox.shrink();
-                  final s = snap.data!;
-                  final central = s['centralHub'] as Map?;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                      decoration: BoxDecoration(color: warn.withValues(alpha: .08), borderRadius: BorderRadius.circular(10)),
-                      child: Text(
-                        '${returnsLine(s)}${central == null ? '' : s['isCentral'] == true ? ' · this is the central hub' : ' · central hub: ${central['name']}'}',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  );
-                },
-              ),
       ),
     );
   }
@@ -463,228 +288,13 @@ class _Task extends StatelessWidget {
   }
 }
 
-/// Delivery entry: the rider hands in signed slips. For each slip: who received it (and their relation to the
-/// recipient), a note, partial delivery with the cash collected, a photo of the slip, then scan it. The details go
-/// with that one scan (like Courier Operations › Scan desk › Delivery entry); the form is then ready for the next.
-class DeliveryEntryPage extends StatefulWidget {
-  const DeliveryEntryPage({super.key});
-  @override
-  State<DeliveryEntryPage> createState() => _DeliveryEntryPageState();
-}
-
-class _DeliveryEntryPageState extends State<DeliveryEntryPage> {
-  final _receivedBy = TextEditingController();
-  final _note = TextEditingController();
-  final _cash = TextEditingController();
-  List<String> _relations = const ['Self'];
-  String _relation = 'Self';
-  bool _partial = false;
-  String? _photo;
-  bool _busy = false;
-  int _done = 0;
-  final _log = <ScanFeedback>[];
-
-  @override
-  void initState() {
-    super.initState();
-    Api.get('/delivery/receiver-relations')
-        .then((r) {
-          final list = ((r as Map)['relations'] as List?)?.map((x) => '$x').toList();
-          if (list != null && list.isNotEmpty && mounted) setState(() => _relations = list.contains('Self') ? list : ['Self', ...list]);
-        })
-        .catchError((_) {});
-  }
-
-  @override
-  void dispose() {
-    _receivedBy.dispose();
-    _note.dispose();
-    _cash.dispose();
-    super.dispose();
-  }
-
-  Future<void> _takePhoto() async {
-    final photo = await pickPhotoDataUrl(context);
-    if (photo != null && mounted) setState(() => _photo = photo);
-  }
-
-  Future<void> _scan() async {
-    final cash = num.tryParse(_cash.text.trim());
-    if (_partial && cash == null) {
-      setState(() => _log.insert(0, ScanFeedback(false, 'Enter the cash collected for the partial delivery, then scan.')));
-      return;
-    }
-    final code = await scanBarcode(context, title: 'Scan the slip', hint: 'Scan the tracking ID on the signed slip.');
-    if (code == null || code.trim().isEmpty || !mounted) return;
-    setState(() => _busy = true);
-    final r = await deskScan('/hub-desk/deliver', {
-      'code': code,
-      'source': 'CAMERA',
-      if (_receivedBy.text.trim().isNotEmpty) 'receivedBy': _receivedBy.text.trim(),
-      'receiverRelation': _relation,
-      if (_note.text.trim().isNotEmpty) 'note': _note.text.trim(),
-      if (_photo != null) 'photo': _photo,
-      if (_partial) ...{'partial': true, 'codCollected': cash},
-    });
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _log.insert(0, r);
-      if (r.ok) {
-        _done++;
-        // The details went with this slip: the form is ready for the next one.
-        _receivedBy.clear();
-        _note.clear();
-        _cash.clear();
-        _relation = 'Self';
-        _partial = false;
-        _photo = null;
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(_done == 0 ? 'Delivery entry' : 'Delivery entry · $_done done')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text('The rider hands in signed slips. Fill in what the slip says, then scan it. The COD stays with the rider for the cash handover.', style: TextStyle(color: muted)),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _receivedBy,
-              maxLength: 120,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Received by (optional)', hintText: 'Name on the slip; empty = the recipient', counterText: ''),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              key: ValueKey('relation-$_relation-${_relations.length}'),
-              initialValue: _relations.contains(_relation) ? _relation : 'Self',
-              decoration: const InputDecoration(labelText: 'Relation to the recipient'),
-              items: [for (final r in _relations) DropdownMenuItem(value: r, child: Text(r == 'Self' ? 'Self (the recipient)' : r))],
-              onChanged: (v) => setState(() => _relation = v ?? 'Self'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _note,
-              maxLength: 500,
-              decoration: InputDecoration(labelText: 'Note (optional)', hintText: _partial ? 'What came back, e.g. Kept the shirt, returned the jeans' : 'e.g. Signed by the guard', counterText: ''),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Partial delivery'),
-              subtitle: const Text('The recipient kept only part of the order'),
-              value: _partial,
-              onChanged: (v) => setState(() => _partial = v),
-            ),
-            if (_partial)
-              TextField(
-                controller: _cash,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Cash collected (Tk)', hintText: 'What the recipient paid'),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                OutlinedButton.icon(onPressed: _busy ? null : _takePhoto, icon: const Icon(Icons.photo_camera_outlined), label: Text(_photo == null ? 'Photo of the slip' : 'Retake photo')),
-                if (_photo != null) ...[
-                  const SizedBox(width: 8),
-                  const Icon(Icons.check_circle, color: good, size: 18),
-                  const Text(' Photo added', style: TextStyle(color: good)),
-                  IconButton(tooltip: 'Remove photo', onPressed: () => setState(() => _photo = null), icon: const Icon(Icons.close)),
-                ],
-              ],
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _busy ? null : _scan,
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-              icon: const Icon(Icons.qr_code_scanner),
-              label: Text(_busy ? 'Saving…' : 'Scan the slip', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(height: 16),
-            for (final r in _log)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(r.ok ? Icons.check_circle : Icons.error_outline, color: r.ok ? good : bad, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(r.message)),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Failed delivery entry: the reason and the next step, chosen once for the session.
-class _ReasonSheet extends StatefulWidget {
-  const _ReasonSheet();
-  @override
-  State<_ReasonSheet> createState() => _ReasonSheetState();
-}
-
-class _ReasonSheetState extends State<_ReasonSheet> {
-  String? _reason;
-  String _next = 'RETRY';
-
-  @override
-  void initState() {
-    super.initState();
-    loadReasons().then((_) => mounted ? setState(() {}) : null);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('Why could they not be delivered?', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            RadioGroup<String>(
-              groupValue: _reason,
-              onChanged: (v) => setState(() => _reason = v),
-              child: Column(
-                children: [for (final r in failureReasons) RadioListTile<String>(dense: true, value: r, title: Text(r))],
-              ),
-            ),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'RETRY', label: Text('Try again')),
-                ButtonSegment(value: 'RETURN_TO_HUB', label: Text('Back at the hub')),
-              ],
-              selected: {_next},
-              onSelectionChanged: (s) => setState(() => _next = s.first),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _reason == null ? null : () => Navigator.pop(context, (_reason!, _next)),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Start scanning'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Hub Pickup counter: the customer gives their collection code; who collects; the COD paid at the counter.
 class CollectPage extends StatefulWidget {
-  const CollectPage({super.key, required this.trackingId});
+  const CollectPage({super.key, required this.trackingId, this.base = '/parcels'});
   final String trackingId;
+
+  /// Where the parcel is read and handed over: /parcels (operations) or /franchise/parcels (a franchise hub).
+  final String base;
   @override
   State<CollectPage> createState() => _CollectPageState();
 }
@@ -705,7 +315,7 @@ class _CollectPageState extends State<CollectPage> {
       _error = null;
     });
     try {
-      await Api.post('/parcels/${Uri.encodeComponent(widget.trackingId)}/collect', {if (_code.text.trim().isNotEmpty) 'code': _code.text.trim(), 'receivedBy': _name.text.trim(), 'codCollected': cod});
+      await Api.post('${widget.base}/${Uri.encodeComponent(widget.trackingId)}/collect', {if (_code.text.trim().isNotEmpty) 'code': _code.text.trim(), 'receivedBy': _name.text.trim(), 'codCollected': cod});
       Beep.ok();
       if (!mounted) return;
       snack(context, '${widget.trackingId} handed over.');
@@ -725,7 +335,7 @@ class _CollectPageState extends State<CollectPage> {
         title: Text('Collect ${widget.trackingId}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
       ),
       body: Loader<Map<String, dynamic>>(
-        load: () async => (await Api.get('/parcels/${Uri.encodeComponent(widget.trackingId)}') as Map).cast<String, dynamic>(),
+        load: () async => (await Api.get('${widget.base}/${Uri.encodeComponent(widget.trackingId)}') as Map).cast<String, dynamic>(),
         builder: (context, p, _) {
           final r = (p['recipient'] as Map?) ?? {};
           if (_name.text.isEmpty) _name.text = '${r['name'] ?? ''}';
@@ -773,105 +383,15 @@ class _CollectPageState extends State<CollectPage> {
               if (_error != null) ...[const SizedBox(height: 8), ErrorBox(_error!)],
               const SizedBox(height: 16),
               BusyButton(label: 'Hand over', busy: _busy, onPressed: () => _submit(p), icon: Icons.check),
-              TextButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ParcelPage(trackingId: widget.trackingId))),
-                child: const Text('Parcel details'),
-              ),
+              // Operations staff: the full parcel page (a franchise account has no access to it).
+              if (widget.base == '/parcels')
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ParcelPage(trackingId: widget.trackingId))),
+                  child: const Text('Parcel details'),
+                ),
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// Return issue: what the sheet set up for the scans.
-class _IssueSetup {
-  const _IssueSetup(this.reason, this.riderId, this.riderLabel, this.toCentral);
-  final String reason;
-  final String? riderId;
-  final String? riderLabel;
-  final bool toCentral;
-}
-
-/// Return issue: the reason, a rider (optional) and, at a hub that isn't the central hub, "send to the central hub".
-class _ReturnIssueSheet extends StatefulWidget {
-  const _ReturnIssueSheet({required this.summary});
-  final Map<String, dynamic>? summary;
-  @override
-  State<_ReturnIssueSheet> createState() => _ReturnIssueSheetState();
-}
-
-class _ReturnIssueSheetState extends State<_ReturnIssueSheet> {
-  String _reason = returnReasons.first;
-  String _rider = '';
-  bool _toCentral = true;
-  List<Map<String, dynamic>> _riders = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    Api.get('/riders', {'active': 'true', if (Ops.hubId != null) 'hubId': Ops.hubId})
-        .then((r) {
-          if (mounted) setState(() => _riders = (r as List).cast<Map<String, dynamic>>());
-        })
-        .catchError((_) {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final central = widget.summary?['centralHub'] as Map?;
-    final canSend = central != null && widget.summary?['isCentral'] != true;
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Return issue', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: _reason,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Why does it go back?'),
-                items: [for (final r in returnReasons) DropdownMenuItem(value: r, child: Text(r))],
-                onChanged: (v) => setState(() => _reason = v ?? _reason),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey('riders-${_riders.length}'),
-                initialValue: _rider,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Rider (optional)', helperText: 'Only when this rider takes them straight to the merchant'),
-                items: [
-                  const DropdownMenuItem(value: '', child: Text('No rider')),
-                  for (final r in _riders) DropdownMenuItem(value: '${r['id']}', child: Text('${r['label'] ?? r['code']}', overflow: TextOverflow.ellipsis)),
-                ],
-                onChanged: (v) => setState(() => _rider = v ?? ''),
-              ),
-              if (canSend && _rider.isEmpty)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Send to ${central['name']} now'),
-                  subtitle: const Text('The central hub puts returns on runs'),
-                  value: _toCentral,
-                  onChanged: (v) => setState(() => _toCentral = v),
-                ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () {
-                  final rider = _riders.where((r) => '${r['id']}' == _rider).toList();
-                  Navigator.pop(context, _IssueSetup(_reason, _rider.isEmpty ? null : _rider, rider.isEmpty ? null : '${rider.first['label'] ?? rider.first['code']}', canSend && _toCentral));
-                },
-                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Start scanning'),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

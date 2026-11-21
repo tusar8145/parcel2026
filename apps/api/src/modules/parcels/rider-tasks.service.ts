@@ -16,7 +16,7 @@ import { parcelInclude, parcelView, proofMethodsOf, type ParcelWithRelations } f
 import { ParcelWorkflowService, parcelEvent, type AfterCommit } from "./parcel-workflow.service";
 import { ParcelsService } from "./parcels.service";
 import type { Parcel, Prisma } from "../../generated/prisma/client";
-import { addDays, dhakaDayStart, dhakaMonthStart, dhakaWeekStart, opsHubScope } from "./ops-scope";
+import { addDays, assertRiderAssignable, dhakaDayStart, dhakaMonthStart, dhakaWeekStart, opsHubScope } from "./ops-scope";
 import { recordTaskEarning } from "../rider/earnings";
 import { LedgerService } from "../finance/ledger.service";
 import { recordFranchiseReturn } from "../franchise/franchise-commission";
@@ -92,8 +92,8 @@ export class RiderTasksService {
   @Inject(AuditService) private readonly audit!: AuditService;
 
   /** Pickup queue and delivery run for the signed-in rider. */
-  async tasks(actor: UserActor) {
-    const riderId = this.riderId(actor);
+  async tasks(actor: UserActor, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     const [pickups, deliveries, carrying, rider] = await Promise.all([
       // On-demand pickups / deliveries first (service packages), then oldest first.
       this.prisma.parcel.findMany({ where: { pickupRiderId: riderId, status: { in: [...PICKUP_STATUSES] } }, include: parcelInclude, orderBy: [{ onDemand: "desc" }, { createdAt: "asc" }] }),
@@ -124,10 +124,10 @@ export class RiderTasksService {
     };
   }
 
-  async pickup(actor: UserActor, trackingId: string, input: z.infer<typeof pickupOutcomeSchema>, meta: RequestMeta) {
-    const riderId = this.riderId(actor);
+  async pickup(actor: UserActor, trackingId: string, input: z.infer<typeof pickupOutcomeSchema>, meta: RequestMeta, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
-      if (parcel.pickupRiderId !== riderId) throw forbidden("This pickup isn't assigned to you");
+      if (parcel.pickupRiderId !== riderId) throw forbidden(`This pickup isn't assigned to ${forRider ? "this rider" : "you"}`);
       const rider = await tx.rider.findUniqueOrThrow({ where: { id: riderId }, include: { user: { select: { name: true } } } });
       const label = `${rider.code} · ${rider.user.name}`;
       if (input.outcome === "COLLECTED") {
@@ -209,10 +209,10 @@ export class RiderTasksService {
    * RETRY_SCHEDULED / EXCEPTION) issues a FRESH delivery code and sends it by SMS, so the recipient's
    * latest message always holds the valid code; any earlier code stops working. Assignment sends none.
    */
-  async startDelivery(actor: UserActor, trackingId: string, meta: RequestMeta) {
-    const riderId = this.riderId(actor);
+  async startDelivery(actor: UserActor, trackingId: string, meta: RequestMeta, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
-      if (parcel.deliveryRiderId !== riderId) throw forbidden("This delivery isn't assigned to you");
+      if (parcel.deliveryRiderId !== riderId) throw forbidden(`This delivery isn't assigned to ${forRider ? "this rider" : "you"}`);
       await this.workflow.transition(
         tx,
         parcel,
@@ -228,10 +228,10 @@ export class RiderTasksService {
     });
   }
 
-  async resendDeliveryCode(actor: UserActor, trackingId: string) {
-    const riderId = this.riderId(actor);
+  async resendDeliveryCode(actor: UserActor, trackingId: string, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
-      if (parcel.deliveryRiderId !== riderId) throw forbidden("This delivery isn't assigned to you");
+      if (parcel.deliveryRiderId !== riderId) throw forbidden(`This delivery isn't assigned to ${forRider ? "this rider" : "you"}`);
       // Only once the delivery has started (the code is sent then); a retry keeps its code until the next start.
       if (parcel.status === "ASSIGNED" || (parcel.status === "RETRY_SCHEDULED" && !parcel.deliveryOtpEncrypted))
         throw new AppError("DELIVERY_NOT_STARTED", "Start the delivery first; the code is sent to the recipient then", HttpStatus.CONFLICT);
@@ -240,10 +240,10 @@ export class RiderTasksService {
     });
   }
 
-  async deliver(actor: UserActor, trackingId: string, input: z.infer<typeof deliveryOutcomeSchema>, meta: RequestMeta) {
-    const riderId = this.riderId(actor);
+  async deliver(actor: UserActor, trackingId: string, input: z.infer<typeof deliveryOutcomeSchema>, meta: RequestMeta, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     return this.change(actor, trackingId, async (tx, parcel, after) => {
-      if (parcel.deliveryRiderId !== riderId) throw forbidden("This delivery isn't assigned to you");
+      if (parcel.deliveryRiderId !== riderId) throw forbidden(`This delivery isn't assigned to ${forRider ? "this rider" : "you"}`);
       if (input.outcome === "DELIVERED") {
         // Partial delivery: the cash actually collected (0 … COD); else exactly the COD amount.
         const partial = !!input.partial;
@@ -465,8 +465,8 @@ export class RiderTasksService {
    * return: the rider app's "Assigned returns" and "Return to merchant". The rider scans each parcel the
    * merchant takes back (returnToMerchant); the run completes with its last parcel.
    */
-  async returnRuns(actor: UserActor) {
-    const riderId = this.riderId(actor);
+  async returnRuns(actor: UserActor, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     const runs = await this.prisma.returnRun.findMany({
       where: { riderId, status: { in: ["PLANNED", "OUT_FOR_RETURN"] } },
       orderBy: [{ dispatchedAt: "asc" }, { createdAt: "asc" }],
@@ -492,8 +492,8 @@ export class RiderTasksService {
    * Returned (as on Scan desk > Return entry: the return charge earned, a franchise rider's return pay).
    * A planned run is sent out with the rider's first return; the run completes with its last parcel.
    */
-  async returnToMerchant(actor: UserActor, trackingId: string, input: { runId?: string; receivedBy?: string; note?: string }, meta: RequestMeta) {
-    const riderId = this.riderId(actor);
+  async returnToMerchant(actor: UserActor, trackingId: string, input: { runId?: string; receivedBy?: string; note?: string }, meta: RequestMeta, forRider?: string) {
+    const riderId = await this.riderFor(actor, forRider);
     const after = this.workflow.newAfterCommit();
     const result = await this.prisma.$transaction(
       async tx => {
@@ -501,7 +501,7 @@ export class RiderTasksService {
         if (!parcel) throw notFound("Parcel");
         const run = parcel.returnRunId ? await tx.returnRun.findUnique({ where: { id: parcel.returnRunId }, include: { merchant: { select: { name: true } } } }) : null;
         if (parcel.status === "RETURNED") return { trackingId: parcel.trackingId, outcome: "ALREADY_RETURNED" as const, run: run?.number ?? null, merchant: run?.merchant.name ?? null, runCompleted: false };
-        if (!run || run.riderId !== riderId || !["PLANNED", "OUT_FOR_RETURN"].includes(run.status)) throw forbidden(`${parcel.trackingId} isn't on a return run assigned to you`);
+        if (!run || run.riderId !== riderId || !["PLANNED", "OUT_FOR_RETURN"].includes(run.status)) throw forbidden(`${parcel.trackingId} isn't on a return run assigned to ${forRider ? "this rider" : "you"}`);
         if (input.runId && input.runId !== run.id) throw new AppError("OTHER_RETURN_RUN", `${parcel.trackingId} is on ${run.number} (${run.merchant.name}), not this run`, HttpStatus.CONFLICT, { run: run.number });
         if (parcel.status !== "RETURN_SCHEDULED") throw new AppError("NOT_ON_RETURN", `${parcel.trackingId} isn't waiting to be returned`, HttpStatus.CONFLICT);
         const now = operationNow();
@@ -514,7 +514,7 @@ export class RiderTasksService {
             to: "RETURNED",
             actorRole: "rider",
             data: { deliveredAt: null },
-            description: `Returned to ${run.merchant.name}${input.receivedBy ? ` (received by ${input.receivedBy})` : ""} by the rider.`,
+            description: `Returned to ${run.merchant.name}${input.receivedBy ? ` (received by ${input.receivedBy})` : ""} by the rider${forRider ? " (entered by operations)" : ""}.`,
             internalNote: input.note,
             metadata: { returnRunId: run.id, riderId, receivedBy: input.receivedBy ?? null },
           },
@@ -641,6 +641,27 @@ export class RiderTasksService {
   private riderId(actor: UserActor) {
     if (!actor.riderId) throw forbidden("Only riders can do this");
     return actor.riderId;
+  }
+
+  /**
+   * The rider the work is for: the signed-in rider, or (Scan desk / Operations app › Rider Operation) a rider chosen by
+   * operations staff (parcel:dispatch), who then do the rider's steps for them with the same rules; the staff member
+   * is the actor (tracking events, audit). Franchise riders only for their own franchise hub's staff; a franchise
+   * account (franchise:self, its app's Rider operation) only for its own riders (assertRiderAssignable: its hub).
+   */
+  private async riderFor(actor: UserActor, forRider?: string) {
+    if (!forRider) return this.riderId(actor);
+    const franchise = actor.permissions.has("franchise:self") && actor.roles.some(r => r.role === "FRANCHISE");
+    if (!actor.permissions.has("parcel:dispatch") && !franchise) throw forbidden("Only operations staff can do a rider's steps for them");
+    const rider = await this.prisma.rider.findUnique({ where: { id: forRider }, select: { id: true, active: true, user: { select: { status: true } } } });
+    if (!rider) throw notFound("Rider");
+    if (!rider.active || rider.user.status !== "ACTIVE") throw new AppError("RIDER_UNAVAILABLE", "That rider isn't active", HttpStatus.UNPROCESSABLE_ENTITY);
+    await assertRiderAssignable(this.prisma, actor, rider.id);
+    if (franchise && !actor.permissions.has("parcel:dispatch")) {
+      const own = await this.prisma.rider.findUnique({ where: { id: rider.id }, select: { hubId: true } });
+      if (!own?.hubId || !(opsHubScope(actor) ?? []).includes(own.hubId)) throw forbidden("You can only do your own riders' steps");
+    }
+    return rider.id;
   }
 
   private async change(actor: UserActor, trackingId: string, work: (tx: Db, parcel: Parcel, after: AfterCommit) => Promise<void>) {

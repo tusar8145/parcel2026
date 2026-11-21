@@ -236,7 +236,7 @@ export class HubDeskService {
     try {
       const rider = parcel.pickupRider;
       if (parcel.status === "AT_HUB") return { ok: true, outcome: "ALREADY_RECEIVED", message: `${parcel.trackingId} is already at a hub.`, code: parcel.trackingId };
-      if (parcel.intake === "DROP_OFF") return { ok: false, outcome: "NOT_A_PICKUP", message: `${parcel.trackingId} is a drop-off: receive it on Scan desk → Receive entry.`, code: parcel.trackingId };
+      if (parcel.intake === "DROP_OFF") return { ok: false, outcome: "NOT_A_PICKUP", message: `${parcel.trackingId} is a drop-off: receive it on Scan desk → Receive at hub.`, code: parcel.trackingId };
       const picked = parcel.status === "PICKED_UP";
       if (!picked && (!AWAITING_PICKUP.includes(parcel.status as ParcelStatus) || !rider))
         return {
@@ -294,7 +294,7 @@ export class HubDeskService {
       const rider = parcel.deliveryRider;
       // Already recorded (a second scan, a retried request): no second attempt, re-attempt fee or attempt count.
       if (parcel.status === "RETRY_SCHEDULED")
-        return { ok: true, outcome: "ALREADY_RECORDED", message: `${parcel.trackingId}: the failed attempt is already recorded. When the rider brings it back, receive it on Scan desk → Receive entry.`, code: parcel.trackingId };
+        return { ok: true, outcome: "ALREADY_RECORDED", message: `${parcel.trackingId}: the failed attempt is already recorded. When the rider brings it back, receive it on Scan desk → Receive at hub.`, code: parcel.trackingId };
       if (!["ASSIGNED", "OUT_FOR_DELIVERY"].includes(parcel.status) || !rider)
         return { ok: false, outcome: "NOT_WITH_RIDER", message: `${parcel.trackingId} is ${parcelStatusLabel(parcel.status as ParcelStatus).toLowerCase()}; only parcels with a delivery rider can have a failed attempt.`, code: parcel.trackingId };
       let hub: { id: string; name: string } | null = null;
@@ -415,7 +415,7 @@ export class HubDeskService {
     try {
       if (parcel.status === "AT_HUB") return { ok: true, outcome: "ALREADY_RECEIVED", message: `${parcel.trackingId} is already at a hub.`, code: parcel.trackingId };
       if (parcel.status === "OUT_FOR_DELIVERY")
-        return { ok: false, outcome: "RECORD_FAILED_FIRST", message: `${parcel.trackingId} is still out for delivery: record the failed attempt on Scan desk → Failed delivery entry ("Back at the hub").`, code: parcel.trackingId };
+        return { ok: false, outcome: "RECORD_FAILED_FIRST", message: `${parcel.trackingId} is still out for delivery: record the failed attempt first (Scan desk → Rider operation › Could not deliver), then receive it here.`, code: parcel.trackingId };
       const run = parcel.status === "RETURN_SCHEDULED" && parcel.returnRunId ? await this.prisma.returnRun.findUnique({ where: { id: parcel.returnRunId }, select: { number: true, status: true } }) : null;
       const failed = (parcel.status === "RETRY_SCHEDULED" || parcel.status === "ASSIGNED") && !!parcel.deliveryRiderId;
       const unreturned = parcel.status === "RETURN_SCHEDULED" && run?.status === "OUT_FOR_RETURN";

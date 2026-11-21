@@ -6,6 +6,9 @@
 
 .vtabs { position: relative; display: grid; gap: 2px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; max-height: calc(100vh - 96px); overflow: auto; }
 .vtabs-title { padding: 4px 10px 6px; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+/* A group heading between the tabs, like the main menu's group labels. */
+.vtabs-group { padding: 10px 10px 4px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.vtabs-title + .vtabs-group { padding-top: 2px; }
 /* As the main menu's items (styles.css .nav-item; motion.css hover and the sliding box). */
 .vtab { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font: inherit; font-weight: 520; text-align: left; cursor: pointer; transition: color 0.22s ease, transform 0.22s ease; }
 .vtab-label { flex: 1 1 auto; min-width: 0; }
@@ -26,7 +29,7 @@
   .page-cols { flex-direction: column; gap: 12px; }
   .view-tabs-col { position: static; flex: none; width: 100%; }
   .vtabs { display: flex; gap: 4px; max-height: none; overflow-x: auto; padding: 6px; }
-  .vtabs-title { display: none; }
+  .vtabs-title, .vtabs-group { display: none; }
   .vtab { width: auto; flex: none; white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) { .vtab, .vtabs-indicator.ready { transition: none; } .vtab:hover { transform: none; } }

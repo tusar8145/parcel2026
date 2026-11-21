@@ -1,3 +1,4 @@
+import { RiderOperationController } from "./rider-operation.controller";
 import { Module } from "@nestjs/common";
 import { PricingModule } from "../pricing/pricing.module";
 import { ParcelsController } from "./parcels.controller";
@@ -24,8 +25,8 @@ import { ParcelExportService } from "./parcel-export.service";
 
 @Module({
   imports: [PricingModule],
-  controllers: [ParcelsController, GuestBookingController, PickupSlotsController, IntakeChangeController, CompleteDetailsController, CollectionsController, ParcelMessagesController, HubDeskController, ParcelCorrectionsController],
+  controllers: [ParcelsController, GuestBookingController, PickupSlotsController, IntakeChangeController, CompleteDetailsController, CollectionsController, ParcelMessagesController, HubDeskController, ParcelCorrectionsController, RiderOperationController],
   providers: [ParcelsService, ParcelWorkflowService, RiderTasksService, PickupSlotsService, GuestBookingService, IntakeChangeService, CompleteDetailsService, CollectionsService, ParcelMessagesService, HubDeskService, ParcelCorrectionsService, ParcelExportService],
-  exports: [ParcelsService, ParcelWorkflowService, HubDeskService, PickupSlotsService, IntakeChangeService, CompleteDetailsService, CollectionsService],
+  exports: [ParcelsService, ParcelWorkflowService, RiderTasksService, HubDeskService, PickupSlotsService, IntakeChangeService, CompleteDetailsService, CollectionsService],
 })
 export class ParcelsModule {}

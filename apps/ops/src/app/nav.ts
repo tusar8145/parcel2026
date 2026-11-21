@@ -13,6 +13,8 @@ export interface TabDef {
   id: string;
   /** Hidden for this person (Accounts tabs by role). */
   show?: (ctx: MenuContext) => boolean;
+  /** A heading above this tab in a vertical tab list (Scan desk: At the hub, Hub collection, CN labels, Rider operation). */
+  group?: string;
 }
 export interface ViewDef {
   id: string;
@@ -76,8 +78,19 @@ export const VIEWS: ViewDef[] = [
     tabsAt: "side",
     icon: "scan",
     group: "queue",
-    subtitle: "Quick updates by scanning, one tab per job: receive, pickups, transfers, deliveries, failed deliveries and returns.",
-    tabs: tabs("Receive entry", "Receive & assign rider", "Pickup entry", "Transfer out", "Collect from hub", "Out for delivery entry", "Delivery entry", "Failed delivery entry", "Receive from rider", "Return issue", "Return transfer", "Return rider assign", "Return entry", "CN Merchant"),
+    subtitle: "Quick updates by scanning, as in the Operations app: work at the hub, hub collection, CN labels, and a rider's steps done for them (Rider operation).",
+    tabs: [
+      { id: "Receive at hub", group: "At the hub" },
+      { id: "Hub transfer" },
+      { id: "Hub return" },
+      { id: "Delivery rider assign" },
+      { id: "Return rider assign" },
+      { id: "Assign pickup rider" },
+      { id: "Hub collection", group: "Hub collection" },
+      { id: "CN Assign Merchant", group: "CN labels" },
+      { id: "CN Scan Details" },
+      { id: "Rider operation", group: "Rider operation" },
+    ],
   },
   { id: "Pickup", label: "Pickup", icon: "clock", group: "journey", step: "2", stage: "pickup", subtitle: "Assign pickup riders to accepted orders and follow merchants' scheduled pickups.", tabs: tabs("Assign pickup rider", "Scheduled pickups") },
   { id: "Hub desk", label: "Hub desk", icon: "pin", group: "journey", step: "3", stage: "hubDesk", subtitle: "Parcels at your hub with their next step, and the day's reconciliation. Scanning work is on Scan desk.", tabs: tabs("At my hub", "End of day") },
@@ -171,7 +184,7 @@ export const OLD_PAGES: Record<string, [string, string?]> = {
   "Customer parcels": ["All parcels", "Customer"],
   Dispatch: ["Delivery"],
   "Dispatch & routes": ["Delivery"],
-  Hubs: ["Scan desk", "Receive entry"],
+  Hubs: ["Scan desk", "Receive at hub"],
   Linehaul: ["Transfers"],
   "Returns (RTO)": ["Returns"],
   "Scheduled pickups": ["Pickup", "Scheduled pickups"],

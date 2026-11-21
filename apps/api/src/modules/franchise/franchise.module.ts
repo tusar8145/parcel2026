@@ -9,13 +9,14 @@ import { RiderModule } from "../rider/rider.module";
 import { DocumentsModule } from "../documents/documents.module";
 import { FranchiseAdminController, FranchiseFinanceController, FranchisePanelController } from "./franchise.controller";
 import { FranchiseAdminService } from "./franchise-admin.service";
+import { FranchiseScanController } from "./franchise-scan.controller";
 import { FranchisePanelService } from "./franchise-panel.service";
 import { FranchiseMoneyService } from "./franchise-money.service";
 
 /** Franchise hubs: the franchise panel, super admin management, deposits and commission invoices. */
 @Module({
   imports: [AuthModule, ParcelsModule, OpsModule, ReturnsModule, NetworkModule, FinanceModule, RiderModule, DocumentsModule],
-  controllers: [FranchisePanelController, FranchiseAdminController, FranchiseFinanceController],
+  controllers: [FranchisePanelController, FranchiseScanController, FranchiseAdminController, FranchiseFinanceController],
   providers: [FranchiseAdminService, FranchisePanelService, FranchiseMoneyService],
 })
 export class FranchiseModule {}

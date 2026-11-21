@@ -1,7 +1,9 @@
 /**
- * Scan desk: quick updates by scanning, one tab per job (bridge-hub-desk.js, bridge-intake.js receive desk,
- * bridge-collect.js). Everything is on the page (no dialogs); each scan does the step at once and the fields above
- * apply to the scans that follow. Logs, counters and choices stay while you switch tabs.
+ * Scan desk: the Operations app's Scan on the web, in the same groups and names. At the hub: Assign pickup rider,
+ * Receive at hub, Hub transfer, Hub return, Delivery rider assign, Return rider assign. Hub collection. CN labels:
+ * CN Assign Merchant, CN Scan Details. Rider operation: a rider's app steps done for them (RiderOperation). Each scan
+ * does the step at once and the fields above apply to the scans that follow. Logs, counters and choices stay while you
+ * switch tabs.
  */
 import { Select } from "@panel/ui/Select";
 import { useEffect, useRef, useState } from "react";
@@ -11,24 +13,26 @@ import { useLive } from "@panel/lib/events";
 import { localPhone, num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
 import { Button, Empty, PageHeading, Panel, Pill } from "@panel/ui/kit";
-import { toast, toastError } from "@panel/ui/toast";
+import { toast } from "@panel/ui/toast";
 import ViewTabs from "@/app/ViewTabs";
 import { viewById } from "@/app/nav";
 import { printLabels } from "@/features/parcels/actions";
 import { findParcels } from "@/features/parcels/search";
 import { useParcelActions } from "@/features/parcels/useParcelActions";
 import { OperationTimeBar } from "@/features/scan/OperationTime";
-import { CnMerchantDesk } from "@/features/scan/CnDesk";
+import { CnMerchantDesk, CnScanDetailsDesk } from "@/features/scan/CnDesk";
+import RiderOperation from "@/features/scan/RiderOperation";
+import { LogList, type LogEntry } from "@/features/scan/deskShared";
 import "@/features/scan/cn-desk.css";
 import { normalizeScan, ScanInput, type ScanInputHandle, type ScanSource } from "@/features/scan/scanner";
 import type { Handoff } from "@/features/parcels/useParcelActions";
 import { useLocation } from "react-router";
+import { StageTable } from "./ParcelPages";
 
-/** Fallbacks while the super admin's lists load (GET /delivery/fail-reasons, GET /returns/reasons). */
-const REASONS = ["Recipient unavailable", "Incorrect address", "Recipient refused", "Unable to contact recipient", "Access / safety issue", "Other"];
+/** Fallback while the super admin's list loads (GET /returns/reasons). */
 const RETURN_REASONS = ["Recipient refused", "Recipient unreachable", "Wrong or incomplete address", "Recipient asked to cancel", "Damaged in transit", "Merchant cancelled the order", "Delivery attempts exhausted"];
 
-type Part = "pickup" | "assign" | "transfer" | "dispatch" | "delivered" | "failed" | "returnissue" | "returntransfer" | "returnassign" | "returns";
+type Part = "assign" | "transfer" | "returntransfer" | "returnassign";
 interface TabCfg {
   path: string;
   /** Another endpoint than /hub-desk/<path>. */
@@ -42,13 +46,8 @@ interface TabCfg {
   toHub?: boolean;
   rider?: boolean;
   riderRequired?: boolean;
-  proof?: boolean;
-  failure?: boolean;
   returnReason?: boolean;
   runs?: boolean;
-  handover?: boolean;
-  /** Return issue: the reason is required, the rider optional, "send on to the central hub" offered. */
-  issue?: boolean;
   /** Shows the returns held at this hub (GET /hub-desk/returns-summary). */
   waiting?: boolean;
 }
@@ -56,76 +55,34 @@ const TABS: Record<Part, TabCfg> = {
   assign: {
     path: "assign",
     endpoint: "/ops/hub-assign",
-    title: "Receive & assign rider",
+    title: "Delivery rider assign",
     subtitle: "Choose the rider, then scan the parcels they take. A parcel not received here yet (in transit to this hub, a drop-off, back from a rider) is received and given to the rider in one scan. Scanning it for another rider moves it to that rider.",
     done: ["ASSIGNED", "REASSIGNED"],
     counter: "assigned",
     rider: true,
     riderRequired: true,
     hub: true,
-    hint: "The rider can go out at once (Out for delivery entry, or the rider scans Out for delivery in the app). The rider doesn't need to scan to receive them.",
+    hint: "The rider can go out at once (the rider scans Start deliveries in the app, or Rider operation › Start deliveries here). The rider doesn't need to scan to receive them.",
   },
-  pickup: { path: "pickup", title: "Pickup entry", subtitle: "A pickup rider brings the parcels they collected: scan each one. It's picked up for that rider and received at this hub.", done: ["RECEIVED"], counter: "received", hub: true, hint: "Only parcels given to a pickup rider. Drop-offs are received on Receive entry." },
   transfer: {
     path: "transfer",
-    title: "Transfer out",
+    title: "Hub transfer",
     subtitle: "Parcels received here that another hub delivers: scan each one and it's on its way there (in transit). The destination is the hub serving the delivery area unless you choose one.",
     done: ["IN_TRANSIT"],
     counter: "sent",
     toHub: true,
-    hint: "Parcels already packed in a transfer bag travel with the bag (Transfers). The destination hub receives them on its Receive entry.",
-  },
-  dispatch: {
-    path: "dispatch",
-    title: "Out for delivery entry",
-    subtitle: "Scan the parcels as the rider leaves. Parcels already given to a rider go out with that rider; a parcel still at the hub goes to the rider chosen here.",
-    done: ["OUT_FOR_DELIVERY"],
-    counter: "sent out",
-    rider: true,
-    hint: "The recipient gets the delivery code by SMS when the parcel goes out.",
-  },
-  delivered: {
-    path: "deliver",
-    title: "Delivery entry",
-    subtitle: "The rider handed in a signed delivery slip: scan it and it's delivered for that rider (cash on delivery stays with the rider for the cash handover).",
-    done: ["DELIVERED", "PARTIALLY_DELIVERED"],
-    counter: "entered",
-    proof: true,
-    hint: "Each scan marks the parcel delivered at once. The receiver, note, photo and partial delivery above go with the next scan and then clear. Partial delivery: enter the cash the recipient paid; what they didn't keep goes back to the sender on a new return order (Return rider assign). Scanning a delivered parcel again updates its details (add the photo later the same way).",
-  },
-  failed: {
-    path: "failed",
-    title: "Failed delivery entry",
-    subtitle: "The rider couldn't deliver: set the reason and the next step, then scan each parcel. They stay set for the next scans.",
-    done: ["RETRY_SCHEDULED", "BACK_AT_HUB"],
-    counter: "recorded",
-    failure: true,
-    hub: true,
-    hint: "Try again: the parcel stays with the rider for another attempt. Back at the hub: it's received here for another delivery or a return. A parcel the rider brings back later is received on Receive entry. Re-attempt charges apply as usual.",
-  },
-  returnissue: {
-    path: "return-issue",
-    title: "Return issue",
-    subtitle: "A parcel at this hub goes back to its merchant: choose the reason, then scan. With a rider chosen, it joins that rider's return run and the rider takes it straight to the merchant. Without a rider, it's on the returns list and, at any hub but the central hub, can leave for the central hub in the same scan.",
-    done: ["ISSUED", "ISSUED_SENT", "ASSIGNED"],
-    counter: "issued",
-    rider: true,
-    returnReason: true,
-    issue: true,
-    hub: true,
-    waiting: true,
-    hint: "Returns are put on runs at the central hub (Return rider assign). Choose a rider here only when that rider takes the parcels to the merchant from this hub. Merchants' own return requests are already on the list below: no need to issue them again.",
+    hint: "Parcels already packed in a transfer bag travel with the bag (Transfers). The destination hub receives them on its Receive at hub.",
   },
   returntransfer: {
     path: "return-transfer",
-    title: "Return transfer",
-    subtitle: "Returns held at this hub leave for the central hub: scan each one and it's on its way (in transit). The central hub receives them on Receive entry, then puts them on return runs.",
+    title: "Hub return",
+    subtitle: "Returns held at this hub leave for the central hub: scan each one and it's on its way (in transit). The central hub receives them on Receive at hub, then puts them on return runs.",
     done: ["SENT_TO_CENTRAL"],
     counter: "sent",
     returnReason: true,
     hub: true,
     waiting: true,
-    hint: "Only parcels going back to their merchant. A parcel nobody asked to return yet is issued with the reason above first; leave it empty to send only the returns already issued.",
+    hint: "Only parcels going back to their merchant. A parcel nobody asked to return yet is marked for return with the reason above first; leave it empty to send only the returns already marked (Could not deliver → Return to sender, or the merchant's request).",
   },
   returnassign: {
     path: "return-assign",
@@ -138,53 +95,28 @@ const TABS: Record<Part, TabCfg> = {
     returnReason: true,
     hub: true,
     runs: true,
-    hint: "The reason is used only for parcels nobody asked to return yet. The rider sees the assigned returns in the rider app (Home › Assigned returns) and scans each parcel the merchant takes back; or enter them on Return entry when the rider is back.",
-  },
-  returns: {
-    path: "return",
-    title: "Return entry",
-    subtitle: "The rider took returns back to the sender: scan each parcel the sender received. It's returned, and the return run completes with its last parcel.",
-    done: ["RETURNED"],
-    counter: "returned",
-    handover: true,
-    hint: "Received by and the note stay set for the next scans (one shop usually takes the whole run). A parcel the sender didn't take is received back on Receive entry.",
+    hint: "The reason is used only for parcels nobody asked to return yet. The rider sees the returns in the rider app and scans each parcel the merchant takes back (Returned to merchant); or do it for the rider on Rider operation › Returned to merchant.",
   },
 };
-const TAB_PART: Record<string, Part | "receive" | "collect" | "cnmerchant" | "fromrider"> = {
-  "CN Merchant": "cnmerchant",
-  "Receive from rider": "fromrider",
-  "Receive entry": "receive",
-  "Pickup entry": "pickup",
-  "Receive & assign rider": "assign",
-  "Transfer out": "transfer",
-  "Collect from hub": "collect",
-  "Out for delivery entry": "dispatch",
-  "Delivery entry": "delivered",
-  "Failed delivery entry": "failed",
-  "Return issue": "returnissue",
-  "Return transfer": "returntransfer",
+const TAB_PART: Record<string, Part | "pickupassign" | "receive" | "collect" | "cnmerchant" | "cnscan" | "rider"> = {
+  "Assign pickup rider": "pickupassign",
+  "Receive at hub": "receive",
+  "Hub transfer": "transfer",
+  "Hub return": "returntransfer",
+  "Delivery rider assign": "assign",
   "Return rider assign": "returnassign",
-  "Return entry": "returns",
+  "Hub collection": "collect",
+  "CN Assign Merchant": "cnmerchant",
+  "CN Scan Details": "cnscan",
+  "Rider operation": "rider",
 };
 
-interface LogEntry {
-  tone: "" | "bad" | "info";
-  message: string;
-  at: Date;
-}
 /** Kept while the panel is open (switching tabs keeps the work). */
 const desk = {
   hubId: "",
   riderId: "",
   toHubId: "",
-  reason: REASONS[0],
-  nextAction: "RETRY",
-  failNote: "",
-  returnBy: "",
-  returnNote: "",
   returnReason: "",
-  issueReason: "",
-  toCentral: true,
   log: Object.fromEntries(Object.keys(TABS).map(k => [k, [] as LogEntry[]])) as Record<Part, LogEntry[]>,
   count: Object.fromEntries(Object.keys(TABS).map(k => [k, 0])) as Record<Part, number>,
   queue: Promise.resolve() as Promise<unknown>,
@@ -200,7 +132,31 @@ export default function ScanDesk({ tab }: { tab: string }) {
       <p className="faint" style={{ margin: "-6px 0 12px", fontSize: 12 }}>
         Keyboard: <kbd>/</kbd> find a parcel · <kbd>F2</kbd> scan box · <kbd>Esc</kbd> close the dialog or drawer
       </p>
-      {part === "receive" ? <ReceiveDesk /> : part === "fromrider" ? <ReceiveFromRider /> : part === "collect" ? <CollectCounter /> : part === "cnmerchant" ? <CnMerchantDesk /> : <HubDeskTab key={part} part={part} />}
+      {part === "receive" ? (
+        <ReceiveDesk />
+      ) : part === "pickupassign" ? (
+        <PickupAssign />
+      ) : part === "collect" ? (
+        <CollectCounter />
+      ) : part === "cnmerchant" ? (
+        <CnMerchantDesk />
+      ) : part === "cnscan" ? (
+        <CnScanDetailsDesk />
+      ) : part === "rider" ? (
+        <RiderOperation />
+      ) : (
+        <HubDeskTab key={part} part={part} />
+      )}
+    </>
+  );
+}
+
+/** Assign pickup rider: the Pickup page's lists (accepted orders without a pickup rider, and those being picked up). */
+function PickupAssign() {
+  return (
+    <>
+      <StageTable id="pickup-waiting" stage="pickup_waiting" title="Waiting for a pickup rider" subtitle="Accepted orders without a pickup rider: tick them and assign a pickup rider (new orders are accepted with a rider in New orders)" empty="Every accepted order has a pickup rider." />
+      <StageTable id="pickup-active" stage="pickup" title="Being picked up" subtitle="Pickup assigned, confirmed or picked up · on the way to the hub" empty="No pickups in progress." />
     </>
   );
 }
@@ -208,22 +164,6 @@ export default function ScanDesk({ tab }: { tab: string }) {
 function useOwnHub() {
   const ops = useOps();
   return ops.myHubs?.length === 1 ? ops.myHubs[0] : null;
-}
-
-function LogList({ entries }: { entries: LogEntry[] }) {
-  if (!entries.length) return <p className="muted" style={{ marginTop: 14 }}>Scanned parcels appear here.</p>;
-  return (
-    <ul style={{ listStyle: "none", margin: "14px 0 0", padding: 0, display: "grid", gap: 5, maxHeight: 340, overflow: "auto" }} aria-live="polite">
-      {entries.map((e, i) => (
-        <li key={i} style={{ fontSize: 13, padding: "7px 10px", borderRadius: 8, background: e.tone === "bad" ? "var(--bad-soft)" : e.tone === "info" ? "var(--surface-3)" : "var(--good-soft)", color: e.tone === "bad" ? "var(--bad)" : e.tone === "info" ? "var(--ink-2)" : "var(--good)" }}>
-          <time className="faint" style={{ marginRight: 8 }}>
-            {e.at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-          </time>
-          {e.message}
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function HubDeskTab({ part }: { part: Part }) {
@@ -234,16 +174,7 @@ function HubDeskTab({ part }: { part: Part }) {
   const [, force] = useState(0);
   const redraw = () => force(n => n + 1);
   const set = (patch: Partial<typeof desk>) => (Object.assign(desk, patch), redraw());
-  // Delivery entry: these go with the next scan only.
-  const [proof, setProof] = useState({ receivedBy: "", note: "", photo: null as string | null, photoKb: 0, partial: false, cash: "", relation: "Self" });
-  const relations = useQuery({ queryKey: ["receiver-relations"], queryFn: async () => (await api<{ relations: string[] }>("/delivery/receiver-relations")).relations, enabled: !!t.proof, staleTime: 10 * 60_000 });
-  const failReasons = useQuery({ queryKey: ["fail-reasons"], queryFn: async () => (await api<{ reasons: string[] }>("/delivery/fail-reasons")).reasons, enabled: !!t.failure, staleTime: 10 * 60_000 });
   const returnReasons = useQuery({ queryKey: ["return-reasons"], queryFn: async () => (await api<{ reasons: string[] }>("/returns/reasons")).reasons, enabled: !!t.returnReason, staleTime: 10 * 60_000 });
-  useEffect(() => {
-    const list = failReasons.data;
-    if (list?.length && !list.includes(desk.reason)) set({ reason: list[0] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [failReasons.data]);
   const hubId = own?.id || desk.hubId;
   const runs = useQuery({
     queryKey: ["hub-desk", "return-runs", hubId],
@@ -256,9 +187,6 @@ function HubDeskTab({ part }: { part: Part }) {
     enabled: !!t.waiting && !!hubId,
   });
   useLive(["parcel.updated", "return_run.updated"], () => void (t.waiting && hubId && summary.refetch()));
-  const central = summary.data?.centralHub;
-  const atCentral = !!summary.data?.isCentral;
-  const photoInput = useRef<HTMLInputElement>(null);
 
   function add(entry: LogEntry) {
     desk.log[part] = [entry, ...desk.log[part]].slice(0, 100);
@@ -274,23 +202,8 @@ function HubDeskTab({ part }: { part: Part }) {
       return add({ tone: "bad", message: "Choose the rider first, then scan.", at: new Date() });
     }
     if (t.rider && desk.riderId) body.riderId = desk.riderId;
-    if (t.issue) {
-      const reason = desk.issueReason.trim() || (returnReasons.data ?? RETURN_REASONS)[0];
-      Object.assign(body, { reason, toCentral: !desk.riderId && desk.toCentral && !atCentral });
-    } else if (t.returnReason && desk.returnReason.trim()) body.reason = desk.returnReason.trim();
+    if (t.returnReason && desk.returnReason.trim()) body.reason = desk.returnReason.trim();
     if (t.toHub && desk.toHubId) body.toHubId = desk.toHubId;
-    if (t.handover) Object.assign(body, { receivedBy: desk.returnBy.trim() || undefined, note: desk.returnNote.trim() || undefined });
-    if (t.failure) Object.assign(body, { reason: desk.reason, nextAction: desk.nextAction, note: desk.failNote.trim() || undefined });
-    const sent = t.proof ? { ...proof } : null;
-    if (sent) {
-      if (sent.partial && String(sent.cash).trim() === "") {
-        box.current?.feedback(false);
-        return add({ tone: "bad", message: "Enter the cash collected for the partial delivery, then scan.", at: new Date() });
-      }
-      Object.assign(body, { receivedBy: sent.receivedBy.trim() || undefined, receiverRelation: sent.relation || "Self", note: sent.note.trim() || undefined, photo: sent.photo || undefined });
-      if (sent.partial) Object.assign(body, { partial: true, codCollected: Number(sent.cash) });
-      setProof({ receivedBy: "", note: "", photo: null, photoKb: 0, partial: false, cash: "", relation: "Self" });
-    }
     desk.queue = desk.queue.then(async () => {
       let r: { ok: boolean; outcome?: string; message: string };
       try {
@@ -304,18 +217,7 @@ function HubDeskTab({ part }: { part: Part }) {
       add({ tone, message: r.message, at: new Date() });
       if (t.runs && r.ok) void runs.refetch();
       if (t.waiting && r.ok) void summary.refetch();
-      // Not done: the receiver / note / photo come back for another try.
-      if (sent && !r.ok) setProof(sent);
     });
-  }
-
-  async function takePhoto(file: File) {
-    try {
-      const url = await shrink(file);
-      setProof(p => ({ ...p, photo: url, photoKb: Math.round((url.length * 3) / 4 / 1024) }));
-    } catch (e) {
-      toastError(e);
-    }
   }
 
   const hubs = ops.myHubs || ops.hubs.filter(h => h.active !== false);
@@ -332,7 +234,7 @@ function HubDeskTab({ part }: { part: Part }) {
             <label className="field">
               <span>Hub you're working at</span>
               <Select className="select" value={desk.hubId} onChange={e => set({ hubId: e.target.value })}>
-                <option value="">{part === "pickup" ? "The rider's hub" : "The parcel's hub"}</option>
+                <option value="">The parcel's hub</option>
                 {hubs.map(h => (
                   <option key={h.id} value={h.id}>
                     {h.name}
@@ -358,9 +260,9 @@ function HubDeskTab({ part }: { part: Part }) {
           ) : null}
           {t.rider ? (
             <label className="field">
-              <span>{t.riderRequired ? "Rider taking the returns" : t.issue ? "Rider (optional)" : "Rider"}</span>
+              <span>{part === "returnassign" ? "Rider taking the returns" : "Rider"}</span>
               <Select className="select" value={desk.riderId} onChange={e => set({ riderId: e.target.value })}>
-                <option value="">{t.riderRequired ? "— Choose the rider —" : t.issue ? "— No rider: on the returns list —" : "— Only for parcels still at the hub —"}</option>
+                <option value="">— Choose the rider —</option>
                 {riders.map(r => (
                   <option key={r.id} value={r.id}>
                     {`${r.label || `${r.code} · ${r.name}`}${r.hub?.name ? ` · ${r.hub.name}` : ""}`}
@@ -369,55 +271,7 @@ function HubDeskTab({ part }: { part: Part }) {
               </Select>
             </label>
           ) : null}
-          {t.failure ? (
-            <>
-              <label className="field">
-                <span>Reason</span>
-                <Select className="select" value={desk.reason} onChange={e => set({ reason: e.target.value })}>
-                  {(failReasons.data ?? REASONS).map(r => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </Select>
-              </label>
-              <div className="field">
-                <span className="field-label">Next step</span>
-                <div className="row" role="radiogroup" aria-label="Next step">
-                  {[
-                    ["RETRY", "Try again (stays with the rider)"],
-                    ["RETURN_TO_HUB", "Back at the hub"],
-                  ].map(([v, l]) => (
-                    <label key={v} className="check" style={{ padding: "7px 11px", border: "1px solid var(--line)", borderRadius: 9 }}>
-                      <input type="radio" name="hdNext" checked={desk.nextAction === v} onChange={() => set({ nextAction: v })} /> {l}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <label className="field">
-                <span>Note (optional)</span>
-                <input className="input" maxLength={500} placeholder="What the rider said" value={desk.failNote} onChange={e => set({ failNote: e.target.value })} />
-              </label>
-            </>
-          ) : null}
-          {t.issue ? (
-            <>
-              <label className="field">
-                <span>Return reason</span>
-                <Select className="select" value={desk.issueReason || (returnReasons.data ?? RETURN_REASONS)[0]} onChange={e => set({ issueReason: e.target.value })}>
-                  {(returnReasons.data ?? RETURN_REASONS).map(r => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </Select>
-              </label>
-              {central && !atCentral ? (
-                <div className="field">
-                  <span className="field-label">Then</span>
-                  <label className="check" style={{ padding: "7px 11px", border: "1px solid var(--line)", borderRadius: 9, opacity: desk.riderId ? 0.5 : 1 }}>
-                    <input type="checkbox" disabled={!!desk.riderId} checked={desk.toCentral && !desk.riderId} onChange={e => set({ toCentral: e.target.checked })} /> {`Send to the central hub (${central.name}) in the same scan`}
-                  </label>
-                </div>
-              ) : null}
-            </>
-          ) : t.returnReason ? (
+          {t.returnReason ? (
             <label className="field">
               <span>Return reason (if none yet)</span>
               <input className="input" maxLength={300} list="hdReasons" placeholder="e.g. Recipient refused" value={desk.returnReason} onChange={e => set({ returnReason: e.target.value })} />
@@ -427,69 +281,6 @@ function HubDeskTab({ part }: { part: Part }) {
                 ))}
               </datalist>
             </label>
-          ) : null}
-          {t.handover ? (
-            <>
-              <label className="field">
-                <span>Received by (optional)</span>
-                <input className="input" maxLength={120} placeholder="Who took it back at the sender" value={desk.returnBy} onChange={e => set({ returnBy: e.target.value })} />
-              </label>
-              <label className="field">
-                <span>Note (optional)</span>
-                <input className="input" maxLength={500} placeholder="e.g. Checked and signed by the shop" value={desk.returnNote} onChange={e => set({ returnNote: e.target.value })} />
-              </label>
-            </>
-          ) : null}
-          {t.proof ? (
-            <>
-              <label className="field">
-                <span>Received by (optional)</span>
-                <input className="input" maxLength={120} placeholder="Name on the slip; empty = the recipient" value={proof.receivedBy} onChange={e => setProof(p => ({ ...p, receivedBy: e.target.value }))} />
-              </label>
-              <label className="field">
-                <span>Relation to the recipient</span>
-                <Select className="select" value={proof.relation} onChange={e => setProof(p => ({ ...p, relation: e.target.value }))}>
-                  {(relations.data || ["Self"]).map(r => (
-                    <option key={r} value={r}>
-                      {r === "Self" ? "Self (the recipient)" : r}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="field">
-                <span>Note (optional)</span>
-                <input className="input" maxLength={500} placeholder={proof.partial ? "What came back, e.g. Kept the shirt, returned the jeans" : "e.g. Signed by the guard"} value={proof.note} onChange={e => setProof(p => ({ ...p, note: e.target.value }))} />
-              </label>
-              <div className="field">
-                <span className="field-label">Partial delivery</span>
-                <label className="check" style={{ padding: "7px 11px", border: "1px solid var(--line)", borderRadius: 9 }}>
-                  <input type="checkbox" checked={proof.partial} onChange={e => setProof(p => ({ ...p, partial: e.target.checked, cash: e.target.checked ? p.cash : "" }))} /> The recipient kept only part of the order
-                </label>
-              </div>
-              {proof.partial ? (
-                <label className="field">
-                  <span>Cash collected (৳)</span>
-                  <input className="input" type="number" min={0} step={1} inputMode="numeric" placeholder="What the recipient paid" value={proof.cash} onChange={e => setProof(p => ({ ...p, cash: e.target.value }))} autoFocus />
-                </label>
-              ) : null}
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <div className="row">
-                  <Button onClick={() => photoInput.current?.click()} icon="camera">
-                    {proof.photo ? "Retake photo" : "Take photo of the slip"}
-                  </Button>
-                  {proof.photo ? (
-                    <>
-                      <img src={proof.photo} alt="Slip photo" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
-                      <small className="faint">{proof.photoKb} KB · goes with the next scan</small>
-                      <Button size="sm" onClick={() => setProof(p => ({ ...p, photo: null, photoKb: 0 }))}>
-                        Remove
-                      </Button>
-                    </>
-                  ) : null}
-                  <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden onChange={e => e.target.files?.[0] && void takePhoto(e.target.files[0])} />
-                </div>
-              </div>
-            </>
           ) : null}
         </div>
         <div style={{ marginTop: 14 }}>
@@ -521,7 +312,7 @@ function ReturnsWaiting({ data, error, loading, hubChosen }: { data?: ReturnsSum
   if (loading) return <p className="muted">Loading the returns at this hub…</p>;
   if (error) return <p className="muted">{describe(error)}</p>;
   if (!data) return null;
-  const next = data.waiting.next === "TRANSFER" ? `send to ${data.centralHub?.name ?? "the central hub"} (Return transfer)` : "put on a return run (Return rider assign)";
+  const next = data.waiting.next === "TRANSFER" ? `send to ${data.centralHub?.name ?? "the central hub"} (Hub return)` : "put on a return run (Return rider assign)";
   return (
     <div style={{ marginTop: 16 }}>
       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -603,197 +394,7 @@ function ReturnRuns({ runs, error, loading, onSent }: { runs?: { id: string; num
   );
 }
 
-/** The camera photo, shrunk: longest side 1280 px, JPEG, about 100–250 KB. */
-export function shrink(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The photo couldn't be read"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("That file isn't a photo"));
-      img.onload = () => {
-        const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        let quality = 0.6;
-        let url = canvas.toDataURL("image/jpeg", quality);
-        while (url.length > 1_000_000 && quality > 0.25) url = canvas.toDataURL("image/jpeg", (quality -= 0.1));
-        resolve(url);
-      };
-      img.src = String(reader.result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-// ───────────── Receive from rider ─────────────
-
-interface WithRider {
-  trackingId: string;
-  kind: "FAILED" | "RETURN_RUN";
-  recipient: string | null;
-  destination: string;
-  merchant: string | null;
-  codAmount: number;
-  reason: string | null;
-  riderChose: "RETRY" | "RETURN" | null;
-  returnRun: string | null;
-}
-const back = { hubId: "", riderId: "", decision: "RIDER", log: [] as LogEntry[], received: 0, queue: Promise.resolve() as Promise<unknown> };
-
-/**
- * End of the day: a rider hands in the parcels they couldn't deliver (and returns the sender didn't take). Choose the
- * rider: the list shows what they still hold, with their reason and choice; each scan receives one at the hub (deliver
- * again, or back to the sender) and ticks it off.
- */
-function ReceiveFromRider() {
-  const ops = useOps();
-  const own = useOwnHub();
-  const box = useRef<ScanInputHandle>(null);
-  const [, force] = useState(0);
-  const redraw = () => force(n => n + 1);
-  const hubs = ops.myHubs || ops.hubs.filter(h => h.active !== false);
-  const riders = ops.riders.filter(r => r.active !== false);
-  const hubId = own?.id || back.hubId;
-  const list = useQuery({
-    queryKey: ["hub-desk", "with-rider", back.riderId],
-    queryFn: () => api<{ items: WithRider[] }>(`/hub-desk/with-rider?riderId=${encodeURIComponent(back.riderId)}`),
-    enabled: !!back.riderId,
-  });
-  useLive(["parcel.updated"], () => back.riderId && void list.refetch(), { debounceMs: 1500 });
-  const items = list.data?.items || [];
-  const toReturn = items.filter(i => i.riderChose === "RETURN").length;
-
-  function add(entry: LogEntry) {
-    back.log = [entry, ...back.log].slice(0, 100);
-    redraw();
-  }
-
-  function scan(code: string, source: ScanSource) {
-    if (!ops.require("dispatch", "receive parcels")) return;
-    if (!back.riderId) {
-      box.current?.feedback(false, "Choose the rider first, then scan.");
-      return add({ tone: "bad", message: "Choose the rider first, then scan.", at: new Date() });
-    }
-    if (!hubId) {
-      box.current?.feedback(false, "Choose the hub you are receiving at.");
-      return add({ tone: "bad", message: "Choose the hub you are receiving at.", at: new Date() });
-    }
-    const body = { code, hubId, riderId: back.riderId, decision: back.decision, source };
-    back.queue = back.queue.then(async () => {
-      let r: { ok: boolean; outcome?: string; message: string };
-      try {
-        r = await api("/hub-desk/receive-back", { method: "POST", body });
-      } catch (error) {
-        r = { ok: false, message: describe(error) };
-      }
-      box.current?.feedback(r.ok, r.message);
-      if (r.ok && r.outcome === "RECEIVED") back.received++;
-      add({ tone: !r.ok ? "bad" : r.outcome === "RECEIVED" ? "" : "info", message: r.message, at: new Date() });
-      void list.refetch();
-    });
-  }
-
-  return (
-    <div className="grid-2" style={{ alignItems: "start" }}>
-      <Panel
-        title={`Receive from rider${own ? ` · ${own.name}` : ""}`}
-        subtitle="End of the day: the rider hands in what they couldn't deliver. Choose the rider, then scan each parcel. It's received at the hub, to deliver again or to go back to the sender. The rider doesn't need to scan."
-        tools={<span className="pill good">{`${back.received} received`}</span>}
-      >
-        <div className="panel-body stack">
-          {!own ? (
-            <label className="field">
-              <span>Hub you're working at</span>
-              <Select className="select" value={back.hubId} onChange={e => ((back.hubId = e.target.value), redraw())}>
-                <option value="">— Choose the hub —</option>
-                {hubs.map(h => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          ) : null}
-          <label className="field">
-            <span>Rider</span>
-            <Select className="select" value={back.riderId} onChange={e => ((back.riderId = e.target.value), redraw())}>
-              <option value="">— Choose the rider —</option>
-              {riders.map(r => (
-                <option key={r.id} value={r.id}>
-                  {`${r.label || `${r.code} · ${r.name}`}${r.hub?.name ? ` · ${r.hub.name}` : ""}`}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="field">
-            <span>What next</span>
-            <Select className="select" value={back.decision} onChange={e => ((back.decision = e.target.value), redraw())}>
-              <option value="RIDER">As the rider chose (deliver again / return to sender)</option>
-              <option value="REATTEMPT">Deliver again (all scanned parcels)</option>
-              <option value="RETURN">Return to the sender (all scanned parcels)</option>
-            </Select>
-          </label>
-          <ScanInput ref={box} id="rrCode" label="Tracking ID / CN" placeholder="Scan or type, then Enter" cameraTitle="Receive parcels from the rider" onScan={scan} />
-          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-            Deliver again: the parcel is at the hub, ready to give to a rider tomorrow (Receive & assign rider). Return to the sender: it's on the returns list (Return rider assign).
-          </p>
-          <LogList entries={back.log} />
-        </div>
-      </Panel>
-      <Panel
-        title="Still with the rider"
-        subtitle={back.riderId ? "Failed deliveries and returns this rider hasn't handed in yet. Each one leaves the list when it's scanned." : "Choose a rider to see what they have to hand in."}
-        tools={back.riderId ? <span className="pill warn">{`${items.length} to hand in${toReturn ? ` · ${toReturn} return` : ""}`}</span> : null}
-      >
-        <div className="panel-body">
-          {!back.riderId ? (
-            <Empty title="No rider chosen">The rider's failed deliveries appear here.</Empty>
-          ) : list.isLoading ? (
-            <p className="muted">Loading…</p>
-          ) : list.error ? (
-            <p className="muted">{describe(list.error)}</p>
-          ) : !items.length ? (
-            <Empty title="Nothing to hand in">This rider holds no failed delivery or unfinished return.</Empty>
-          ) : (
-            <div className="table-wrap" style={{ maxHeight: 520 }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Parcel</th>
-                    <th>Recipient</th>
-                    <th>Reason</th>
-                    <th>Rider chose</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map(i => (
-                    <tr key={i.trackingId}>
-                      <td className="tracking">
-                        {i.trackingId}
-                        <span className="sub">{i.merchant || ""}</span>
-                      </td>
-                      <td>
-                        {i.recipient || "—"}
-                        <span className="sub">{i.destination}</span>
-                      </td>
-                      <td>{i.kind === "RETURN_RUN" ? `Return run ${i.returnRun} not completed` : i.reason || "—"}</td>
-                      <td>{i.kind === "RETURN_RUN" ? <Pill tone="neutral">Return</Pill> : i.riderChose === "RETURN" ? <Pill tone="bad">Return to sender</Pill> : <Pill tone="warn">Try again</Pill>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-// ───────────── Receive entry ─────────────
+// ───────────── Receive at hub ─────────────
 
 const OUTCOME: Record<string, { label: string; tone: "good" | "info" | "bad" | "warn" }> = {
   RECEIVED: { label: "Received", tone: "good" },
@@ -937,7 +538,7 @@ function ReceiveDesk() {
   return (
     <div className="grid-2" style={{ alignItems: "start" }}>
       <Panel
-        title="Receive"
+        title="Receive at hub"
         subtitle={`Every arrival, wherever it comes from: drop-offs (at the hub they were booked for), picked-up parcels, transfers and parcels back from riders (failed deliveries, unfinished returns). "Find" shows a parcel without receiving it.`}
         tools={<span className="pill good">{`${receive.received} received`}</span>}
       >
@@ -1089,7 +690,7 @@ function ReceiveDesk() {
   );
 }
 
-// ───────────── Collect from hub ─────────────
+// ───────────── Hub collection ─────────────
 
 interface Waiting {
   trackingId: string;
@@ -1133,7 +734,7 @@ function CollectCounter() {
 
   return (
     <Panel
-      title="Collect from hub"
+      title="Hub collection"
       subtitle="Parcels waiting for their receivers. Hand them over against the collection code; cash on delivery goes into this hub's cash."
       tools={
         <>

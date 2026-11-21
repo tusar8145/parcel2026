@@ -109,7 +109,7 @@ export class HubIntakeService {
       const made = await this.cn.fromLabel(actor, variants[0], hub.id, meta).catch(() => null);
       if (made?.created) {
         parcel = await find();
-        if (parcel) return result("RECEIVED", `${made.trackingId}: new parcel from the CN label, received at ${hub.name}.${made.merchant ? "" : " Set its merchant with CN Merchant."}`, parcel);
+        if (parcel) return result("RECEIVED", `${made.trackingId}: new parcel from the CN label, received at ${hub.name}.${made.merchant ? "" : " Set its merchant with CN Assign Merchant."}`, parcel);
       }
     }
     if (!parcel) {

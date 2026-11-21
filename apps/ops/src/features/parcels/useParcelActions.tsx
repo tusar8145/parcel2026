@@ -38,14 +38,14 @@ export function useParcelActions() {
         return A.editDetails(p, ctx, catalog);
       case "receive":
         toast(`${p.trackingId}: press Enter to receive it at the hub.`);
-        return go("Scan desk", "Receive entry", { code: p.trackingId, hubId: p.dropOffHub?.id, action: "receive" });
+        return go("Scan desk", "Receive at hub", { code: p.trackingId, hubId: p.dropOffHub?.id, action: "receive" });
       case "transfer": {
         const hub = servingHub(p, ops.hubs);
         toast(`Open a bag to ${hub?.name || "the delivery hub"}, then scan ${p.trackingId} into it.`);
         return go("Transfers", "Send", { code: p.trackingId, hubId: hub?.id, action: "transfer" });
       }
       case "handover":
-        return go("Scan desk", "Collect from hub", { code: p.trackingId, hubId: p.currentHub?.id, action: "handover" });
+        return go("Scan desk", "Hub collection", { code: p.trackingId, hubId: p.currentHub?.id, action: "handover" });
       case "returnRun":
         return go("Returns", undefined, { code: p.trackingId, action: "returnRun" });
     }

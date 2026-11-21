@@ -113,7 +113,7 @@ Future<void> openCnMerchant(BuildContext context, {String? hubId}) async {
   if (m == null || !context.mounted) return;
   await scanBarcode(
     context,
-    title: 'CN Merchant · ${m['name']}',
+    title: 'CN Assign Merchant · ${m['name']}',
     hint: 'Scan each CN label: the parcel becomes ${m['name']}\'s.',
     continuous: true,
     onCode: (code, source) async {
@@ -242,7 +242,7 @@ class _CnScanPageState extends State<CnScanPage> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.black,
-        title: const Text('CN_Scan'),
+        title: const Text('CN Scan Details'),
         actions: [
           IconButton(tooltip: 'Light', onPressed: () => _controller.toggleTorch(), icon: const Icon(Icons.flashlight_on_outlined)),
           TextButton(

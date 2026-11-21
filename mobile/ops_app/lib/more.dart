@@ -1,13 +1,12 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
-import 'assign.dart';
 import 'home.dart';
 import 'ops.dart';
 import 'parcels.dart';
 import 'riders.dart';
 
-/// More: assign riders, riders (add, new password), problems, find a parcel, hub, support, password, sign out.
+/// More: riders (add, new password), problems, find a parcel, hub, support, password, sign out (assigning riders is on Scan).
 class MorePage extends StatelessWidget {
   const MorePage({super.key});
 
@@ -63,11 +62,6 @@ class MorePage extends StatelessWidget {
             ],
           ),
         ),
-        if (Ops.allowed('dispatch')) ...[
-          _group('Assign riders'),
-          _item(context, Icons.fiber_new_outlined, 'Assign pickup riders', 'New orders and pickup requests', () => _open(context, const AssignPage(mode: AssignMode.pickup))),
-          _item(context, Icons.person_search_outlined, 'Assign delivery riders', 'Parcels at the hub waiting for a rider', () => _open(context, const AssignPage(mode: AssignMode.delivery))),
-        ],
         _group('Riders & parcels'),
         if (Ops.addsRiders) _item(context, Icons.two_wheeler, 'Riders', 'Add a rider, set a new password', () => _open(context, const RidersPage())),
         _item(context, Icons.error_outline, 'Problems', 'Exceptions, failed deliveries, needs info, late-risk', () => _open(context, const ProblemsPage())),

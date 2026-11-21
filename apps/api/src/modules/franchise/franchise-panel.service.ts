@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { z } from "zod";
 import { PrismaService, type Db } from "../../common/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -26,6 +26,9 @@ import { StorageService } from "../../common/storage.service";
 import { hubCashPlacement } from "../money/cash-placement";
 import { operationNow } from "../../common/operation-time";
 import { recordFranchiseCommission } from "./franchise-commission";
+import { HubDeskService } from "../parcels/hub-desk.service";
+import { CollectionsService, type collectSchema } from "../parcels/collections.service";
+import { RiderTasksService } from "../parcels/rider-tasks.service";
 import type {
   franchiseAssignScanSchema,
   franchiseDirectDeliverySchema,
@@ -125,6 +128,57 @@ export class FranchisePanelService {
     private readonly workflow: ParcelWorkflowService,
     private readonly storage: StorageService,
   ) {}
+
+  // The app's Scan (same as the Operations app's, without CN labels): the network's desk services with the franchise as
+  // the actor; opsHubScope / assertRiderAssignable keep it to its own hub and riders (property injection keeps the
+  // constructor stable).
+  @Inject(HubDeskService) private readonly desk!: HubDeskService;
+  @Inject(CollectionsService) private readonly collections!: CollectionsService;
+  @Inject(RiderTasksService) private readonly riderTasks!: RiderTasksService;
+
+  /** Scan › Hub transfer: the parcel leaves the franchise hub for the hub that delivers it (or the one chosen). */
+  async transferScan(actor: Actor, input: { code: string; toHubId?: string; source: "CAMERA" | "KEYBOARD" | "MANUAL" }, meta: RequestMeta) {
+    await this.context(actor);
+    return this.desk.transfer(actor, input, meta);
+  }
+
+  /** Scan › Hub return: a return held at the franchise hub leaves for the central hub. */
+  async returnTransfer(actor: Actor, input: { code: string; source: "CAMERA" | "KEYBOARD" | "MANUAL" }, meta: RequestMeta) {
+    const f = await this.context(actor);
+    return this.returns.deskTransfer(actor, { code: input.code, hubId: f.hubId, source: input.source }, meta);
+  }
+
+  /** The returns at the franchise hub: held here (and the next step), runs planned and out. */
+  async returnsSummary(actor: Actor) {
+    const f = await this.context(actor);
+    return this.returns.deskSummary(actor, { hubId: f.hubId });
+  }
+
+  /** Scan › Return rider assign: the parcel joins the franchise rider's return run for its merchant. */
+  async returnAssign(actor: Actor, input: { code: string; riderId: string; reason?: string; source: "CAMERA" | "KEYBOARD" | "MANUAL" }, meta: RequestMeta) {
+    const f = await this.context(actor);
+    const rider = await this.prisma.rider.findUnique({ where: { id: input.riderId }, select: { hubId: true } });
+    if (!rider || rider.hubId !== f.hubId) throw notFound("Rider");
+    return this.returns.deskAssign(actor, { code: input.code, riderId: input.riderId, hubId: f.hubId, reason: input.reason, source: input.source }, meta);
+  }
+
+  /** One parcel of the franchise (Hub collection: its code, recipient and COD before handing it over). */
+  async parcelDetail(actor: Actor, trackingId: string) {
+    await this.context(actor);
+    return this.parcels.detail(actor, trackingId);
+  }
+
+  /** Scan › Hub collection: the recipient collects at the franchise hub (code, who collects; COD into its counter cash). */
+  async collect(actor: UserActor, trackingId: string, input: z.infer<typeof collectSchema>, meta: RequestMeta) {
+    await this.context(actor);
+    return this.collections.collect(actor, trackingId, input, meta);
+  }
+
+  /** Scan › Rider operation: the franchise does one of its own riders' rider app steps for them (the rider app's rules). */
+  async riderOperation<T>(actor: UserActor, work: (tasks: RiderTasksService) => Promise<T>) {
+    await this.context(actor);
+    return work(this.riderTasks);
+  }
 
   /** The signed-in franchise (active only). */
   async context(actor: Actor) {

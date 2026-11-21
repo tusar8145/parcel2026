@@ -7,6 +7,14 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.58.0 — 2026-11-22
+- Operations app 1.9.0, Scan made simple, in groups. At the hub: Receive at hub (every arrival: first mile, failed deliveries back, hub transfers, returns), Hub transfer, Hub return, Delivery rider assign, Return rider assign, Assign pickup rider. Hub collection. CN labels: CN Assign Merchant, CN Scan Details. Rider operation.
+- Rider operation (Operations app and Scan desk): choose a rider and do their rider app steps for them, with the rider app's own rules: Pickup from merchant, Receive from hub, Start deliveries, Deliver (code, signature or photo; cash; partial), Could not deliver (try again or return to sender), Returned to merchant. You are recorded as the one who entered each step; the rider's pay and cash are as if the rider did it.
+- Removed from the Operations app's Scan: Pickup entry, Out for delivery, Delivery entry, Failed delivery entry, Receive from rider, Return issue, Send out return runs, Return entry (Rider operation and Receive at hub do their jobs). Removed from More: Assign pickup riders, Assign delivery riders.
+- Scan desk (web) has the same names and groups as the app, with the group headings in the left list; CN Scan Details is new on the web (a photo of the parcel with its CN).
+- Rider app 1.8.0: Scan in three groups. First mile: Pickup from merchant, Hand over at hub (optional). Last mile: Receive from hub (optional, now for deliveries and returns), Start deliveries, Deliver, Could not deliver, Returned to merchant. CN labels: CN Assign Merchant, CN Scan Details. Account no longer has Returns to merchants.
+- Franchise hubs (Operations app): Scan is the same as the Operations app's without CN labels: Receive at hub, Hub transfer, Hub return, Delivery rider assign, Return rider assign, Assign pickup rider, Hub collection, Rider operation (their own riders). Deliver / not delivered without a rider stay on Parcels, taking a rider's cash on Riders and Cash.
+
 ## 1.57.3 — 2026-11-22
 - Scan desk: the tabs on the left look and move like the main menu: the open tab's blue box (without a bar beside it) slides to the tab you choose, and a tab under the mouse nudges right instead of turning grey.
 

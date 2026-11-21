@@ -1,6 +1,7 @@
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
+import 'rider_op.dart';
 import 'riders.dart';
 import 'scan.dart';
 import 'signature_pad.dart';
@@ -264,7 +265,7 @@ class _ScanTab extends StatelessWidget {
   Future<void> _receive(BuildContext context) => _session(
     context,
     title: 'Receive at ${Franchise.hubName}',
-    hint: 'Scan every parcel arriving: transfers, drop-offs, parcels coming back.',
+    hint: 'Scan every parcel arriving: pickups, failed deliveries back, transfers, returns, drop-offs.',
     action: (code, source) => deskScan('/franchise/receive', {'code': code, 'source': source}),
   );
 
@@ -273,56 +274,143 @@ class _ScanTab extends StatelessWidget {
     if (rider == null || !context.mounted) return;
     await _session(
       context,
-      title: 'Receive & assign rider',
+      title: 'Delivery rider assign',
       hint: 'Scan each parcel the rider takes. Not received yet? It is received here and given to the rider.',
       action: (code, source) => deskScan('/franchise/assign-scan', {'code': code, 'riderId': rider, 'source': source}),
     );
   }
 
-  /// Returns and cash from one rider, together: scan what they bring back, then take their cash.
-  Future<void> _riderBack(BuildContext context) async {
-    final rider = await pickFranchiseRider(context, title: 'Which rider is back?');
-    if (rider == null || !context.mounted) return;
-    final decision = await pickFromList(context, title: 'Failed deliveries: what next?', items: backDecisions.keys.toList(), selected: 'RIDER', labelOf: (k) => backDecisions[k]!);
-    if (decision == null || !context.mounted) return;
+  /// Hub transfer: parcels leaving for the hub that delivers them (or the hub chosen).
+  Future<void> _transfer(BuildContext context) async {
+    final hubs = ((Franchise.me?['sendHubs'] as List?) ?? []).cast<Map<String, dynamic>>();
+    final dest = await pickFromList(
+      context,
+      title: 'Send to which hub?',
+      items: ['', ...hubs.map((h) => '${h['id']}')],
+      selected: '',
+      labelOf: (id) => id.isEmpty ? 'The hub serving each parcel\'s delivery area' : '${hubs.firstWhere((h) => h['id'] == id)['name']}',
+    );
+    if (dest == null || !context.mounted) return;
     await _session(
       context,
-      title: 'Returns from the rider',
-      hint: 'Scan each parcel the rider brings back. Then take their cash.',
-      action: (code, source) => deskScan('/franchise/receive', {'code': code, 'source': source, 'decision': decision}),
+      title: 'Hub transfer',
+      hint: 'Scan each parcel leaving for another hub.',
+      action: (code, source) => deskScan('/franchise/transfer-scan', {'code': code, if (dest.isNotEmpty) 'toHubId': dest, 'source': source}),
     );
+  }
+
+  /// Hub return: returns held at the franchise hub leave for the central hub; counted down as they are scanned.
+  Future<void> _returnTransfer(BuildContext context) async {
+    Future<Map<String, dynamic>?> summary() async {
+      try {
+        return (await Api.get('/franchise/returns-summary') as Map).cast<String, dynamic>();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final first = await summary();
     if (!context.mounted) return;
-    await takeRiderCash(context, rider);
-  }
+    final central = first?['centralHub'] as Map?;
+    if (first != null && central == null) return snack(context, 'No central hub is set yet: Delivery Fast sets it.');
+    String left(Map<String, dynamic>? s) {
+      final n = toNum((s?['waiting'] as Map?)?['count']).toInt();
+      return n == 0 ? 'No return left to send.' : '$n return${n == 1 ? '' : 's'} still held here';
+    }
 
-  Future<void> _deliver(BuildContext context) async {
-    final code = await scanBarcode(context, title: 'Deliver', hint: 'Scan the parcel you hand over.');
-    if (code == null || !context.mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DirectDeliveryPage(trackingId: normalizeScan(code))));
+    final status = ValueNotifier(left(first));
+    var n = 0;
+    await scanBarcode(
+      context,
+      title: 'Hub return',
+      hint: 'Scan each return leaving for ${central?['name'] ?? 'the central hub'}.',
+      continuous: true,
+      status: status,
+      onCode: (code, source) async {
+        final r = await deskScan('/franchise/return-transfer', {'code': code, 'source': source == 'KEYBOARD' ? 'KEYBOARD' : 'CAMERA'});
+        if (r.ok) status.value = '${++n} sent · ${left(await summary())}';
+        return r;
+      },
+    );
     franchiseChanged.value++;
   }
 
-  Future<void> _failed(BuildContext context) async {
-    final code = await scanBarcode(context, title: 'Not delivered', hint: 'Scan the parcel that could not be delivered.');
-    if (code == null || !context.mounted) return;
-    await directFail(context, normalizeScan(code));
+  /// Return rider assign: parcels going back join your rider's return run for their merchant.
+  Future<void> _returnAssign(BuildContext context) async {
+    await loadReasons();
+    if (!context.mounted) return;
+    final rider = await pickFranchiseRider(context, title: 'Who takes the returns?');
+    if (rider == null || !context.mounted) return;
+    final reason = await pickFromList(context, title: 'Reason (for parcels without one)', items: returnReasons, selected: returnReasons.first);
+    if (reason == null || !context.mounted) return;
+    await _session(
+      context,
+      title: 'Return rider assign',
+      hint: 'Scan each parcel going back. It joins the rider\'s return run for its merchant.',
+      action: (code, source) => deskScan('/franchise/return-assign', {'code': code, 'riderId': rider, 'reason': reason, 'source': source}),
+    );
+  }
+
+  Future<void> _assignPickup(BuildContext context) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const FranchiseAssignPickupPage()));
     franchiseChanged.value++;
   }
+
+  /// Hub collection: each scan opens the parcel's hand-over (collection code, who collects, COD).
+  Future<void> _collect(BuildContext context) async {
+    while (true) {
+      if (!context.mounted) return;
+      final code = await scanBarcode(context, title: 'Hub collection', hint: 'Scan the parcel the customer collects.');
+      if (code == null || !context.mounted) return;
+      final done = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => CollectPage(trackingId: normalizeScan(code), base: '/franchise/parcels')));
+      franchiseChanged.value++;
+      if (done != true) return;
+    }
+  }
+
+  /// Rider operation: one of your riders, their rider app steps done for them.
+  Future<void> _riderOperation(BuildContext context) async {
+    final id = await pickFranchiseRider(context, title: 'Which rider?');
+    if (id == null || !context.mounted) return;
+    var label = 'the rider';
+    try {
+      final r = ((await Api.get('/franchise/riders')) as List).cast<Map<String, dynamic>>().where((r) => '${r['id']}' == id).firstOrNull;
+      if (r != null) label = '${r['code']} · ${r['name']}';
+    } catch (_) {}
+    if (!context.mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => RiderOperationPage(riderId: id, riderLabel: label, base: '/franchise/rider-op/${Uri.encodeComponent(id)}')));
+    franchiseChanged.value++;
+  }
+
+  Widget _group(String title, String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 16, 2, 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, color: brand, fontSize: 12.5, letterSpacing: .6)),
+        Text(text, style: const TextStyle(color: muted, fontSize: 12.5)),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
+    // The Operations app's Scan without CN labels, at your own hub with your own riders.
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 10),
-          child: Text('Choose the task, then scan. Only your hub\'s parcels and your own riders.', style: TextStyle(color: muted)),
-        ),
-        _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Transfers, drop-offs, parcels coming back.', () => _receive(context)),
-        _Task(Icons.person_add_alt_1_outlined, good, 'Receive & assign rider', 'Choose your rider, then scan what they take.', () => _assign(context)),
-        _Task(Icons.check_circle_outline, good, 'Deliver (no rider)', 'Hand it over yourself: proof by photo or signature.', () => _deliver(context)),
-        _Task(Icons.report_gmailerrorred_outlined, bad, 'Not delivered (no rider)', 'Deliver again later, or back to the sender.', () => _failed(context)),
-        _Task(Icons.keyboard_return, warn, 'Rider back: returns & cash', 'Scan what they bring back, then take their cash.', () => _riderBack(context)),
+        const Text('Choose the task, then scan. Only your hub\'s parcels and your own riders.', style: TextStyle(color: muted)),
+        _group('At the hub', 'Parcels arriving, leaving and given to riders.'),
+        _Task(Icons.move_to_inbox_outlined, good, 'Receive at hub', 'Every arrival: pickups, failed deliveries back, transfers, returns.', () => _receive(context)),
+        _Task(Icons.swap_horiz, brand, 'Hub transfer', 'Parcels leaving for the hub that delivers them.', () => _transfer(context)),
+        _Task(Icons.move_up_outlined, brand, 'Hub return', 'Returns held here leave for the central hub.', () => _returnTransfer(context)),
+        _Task(Icons.person_add_alt_1_outlined, good, 'Delivery rider assign', 'Choose your rider, then scan what they take.', () => _assign(context)),
+        _Task(Icons.assignment_return_outlined, bad, 'Return rider assign', 'Parcels going back join your rider\'s return run.', () => _returnAssign(context)),
+        _Task(Icons.fiber_new_outlined, warn, 'Assign pickup rider', 'Pickups for your hub: choose the parcels, then your rider.', () => _assignPickup(context)),
+        _group('Hub collection', 'The recipient collects at your hub.'),
+        _Task(Icons.inventory_outlined, brand, 'Hub collection', 'Scan the parcel; collection code, who collects, COD.', () => _collect(context)),
+        _group('Rider operation', 'Choose your rider and do their rider app steps for them.'),
+        _Task(Icons.two_wheeler, brand, 'Rider operation', 'Pickup from merchant, receive from hub, start deliveries, deliver, could not deliver, returned to merchant.', () => _riderOperation(context)),
       ],
     );
   }
@@ -782,6 +870,93 @@ class _CashTab extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Scan › Assign pickup rider (franchise): the pickups for your hub; tick them, then choose your rider.
+class FranchiseAssignPickupPage extends StatefulWidget {
+  const FranchiseAssignPickupPage({super.key});
+  @override
+  State<FranchiseAssignPickupPage> createState() => _FranchiseAssignPickupPageState();
+}
+
+class _FranchiseAssignPickupPageState extends State<FranchiseAssignPickupPage> {
+  final _loader = GlobalKey<LoaderState<List<Map<String, dynamic>>>>();
+  final _chosen = <String>{};
+  bool _busy = false;
+
+  Future<List<Map<String, dynamic>>> _load() async => ((((await Api.get('/franchise/parcels', {'view': 'pickups', 'limit': '200'})) as Map)['items'] as List?) ?? []).cast<Map<String, dynamic>>();
+
+  Future<void> _assign() async {
+    final rider = await pickFranchiseRider(context, title: 'Who picks them up?');
+    if (rider == null || !mounted) return;
+    setState(() => _busy = true);
+    var done = 0;
+    String? problem;
+    for (final id in _chosen.toList()) {
+      try {
+        await Api.post('/franchise/parcels/${Uri.encodeComponent(id)}/assign', {'riderId': rider, 'task': 'PICKUP'});
+        done++;
+        _chosen.remove(id);
+      } on ApiError catch (e) {
+        problem ??= '$id: ${e.message}';
+      }
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    snack(context, problem == null ? '$done pickup(s) assigned.' : '$done assigned · $problem');
+    await _loader.currentState?.reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Assign pickup rider', style: TextStyle(fontWeight: FontWeight.w800))),
+      bottomNavigationBar: _chosen.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: BusyButton(label: 'Assign ${_chosen.length}', busy: _busy, onPressed: _assign, icon: Icons.person_add_alt_1),
+              ),
+            ),
+      body: Loader<List<Map<String, dynamic>>>(
+        key: _loader,
+        load: _load,
+        builder: (context, items, reload) {
+          if (items.isEmpty) return const EmptyView(icon: Icons.inbox_outlined, text: 'No pickups for your hub.');
+          return RefreshIndicator(
+            onRefresh: reload,
+            child: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                CheckboxListTile(
+                  value: _chosen.length == items.length,
+                  onChanged: (v) => setState(() => v == true ? _chosen.addAll(items.map((p) => '${p['trackingId']}')) : _chosen.clear()),
+                  title: Text('All ${items.length}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                for (final p in items)
+                  Panel(
+                    padding: EdgeInsets.zero,
+                    child: CheckboxListTile(
+                      value: _chosen.contains('${p['trackingId']}'),
+                      onChanged: (v) => setState(() => v == true ? _chosen.add('${p['trackingId']}') : _chosen.remove('${p['trackingId']}')),
+                      title: Text('${p['trackingId']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text(
+                        [
+                          '${p['sender'] ?? ''}',
+                          '${p['statusLabel'] ?? ''}',
+                          if (p['pickupRider'] != null) 'Rider: ${(p['pickupRider'] as Map)['label']}',
+                        ].where((x) => x.isNotEmpty).join(' · '),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

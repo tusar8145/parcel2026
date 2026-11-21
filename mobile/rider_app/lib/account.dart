@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'home.dart';
 import 'main.dart';
 import 'offline.dart';
-import 'returns.dart';
 
 /// Account: the rider's profile and hub, location sharing, saved actions, returns, support, password, sign out.
 class AccountPage extends StatelessWidget {
@@ -93,7 +92,6 @@ class AccountPage extends StatelessWidget {
                 ),
               ),
               _tile(context, Icons.cloud_upload_outlined, 'Saved actions', 'Work saved on the phone, waiting to be sent', const OutboxPage()),
-              _tile(context, Icons.undo, 'Returns to merchants', 'Return runs assigned to you', const ReturnsPage()),
               _tile(context, Icons.support_agent, 'Help & support', 'Ask about a parcel, cash, pay or safety', const SupportPage()),
               _tile(context, Icons.lock_reset, 'Change password', 'Use a new password to sign in', const ChangePasswordPage()),
               const SizedBox(height: 6),

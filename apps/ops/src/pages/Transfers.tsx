@@ -205,7 +205,7 @@ function SendTab() {
     <>
       <div className="panel panel-body" style={{ marginBottom: 16 }}>
         <h2 className="panel-title">How to send parcels to another hub</h2>
-        <p className="panel-subtitle">One bag per destination hub. Single parcels can also go from Scan desk → Transfer out.</p>
+        <p className="panel-subtitle">One bag per destination hub. Single parcels can also go from Scan desk → Hub transfer.</p>
         <ol className="grid-3" style={{ listStyle: "none", padding: 0, margin: "12px 0 0", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
           {[
             ["Bag the parcels", "New bag (or open one), choose the destination hub, scan the parcels into it."],
@@ -914,7 +914,7 @@ function ReceiveTab() {
   return (
     <>
       <div className="callout">
-        Receiving a truck: scan each bag's label to receive the whole bag (or open it and scan the parcels one by one). Type the seal number to check it. Missing and extra parcels are recorded on Issues. Single parcels can also be received on Scan desk → Receive entry.
+        Receiving a truck: scan each bag's label to receive the whole bag (or open it and scan the parcels one by one). Type the seal number to check it. Missing and extra parcels are recorded on Issues. Single parcels can also be received on Scan desk → Receive at hub.
       </div>
       <Panel title="Receive transfers" subtitle={`Scan at ${hubs.find(h => h.id === recv.hubId)?.name || "your hub"}: bags whole, or parcels one by one against the manifest. Missing and extra parcels are recorded.`}>
         <div className="panel-body stack">

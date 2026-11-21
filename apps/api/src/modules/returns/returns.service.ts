@@ -639,7 +639,7 @@ export class ReturnsService {
       const sent = await this.deskTransfer(actor, { code: id, hubId: input.hubId, source: input.source }, meta);
       return sent.ok ? { ...sent, outcome: "ISSUED_SENT", message: `${id}: ${done}, ${sent.message.replace(`${id} `, "")}` } : { ...sent, message: `${id}: ${done}, but ${sent.message.replace(`${id}: `, "").replace(`${id} `, "it ")}` };
     }
-    const next = atCentral ? "assign a return rider (Return rider assign)" : "send it to the central hub (Return transfer)";
+    const next = atCentral ? "assign a return rider (Return rider assign)" : "send it to the central hub (Hub return)";
     return { ok: true, outcome: issued ? "ISSUED" : "ALREADY_ISSUED", message: `${id}: ${done}; next ${next}.`, code: id };
   }
 
@@ -662,7 +662,7 @@ export class ReturnsService {
     if (hubId && parcel.currentHubId !== hubId) return { ok: false, outcome: "OTHER_HUB", message: `${id} isn't at this hub.`, code: id };
     if (!parcel.returnRequestedAt) {
       if (!parcel.merchantId) return { ok: false, outcome: "NOT_MERCHANT", message: `${id} isn't a merchant parcel; returns go to merchants.`, code: id };
-      if (!input.reason) return { ok: false, outcome: "NO_RETURN", message: `${id} isn't going back to the sender: issue the return first (Return issue).`, code: id };
+      if (!input.reason) return { ok: false, outcome: "NO_RETURN", message: `${id} isn't going back to the sender: enter the return reason to send it back in the same scan (or record Could not deliver → Return to sender first).`, code: id };
       try {
         await this.request(actor, id, { reason: input.reason }, meta);
       } catch (error) {

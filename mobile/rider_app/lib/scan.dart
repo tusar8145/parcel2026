@@ -29,6 +29,7 @@ class ScanPage extends StatelessWidget {
                 padding: EdgeInsets.only(bottom: 10),
                 child: Text('Choose what you are doing, then scan the parcels one after another.', style: TextStyle(color: muted)),
               ),
+              const _Group('First mile', 'From the merchant to the hub.'),
               _TaskCard(
                 icon: Icons.storefront_outlined,
                 color: warn,
@@ -40,16 +41,17 @@ class ScanPage extends StatelessWidget {
               _TaskCard(
                 icon: Icons.warehouse_outlined,
                 color: brand,
-                title: 'Hand over at hub',
+                title: 'Hand over at hub (optional)',
                 text: 'At the hub: scan each parcel you collected as you hand it over.',
                 count: Tasks.list('carrying').where((p) => p['handover'] == null).length,
                 onTap: () => _handover(context),
               ),
+              const _Group('Last mile', 'From the hub to the recipient, or back to the merchant.'),
               _TaskCard(
                 icon: Icons.move_to_inbox_outlined,
                 color: good,
                 title: 'Receive from hub (optional)',
-                text: 'At the hub: scan the parcels given to you to check they are yours. The hub may already have assigned them by scanning.',
+                text: 'For deliveries or returns. At the hub: scan the parcels given to you to check they are yours. The hub may already have assigned them by scanning.',
                 count: deliveries.where((p) => p['status'] == 'ASSIGNED').length,
                 onTap: () => _receive(context),
               ),
@@ -77,22 +79,19 @@ class ScanPage extends StatelessWidget {
                 count: deliveries.length,
                 onTap: () => _failed(context),
               ),
-              _TaskCard(icon: Icons.undo, color: bad, title: 'Return to merchant', text: 'Choose the return run, then scan each parcel the merchant takes back.', onTap: () => _return(context)),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(2, 14, 2, 6),
-                child: Text('CN labels', style: TextStyle(fontWeight: FontWeight.w800, color: muted)),
-              ),
+              _TaskCard(icon: Icons.undo, color: bad, title: 'Returned to merchant', text: 'Choose the return run, then scan each parcel the merchant takes back.', onTap: () => _return(context)),
+              const _Group('CN labels', 'Pre-printed labels to parcels.'),
               _TaskCard(
                 icon: Icons.qr_code_2,
                 color: brand,
-                title: 'CN Merchant',
+                title: 'CN Assign Merchant',
                 text: "Choose the merchant, then scan CN labels: they become that merchant's parcels. Bring them to your hub.",
                 onTap: () => openCnMerchant(context),
               ),
               _TaskCard(
                 icon: Icons.document_scanner_outlined,
                 color: brand,
-                title: 'CN_Scan',
+                title: 'CN Scan Details',
                 text: 'Camera stays on: CN barcode + recipient in the frame, tap Capture.',
                 onTap: () => openCnScan(context),
               ),
@@ -174,10 +173,27 @@ class ScanPage extends StatelessWidget {
     );
   }
 
-  /// Optional check at the hub: each parcel the hub gave this rider (assigned by the hub's scan).
+  /// Optional check at the hub: each parcel the hub gave this rider, to deliver (assigned by the hub's scan) or to take
+  /// back to its merchant (on one of the rider's return runs).
   Future<void> _receive(BuildContext context) async {
     await Tasks.load();
     if (!context.mounted) return;
+    var runs = <Map<String, dynamic>>[];
+    Future<void> loadRuns() async {
+      try {
+        runs = ((((await cachedGet('/rider/return-runs')) as Map)['items'] as List?) ?? []).cast<Map<String, dynamic>>();
+      } catch (_) {}
+    }
+
+    await loadRuns();
+    if (!context.mounted) return;
+    Map<String, dynamic>? runOf(String code) {
+      for (final r in runs) {
+        if (((r['parcels'] as List?) ?? []).any((p) => (p as Map)['trackingId'] == code)) return r;
+      }
+      return null;
+    }
+
     final status = ValueNotifier('');
     await _session(
       context,
@@ -187,11 +203,16 @@ class ScanPage extends StatelessWidget {
       onDone: (n) => status.value = '$n received',
       action: (code, _) async {
         var task = findTask('deliveries', code);
-        if (task == null) {
+        var run = task == null ? runOf(code) : null;
+        if (task == null && run == null) {
           await Tasks.load();
+          await loadRuns();
           task = findTask('deliveries', code);
+          run = task == null ? runOf(code) : null;
         }
-        return task == null ? ScanFeedback(false, '$code is not assigned to you. Ask the hub to scan it to your name.') : ScanFeedback(true, '${task['trackingId']} is yours: ${task['recipientName'] ?? task['recipient'] ?? ''}'.trim());
+        if (task != null) return ScanFeedback(true, '${task['trackingId']} is yours: ${task['recipientName'] ?? task['recipient'] ?? ''}'.trim());
+        if (run != null) return ScanFeedback(true, '$code is yours: return to ${(run['merchant'] as Map?)?['name'] ?? 'the merchant'} (${run['number']})');
+        return ScanFeedback(false, '$code is not assigned to you. Ask the hub to scan it to your name.');
       },
     );
   }
@@ -272,6 +293,27 @@ class ScanPage extends StatelessWidget {
       status: status,
       onDone: (n) => status.value = '$n of $total returned${n >= total ? ' · run complete' : ''}',
       action: (code, source) => returnParcel(run, code, source, ''),
+    );
+  }
+}
+
+/// A group heading on the scan list: the work in the order it happens.
+class _Group extends StatelessWidget {
+  const _Group(this.title, this.text);
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 16, 2, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, color: brand, fontSize: 12.5, letterSpacing: .6)),
+          Text(text, style: const TextStyle(color: muted, fontSize: 12.5)),
+        ],
+      ),
     );
   }
 }

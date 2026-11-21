@@ -138,6 +138,18 @@ export const franchiseDirectFailSchema = z.object({
 
 /** Receive & assign rider in one scan, at the franchise hub (its own riders). */
 export const franchiseAssignScanSchema = z.object({ code: z.string().trim().min(3).max(64), riderId: z.uuid(), source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL") });
+/** App Scan › Hub transfer: the parcel leaves the franchise hub for the hub that delivers it (or the hub chosen). */
+export const franchiseTransferScanSchema = z.object({ code: z.string().trim().min(3).max(64), toHubId: z.uuid().optional(), source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL") });
+/** App Scan › Hub return: a return held at the franchise hub leaves for the central hub. */
+export const franchiseReturnTransferSchema = z.object({ code: z.string().trim().min(3).max(64), source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL") });
+/** App Scan › Return rider assign: the parcel joins the franchise rider's return run for its merchant. */
+export const franchiseReturnAssignSchema = z.object({
+  code: z.string().trim().min(3).max(64),
+  riderId: z.uuid(),
+  /** For parcels nobody asked to return yet. */
+  reason: z.string().trim().min(3).max(300).optional(),
+  source: z.enum(["CAMERA", "KEYBOARD", "MANUAL"]).default("MANUAL"),
+});
 
 export const franchiseHandoverSchema = z.object({ riderId: z.uuid(), collectionIds: z.array(z.uuid()).min(1).max(500), amountReceived: money });
 export const franchiseRemittanceSchema = z.object({ hubId: z.uuid(), note: optionalText(300) });

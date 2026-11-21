@@ -92,7 +92,7 @@ export default function EndOfDay() {
               <Metric label="Still expected" value={num(p.stillExpected)} icon="clock" foot={`${num(p.expectedParts.inboundBags)} in bags · ${num(p.expectedParts.dropOffs)} drop-offs`} note={`${num(p.expectedParts.pickedUpByRiders)} with pickup riders`} />
               <Metric label="Dispatched out" value={num(p.dispatched)} icon="truck" foot={`${num(p.outForDelivery)} out for delivery`} note={`${num(p.transferred)} transferred (${num(p.transferBags)} bags)`} />
               <Metric label="Held at the hub" value={num(p.heldNow)} icon="pin" foot={now} note={`${num(p.delivered)} delivered today`} />
-              <Metric label="Ready for collection" value={num(p.readyForCollection)} icon="users" foot={now} note="waiting on Collect from hub" />
+              <Metric label="Ready for collection" value={num(p.readyForCollection)} icon="users" foot={now} note="waiting on Hub collection" />
             </div>
           )}
         </div>

@@ -183,7 +183,7 @@ describe("hub desk: delivered entry and out for delivery by scanning", () => {
     // Failed delivery, try again: stays with the rider; the rider brings it back: received.
     await scan(s.desk.token, "dispatch", { code: id, riderId: s.rider.rider.id });
     const early = await ctx.api("POST", "/ops/hub-receive", { token: s.desk.token, body: { code: id, hubId: s.gulshan.id } });
-    expect(early.body).toMatchObject({ ok: false, outcome: "REFUSED", message: expect.stringContaining("Failed delivery entry") });
+    expect(early.body).toMatchObject({ ok: false, outcome: "REFUSED", message: expect.stringContaining("Could not deliver") });
     expect(await scan(s.desk.token, "failed", { code: id, reason: "Recipient unavailable", nextAction: "RETRY" })).toMatchObject({ ok: true, outcome: "RETRY_SCHEDULED" });
     expect(await ctx.prisma.deliveryAttempt.count({ where: { parcel: { trackingId: id }, outcome: "FAILED" } })).toBe(1);
     // Scanned again (double scan / retried request): already recorded; no second attempt, fee or attempt count.

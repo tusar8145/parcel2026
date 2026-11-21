@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { useOps } from "@/lib/ops";
@@ -52,15 +52,24 @@ export default function ViewTabs({ view, tab, counts, badges }: { view: string; 
   const list = (
     <nav ref={listRef} className="vtabs" role="tablist" aria-orientation="vertical" aria-label={`${v.label} tabs`}>
       <div className={`vtabs-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
-      <div className="vtabs-title">{v.label}</div>
+      {/* The view's name on top, unless its tabs have group headings of their own. */}
+      {tabs.some(t => t.group) ? null : <div className="vtabs-title">{v.label}</div>}
       {tabs.map(t => {
         const count = counts?.[t.id];
         return (
-          <button key={t.id} type="button" role="tab" className="vtab" aria-selected={t.id === tab} title={badges?.[t.id]?.title} onClick={() => navigate(pathFor(view, t.id))}>
+          <Fragment key={t.id}>
+          {/* A group heading above its first tab (Scan desk: At the hub, Hub collection, CN labels, Rider operation). */}
+          {t.group ? (
+            <div className="vtabs-group" role="presentation">
+              {t.group}
+            </div>
+          ) : null}
+          <button type="button" role="tab" className="vtab" aria-selected={t.id === tab} title={badges?.[t.id]?.title} onClick={() => navigate(pathFor(view, t.id))}>
             <span className="vtab-label">{t.id}</span>
             {count != null ? <span className="count">{count.toLocaleString("en-US")}</span> : null}
             {badges?.[t.id]?.badge}
           </button>
+          </Fragment>
         );
       })}
     </nav>

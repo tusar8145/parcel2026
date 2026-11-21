@@ -369,7 +369,7 @@ export class CnParcelsService implements OnApplicationBootstrap {
     const hub = await this.hubOf(actor, input.hubId);
     const merchant = await this.activeMerchant(this.prisma, input.merchantId);
     const result = await this.prisma.$transaction(async tx => {
-      const { parcel, created } = await this.parcelOf(tx, actor, input.cn, hub, "CN Merchant", merchant.id);
+      const { parcel, created } = await this.parcelOf(tx, actor, input.cn, hub, "CN Assign Merchant", merchant.id);
       if (created) return { outcome: "CREATED" as const, parcel, message: `${parcel.trackingId} is now ${merchant.name}'s parcel.` };
       if (parcel.merchantId === merchant.id) return { outcome: "ALREADY" as const, parcel, message: `${parcel.trackingId} is already ${merchant.name}'s parcel.` };
       if (parcel.merchantId) {
@@ -394,7 +394,7 @@ export class CnParcelsService implements OnApplicationBootstrap {
           pickupZone: merchant.pickupZone ?? parcel.pickupZone,
           pickupDistrict: merchant.pickupDistrict,
           version: { increment: 1 },
-          events: { create: { status: parcel.status, title: "Merchant set", description: `${merchant.name} (${merchant.code}), scanned with CN Merchant.`, visibility: "INTERNAL", actorUserId: actor.userId, actorLabel: actor.riderId ? "Rider" : "Operations" } },
+          events: { create: { status: parcel.status, title: "Merchant set", description: `${merchant.name} (${merchant.code}), scanned with CN Assign Merchant.`, visibility: "INTERNAL", actorUserId: actor.userId, actorLabel: actor.riderId ? "Rider" : "Operations" } },
         },
       });
       const priced = await this.price(tx, updated);

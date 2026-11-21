@@ -21,11 +21,22 @@ export default function ViewTabs({ view, tab, counts, badges }: { view: string; 
   }, [slot]);
   // On a narrow screen the tabs are a row that scrolls sideways: the open tab is brought into sight.
   const listRef = useRef<HTMLElement>(null);
+  // The open tab's box slides from tab to tab, as in the main menu (view-tabs.css .vtabs-indicator).
+  const [box, setBox] = useState({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
   useLayoutEffect(() => {
     const nav = listRef.current;
-    const open = nav?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!nav || !open || nav.scrollWidth <= nav.clientWidth) return;
-    nav.scrollLeft = Math.max(0, open.offsetLeft - nav.offsetLeft - 24);
+    if (!nav) return;
+    const place = () => {
+      const open = nav.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!open) return setBox(b => ({ ...b, shown: false }));
+      setBox(b => ({ top: open.offsetTop, left: open.offsetLeft, width: open.offsetWidth, height: open.offsetHeight, shown: true, ready: b.shown || b.ready }));
+    };
+    place();
+    const open = nav.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (open && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, open.offsetLeft - 24);
+    const ro = new ResizeObserver(place);
+    ro.observe(nav);
+    return () => ro.disconnect();
   }, [tab, slot]);
   if (!v || v.tabs.length < 2 || v.tabsAt === "menu") return null;
   if (v.tabsAt !== "side")
@@ -40,6 +51,7 @@ export default function ViewTabs({ view, tab, counts, badges }: { view: string; 
   const tabs = v.tabs.filter(t => !(t.show && !t.show(ops.menu)));
   const list = (
     <nav ref={listRef} className="vtabs" role="tablist" aria-orientation="vertical" aria-label={`${v.label} tabs`}>
+      <div className={`vtabs-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
       <div className="vtabs-title">{v.label}</div>
       {tabs.map(t => {
         const count = counts?.[t.id];

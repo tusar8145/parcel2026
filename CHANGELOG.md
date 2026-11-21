@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.57.3 — 2026-11-22
+- Scan desk: the tabs on the left look and move like the main menu: the open tab's blue box (with its bar) slides to the tab you choose, and a tab under the mouse nudges right instead of turning grey.
+
 ## 1.57.2 — 2026-11-21
 - Panels (Operations, merchant, super admin): messages at the bottom of the screen show above an open dialog instead of behind its blurred background.
 - Parcel lists (All parcels, New orders and the other journey pages): Rows per page sits in the top right corner of the table, on the title line, whatever the screen width.

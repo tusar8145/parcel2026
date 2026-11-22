@@ -226,6 +226,9 @@ class Outbox {
 /// Live position while on shift: a fix after a move of the configured distance, else every few minutes
 /// (GET /settings/location). Runs as a foreground service ("On shift" notification), so it keeps going with
 /// the screen off. Points that can't be sent are kept (up to 3,000) and sent together later.
+/// Bumped when the rider's shift or break changes, so screens showing their status (Account) reload.
+final shiftChanged = ValueNotifier<int>(0);
+
 class Tracker {
   static final status = ValueNotifier<String>('Location sharing is off');
   static final on = ValueNotifier<bool>(false);
@@ -305,11 +308,12 @@ class Tracker {
     status.value = 'Location sharing is on';
   }
 
-  static Future<void> stop() async {
+  /// [signedOut]: the phone is being signed out, so the next rider starts with a plain "off" (not this one's shift).
+  static Future<void> stop({bool signedOut = false}) async {
     await _sub?.cancel();
     _sub = null;
     on.value = false;
-    status.value = 'Location sharing is off (shift ended)';
+    status.value = signedOut ? 'Location sharing is off' : 'Location sharing is off (shift ended)';
   }
 
   static Future<void> _onFix(Position p) async {

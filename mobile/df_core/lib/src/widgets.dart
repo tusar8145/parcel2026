@@ -33,6 +33,9 @@ class Loader<T> extends StatefulWidget {
 
 class LoaderState<T> extends State<Loader<T>> {
   late Future<T> _future = widget.load();
+  // The last data shown: a reload keeps it on screen (no spinner flash) until the new data arrives.
+  T? _last;
+  bool _hasLast = false;
 
   Future<void> reload() async {
     final f = widget.load();
@@ -49,8 +52,12 @@ class LoaderState<T> extends State<Loader<T>> {
     return FutureBuilder<T>(
       future: _future,
       builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+        if (snap.connectionState != ConnectionState.done) {
+          return _hasLast ? widget.builder(context, _last as T, reload) : const Center(child: CircularProgressIndicator());
+        }
         if (snap.hasError) return ErrorView(message: errorText(snap.error!), onRetry: reload);
+        _last = snap.data as T;
+        _hasLast = true;
         return widget.builder(context, snap.data as T, reload);
       },
     );

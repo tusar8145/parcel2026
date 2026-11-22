@@ -19,7 +19,7 @@ Future<void> main() async {
 void configureRiderApp() {
   AppConfig.role = 'Rider';
   AppConfig.appName = 'Rider';
-  AppConfig.version = '1.9.0';
+  AppConfig.version = '1.9.1';
   AppConfig.allows = (user) => user['rider'] != null;
   AppConfig.notAllowed = 'This app is for riders. Your account is not a rider account.';
   AppConfig.home = () => RiderShell(key: riderShell);
@@ -29,7 +29,7 @@ void configureRiderApp() {
 /// Signing out also deletes the rider's saved screens, outbox and GPS points from the phone.
 Future<void> riderSignOut() async {
   await Push.unregister();
-  await Tracker.stop();
+  await Tracker.stop(signedOut: true);
   await Store.clear();
   Outbox.reset();
   await Session.logout();

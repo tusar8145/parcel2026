@@ -7,6 +7,14 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.59.1 — 2026-11-23
+- Operations app (franchise): Today, Parcels, Riders and Cash refresh by themselves when you open a tab, come back to the app and every minute, so a delivery made by a rider shows without pulling down to refresh.
+- Operations app (franchise): parcels booked as drop-offs at the hub show on Today ("Waiting for drop-off") and in Parcels.
+- Rider app: after signing out, the next rider who signs in on the phone no longer sees "(shift ended)" from the previous rider.
+- Rider app: Account › Status follows the shift (Online, On break, Offline) instead of keeping the status from sign-in.
+- Operations, Rider and Merchant apps: a screen that refreshes keeps showing its numbers until the new ones arrive, without a spinner.
+- New apps: Operations 1.10.1, Rider 1.9.1, Merchant 1.4.6.
+
 ## 1.59.0 — 2026-11-22
 - Operations, Rider and Merchant apps: an app that needs the forced update now shows the update page with its download button as soon as it opens, before the sign-in page.
 - Operations app: the search (top bar) works like the web panel's search: type or scan a tracking ID, CN or phone and the parcel's details open at once (status, tracking steps and history, price, parcel details, proof of delivery), other matches as tags; a zone or area name shows the hub that serves it.

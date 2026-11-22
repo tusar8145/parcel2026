@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:df_core/df_core.dart';
 import 'package:flutter/material.dart';
 
@@ -52,16 +54,24 @@ class FranchiseShell extends StatefulWidget {
   State<FranchiseShell> createState() => FranchiseShellState();
 }
 
-class FranchiseShellState extends State<FranchiseShell> {
+class FranchiseShellState extends State<FranchiseShell> with WidgetsBindingObserver {
   int _tab = 0;
   bool _loading = true;
   String? _error;
+  Timer? _timer;
 
-  void openTab(int i) => setState(() => _tab = i);
+  /// Riders deliver, fail and hand over in their own app: the franchise's screens reload when a tab is opened,
+  /// when the app comes back to the front, and every minute while it is open.
+  void openTab(int i) {
+    setState(() => _tab = i);
+    franchiseChanged.value++;
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => franchiseChanged.value++);
     _start();
     refreshUnread();
     Push.onReceive = (_) {
@@ -71,6 +81,22 @@ class FranchiseShellState extends State<FranchiseShell> {
     Push.register('operations');
     // Where the franchise is, every 2 minutes while the app is open (super admin › Live map).
     Presence.start(path: '/staff/location', every: const Duration(minutes: 2));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      refreshUnread();
+      franchiseChanged.value++;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    Presence.stop();
+    super.dispose();
   }
 
   Future<void> _start() async {
@@ -177,19 +203,36 @@ Future<void> _openNotification(BuildContext context, Map<String, dynamic> n) asy
   );
 }
 
-/// Reloads when something changed in another tab.
-class _Reloading extends StatelessWidget {
+/// Reloads when something changed (another tab, the app coming back, the shell's minute timer), keeping the
+/// current data on screen while it loads.
+class _Reloading extends StatefulWidget {
   const _Reloading({super.key, required this.load, required this.builder});
   final Future<dynamic> Function() load;
   final Widget Function(BuildContext context, dynamic data, Future<void> Function() reload) builder;
 
   @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: franchiseChanged,
-      builder: (context, v, _) => Loader<dynamic>(key: ValueKey(v), load: load, builder: builder),
-    );
+  State<_Reloading> createState() => _ReloadingState();
+}
+
+class _ReloadingState extends State<_Reloading> {
+  final _loader = GlobalKey<LoaderState<dynamic>>();
+
+  void _changed() => _loader.currentState?.reload();
+
+  @override
+  void initState() {
+    super.initState();
+    franchiseChanged.addListener(_changed);
   }
+
+  @override
+  void dispose() {
+    franchiseChanged.removeListener(_changed);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Loader<dynamic>(key: _loader, load: widget.load, builder: widget.builder);
 }
 
 class _TodayTab extends StatelessWidget {
@@ -199,7 +242,14 @@ class _TodayTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _Reloading(
-      load: () => Api.get('/franchise/overview'),
+      load: () async {
+        final r = await Future.wait([
+          Api.get('/franchise/overview'),
+          // Parcels booked as drop-offs at this hub, not brought in yet (not part of the overview's counts).
+          Api.get('/franchise/parcels', {'view': 'drop-offs', 'limit': '200'}).catchError((_) => <String, dynamic>{}),
+        ]);
+        return {...(r[0] as Map).cast<String, dynamic>(), 'dropOffs': (((r[1] as Map?)?['items'] as List?) ?? []).length};
+      },
       builder: (context, data, reload) {
         final o = (data as Map).cast<String, dynamic>();
         final today = (o['today'] as Map?) ?? {};
@@ -216,6 +266,7 @@ class _TodayTab extends StatelessWidget {
                 tiles: [
                   StatTile(label: 'At the hub', value: count(now['atHub']), icon: Icons.warehouse_outlined, onTap: () => onOpenTab(2)),
                   StatTile(label: 'On the way here', value: count(now['incoming']), icon: Icons.local_shipping_outlined, onTap: () => onOpenTab(2)),
+                  StatTile(label: 'Waiting for drop-off', value: count(o['dropOffs']), icon: Icons.storefront_outlined, onTap: () => onOpenTab(2)),
                   StatTile(label: 'Out for delivery', value: count(now['outForDelivery']), icon: Icons.two_wheeler, color: warn, onTap: () => onOpenTab(2)),
                   StatTile(label: 'Riders', value: count(now['riders']), icon: Icons.people_outline, onTap: () => onOpenTab(3)),
                   StatTile(label: 'Delivered today', value: count(today['delivered']), icon: Icons.check_circle_outline, color: good),
@@ -489,7 +540,7 @@ class _ParcelsTab extends StatefulWidget {
 }
 
 class _ParcelsTabState extends State<_ParcelsTab> {
-  static const views = {'at-hub': 'At the hub', 'incoming': 'On the way', 'out': 'Out for delivery', 'returns': 'Returns', 'delivered': 'Delivered (7 days)'};
+  static const views = {'at-hub': 'At the hub', 'incoming': 'On the way', 'drop-offs': 'Waiting for drop-off', 'out': 'Out for delivery', 'returns': 'Returns', 'delivered': 'Delivered (7 days)'};
   String _view = 'at-hub';
 
   @override

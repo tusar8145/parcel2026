@@ -405,6 +405,7 @@ class _TodayPageState extends State<TodayPage> {
         await Tracker.start();
       }
       await _load();
+      shiftChanged.value++;
       if (mounted) snack(context, on ? 'Shift ended.' : 'Shift started. Have a safe ride!');
     } catch (e) {
       if (mounted) snack(context, errorText(e));
@@ -417,6 +418,7 @@ class _TodayPageState extends State<TodayPage> {
     try {
       await Api.patch('/rider/me/status', {'status': onBreak ? 'ON_BREAK' : 'ONLINE'});
       await _load();
+      shiftChanged.value++;
     } catch (e) {
       if (mounted) snack(context, errorText(e));
     }

@@ -6,8 +6,30 @@ import 'main.dart';
 import 'offline.dart';
 
 /// Account: the rider's profile and hub, location sharing, saved actions, returns, support, password, sign out.
-class AccountPage extends StatelessWidget {
+class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
+
+  @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  final _loader = GlobalKey<LoaderState<Map<String, dynamic>>>();
+
+  // The status (online, on a break, offline) changes with the shift: reload when it does.
+  void _shiftChanged() => _loader.currentState?.reload();
+
+  @override
+  void initState() {
+    super.initState();
+    shiftChanged.addListener(_shiftChanged);
+  }
+
+  @override
+  void dispose() {
+    shiftChanged.removeListener(_shiftChanged);
+    super.dispose();
+  }
 
   Future<void> _signOut(BuildContext context) async {
     final waiting = Outbox.items.value.length;
@@ -37,6 +59,7 @@ class AccountPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Loader<Map<String, dynamic>>(
+      key: _loader,
       load: () async => (await cachedGet('/rider/me') as Map).cast<String, dynamic>(),
       builder: (context, r, reload) {
         final hub = r['hub'] as Map?;

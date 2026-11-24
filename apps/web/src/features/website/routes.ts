@@ -127,6 +127,8 @@ export const WEBSITE_ROUTES: WebsiteRoute[] = [
 export const STATIC_PAGES = [
   { path: "about", title: "Delivery Fast — About us", description: "Delivery Fast: a nationwide courier and logistics service in Bangladesh since 2024 — our story, services, management, mission and how we work." },
   { path: "privacy", title: "Delivery Fast — Privacy Policy", description: "How Delivery Fast collects, uses and protects personal information of senders, recipients, merchants and riders in Bangladesh." },
+  { path: "partners", title: "Delivery Fast — Partner with us", description: "Become a Delivery Fast merchant, rider or franchise partner: how it works and how to apply." },
+  { path: "help", title: "Delivery Fast — Help & support", description: "Track a parcel, read answers to common questions, or contact Delivery Fast customer support." },
   { path: "terms", title: "Delivery Fast — Terms of Service", description: "The terms for booking, sending, tracking and receiving parcels and documents with Delivery Fast." },
 ];
 

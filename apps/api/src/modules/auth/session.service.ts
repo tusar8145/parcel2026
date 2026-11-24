@@ -22,6 +22,9 @@ export interface SessionTokens {
  * Refresh tokens are opaque, stored hashed, and rotate on every use. Presenting a token
  * that was already rotated means it leaked: the whole session family is revoked.
  */
+/** A rotated refresh token used again within this time is a race of the same browser, not a stolen token. */
+const ROTATION_GRACE_MS = 30_000;
+
 @Injectable()
 export class SessionService {
   constructor(
@@ -43,7 +46,10 @@ export class SessionService {
     const session = await this.prisma.session.findUnique({ where: { refreshTokenHash: sha256(refreshToken) } });
     if (!session) throw unauthorized("INVALID_REFRESH_TOKEN", "Please sign in again");
     if (session.revokedAt) {
-      if (session.revokedReason === "rotated") await this.revokeFamily(session.familyId, "refresh_token_reuse");
+      // A token used again after it was rotated means theft, and the whole family is revoked; except within a few
+      // seconds of the rotation, which is two requests of the same browser racing (two tabs, a page and its header).
+      const racing = Date.now() - session.revokedAt.getTime() < ROTATION_GRACE_MS;
+      if (session.revokedReason === "rotated" && !racing) await this.revokeFamily(session.familyId, "refresh_token_reuse");
       throw unauthorized("INVALID_REFRESH_TOKEN", "Please sign in again");
     }
     if (session.expiresAt < new Date()) throw unauthorized("SESSION_EXPIRED", "Your session expired. Please sign in again");

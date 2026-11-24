@@ -118,14 +118,14 @@ export class NetworkService {
       where: includeInactive ? {} : { active: true },
       orderBy: { name: "asc" },
       include: {
-        staff: { where: { role: "HUB_OPERATOR", user: { status: { not: "DEACTIVATED" } } }, select: { user: person }, orderBy: { createdAt: "asc" } },
+        staff: { where: { role: { in: ["HUB_OPERATOR", "FRANCHISE"] }, user: { status: { not: "DEACTIVATED" } } }, select: { role: true, user: person }, orderBy: { createdAt: "asc" } },
         franchise: { select: { id: true, code: true, name: true, status: true, owner: person } },
       },
     });
     return hubs.map(({ staff, franchise, ...hub }) => ({
       ...hub,
-      managers: [...new Map(staff.map(s => [s.user.id, s.user])).values()],
-      franchise: franchise ? { id: franchise.id, code: franchise.code, name: franchise.name, status: franchise.status, account: franchise.owner } : null,
+      managers: [...new Map(staff.filter(s => s.role === "HUB_OPERATOR").map(s => [s.user.id, s.user])).values()],
+      franchise: franchise ? { id: franchise.id, code: franchise.code, name: franchise.name, status: franchise.status, account: franchise.owner, users: staff.filter(s => s.role === "FRANCHISE").map(s => s.user) } : null,
     }));
   }
 
@@ -157,6 +157,8 @@ export class NetworkService {
       input = { ...input, ...(await this.hubPlace(input.district ?? current.district, input.zone !== undefined ? input.zone : current.zone, current)) };
     const hub = await this.prisma.$transaction(async tx => {
       const updated = await tx.hub.update({ where: { id }, data: input });
+      // A franchise is named after its hub.
+      if (input.name && !same(input.name, current.name)) await tx.franchise.updateMany({ where: { hubId: id }, data: { name: input.name } });
       await this.audit.record(
         actor,
         { action: input.active === false && current.active ? "hub.deactivate" : input.active === true && !current.active ? "hub.activate" : "hub.update", entityType: "hub", entityId: id, data: input },
@@ -330,11 +332,14 @@ export class NetworkService {
     return { id: rider.id, code: rider.code, phone: rider.user.phone, email: rider.user.email, appLink: this.riderAppLink() };
   }
 
-  /** Hubs a rider is given: existing and operating. */
+  /** Hubs a rider is given: existing and operating; a franchise hub's rider works for that one hub only. */
   private async checkHubs(ids: string[]) {
     if (!ids.length) return;
-    const found = await this.prisma.hub.findMany({ where: { id: { in: ids }, active: true }, select: { id: true } });
+    const found = await this.prisma.hub.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, name: true, type: true } });
     if (found.length !== ids.length) throw new AppError("HUB_UNKNOWN", "Choose operating hubs", HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubIds" });
+    const franchise = found.find(h => h.type === "FRANCHISE");
+    if (franchise && ids.length > 1)
+      throw new AppError("FRANCHISE_RIDER_ONE_HUB", `${franchise.name} is a franchise hub: its rider works for that one hub only`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubIds" });
   }
 
   async updateRider(actor: Actor, id: string, input: z.infer<typeof updateRiderSchema>, meta: RequestMeta) {

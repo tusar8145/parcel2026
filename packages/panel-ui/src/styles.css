@@ -607,7 +607,7 @@ dialog.dialog::backdrop { background: rgb(16 24 40 / 45%); backdrop-filter: blur
 .grid-2 + .panel, .grid-3 + .panel { margin-top: 16px; }
 
 /* Dialog close (×): a full-size target in the corner. */
-.button.dialog-close { width: 36px; min-height: 36px; flex: none; margin: -6px -8px 0 0; color: var(--muted); border-radius: 10px; }
+.button.dialog-close { width: 36px; height: 36px; min-height: 36px; flex: none; align-self: flex-start; border-radius: 50%; margin: -6px -8px 0 0; color: var(--muted); }
 .button.dialog-close:hover { color: var(--ink); background: var(--surface-3); }
 .toast button { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; margin: -4px -6px -4px auto; border: 0; border-radius: 8px; background: none; color: inherit; opacity: .75; cursor: pointer; }
 .toast button:hover { opacity: 1; background: rgb(255 255 255 / 14%); }
@@ -660,3 +660,23 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-3); b
 .switch-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s; }
 .switch-track.on .switch-thumb { left: 21px; }
 .switch-track:focus-visible { outline: 2px solid var(--accent, #1d5fd0); outline-offset: 2px; }
+
+/* A form's section heading (openForm type "section"). */
+.form-section { grid-column: 1 / -1; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.form-section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.form-section h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--ink); }
+.form-section p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); }
+
+/* A form's radio choices (openForm type "radio"): one card per choice. */
+.radio-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.radio-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.radio-card:hover { border-color: var(--primary); }
+.radio-card.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--surface)); }
+.radio-card input { width: 16px; height: 16px; margin-top: 2px; flex: none; accent-color: var(--primary); }
+.radio-card strong { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.radio-card small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* The sign-in account (login) part of a form: one standard tinted box (riders, merchants, staff). */
+.form-box { grid-column: 1 / -1; margin-top: 6px; padding: 14px 16px 16px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
+.form-box .form-section { margin-top: 0; padding-top: 0; border-top: 0; }
+.form-box .form-section h3::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--primary); vertical-align: 1px; }

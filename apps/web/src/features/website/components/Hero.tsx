@@ -1,5 +1,3 @@
-import { HERO_MOTION_CSS } from "./heroMotion";
-
 export default function Hero() {
   return (
     <section className="hero">
@@ -52,62 +50,56 @@ export default function Hero() {
             </span>
           </div>{" "}
         </div>{" "}
-        <div className="hero-art" aria-label="Illustration of a Delivery Fast delivery van arriving at a home">
-          {" "}
-          <div className="art-sun" />
-          <div className="art-path" />
-          <div className="art-hill" />
-          <div className="art-hill two" />{" "}
-          <div className="art-building">
-            <div className="building-door" />
-          </div>{" "}
-          <div className="art-box" />{" "}
-          <div className="art-van">
-            <div className="van-body" />
-            <div className="van-nose" />
-            <div className="van-window" />
-            <div className="van-logo">delivery fast</div>
-            <i className="wheel one" />
-            <i className="wheel two" />
-          </div>{" "}
-          {/* Night tint and the moon with stars (heroMotion.ts: invisible in the still picture). */}
-          <div className="art-night" aria-hidden="true" />
-          <div className="art-moon" aria-hidden="true" />
-          {/* The parcel's statuses, one by one (heroMotion.ts). */}
-          <div className="art-steps" aria-hidden="true">
-            <div className="art-step s0">
-              <i>{"✓"}</i>
-              <strong>Pickup confirmed</strong>
-              <span>{"· Rider on the way"}</span>
+        {/* A still example of a parcel being followed (theme.css .hero-card): no animation. */}
+        <div className="hero-visual" aria-label="Example: a parcel followed from pickup to delivery">
+          <div className="hero-card">
+            <div className="hero-card-head">
+              <span>
+                <small>Tracking number</small>
+                <strong>PP-260914-1042</strong>
+              </span>
+              <span className="hero-badge">Out for delivery</span>
             </div>
-            <div className="art-step s1">
-              <i>{"✓"}</i>
-              <strong>Picked up</strong>
-              <span>{"· Parcel collected"}</span>
+            <div className="hero-route">
+              <span>
+                <small>From</small>
+                <strong>Gulshan, Dhaka</strong>
+              </span>
+              <i aria-hidden="true">→</i>
+              <span>
+                <small>To</small>
+                <strong>Agrabad, Chattogram</strong>
+              </span>
             </div>
-            <div className="art-step s2">
-              <i>{"✓"}</i>
-              <strong>Out for delivery</strong>
-              <span>{"· Rider heading to you"}</span>
-            </div>
-            <div className="art-step s3">
-              <i>{"✓"}</i>
-              <strong>Delivered</strong>
-              <span>{"· Handed over at the door"}</span>
-            </div>
+            <ol className="hero-steps">
+              <li className="done">
+                <strong>Pickup confirmed</strong>
+                <small>Rider on the way</small>
+              </li>
+              <li className="done">
+                <strong>Picked up</strong>
+                <small>Parcel collected</small>
+              </li>
+              <li className="done current">
+                <strong>Out for delivery</strong>
+                <small>Rider heading to you</small>
+              </li>
+              <li>
+                <strong>Delivered</strong>
+                <small>Handed over at the door</small>
+              </li>
+            </ol>
           </div>
-          <style id="heroMotion">{HERO_MOTION_CSS}</style>
-          <div className="float-tag tag-bottom">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-              <path d="M3 7h11v11H3zM14 11h4l3 3v4h-7z" />
-              <circle cx="7.5" cy="19" r="1.5" />
-              <circle cx="17.5" cy="19" r="1.5" />
+          <div className="hero-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M12 7.5V12l3 2" />
             </svg>
             <span>
-              <strong>All the way, tracked</strong>
-              <small>From pickup to doorstep</small>
+              <strong>Estimated delivery</strong>
+              <small>Today, by 6:00 PM</small>
             </span>
-          </div>{" "}
+          </div>
         </div>{" "}
       </div>{" "}
     </section>

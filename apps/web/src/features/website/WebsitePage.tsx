@@ -20,6 +20,10 @@ import { WEBSITE_ROUTES } from "./routes";
 import { scripts } from "./scripts";
 import SiteSwitches from "./SiteSwitches";
 import { siteContent } from "./siteContent";
+import NewHeader from "./v2/Header";
+import NewHero from "./v2/Hero";
+import NewFooter from "./v2/Footer";
+import { Partners as NewPartners, Services as NewServices } from "./v2/Sections";
 
 /** The path table the browser router (DF.route in public/legacy/shared/api.js) reads. */
 const ROUTE_TABLE = JSON.stringify({ routes: WEBSITE_ROUTES.map(({ legacy, path, title }) => ({ legacy, path, title })) });
@@ -35,7 +39,8 @@ const START_UP = ["/api/v1/settings/platform-config", "/api/v1/catalog"];
 export default async function WebsitePage({
   staticPage,
   panelAssets,
-}: { staticPage?: { name: string; content: ReactNode }; panelAssets?: boolean } = {}) {
+  classic = false,
+}: { staticPage?: { name: string; content: ReactNode }; panelAssets?: boolean; classic?: boolean } = {}) {
   const site = await siteContent();
   return (
     <>
@@ -44,17 +49,31 @@ export default async function WebsitePage({
       ))}
       {!staticPage ? START_UP.map(url => <link key={url} rel="preload" as="fetch" href={url} crossOrigin="anonymous" />) : null}{" "}
       <SiteSwitches site={site} />
-      <TopNote /> <SiteHeader legacy />{" "}
+      {classic ? (
+        <>
+          <TopNote /> <SiteHeader legacy />
+        </>
+      ) : (
+        <NewHeader legacy />
+      )}{" "}
       {staticPage ? (
         <main data-static-page={staticPage.name}>{staticPage.content}</main>
       ) : (
         <main>
           {" "}
-          <Hero /> <StatStrip /> <TrackingSection legacy /> <ServicesSection /> <PricingSection legacy /> <PartnersSection />{" "}
+          {classic ? (
+            <>
+              <Hero /> <StatStrip /> <TrackingSection legacy /> <ServicesSection /> <PricingSection legacy /> <PartnersSection />{" "}
+            </>
+          ) : (
+            <>
+              <NewHero /> <TrackingSection legacy /> <NewServices /> <PricingSection legacy /> <NewPartners />{" "}
+            </>
+          )}
           <StepsBand /> <FaqSection faqs={site.faqs} /> <CtaBand />{" "}
         </main>
       )}{" "}
-      <SiteFooter /> <Toast />{" "}
+      {classic ? <SiteFooter /> : <NewFooter />} <Toast />{" "}
       <script id="dfRoutes" type="application/json" dangerouslySetInnerHTML={{ __html: ROUTE_TABLE }} />
       <WebsiteApp />
       {panelAssets ? <PanelAssetPrefetch /> : null}

@@ -8,7 +8,7 @@ import { DEFAULT_BRANDING, parseAbout, type AboutBlock } from "@delivery-fast/sh
 
 const H2 = ({ children }: { children: ReactNode }) => <h2 style={{ margin: "30px 0 10px", fontSize: 21, letterSpacing: "-.3px" }}>{children}</h2>;
 const H3 = ({ children }: { children: ReactNode }) => <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>{children}</h3>;
-const card = { border: "1px solid #dfe8e2", borderRadius: 14, padding: "16px 18px", background: "#fbfdfb" } as const;
+const card = { border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", background: "#fff" } as const;
 const list = { margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 } as const;
 // Two cards a row on wide screens, one on phones.
 const cards = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 14 } as const;
@@ -28,9 +28,9 @@ export function Block({ block, first }: { block: AboutBlock; first: boolean }) {
       return (
         <div style={{ ...tiles, marginTop: first ? 0 : 20 }}>
           {block.items.map((t, i) => (
-            <div key={i} style={{ ...card, background: "#f1f8f4" }}>
+            <div key={i} style={{ ...card, background: "var(--pink, #fff0f0)", border: 0 }}>
               <strong style={{ display: "block", fontSize: 28, color: "var(--green, #087e67)", lineHeight: 1.1 }}>{t.value}</strong>
-              <span style={{ fontSize: 13, color: "#49605d" }}>{t.label}</span>
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>{t.label}</span>
             </div>
           ))}
         </div>

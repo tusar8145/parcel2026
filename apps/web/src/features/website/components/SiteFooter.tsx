@@ -72,7 +72,9 @@ export default function SiteFooter() {
         </div>
         <div className="footer-bottom">
           <span>© 2026 Delivery Fast. All rights reserved.</span>
-          <span>Built for Bangladesh</span>
+          <span>
+            Built for Bangladesh · <a href="/?site=new">New website</a>
+          </span>
         </div>
       </div>
     </footer>

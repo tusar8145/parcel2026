@@ -14,21 +14,40 @@ import CookieConsent from "./react/CookieConsent";
 import LegacyHashRedirect from "./LegacyHashRedirect";
 import SiteSwitches from "./SiteSwitches";
 import { siteContent } from "./siteContent";
+import NewHeader from "./v2/Header";
+import NewHero from "./v2/Hero";
+import NewFooter from "./v2/Footer";
+import { Partners as NewPartners, Services as NewServices } from "./v2/Sections";
 
 /** React-first homepage; the other website routes still use the legacy router for now. */
-export default async function WebsiteHomePage() {
+export default async function WebsiteHomePage({ classic = false }: { classic?: boolean } = {}) {
   const site = await siteContent();
   return (
     <>
       {" "}
       <SiteSwitches site={site} />
-      <TopNote /> <SiteHeader /> <LegacyHashRedirect />
+      {classic ? (
+        <>
+          <TopNote /> <SiteHeader />
+        </>
+      ) : (
+        <NewHeader />
+      )}{" "}
+      <LegacyHashRedirect />
       <main>
         {" "}
-        <Hero /> <StatStrip /> <TrackingSection /> <ServicesSection /> <PricingSection /> <PartnersSection />{" "}
+        {classic ? (
+          <>
+            <Hero /> <StatStrip /> <TrackingSection /> <ServicesSection /> <PricingSection /> <PartnersSection />{" "}
+          </>
+        ) : (
+          <>
+            <NewHero /> <TrackingSection /> <NewServices /> <PricingSection /> <NewPartners />{" "}
+          </>
+        )}
         <StepsBand /> <FaqSection faqs={site.faqs} /> <CtaBand />{" "}
       </main>{" "}
-      <SiteFooter /> <CookieConsent />
+      {classic ? <SiteFooter /> : <NewFooter />} <CookieConsent />
     </>
   );
 }

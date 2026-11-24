@@ -180,7 +180,7 @@ export interface Staff {
   status: "ACTIVE" | "SUSPENDED" | "DISABLED";
   lastLoginAt?: string | null;
   mfa?: { enabled?: boolean; required?: boolean } | null;
-  roles: { role: string; hub?: { id: string; name: string } | null }[];
+  roles: { id?: string; role: string; hub?: { id: string; name: string } | null }[];
 }
 export function useStaff() {
   return useQuery(staffQuery());

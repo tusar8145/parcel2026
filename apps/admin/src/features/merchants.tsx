@@ -18,7 +18,7 @@ import { toast, toastError } from "@panel/ui/toast";
 import { queryClient } from "@panel/lib/queryClient";
 import { addressText } from "@panel/lib/format";
 import { editMerchantAddress } from "./merchantAddress";
-import { accountFields, passwordProblem } from "@panel/ui/AccountFields";
+import { accountFields, generatePassword, passwordProblem } from "@panel/ui/AccountFields";
 import { DialogFrame, Facts, packageLabel, phoneText, STATUS_LABEL, TYPE_LABEL, whenFull, dateOf, type Merchant, type MerchantType, type Place } from "@/lib/admin";
 
 const reload = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "merchants"] }), queryClient.invalidateQueries({ queryKey: ["admin", "overview"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] })]);
@@ -308,6 +308,9 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
   const pkg = useQuery({ queryKey: ["admin", "merchant-package", m.id], queryFn: () => api<{ current: Pkg; scheduled: { package?: Pkg | null; effectiveFrom: string }[] }>(`/merchants/${m.id}/package`) });
   const current = pkg.data?.current;
   const next = pkg.data?.scheduled?.[0];
+  // The owner's sign-in account(s) (role MERCHANT_OWNER).
+  const detail = useQuery({ queryKey: ["admin", "merchant-detail", m.id], queryFn: () => api<{ owners: Owner[] }>(`/merchants/${m.id}`) });
+  const owners = detail.data?.owners ?? [];
   async function save() {
     const value = ({ Active: "ACTIVE", "Under review": "PENDING_REVIEW", Suspended: "SUSPENDED" } as Record<string, string>)[status];
     if (status === initial) {
@@ -344,6 +347,10 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
       }
     >
       <div className="form-grid">
+        <div className="form-section full">
+          <h3>Account</h3>
+          <p>Status, service package and the services it has.</p>
+        </div>
         <label className="field">
           <span>Account status</span>
           <Select className="select" value={status} onChange={e => setStatus(e.target.value)}>
@@ -370,10 +377,6 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
           {next ? <small>{`Changes to ${next.package?.name || "the default package"} on ${dateOf(next.effectiveFrom)}.`}</small> : null}
         </div>
         <label className="field full">
-          <span>Primary owner · contact</span>
-          <input className="input" readOnly value={`${m.contactName} · ${m.contactEmail || phoneText(m.contactPhone)}`} />
-        </label>
-        <label className="field full">
           <span>Enabled services</span>
           <input className="input" readOnly value={m.type === "BANKING_FINANCIAL" ? "Secure documents · OTP" : "E-commerce · COD"} />
         </label>
@@ -381,6 +384,53 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
           <span>Internal account note</span>
           <textarea className="textarea" value={note} onChange={e => setNote(e.target.value)} placeholder="Reason for the status change" />
         </label>
+        <div className="form-section full">
+          <h3>Sign-in account (login)</h3>
+          <p>The owner signs in to the merchant panel with this mobile number (or email) and their password.</p>
+        </div>
+        <div className="field full">
+          {detail.isLoading ? (
+            <small className="faint">Loading…</small>
+          ) : owners.length ? (
+            owners.map(o => (
+              <div key={o.userId} className="login-card">
+                <Facts
+                  rows={[
+                    ["Owner", <>{o.name || "—"} {o.status !== "ACTIVE" ? <Pill tone="bad">{o.status === "SUSPENDED" ? "Suspended" : "Disabled"}</Pill> : null}</>],
+                    ["Mobile (sign-in)", o.phone ? phoneText(o.phone) : "—"],
+                    ["Email (sign-in)", o.email || "—"],
+                    ["Last sign-in", o.lastLoginAt ? whenFull(o.lastLoginAt) : "Not signed in yet"],
+                  ]}
+                />
+                <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      close();
+                      void editLogin(m, o);
+                    }}
+                  >
+                    Change mobile & email
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      close();
+                      void setLoginPassword(o);
+                    }}
+                  >
+                    Set new password
+                  </Button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <small className="faint">{`No sign-in account yet: contact ${m.contactName} · ${m.contactEmail || phoneText(m.contactPhone)}.`}</small>
+          )}
+        </div>
+        <div className="form-section full">
+          <h3>Address and history</h3>
+        </div>
         <div className="field full">
           <span className="field-label row" style={{ justifyContent: "space-between" }}>
             Addresses, pickup and serving hub
@@ -404,6 +454,66 @@ function Account({ m, close, onPackage }: { m: Merchant; close: () => void; onPa
     </DialogFrame>
   );
 }
+
+interface Owner {
+  userId: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  status: string;
+  lastLoginAt: string | null;
+}
+
+/** The owner's sign-in mobile and email (their user account); by default the merchant's contact follows. */
+async function editLogin(m: Merchant, o: Owner) {
+  await openForm({
+    title: `Sign-in account · ${m.name}`,
+    description: "The owner signs in with this mobile number (or email). Changing it doesn't sign them out; their password stays.",
+    submit: "Save sign-in details",
+    fields: [
+      { id: "name", label: "Owner's name", required: true, full: true, maxLength: 120, value: o.name ?? "" },
+      { id: "phone", label: "Mobile number (sign-in)", type: "phone", required: true, value: (o.phone || "").replace(/^\+?880/, "0") },
+      { id: "email", label: "Email (sign-in)", type: "email", value: o.email ?? "" },
+      { id: "sync", label: "Merchant contact", type: "checkbox", value: true, full: true, hint: "Use these as the merchant's contact details too (notices, pickups)" },
+    ],
+    onSubmit: async v => {
+      await api(`/users/${o.userId}`, { method: "PATCH", body: { name: v.name.trim(), phone: v.phone, email: v.email.trim() || null } });
+      if (v.sync === "true") await api(`/merchants/${m.id}`, { method: "PATCH", body: { contactName: v.name.trim(), contactPhone: v.phone, contactEmail: v.email.trim() || null } });
+      await reloadLogin(m.id);
+      return `${m.name}: sign-in details saved.`;
+    },
+  });
+}
+
+/** A new password for the owner (shared by you; they are signed out everywhere). */
+async function setLoginPassword(o: Owner) {
+  await openForm({
+    title: `New password for ${o.name || "the owner"}`,
+    description: "Share it with them yourself; it isn't sent. They are signed out everywhere and sign in with their mobile number (or email) and this password.",
+    submit: "Set password",
+    fields: [
+      { id: "password", label: "New password", required: true, full: true, maxLength: 128, placeholder: "At least 10 characters, a letter and a number" },
+      {
+        id: "passwordTools",
+        label: "",
+        type: "static",
+        live: (_v, set) => (
+          <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
+            Generate a password
+          </button>
+        ),
+      },
+    ],
+    validate: { password: v => passwordProblem(v) },
+    onSubmit: async v => {
+      await api(`/users/${o.userId}/password`, { method: "POST", body: { password: v.password } });
+      return `New password set. Share it: they sign in with ${o.phone ? phoneText(o.phone) : o.email} and it.`;
+    },
+  });
+}
+
+const reloadLogin = (id: string) =>
+  Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "merchant-detail", id] }), queryClient.invalidateQueries({ queryKey: ["admin", "merchants"] })]);
 
 // ───────────── invitations ─────────────
 const INVITE_TYPES: [MerchantType, string][] = [
@@ -444,12 +554,12 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
     wide: true,
     fields: [
       { id: "onboard", label: "Onboard directly (no invitation link: the merchant and their sign-in account are made now, active)", type: "checkbox", value: false, full: true },
+      { id: "s_business", label: "Business", type: "section", hint: "Who the merchant is." },
       { id: "businessName", label: "Business name", placeholder: "Registered business name" },
-      { id: "name", label: "Primary contact", required: true, placeholder: "Contact name" },
-      { id: "email", label: "Business email", type: "email", full: true, placeholder: "name@company.example (optional if a mobile number is given)" },
-      { id: "phone", label: "Mobile number", type: "phone" },
       { id: "type", label: "Merchant type", type: "select", required: true, value: type, options: INVITE_TYPES.map(([value, label]) => ({ value, label })) },
+      { id: "name", label: "Primary contact (owner's name)", required: true, full: true, placeholder: "Contact name" },
       { id: "message", label: "Personal message", type: "textarea", full: true, maxLength: 500, placeholder: "Shown on the invitation", show: v => !direct(v) },
+      { id: "s_address", label: "Business address", type: "section", hint: "Pickups are from here; it also sets the merchant's hub.", show: direct },
       { id: "district", label: "Business district", type: "select", required: true, show: direct, options: [{ value: "", label: "Choose" }, ...catalog.districts.map(d => ({ value: d, label: d }))] },
       { id: "zone", label: "Thana / upazila", type: "select", required: true, show: direct, options: v => [{ value: "", label: "Choose" }, ...(catalog.zonesByDistrict[v.district] ?? []).map(z => ({ value: z, label: z }))] },
       {
@@ -462,6 +572,15 @@ export async function inviteMerchant(type: MerchantType = "BANKING_FINANCIAL") {
       },
       { id: "otherArea", label: "Area (not listed)", required: true, maxLength: 80, show: v => direct(v) && v.area === "__other" },
       { id: "street", label: "Business address (pickups are from here)", required: true, full: true, maxLength: 300, show: direct, placeholder: "House, road, area" },
+      {
+        id: "s_login",
+        label: "Sign-in account (login)",
+        type: "section",
+        boxed: true,
+        hint: "The owner signs in to the merchant panel with this mobile number (or email) and the password. These are also the merchant's contact details.",
+      },
+      { id: "phone", label: "Mobile number (sign-in)", type: "phone" },
+      { id: "email", label: "Email (sign-in and notices)", type: "email", placeholder: "name@company.example (optional if a mobile number is given)" },
       ...accountFields(v => (direct(v) ? { kind: "merchant_onboard", name: v.name, businessName: v.businessName } : { kind: "merchant", name: v.name, businessName: v.businessName, merchantType: v.type }), {
         passwordHint: "Makes the sign-in account now (needs the mobile number). Share it yourself; it isn't sent. Empty: they sign in with a code sent to their mobile (onboarded) or create their account from the link.",
       }),

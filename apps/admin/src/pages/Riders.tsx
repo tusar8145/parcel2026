@@ -52,10 +52,24 @@ async function hubsFor(franchise: boolean) {
 
 function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider, franchise = false): FormField[] {
   return [
-    { id: "name", label: "Name", required: true, maxLength: 120, value: r?.name ?? "" },
-    { id: "phone", label: "Mobile", type: "phone", required: true, value: r ? localPhone(r.phone) : "", placeholder: "01XXXXXXXXX" },
-    { id: "email", label: "Email", type: "email", value: r?.email ?? "" },
-    {
+    { id: "s_rider", label: "Rider", type: "section", hint: "Who they are and how they ride." },
+    { id: "name", label: "Name", required: true, full: true, maxLength: 120, value: r?.name ?? "" },
+    { id: "vehicle", label: "Vehicle", type: "select", required: true, value: r?.vehicle ?? "MOTORBIKE", options: VEHICLES.map(([value, label]) => ({ value, label })) },
+    { id: "zone", label: "Usual zone", maxLength: 80, value: r?.zone ?? "" },
+    { id: "dailyCapacity", label: "Stops a day", type: "number", min: 1, max: 500, value: r?.dailyCapacity ?? "", hint: "Assignment suggestions. Empty: the network default." },
+    { id: "s_hub", label: franchise ? "Franchise hub" : "Hubs", type: "section", hint: franchise ? "The franchise hub they work for." : "Where they pick up, deliver and hand over cash." },
+    // A franchise rider: exactly one franchise hub.
+    franchise
+      ? {
+          id: "hubIds",
+          label: "Franchise hub",
+          type: "select",
+          required: true,
+          value: r?.hubs[0]?.id ?? "",
+          options: [{ value: "", label: "Choose the franchise hub" }, ...hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code})` }))],
+          hint: "A franchise rider works for one franchise hub only (its parcels and its cash).",
+        }
+      : {
       id: "hubIds",
       label: "Hubs",
       type: "checks",
@@ -63,13 +77,12 @@ function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider, franch
       value: r ? r.hubs.map(h => h.id).join(",") : "",
       // Inside Dhaka, Dhaka sub-urban, Outside Dhaka (franchise hubs are left out; one a rider is already on shows last).
       options: groupHubs(hubs).flatMap(g => g.hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code})`, group: g.label }))),
-      hint: franchise
-        ? "A franchise rider works only for its franchise hub (its parcels and its cash)."
-        : "Several hubs: the rider app works at the nearest one (cash is handed over there); parcels of any of them can be assigned to the rider.",
+      hint: "Several hubs: the rider app works at the nearest one (cash is handed over there); parcels of any of them can be assigned to the rider.",
     },
-    { id: "vehicle", label: "Vehicle", type: "select", required: true, value: r?.vehicle ?? "MOTORBIKE", options: VEHICLES.map(([value, label]) => ({ value, label })) },
-    { id: "zone", label: "Usual zone", maxLength: 80, value: r?.zone ?? "" },
-    { id: "dailyCapacity", label: "Stops a day", type: "number", min: 1, max: 500, value: r?.dailyCapacity ?? "", hint: "Assignment suggestions. Empty: the network default." },
+    // Sign-in: the rider app's login (the password and the sign-in message follow when adding).
+    { id: "s_login", label: "Sign-in account (login)", type: "section", boxed: true, hint: "They sign in to the rider app with this mobile number (or email)." },
+    { id: "phone", label: "Mobile number (sign-in)", type: "phone", required: true, value: r ? localPhone(r.phone) : "", placeholder: "01XXXXXXXXX" },
+    { id: "email", label: "Email (sign-in)", type: "email", value: r?.email ?? "" },
   ];
 }
 

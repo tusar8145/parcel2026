@@ -13,7 +13,8 @@ import { riderPasswordSchema } from "../network/network.schemas";
 import {
   createFranchiseSchema,
   franchiseAccountSchema,
-  replaceFranchiseOwnerSchema,
+  addFranchiseUserSchema,
+  moveFranchiseUserSchema,
   franchiseAssignScanSchema,
   franchiseAssignSchema,
   franchiseDirectDeliverySchema,
@@ -288,11 +289,18 @@ export class FranchiseAdminController {
   }
 
   @RequirePermissions("franchise:manage")
-  @Post(":id/owner")
+  @Patch("users/:userId")
+  @ApiZodBody(moveFranchiseUserSchema)
+  moveUser(@CurrentActor() actor: Actor, @Param("userId", ParseUUIDPipe) userId: string, @ZBody(moveFranchiseUserSchema) body: z.infer<typeof moveFranchiseUserSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.admin.moveUser(actor, userId, body, meta);
+  }
+
+  @RequirePermissions("franchise:manage")
+  @Post(":id/users")
   @HttpCode(200)
-  @ApiZodBody(replaceFranchiseOwnerSchema)
-  replaceOwner(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(replaceFranchiseOwnerSchema) body: z.infer<typeof replaceFranchiseOwnerSchema>, @ReqMeta() meta: RequestMeta) {
-    return this.admin.replaceOwner(actor, id, body, meta);
+  @ApiZodBody(addFranchiseUserSchema)
+  addUser(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(addFranchiseUserSchema) body: z.infer<typeof addFranchiseUserSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.admin.addUser(actor, id, body, meta);
   }
 
   @RequirePermissions("franchise:manage")

@@ -99,7 +99,7 @@ export class LiveMapService {
           email: u.email,
           roles,
           hubIds: [...new Set(u.roles.flatMap(r => (r.hubId ? [r.hubId] : [])))],
-          franchiseId: franchises.find(f => f.ownerId === u.id)?.id ?? null,
+          franchiseId: franchises.find(f => u.roles.some(r => r.role === "FRANCHISE" && r.hubId === f.hubId))?.id ?? null,
           location: u.staffLocation,
           online: !!u.staffLocation && now - u.staffLocation.at.getTime() < STAFF_ONLINE_MS,
           lastActiveAt: latest(u.staffLocation?.at, u.lastLoginAt),

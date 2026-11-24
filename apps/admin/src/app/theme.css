@@ -44,3 +44,13 @@ html.df-skin {
 /* The version and "What's new" at the menu's foot. */
 .df-skin .admin-sidebar .sidebar-foot { border-top-color: var(--side-line); background: rgb(var(--skin-deep) / 26%); color: #fff; }
 .df-skin .admin-sidebar .sidebar-foot .link-button { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Hubs & zones: a small card per Hub Manager or Franchise user, with Manage. */
+.hub-people { display: grid; gap: 6px; min-width: 220px; }
+.hub-person { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.hub-person strong { color: var(--ink); font-weight: 600; }
+.hub-person small { display: block; color: var(--muted); font-size: 12px; }
+
+/* Merchant › Manage: the owner's sign-in account. */
+.login-card { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 5%, var(--surface)); }
+.login-card + .login-card { margin-top: 8px; }

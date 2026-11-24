@@ -3,7 +3,7 @@ import path from "node:path";
 import PwaInstall from "./PwaInstall";
 import BrandingRuntime from "./branding/BrandingRuntime";
 
-// Apps with their own markup, and so their own layer; every other panel shares panels.css. The website has none.
+// Apps with their own markup, and so their own layer; every other panel shares panels.css. The website has its own (website/theme.css).
 const OWN_THEME = ["franchise", "application"];
 
 // Hide only pages that still require the legacy scripts to finish booting. A website page the server wrote in
@@ -45,13 +45,14 @@ const MODAL_GUARD = `(function(){
  * blocks in the original .html files. It deliberately skips the CSS bundler, whose
  * minifier rewrites declarations (e.g. `background:transparent` -> `background:0 0`).
  */
-export default function LegacyRootLayout({ app, children }: { app: string; children: React.ReactNode }) {
+/** `classic`: the website in its previous design (website/theme.css, served at /classic); else the new one (theme-v2.css). */
+export default function LegacyRootLayout({ app, children, classic = false }: { app: string; children: React.ReactNode; classic?: boolean }) {
   // Line endings as the browser's HTML parser leaves them (\r\n → \n): a Windows checkout's CRLF file
   // would otherwise differ from the parsed <style> text and React reports a hydration mismatch.
   const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8").replace(/\r\n?/g, "\n");
   const css = read(`src/features/${app}/styles.css`);
-  // The panels' shared look (after the page's own styles, so it wins). The website keeps its own.
-  const theme = app === "website" ? "" : read("src/shared/theme/tokens.css") + read(`src/shared/theme/${OWN_THEME.includes(app) ? app : "panels"}.css`);
+  // The look on top of the page's own styles (so it wins): the website's own theme, else the panels' shared one.
+  const theme = app === "website" ? read(`src/features/website/${classic ? "theme.css" : "theme-v2.css"}`) : read("src/shared/theme/tokens.css") + read(`src/shared/theme/${OWN_THEME.includes(app) ? app : "panels"}.css`);
   return (
     <html lang="en">
       <head>
@@ -66,7 +67,7 @@ export default function LegacyRootLayout({ app, children }: { app: string; child
           <style>{"body{opacity:1!important}"}</style>
         </noscript>
       </head>
-      <body data-app={app}>
+      <body data-app={app} data-site={app === "website" ? (classic ? "classic" : "new") : undefined}>
         {children}
         <PwaInstall />
         {/* White label: the company's name, logo, tab icon and contact details from Super admin › Branding & company. */}

@@ -22,7 +22,8 @@ export const createFranchiseSchema = z
   .object({
   /** An approved franchise application: its applicant becomes the franchise account (signs in as before). */
   applicationId: z.uuid().optional(),
-  name: text(120),
+  /** Ignored: a franchise is named after its hub. */
+  name: text(120).optional(),
   contactName: text(120),
   /** Without an application: the account's phone (an existing user keeps their sign-in). */
   phone: phoneSchema.optional(),
@@ -53,8 +54,8 @@ export const updateFranchiseSchema = z
   .object({ name: text(120).optional(), contactName: text(120).optional(), contactEmail: emailSchema.nullable().optional(), rates: commissionRatesSchema.partial().optional() })
   .refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
 
-/** A new Franchise user for a franchise (the old one is suspended): its name, mobile, email, a password, the sign-in message. */
-export const replaceFranchiseOwnerSchema = z.object({
+/** Another Franchise user for a franchise hub (a hub can have several): name, mobile, email, a password, the sign-in message. */
+export const addFranchiseUserSchema = z.object({
   name: text(120),
   phone: phoneSchema,
   email: emailSchema.optional(),
@@ -162,3 +163,6 @@ export const franchiseReturnAssignSchema = z.object({
 
 export const franchiseHandoverSchema = z.object({ riderId: z.uuid(), collectionIds: z.array(z.uuid()).min(1).max(500), amountReceived: money });
 export const franchiseRemittanceSchema = z.object({ hubId: z.uuid(), note: optionalText(300) });
+
+/** A Franchise user moved to another franchise hub (one hub per user). */
+export const moveFranchiseUserSchema = z.object({ hubId: z.uuid("Choose the franchise hub") });

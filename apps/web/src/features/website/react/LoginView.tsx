@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { df, describe, site, toast, type MfaChallenge, type SessionUser } from "./df";
 import { Field, PhoneInput, TextInput, cooldownFrom, e164, rules, useBusy, useCountdown, useForm } from "./form";
 
@@ -57,27 +58,52 @@ export function useAlreadySignedIn(): SessionUser | null | undefined {
   return state;
 }
 
-/** Shown instead of the form while an already signed-in user is sent on to their panel. */
+const SPIN_CSS = `
+@keyframes df-spin { to { transform: rotate(360deg); } }
+.df-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgb(0 0 0 / 10%); border-top-color: var(--accent, #f5b301); animation: df-spin 0.8s linear infinite; }
+.df-opening { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: rgb(255 255 255 / 96%); backdrop-filter: blur(4px); }
+.df-opening-card { display: grid; justify-items: center; gap: 14px; padding: 28px 32px; text-align: center; color: #12213f; }
+.df-opening-card strong { font-size: 18px; }
+.df-opening-card p { margin: 0; font-size: 14px; color: #5b6478; }
+@media (prefers-reduced-motion: reduce) { .df-spinner { animation-duration: 2.4s; } }
+`;
+
+/**
+ * Login and Sign up: a full-screen loader while the session is checked (nothing of the page shows yet); when someone
+ * is already signed in, the "Opening your workspace" loader until their panel opens (to use another account, sign out first).
+ */
 export function AlreadySignedIn({ user }: { user: SessionUser | null | undefined }) {
-  if (user === undefined) return <div className="route-card route-form" aria-busy="true" style={{ minHeight: 120 }} />;
+  // Checking: the whole page waits behind the loader (no login page first); signed out, the page shows as usual.
+  if (user === undefined)
+    return createPortal(
+      <div className="df-opening" aria-busy="true" role="status" aria-label="Checking your sign-in">
+        <style>{SPIN_CSS}</style>
+        <div className="df-opening-card">
+          <span className="df-spinner" />
+        </div>
+      </div>,
+      document.body,
+    );
   if (!user) return null;
-  return (
-    <div className="route-card route-form" id="alreadySignedIn" role="status">
-      <p style={{ margin: 0 }}>{`You're signed in as ${user.name}. Opening your workspace…`}</p>
-      <p style={{ margin: "10px 0 0", fontSize: 13 }}>
-        {"To use a different account, "}
-        <span
-          role="button"
-          tabIndex={0}
-          style={linkStyle}
-          onClick={() => void df().auth.logout().then(() => location.reload())}
-          onKeyDown={e => (e.key === "Enter" || e.key === " ") && void df().auth.logout().then(() => location.reload())}
-        >
-          {"sign out first"}
-        </span>
-        {"."}
-      </p>
-    </div>
+  const signOut = () => void df().auth.logout().then(() => location.reload());
+  // On the page itself (not inside the card), so it covers the header and footer too.
+  return createPortal(
+    <div className="df-opening" id="alreadySignedIn" role="status" aria-live="polite">
+      <style>{SPIN_CSS}</style>
+      <div className="df-opening-card">
+        <span className="df-spinner" />
+        <strong>Opening your workspace…</strong>
+        <p>{`Signed in as ${user.name}.`}</p>
+        <p style={{ fontSize: 13 }}>
+          {"To use a different account, "}
+          <span role="button" tabIndex={0} style={linkStyle} onClick={signOut} onKeyDown={e => (e.key === "Enter" || e.key === " ") && signOut()}>
+            {"sign out first"}
+          </span>
+          {"."}
+        </p>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

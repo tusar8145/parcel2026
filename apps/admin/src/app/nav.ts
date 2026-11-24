@@ -50,8 +50,7 @@ export const PAGES: PageDef[] = [
   { id: "AI import", label: "AI Product & Address", slug: "ai-import", icon: "sheet" },
   { id: "AI address reading", label: "AI best route", slug: "ai-address-reading", icon: "pin" },
   { id: "Address", label: "Address", slug: "address", icon: "pin" },
-  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map" },
-  { id: "Franchises", label: "Franchise settings", menu: "Franchise", slug: "franchises", icon: "share" },
+  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", legacy: ["franchises", "franchise-hubs"] },
   { id: "Integration settings", label: "Integration settings", menu: "Integration", slug: "integration-settings", icon: "settings", legacy: ["channels-and-limits", "channel-and-limits"] },
   { id: "System guide", label: "System guide", slug: "system-guide", icon: "help" },
 ];
@@ -86,7 +85,6 @@ export const MENU: { label: string; entries: MenuEntry[] }[] = [
         label: "Settings",
         icon: "settings",
         items: [
-          "Franchises",
           "Platform settings",
           "Integration settings",
           "Website settings",

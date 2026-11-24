@@ -194,6 +194,8 @@ export class UsersService {
   }
 
   async addRole(actor: Actor, userId: string, grant: RoleGrantInput, meta: RequestMeta) {
+    // A Franchise user is made with its franchise (POST /franchises, /franchises/:id/users), one franchise hub each.
+    if (grant.role === "FRANCHISE") throw unprocessable("FRANCHISE_ROLE", "Franchise users are made in Admin users › Invite › Franchise");
     this.assertGrantable(actor, grant);
     if (!(await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) throw notFound("User");
     await this.assertScopesExist([grant]);

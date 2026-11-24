@@ -1,47 +1,16 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import WebsitePage from "@/features/website/WebsitePage";
-import WebsiteHomePage from "@/features/website/WebsiteHomePage";
-import { pageMetadata } from "@/features/website/seo";
-import { routeForSegments, WEBSITE_ROUTES } from "@/features/website/routes";
-import { ClosedPage } from "@/features/website/components/ClosedPage";
-import { isClosed } from "@/features/website/SiteSwitches";
-import { siteContent } from "@/features/website/siteContent";
+import { renderWebsite, routeMetadata, routeParams, type RouteProps } from "@/features/website/websiteRoute";
 
-type Props = { params: Promise<{ slug?: string[] }> };
-
-/**
- * Every website URL (/, /request, /track/PP-…, /account/orders …). The server renders the
- * route's title, description, canonical URL and indexing rule; the page scripts show its view.
- */
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug = [] } = await params;
-  const match = routeForSegments(slug);
-  if (!match) return { title: "Delivery Fast — Page not found", robots: { index: false } };
-  const { route, param } = match;
-  if (route.legacy === "tracking" && param)
-    // A tracking result is personal and changes all the time: never indexed.
-    return pageMetadata({
-      path: `track/${encodeURIComponent(param)}`,
-      title: `Delivery Fast — Track ${param.toUpperCase()}`,
-      description: `Delivery status and history for parcel ${param.toUpperCase()}.`,
-      index: false,
-    });
-  if (param) return pageMetadata({ path: `${route.path}/${encodeURIComponent(param)}`, title: route.title, description: route.description, index: false });
-  return pageMetadata(route);
+/** Every website URL, in the new design (the main site). */
+export async function generateMetadata(props: RouteProps): Promise<Metadata> {
+  return routeMetadata(props);
 }
 
-/** Built ahead (home, /login, /pricing …), so they open from the cache; /track/PP-… is drawn on request. */
+/** /services has its own page (app/(website)/services). */
 export function generateStaticParams() {
-  return WEBSITE_ROUTES.map(route => ({ slug: route.path ? route.path.split("/") : [] }));
+  return routeParams().filter(p => p.slug.join("/") !== "services");
 }
 
-export default async function Page({ params }: Props) {
-  const { slug = [] } = await params;
-  const match = routeForSegments(slug);
-  if (!match) notFound();
-  if (slug.length === 0) return <WebsiteHomePage />;
-  // Turned off in Super admin › Website settings: the page says so instead of a form that would be refused.
-  if (isClosed(await siteContent(), match.route.legacy)) return <WebsitePage staticPage={{ name: "closed", content: <ClosedPage route={match.route.legacy} /> }} />;
-  return <WebsitePage panelAssets={match.route.legacy === "login"} />;
+export default async function Page({ params }: RouteProps) {
+  return renderWebsite(params, false);
 }

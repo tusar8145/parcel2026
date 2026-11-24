@@ -1,18 +1,19 @@
 /**
- * Settings › Franchise (bridge-franchise.js + bridge-status-tabs.js): partner-run hubs, each a hub marked Franchise
+ * The franchise options of Hubs & zones (settlement, riders, rates, users) (bridge-franchise.js + bridge-status-tabs.js): partner-run hubs, each a hub marked Franchise
  * (Hubs & zones) with one Franchise user (made here or in Admin users & roles; Replace user suspends the old one). Add a franchise (or create one from an approved franchise application), commission rates (percent of the
  * delivery charge with a minimum, for pickup, delivery and return), suspend / reactivate, and the settlement settings
  * (DEDUCT or BILL, billing period). API: /franchises, /franchises/config, /franchises/applications.
  */
-import { useEffect, useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, describe } from "@panel/lib/api";
+import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@panel/lib/api";
 import { localPhone } from "@panel/lib/format";
-import { confirm, openForm, type FormField } from "@panel/ui/dialogs";
-import { Button, Loading, Metric, PageHeading, Panel, Pill, Tabs } from "@panel/ui/kit";
+import { confirm, openCustom, openForm, type FormField } from "@panel/ui/dialogs";
+import { queryClient } from "@panel/lib/queryClient";
+import { Button, Panel, Pill } from "@panel/ui/kit";
 import { toast, toastError } from "@panel/ui/toast";
-import { useCatalog, type Catalog } from "@/lib/admin";
-import { accountFields, generatePassword, passwordProblem } from "@panel/ui/AccountFields";
+import { DialogFrame, useCatalog, type Catalog } from "@/lib/admin";
+import { accountFields, passwordProblem } from "@panel/ui/AccountFields";
 
 interface Rates {
   pickupPercent: number;
@@ -31,6 +32,8 @@ export interface Franchise {
   contactEmail?: string | null;
   /** The franchise's sign-in account. */
   owner?: { id: string; name: string; phone: string; email: string | null; status: string; lastLoginAt: string | null } | null;
+  /** Every Franchise user of the hub (a hub can have several). */
+  users?: { id: string; name: string; phone: string; email: string | null; status: string; lastLoginAt: string | null }[];
   status: "ACTIVE" | "SUSPENDED";
   riders: number;
   unsettledCommission: number;
@@ -47,196 +50,94 @@ interface Config {
   settlementMode: "DEDUCT" | "BILL";
   billingPeriodDays: number;
 }
-const tk = (n: unknown) => `৳${(Math.round(Number(n || 0) * 100) / 100).toLocaleString("en-US")}`;
-const rateText = (p: number, m: number) => `${p}%${m ? ` · min ${tk(m)}` : ""}`;
-type Tab = "active" | "suspended" | "all";
 
-export default function Franchises() {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["admin", "franchises"],
-    queryFn: async () => {
-      const [franchises, config, applications] = await Promise.all([api<Franchise[]>("/franchises"), api<Config>("/franchises/config"), api<Application[]>("/franchises/applications").catch(() => [])]);
-      return { franchises, config, applications };
-    },
+/** Suspend or reactivate a franchise (Hubs & zones › its row). */
+export async function toggleFranchise(f: Franchise, reload: () => Promise<unknown>) {
+  const suspend = f.status === "ACTIVE";
+  const ok = await confirm({
+    title: suspend ? `Suspend ${f.name}?` : `Reactivate ${f.name}?`,
+    message: suspend ? "The franchise panel closes, its riders are signed out and can't sign in, and the hub takes no new work." : "The franchise and its riders can sign in again and the hub takes work again.",
+    ok: suspend ? "Suspend" : "Reactivate",
+    danger: suspend,
   });
-  const catalog = useCatalog();
-  const [tab, setTab] = useState<Tab>("active");
-  const reload = () => qc.invalidateQueries({ queryKey: ["admin", "franchises"] });
-  if (!q.data) return <>{heading}{q.error ? <div className="callout bad">{describe(q.error)}</div> : <Loading rows={6} />}</>;
-  const { franchises, config: c, applications } = q.data;
-  const shown = franchises.filter(f => (tab === "active" ? f.status === "ACTIVE" : tab === "suspended" ? f.status !== "ACTIVE" : true));
-
-  async function toggleStatus(f: Franchise) {
-    const suspend = f.status === "ACTIVE";
-    const ok = await confirm({
-      title: suspend ? `Suspend ${f.name}?` : `Reactivate ${f.name}?`,
-      message: suspend ? "The franchise panel closes, its riders are signed out and can't sign in, and the hub takes no new work." : "The franchise and its riders can sign in again and the hub takes work again.",
-      ok: suspend ? "Suspend" : "Reactivate",
-      danger: suspend,
-    });
-    if (!ok) return;
-    try {
-      await api(`/franchises/${f.id}/status`, { method: "POST", body: { status: suspend ? "SUSPENDED" : "ACTIVE" } });
-      toast(suspend ? `${f.name} is suspended.` : `${f.name} is active again.`, "good");
-      await reload();
-    } catch (e) {
-      toastError(e);
-    }
+  if (!ok) return;
+  try {
+    await api(`/franchises/${f.id}/status`, { method: "POST", body: { status: suspend ? "SUSPENDED" : "ACTIVE" } });
+    toast(suspend ? `${f.name} is suspended.` : `${f.name} is active again.`, "good");
+    await reload();
+  } catch (e) {
+    toastError(e);
   }
+}
 
+/** Franchise applications approved in Support (Hubs & zones): create their franchise. Nothing when there are none. */
+export function FranchiseApplications({ reload }: { reload: () => Promise<unknown> }) {
+  const catalog = useCatalog();
+  const q = useQuery({ queryKey: ["admin", "franchises", "applications"], queryFn: () => api<Application[]>("/franchises/applications").catch(() => []) });
+  const applications = q.data ?? [];
+  if (!applications.length) return null;
+  const done = () => Promise.all([reload(), q.refetch()]);
   return (
-    <>
-      <PageHeading
-        eyebrow="Settings · Franchise"
-        title="Franchises"
-        subtitle="Partner-run hubs: each is a hub of the network (tagged Franchise) with its own riders and one account. Commission is a percent of the delivery charge, with a minimum."
-        actions={
-          <Button variant="primary" onClick={() => void openCreate(null, catalog.data, reload)}>
-            Add franchise
-          </Button>
-        }
-      />
-      <div className="metrics">
-        <Metric label="Franchises" icon="box" value={String(franchises.length)} foot={`${franchises.filter(f => f.status === "ACTIVE").length} active`} note="partner hubs" />
-        <Metric label="Franchise riders" icon="users" value={String(franchises.reduce((a, f) => a + f.riders, 0))} foot="own riders" note="work only for their hub" />
-        <Metric label="Commission not settled" icon="wallet" value={tk(franchises.reduce((a, f) => a + f.unsettledCommission, 0))} foot={c.settlementMode === "DEDUCT" ? "kept from deposits" : "billed by finance"} note="all franchises" />
-      </div>
-      <Settlement config={c} onSaved={next => qc.setQueryData(["admin", "franchises"], { ...q.data, config: next })} />
-      {applications.length ? (
-        <Panel title="Approved applications" subtitle="Franchise applications approved in Support: create their franchise (the applicant's account becomes the franchise account).">
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Applicant</th>
-                  <th>Location</th>
-                  <th>Territory</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {applications.map(a => (
-                  <tr key={a.id}>
-                    <td>
-                      <span className="strong">{a.applicant?.name || "Applicant"}</span>
-                      <span className="sub">
-                        {a.number} · {a.applicant?.phone || ""}
-                      </span>
-                    </td>
-                    <td>{a.details?.location || "—"}</td>
-                    <td>{a.details?.territory || "—"}</td>
-                    <td>
-                      <Button size="sm" variant="primary" onClick={() => void openCreate(a, catalog.data, reload)}>
-                        Create franchise
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-      ) : null}
-      <div style={{ height: 16 }} />
-      <Panel title="Franchise hubs" subtitle={`${franchises.length} franchise${franchises.length === 1 ? "" : "s"}`}>
-        <div style={{ padding: "12px 16px 10px" }}>
-          <Tabs
-            label="Franchises"
-            value={tab}
-            onChange={setTab}
-            tabs={[
-              { id: "active", label: "Active", count: franchises.filter(f => f.status === "ACTIVE").length },
-              { id: "suspended", label: "Suspended", count: franchises.filter(f => f.status !== "ACTIVE").length },
-              { id: "all", label: "All", count: franchises.length },
-            ]}
-          />
-        </div>
+    <div style={{ marginBottom: 16 }}>
+      <Panel title="Approved franchise applications" subtitle="Approved in Support: create their franchise (the applicant's account becomes the Franchise user).">
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Franchise / hub</th>
-                <th>Contact</th>
-                <th>Commission (pickup)</th>
-                <th className="num">Riders</th>
-                <th className="num">Not settled</th>
-                <th>Status</th>
+                <th>Applicant</th>
+                <th>Location</th>
+                <th>Territory</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {shown.map(f => (
-                <tr key={f.id}>
+              {applications.map(a => (
+                <tr key={a.id}>
                   <td>
-                    <span className="strong">{f.name}</span>
+                    <span className="strong">{a.applicant?.name || "Applicant"}</span>
                     <span className="sub">
-                      {f.code} · {f.hub.name} ({f.hub.code}) · {f.hub.district}
+                      {a.number} · {a.applicant?.phone || ""}
                     </span>
                   </td>
+                  <td>{a.details?.location || "—"}</td>
+                  <td>{a.details?.territory || "—"}</td>
                   <td>
-                    {f.contactName}
-                    <span className="sub">{[localPhone(f.owner?.phone || f.contactPhone), f.owner?.email || f.contactEmail || ""].filter(Boolean).join(" · ")}</span>
-                  </td>
-                  <td>
-                    {rateText(f.rates.pickupPercent, f.rates.pickupMin)}
-                    <span className="sub">{`Delivery ${rateText(f.rates.deliveryPercent, f.rates.deliveryMin)} · Return ${rateText(f.rates.returnPercent, f.rates.returnMin)}`}</span>
-                  </td>
-                  <td className="num">{f.riders}</td>
-                  <td className="num">{tk(f.unsettledCommission)}</td>
-                  <td>
-                    <Pill tone={f.status === "ACTIVE" ? "good" : "bad"}>{f.status === "ACTIVE" ? "Active" : "Suspended"}</Pill>
-                  </td>
-                  <td className="nowrap">
-                    <Button size="sm" onClick={() => void openRiders(f)}>
-                      {`Riders (${f.riders})`}
-                    </Button>
-                    <Button size="sm" onClick={() => void openEdit(f, reload)}>
-                      Rates
-                    </Button>{" "}
-                    <Button size="sm" title="The franchise's sign-in: name, mobile, email, a new password" onClick={() => void openAccount(f, reload)}>
-                      Account
-                    </Button>{" "}
-                    <Button size="sm" title="A new Franchise user for this hub: the current one is suspended" onClick={() => void openReplace(f, reload)}>
-                      Replace user
-                    </Button>{" "}
-                    <Button size="sm" onClick={() => void toggleStatus(f)}>
-                      {f.status === "ACTIVE" ? "Suspend" : "Reactivate"}
+                    <Button size="sm" variant="primary" onClick={() => void openCreate(a, catalog.data, done)}>
+                      Create franchise
                     </Button>
                   </td>
                 </tr>
               ))}
-              {!shown.length ? (
-                <tr>
-                  <td colSpan={7} className="faint" style={{ textAlign: "center" }}>
-                    {franchises.length ? "No franchises here." : "No franchises yet. Add one, or create one from an approved application."}
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>
       </Panel>
-    </>
+    </div>
   );
 }
 
-const heading = <PageHeading eyebrow="Settings · Franchise" title="Franchises" subtitle="Loading…" />;
 
-function Settlement({ config, onSaved }: { config: Config; onSaved: (c: Config) => void }) {
+/** Franchise commission settlement (Hubs & zones › Franchise hubs › Settlement settings). */
+export async function openSettlement() {
+  const config = await api<Config>("/franchises/config").catch(e => {
+    toastError(e);
+    return null;
+  });
+  if (!config) return;
+  await openCustom(close => <Settlement config={config} close={() => close()} />);
+}
+
+function Settlement({ config, close }: { config: Config; close: () => void }) {
   const [mode, setMode] = useState(config.settlementMode);
   const [period, setPeriod] = useState(String(config.billingPeriodDays));
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setMode(config.settlementMode);
-    setPeriod(String(config.billingPeriodDays));
-  }, [config]);
   async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
       const c = await api<Config>("/franchises/config", { method: "PUT", body: { settlementMode: mode, billingPeriodDays: Number(period) || 30 } });
-      onSaved(c);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "franchises"] });
+      close();
       toast(mode === "DEDUCT" ? "Franchises now keep their commission when they deposit." : `Finance now bills franchise commission every ${c.billingPeriodDays} days.`, "good");
     } catch (err) {
       toastError(err);
@@ -244,38 +145,42 @@ function Settlement({ config, onSaved }: { config: Config; onSaved: (c: Config) 
       setBusy(false);
     }
   }
+  const choice = (value: "DEDUCT" | "BILL", title: string, text: string) => (
+    <label className={`radio-card${mode === value ? " on" : ""}`}>
+      <input type="radio" name="frMode" value={value} checked={mode === value} onChange={() => setMode(value)} />
+      <span>
+        <strong>{title}</strong>
+        <small>{text}</small>
+      </span>
+    </label>
+  );
   return (
-    <div style={{ marginBottom: 16 }}>
-      <Panel title="Settlement" subtitle="How franchises get their commission.">
-        <form className="panel-body" onSubmit={e => void save(e)} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "end" }}>
-          <label className="check" style={{ alignItems: "flex-start" }}>
-            <input type="radio" name="frMode" value="DEDUCT" checked={mode === "DEDUCT"} onChange={() => setMode("DEDUCT")} />
-            <span>
-              <b>Deduct when depositing</b>
-              <br />
-              <small className="faint">A franchise keeps its commission from the cash it deposits at a hub.</small>
-            </span>
-          </label>
-          <label className="check" style={{ alignItems: "flex-start" }}>
-            <input type="radio" name="frMode" value="BILL" checked={mode === "BILL"} onChange={() => setMode("BILL")} />
-            <span>
-              <b>Bill and pay</b>
-              <br />
-              <small className="faint">Franchises deposit everything; finance invoices the commission and pays it.</small>
-            </span>
-          </label>
-          <label className="field">
-            <span>Billing period (days)</span>
-            <input id="frPeriod" className="input" type="number" min={1} max={92} value={period} onChange={e => setPeriod(e.target.value)} />
-          </label>
-          <div>
+    <form onSubmit={e => void save(e)}>
+      <DialogFrame
+        title="Franchise settlement"
+        subtitle="How every franchise gets its commission."
+        close={close}
+        foot={
+          <>
+            <Button onClick={close}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={busy}>
               Save settlement
             </Button>
-          </div>
-        </form>
-      </Panel>
-    </div>
+          </>
+        }
+      >
+        <div className="radio-cards">
+          {choice("DEDUCT", "Deduct when depositing", "A franchise keeps its commission from the cash it deposits at a hub.")}
+          {choice("BILL", "Bill and pay", "Franchises deposit everything; finance invoices the commission and pays it.")}
+        </div>
+        {mode === "BILL" ? (
+          <label className="field" style={{ marginTop: 12, maxWidth: 220 }}>
+            <span>Billing period (days)</span>
+            <input id="frPeriod" className="input" type="number" min={1} max={92} value={period} onChange={e => setPeriod(e.target.value)} />
+          </label>
+        ) : null}
+      </DialogFrame>
+    </form>
   );
 }
 
@@ -304,7 +209,6 @@ export async function openCreate(application: Application | null, catalog: Catal
     submit: "Save",
     wide: true,
     fields: [
-      { id: "name", label: "Franchise name", required: true, maxLength: 120, value: application ? `${application.applicant?.name || ""} franchise` : "" },
       { id: "contactName", label: "Contact person", required: true, maxLength: 120, value: application?.applicant?.name || "" },
       ...(application ? [] : [{ id: "phone", label: "Account mobile", type: "phone", required: true, placeholder: "01XXXXXXXXX" } as FormField]),
       { id: "email", label: "Email", type: "email", value: application?.applicant?.email || "" },
@@ -334,7 +238,6 @@ export async function openCreate(application: Application | null, catalog: Catal
         method: "POST",
         body: {
           applicationId: application?.id || undefined,
-          name: v.name.trim(),
           contactName: v.contactName.trim(),
           phone: v.phone || undefined,
           email: v.email?.trim() || undefined,
@@ -355,7 +258,7 @@ export async function openCreate(application: Application | null, catalog: Catal
 }
 
 /** The franchise's riders (they work only for its hub; super admin › Riders lists the company's). */
-async function openRiders(f: Franchise) {
+export async function openRiders(f: Franchise) {
   const riders = await api<{ id: string; code: string; name: string; phone: string; vehicle: string; status: string; active: boolean; openTasks?: number }[]>(`/riders?hubId=${f.hub.id}`).catch(() => []);
   await openForm({
     title: `Riders · ${f.name}`,
@@ -397,79 +300,15 @@ async function openRiders(f: Franchise) {
   });
 }
 
-/** A new Franchise user (POST /franchises/:id/owner): the current one loses the franchise and is suspended. */
-export async function openReplace(f: Franchise, reload: () => Promise<unknown>) {
-  const o = f.owner;
-  await openForm({
-    title: `Replace user · ${f.name}`,
-    description: `${f.hub.name} (${f.code}). ${o ? `${o.name} (${localPhone(o.phone)}) is suspended and signed out` : "The current user is suspended"}; the new user runs the franchise from now on. The hub, its riders, the commission and the money records stay.`,
-    submit: "Replace user",
-    wide: true,
-    fields: [
-      { id: "name", label: "New user's name", required: true, maxLength: 120 },
-      { id: "phone", label: "Mobile", type: "phone", required: true, placeholder: "01XXXXXXXXX", hint: "An existing account with this mobile keeps its own sign-in." },
-      { id: "email", label: "Email", type: "email" },
-      ...accountFields(v => ({ kind: "franchise", name: v.name, franchiseName: f.name, hubId: f.hub.id }), { password: true, passwordHint: "For a new account only. Share it yourself; it isn't sent. Empty: they sign in with a code sent to their mobile." }),
-    ],
-    validate: { password: passwordProblem },
-    confirm: `${o?.name ?? "The current user"} loses the franchise and is suspended.`,
-    onSubmit: async v => {
-      const r = await api<Franchise & { messageSent?: boolean; newAccount?: boolean; passwordSet?: boolean }>(`/franchises/${f.id}/owner`, {
-        method: "POST",
-        body: { name: v.name.trim(), phone: v.phone, email: v.email.trim() || undefined, password: v.password || undefined, sendSms: v.sendSms === "true" },
-      });
-      await reload();
-      const how = r.messageSent ? " The sign-in message was sent." : r.passwordSet ? ` Share the password: they sign in with ${localPhone(v.phone)} and it.` : r.newAccount ? " No message was sent: share the sign-in details yourself." : " This mobile already had an account: it keeps its own sign-in.";
-      return `${v.name.trim()} now runs ${f.name}; the previous user is suspended.${how}`;
-    },
-  });
-}
-
-/** The franchise's sign-in account (PATCH /franchises/:id/account): name, mobile, email, a new password. */
-export async function openAccount(f: Franchise, reload: () => Promise<unknown>) {
-  const o = f.owner;
-  await openForm({
-    title: `Account · ${f.name}`,
-    description: `The sign-in of ${f.hub.name} (${f.code})${o?.lastLoginAt ? "" : ", not signed in yet"}. A new password or mobile number signs them out everywhere.`,
-    submit: "Save",
-    wide: true,
-    fields: [
-      { id: "name", label: "Name", required: true, maxLength: 120, value: o?.name ?? f.contactName },
-      { id: "phone", label: "Mobile", type: "phone", required: true, value: localPhone(o?.phone || f.contactPhone), placeholder: "01XXXXXXXXX" },
-      { id: "email", label: "Email", type: "email", value: o?.email ?? f.contactEmail ?? "" },
-      { id: "password", label: "New password", maxLength: 128, placeholder: "Leave empty to keep the current one", hint: "Share it with them yourself; it isn't sent." },
-      {
-        id: "passwordTools",
-        label: "",
-        type: "static",
-        live: (_v, set) => (
-          <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
-            Generate a password
-          </button>
-        ),
-      },
-    ],
-    validate: { password: passwordProblem },
-    onSubmit: async v => {
-      await api(`/franchises/${f.id}/account`, {
-        method: "PATCH",
-        body: { name: v.name.trim(), phone: v.phone, email: v.email.trim() || null, ...(v.password ? { password: v.password } : {}) },
-      });
-      await reload();
-      return v.password ? `Saved. Share the new password: they sign in with ${localPhone(v.phone)} and it.` : "Account saved.";
-    },
-  });
-}
-
-async function openEdit(f: Franchise, reload: () => Promise<unknown>) {
+export async function openEdit(f: Franchise, reload: () => Promise<unknown>) {
   await openForm({
     title: `Commission · ${f.name}`,
     description: `${f.hub.name} (${f.code}). New rates apply to parcel events from now on.`,
     submit: "Save",
     wide: true,
-    fields: [{ id: "name", label: "Franchise name", required: true, maxLength: 120, value: f.name }, { id: "contactName", label: "Contact person", required: true, maxLength: 120, value: f.contactName }, ...rateFields(f.rates)],
+    fields: [{ id: "contactName", label: "Contact person", required: true, maxLength: 120, value: f.contactName }, ...rateFields(f.rates)],
     onSubmit: async v => {
-      await api(`/franchises/${f.id}`, { method: "PATCH", body: { name: v.name.trim(), contactName: v.contactName.trim(), rates: readRates(v) } });
+      await api(`/franchises/${f.id}`, { method: "PATCH", body: { contactName: v.contactName.trim(), rates: readRates(v) } });
       await reload();
       return "Commission saved.";
     },

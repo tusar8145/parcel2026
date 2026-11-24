@@ -7,6 +7,32 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.61.0 — 2026-11-25
+- Website: a new design, now the main site: navy and yellow, a top bar with contact details, a quick tracking box and log in, a Help menu, Merchant Login and Merchant Dashboard buttons, a hero with an example tracking strip, picture cards for the services, a one-row price estimate, a partner banner, and a navy footer with branches, contact and social links. Every page, form and feature is as before.
+- Website: Log in and Sign up are a two-part card: a navy side with the title and what you get, and a roomier form with larger fields and a full-width button.
+- Website: the rider, franchise and merchant applications get the same style: a navy panel beside the form (what you get and what happens next), clear numbered sections, larger fields and a full-width send button.
+- Website: the Pricing page is easier to read: a navy panel beside the estimate, the options two to a row, and a navy price summary with the total in large yellow figures and the breakdown as small rows.
+- Website: the menu shows where you are: the item you clicked is highlighted in yellow and stays so while you scroll.
+- Website: every menu item has its own page: Services (each service in detail, delivery speeds and coverage), Partner with us (merchant, rider and franchise, and how to start) and Help (tracking, questions and answers, and how to reach us).
+- Fix: being signed in to a panel and then opening the website could sign you out (the website asked twice for the session at the same moment, and the second ask was taken for a stolen token). A repeat within a few seconds is now a harmless race, and the website asks once.
+- Website: someone already signed in who opens Log in or Sign up sees a full-screen “Opening your workspace…” loader and goes straight to their panel. While the sign-in is checked the whole page waits behind a loader; signed out, the login page then shows.
+- Website: the previous design is still available at /classic (it stays until you choose “New website” in its footer).
+- Website: a new look on every page (content unchanged): light headings with a bold word, coral accents and round buttons, coral and soft pink bands, centred service cards with round icons, white cards with soft shadows and a black footer, in the Nunito Sans typeface.
+- Website home: the moving van picture is replaced by a still example of a tracked parcel (its route and each step up to delivery).
+- Admin › Hubs & zones: a search box finds hubs by name or code. The Hub manager / Franchise column shows a card for each Hub Manager and Franchise user, with Manage (the same options as in Admin users & roles).
+- Admin users & roles: a Hub Manager can run several hubs, ticked from a grouped list (as in Add rider) when inviting them and later with Manage › Change hubs. The table shows three hubs, then “See more”.
+- Admin users & roles: Manage › Change franchise hub moves a Franchise user to another franchise hub (each user is on one franchise hub; a hub can have several). The user is signed out and their next sign-in opens the new hub's franchise. Finance Administrator and Merchant Support have no hub.
+- Admin › Hubs & zones › More: Riders, Rates and one Inactive / Active switch (hubs are no longer deleted here; make them inactive) (for a franchise hub it turns the hub and its franchise off or on together; Suspend franchise and Deactivate hub are merged into it).
+- Admin › Hubs & zones: More › Add hub manager (company hubs) and More › Add franchise user (franchise hubs) open the Admin users & roles invite form with the role and that hub already chosen.
+- Admin › Hubs & zones: Franchise settlement (deduct when depositing / bill and pay, billing period) is a small “Settlement settings” window on the Franchise hubs group; the Settings › Franchise settings page is removed (its old address opens Hubs & zones).
+- Admin › riders: Add and Edit rider are in parts (Rider, Hubs, Sign-in account (login)); the sign-in mobile, email and password are together.
+- Admin users & roles › Invite: the form is in parts (Person and role, Hub, Sign-in account (login)); the sign-in mobile and email are labelled as such, and “How the account is finished” is two radio choices (Send an invitation / Set a password now); the email shows “(optional)” only for a Franchise user (staff must give one).
+- Admin: the Sign-in account (login) part of the rider, merchant and administrator forms (and the merchant's Manage window) sits in one standard tinted box, so the login details stand out.
+- Admin users & roles: Active and Suspended tabs (suspended and disabled staff and Franchise users are in Suspended). Hubs & zones shows only the hub's active Hub Managers and Franchise users.
+- Admin users & roles: every Manage is a drop-down menu: View details, Edit name, mobile, email, Change hubs (Hub Manager), New password, Reset two-step verification (when it is on) and Suspend / Reactivate account. Hub Manager cards in Hubs & zones have the same menu.
+- Admin › merchants: the Invite / Onboard form is in parts (Business, Business address, Sign-in account), so the owner's login mobile, email and password are clearly apart.
+- Admin › merchants › Manage: a Sign-in account (login) part shows the owner's sign-in mobile, email and last sign-in, with Change mobile & email (optionally also the merchant's contact) and Set new password.
+
 ## 1.60.0 — 2026-11-24
 - Courier Operations: a new menu look. Orange panel with a landscape, white capital letters and thin line icons; every page, count and fold-out is where it was.
 - Courier Operations: your name and Sign out are now at the right end of the top bar (they were at the bottom of the menu).
@@ -14,9 +40,9 @@ new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 
 - Courier Operations and super admin: the filled buttons no longer blink when the mouse moves onto them.
 - Super admin: the same new design and colours as Courier Operations, menu included. Your name and Sign out are at the right end of the top bar; the version and What's new stay at the foot of the menu.
 - Super admin: a shorter menu. Registrations and Approval center are one item, Registrations (it was the same page); its count shows new requests. Merchant Manage, Rider Manage, Monitoring, Send Message, Operational, Hub and Settings fold out; Settings holds Notification, Integration, Website & Branding and Mobile apps. Every page and old link still opens.
-- Super admin: franchise hubs. Tick "Franchise hub" when adding or editing a hub; a Franchise user (one per hub) is then made in Admin users & roles › Invite › Franchise, where only franchise hubs without a user are offered. Until it has its user, the hub works as a company hub.
-- Super admin: Replace user on a franchise suspends the old Franchise user and gives the franchise to a new one; the hub, its riders, commission and money records stay.
-- Super admin: Rider Manage › Franchise riders lists franchise hubs' riders; super admins can add and edit them too. Franchise commission, status and settlement are under Settings › Franchise (Hub › Franchises moved there).
+- Super admin: franchise hubs. Tick "Franchise hub" when adding or editing a hub; Franchise users are then made in Admin users & roles › Invite › Franchise. Until it has its first user, the hub works as a company hub.
+- Super admin: a franchise is named after its hub and its commission belongs to the hub. A hub can have several Franchise users (Admin users & roles › Invite › Franchise, choose the hub); each can be edited, given a new password, suspended or reactivated there. Replace user is gone.
+- Super admin: Rider Manage › Franchise riders lists franchise hubs' riders; super admins can add and edit them too. A franchise rider belongs to exactly one franchise hub (one hub is chosen, and the server refuses more). Each franchise hub's options (riders, rates, suspend) are in its row in Hub › Hubs & zones, where approved franchise applications also appear; Settings › Franchise holds only the settlement.
 - Super admin › Admin users & roles: Invite has a Franchise type: it opens the franchise form (the franchise, its franchise hub, commission and the Franchise user's sign-in). Franchise accounts are listed there too, with Manage for their sign-in.
 
 ## 1.59.1 — 2026-11-23

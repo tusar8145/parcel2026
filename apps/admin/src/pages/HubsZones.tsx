@@ -12,11 +12,14 @@ import { useSearchParams } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
 import { alertDialog, confirm, openForm , type FormField } from "@panel/ui/dialogs";
-import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
+import { Button, Loading, MoreMenu, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
 import { Pager, usePaged } from "@panel/ui/Pager";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { groupHubs, HUB_GROUPS, hubGroup, phoneText, useCatalog, type Catalog } from "@/lib/admin";
+import { groupHubs, HUB_GROUPS, hubGroup, phoneText, useCatalog, useStaff, type Catalog, type Staff } from "@/lib/admin";
+import { useAuth } from "@panel/lib/auth";
+import { franchiseUserItems, inviteForm, staffItems } from "@/pages/AdminUsers";
+import { FranchiseApplications, openEdit as openRates, openRiders, openSettlement, type Franchise } from "@/pages/Franchises";
 
 interface Hub {
   id: string;
@@ -36,7 +39,7 @@ interface Hub {
   lng?: number | null;
   /** Sign-in people of the hub (Hub Managers); only for those who manage hubs. */
   managers?: Person[];
-  franchise?: { id: string; code: string; name: string; status: string; account?: Person | null } | null;
+  franchise?: { id: string; code: string; name: string; status: string; account?: Person | null; users?: Person[] } | null;
 }
 interface Person {
   id: string;
@@ -131,10 +134,18 @@ type Network = NonNullable<ReturnType<typeof useNetwork>["data"]>;
 
 function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
   const qc = useQueryClient();
-  const reload = () => Promise.all([qc.invalidateQueries({ queryKey: ["admin", "network"] }), qc.invalidateQueries({ queryKey: ["admin", "hubs"] })]);
+  const reload = () => Promise.all([qc.invalidateQueries({ queryKey: ["admin", "network"] }), qc.invalidateQueries({ queryKey: ["admin", "hubs"] }), qc.invalidateQueries({ queryKey: ["admin", "franchises"] })]);
   const central = data.hubs.find(h => h.id === data.central);
+  // Franchise hubs: their franchise's options (riders, rates, the Franchise user, suspend) in their row.
+  const franchises = useQuery({ queryKey: ["admin", "franchises", "list"], queryFn: () => api<Franchise[]>("/franchises") });
+  const franchiseOf = (h: Hub) => franchises.data?.find(f => f.hub.id === h.id);
+  // Search by hub name or code (on this page's list).
+  const [find, setFind] = useState("");
+  const needle = find.trim().toLowerCase();
+  const listed = needle ? data.hubs.filter(h => h.name.toLowerCase().includes(needle) || h.code.toLowerCase().includes(needle)) : data.hubs;
+  const staff = useStaff();
   // Inside Dhaka, Dhaka sub-urban, Outside Dhaka, Franchise hubs; the central hub first in its group.
-  const sorted = groupHubs(data.hubs).flatMap(g => [...g.hubs].sort((a, b) => Number(b.id === data.central) - Number(a.id === data.central)));
+  const sorted = groupHubs(listed).flatMap(g => [...g.hubs].sort((a, b) => Number(b.id === data.central) - Number(a.id === data.central)));
   const { rows, pager } = usePaged(sorted, 25);
   const groupCount = (h: Hub) => sorted.filter(x => hubGroup(x) === hubGroup(h)).length;
 
@@ -182,7 +193,7 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
     const zonesOf = (d: string) => (catalog?.zonesByDistrict?.[d] ?? []).map(z => ({ value: z, label: z }));
     await openForm({
       title: h ? `Edit ${h.name}` : "Add hub",
-      description: h ? `${h.code}${h.type === "FRANCHISE" ? " · franchise hub (its franchise is managed in Settings › Franchise)" : ""}` : "A hub of the network. Tick Franchise hub to make a Franchise user for it later (Admin users & roles).",
+      description: h ? `${h.code}${h.type === "FRANCHISE" ? " · franchise hub (its franchise options are in its row)" : ""}` : "A hub of the network. Tick Franchise hub to make a Franchise user for it later (Admin users & roles).",
       submit: "Save",
       wide: true,
       fields: [
@@ -198,7 +209,7 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
         { id: "lng", label: "Longitude", type: "number", step: "any", min: 88, max: 93, value: h?.lng ?? "" },
         // A franchise hub: marked here; its Franchise user is made in Admin users & roles. Fixed once that user exists.
         ...(h?.franchise
-          ? [{ id: "franchiseNote", label: "", type: "static", full: true, render: <div className="callout">{`Franchise hub of ${h.franchise.name}. It stays a franchise hub while it has a Franchise user (replace or suspend the user in Settings › Franchise).`}</div> } as FormField]
+          ? [{ id: "franchiseNote", label: "", type: "static", full: true, render: <div className="callout">{`Franchise hub of ${h.franchise.name}. It stays a franchise hub while it has a Franchise user (its Franchise users are in Admin users & roles).`}</div> } as FormField]
           : h && h.id === data.central
             ? []
             : [
@@ -253,40 +264,45 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
   async function toggle(h: Hub) {
     const off = h.active;
     const ok = await confirm({
-      title: off ? `Deactivate ${h.name}?` : `Activate ${h.name}?`,
+      title: off ? `Make ${h.name} inactive?` : `Make ${h.name} active?`,
       message: off ? "It takes no new parcels and leaves booking forms. Zones it serves keep it until you change their serving hub; merchants of those zones move to “No hub”." : "It takes parcels again; merchants of the zones it serves come back to it.",
-      ok: off ? "Deactivate" : "Activate",
+      ok: off ? "Make inactive" : "Make active",
       danger: off,
     });
     if (!ok) return;
     try {
       await api(`/hubs/${h.id}`, { method: "PATCH", body: { active: !off } });
-      toast(off ? `${h.name} is deactivated.` : `${h.name} is active again.`, "good");
+      toast(off ? `${h.name} is inactive.` : `${h.name} is active again.`, "good");
       await reload();
     } catch (e) {
       toastError(e);
     }
   }
-  async function remove(h: Hub) {
+  /** A franchise hub on or off: the hub (bookings, lists) and its franchise (panel, riders' sign-in) together. */
+  async function toggleFranchiseHub(h: Hub, f: Franchise) {
+    const off = h.active && f.status === "ACTIVE";
+    const ok = await confirm({
+      title: off ? `Make ${h.name} inactive?` : `Make ${h.name} active?`,
+      message: off
+        ? "The hub takes no new parcels and leaves booking forms; its franchise is suspended: the Franchise users and its riders are signed out and can't sign in."
+        : "The hub takes parcels again and its franchise is active: the Franchise users and its riders can sign in again.",
+      ok: off ? "Make inactive" : "Make active",
+      danger: off,
+    });
+    if (!ok) return;
     try {
-      const usage = await api<{ total: number; items: { label: string; count: number }[] }>(`/hubs/${h.id}/usage`);
-      if (usage.total) {
-        const list = usage.items.filter(i => i.count).map(i => `${i.label}: ${num(i.count)}`).join(" · ");
-        if (!h.active) return void alertDialog({ title: `${h.name} is in use`, message: `${list}. It is deactivated already; existing records keep it.` });
-        if (!(await confirm({ title: `${h.name} is in use`, message: `${list}. Deactivate it instead: it leaves new bookings and lists, existing records keep it.`, ok: "Deactivate", danger: true }))) return;
-        await api(`/hubs/${h.id}`, { method: "PATCH", body: { active: false } });
-        toast(`${h.name} is deactivated.`, "good");
-      } else {
-        if (!(await confirm({ title: `Delete ${h.name}?`, message: "Nothing uses this hub. It is removed for good.", ok: "Delete", danger: true }))) return;
-        await api(`/hubs/${h.id}`, { method: "DELETE" });
-        toast(`${h.name} deleted.`, "good");
-      }
+      if (h.active === off) await api(`/hubs/${h.id}`, { method: "PATCH", body: { active: !off } });
+      if ((f.status === "ACTIVE") === off) await api(`/franchises/${f.id}/status`, { method: "POST", body: { status: off ? "SUSPENDED" : "ACTIVE" } });
+      toast(off ? `${h.name} is inactive.` : `${h.name} is active again.`, "good");
       await reload();
     } catch (e) {
       toastError(e);
+      await reload();
     }
   }
   return (
+    <>
+    <FranchiseApplications reload={reload} />
     <Panel
       title="Hubs"
       subtitle={
@@ -305,6 +321,7 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
       }
       tools={
         <div className="row" style={{ gap: 8 }}>
+          <input className="input" type="search" placeholder="Search hub name or code" aria-label="Search hubs" value={find} onChange={e => setFind(e.target.value)} style={{ width: 230 }} />
           <Button
             title="Hubs without a map location get one from their address (else their zone). Riders and staff on several hubs work at the nearest one."
             onClick={() => void locate(data.hubs.filter(h => h.lat == null || h.lng == null).length)}
@@ -336,7 +353,14 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
                 {i === 0 || hubGroup(rows[i - 1]) !== hubGroup(h) ? (
                   <tr className="group-row">
                     <td colSpan={7}>
-                      {`${HUB_GROUPS.find(([g]) => g === hubGroup(h))?.[1] ?? ""} · ${num(groupCount(h))} hub${groupCount(h) === 1 ? "" : "s"}`}
+                      <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+                        <span>{`${HUB_GROUPS.find(([g]) => g === hubGroup(h))?.[1] ?? ""} · ${num(groupCount(h))} hub${groupCount(h) === 1 ? "" : "s"}`}</span>
+                        {hubGroup(h) === "FRANCHISE" ? (
+                          <Button size="sm" icon="settings" title="How franchises get their commission" onClick={() => void openSettlement()}>
+                            Settlement settings
+                          </Button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ) : null}
@@ -365,29 +389,55 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
                   )}
                 </td>
                 <td>
-                  <HubPeople hub={h} />
+                  <HubPeople
+                    hub={h}
+                    franchise={franchiseOf(h)}
+                    staffOf={id => staff.data?.find(x => x.id === id)}
+                    reload={reload}
+                  />
                 </td>
                 <td className="num">{h.capacity ? num(h.capacity) : "—"}</td>
                 <td>
                   <Pill tone={h.active ? "good" : "bad"}>{h.active ? "Active" : "Inactive"}</Pill>
                 </td>
-                <td className="nowrap">
-                  {h.id !== data.central && h.active && h.type !== "FRANCHISE" ? (
-                    <>
-                      <Button size="sm" onClick={() => void makeCentral(h)}>
-                        Make central hub
-                      </Button>{" "}
-                    </>
-                  ) : null}
-                  <Button size="sm" onClick={() => void edit(h)}>
-                    Edit
-                  </Button>{" "}
-                  <Button size="sm" onClick={() => void toggle(h)}>
-                    {h.active ? "Deactivate" : "Activate"}
-                  </Button>{" "}
-                  <Button size="sm" onClick={() => void remove(h)}>
-                    Delete
-                  </Button>
+                <td>
+                  <div className="row" style={{ gap: 6, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 220 }}>
+                  {(() => {
+                    // Every hub: Edit, and the rest under More (a franchise hub's franchise options too).
+                    const f = franchiseOf(h);
+                    return (
+                      <>
+                      <Button size="sm" onClick={() => void edit(h)}>
+                        Edit
+                      </Button>
+                      <MoreMenu
+                        items={[
+                          // A new person for this hub: the Admin users & roles invite form, role and hub chosen already.
+                          h.active
+                            ? {
+                                label: h.franchise || h.franchiseHub || h.type === "FRANCHISE" ? "Add franchise user" : "Add hub manager",
+                                icon: "plus",
+                                onSelect: () => inviteForm({ role: h.franchise || h.franchiseHub || h.type === "FRANCHISE" ? "Franchise" : "Hub Manager", hubId: h.id }).then(reload),
+                              }
+                            : null,
+                          h.id !== data.central && h.active && h.type !== "FRANCHISE" ? { label: "Make central hub", icon: "check", onSelect: () => makeCentral(h) } : null,
+                          ...(f
+                            ? [
+                                { label: `Riders (${f.riders})`, icon: "users" as const, onSelect: () => openRiders(f) },
+                                { label: "Rates", icon: "wallet" as const, title: "Commission on the delivery charge", onSelect: () => openRates(f, reload) },
+                              ]
+                            : []),
+                          "sep",
+                          // One switch: for a franchise hub it is the hub and its franchise together.
+                          f
+                            ? { label: h.active && f.status === "ACTIVE" ? "Inactive" : "Active", icon: "alert", danger: h.active && f.status === "ACTIVE", onSelect: () => toggleFranchiseHub(h, f) }
+                            : { label: h.active ? "Inactive" : "Active", icon: "alert", danger: h.active, onSelect: () => toggle(h) },
+                        ]}
+                      />
+                      </>
+                    );
+                  })()}
+                  </div>
                 </td>
               </tr>
               </Fragment>
@@ -395,7 +445,7 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
             {!rows.length ? (
               <tr>
                 <td colSpan={7} className="faint" style={{ textAlign: "center" }}>
-                  No hubs yet.
+                  {needle ? "No hub matches." : "No hubs yet."}
                 </td>
               </tr>
             ) : null}
@@ -404,31 +454,50 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
       </div>
       <Pager {...pager} noun="hub" />
     </Panel>
+    </>
   );
 }
 
-/** Who runs the hub: its franchise (and the franchise's account), else its Hub Managers; nothing when nobody signs in for it. */
-function HubPeople({ hub }: { hub: Hub }) {
-  const line = (p: Person) => [p.phone ? phoneText(p.phone) : "", p.email || ""].filter(Boolean).join(" · ");
+/** Who runs the hub: a card per Hub Manager, or per Franchise user of its franchise, each with Manage. */
+function HubPeople({ hub, franchise, staffOf, reload }: { hub: Hub; franchise?: Franchise; staffOf: (id: string) => Staff | undefined; reload: () => Promise<unknown> }) {
+  const { user } = useAuth();
+  const line = (p: { phone?: string | null; email?: string | null }) => [p.phone ? phoneText(p.phone) : "", p.email || ""].filter(Boolean).join(" · ");
+  const card = (key: string, p: { name: string; phone?: string | null; email?: string | null; status?: string }, manage: React.ReactNode) => (
+    <div key={key} className="hub-person">
+      <span>
+        <strong>{p.name}</strong>
+        <small>{line(p)}</small>
+      </span>
+      {manage}
+    </div>
+  );
   if (hub.franchise) {
-    const a = hub.franchise.account;
+    const users = (franchise?.users ?? []).filter(u => u.status === "ACTIVE");
     return (
-      <>
-        <span className="strong">{hub.franchise.name}</span> {hub.franchise.status !== "ACTIVE" ? <Pill tone="bad">Suspended</Pill> : null}
-        {a ? <span className="sub">{[a.name, line(a)].filter(Boolean).join(" · ")}</span> : null}
-      </>
+      <div className="hub-people">
+        <span className="faint" style={{ fontSize: 12 }}>
+          {`Franchise · ${users.length} user${users.length === 1 ? "" : "s"}`} {hub.franchise.status !== "ACTIVE" ? <Pill tone="bad">Suspended</Pill> : null}
+        </span>
+        {franchise
+          ? users.map(u => card(u.id, u, <MoreMenu label="Manage" items={franchiseUserItems(u, franchise.hub, reload)} />))
+          : null}
+      </div>
     );
   }
-  if (!hub.managers?.length) return null;
+  const me = user?.id;
   return (
-    <>
-      {hub.managers.map(p => (
-        <div key={p.id}>
-          {p.name} {p.status === "SUSPENDED" ? <Pill tone="bad">Suspended</Pill> : null}
-          <span className="sub">{line(p)}</span>
-        </div>
-      ))}
-    </>
+    <div className="hub-people">
+      {(hub.managers ?? []).filter(p => !p.status || p.status === "ACTIVE").map(p =>
+        card(
+          p.id,
+          p,
+          (() => {
+            const u = staffOf(p.id);
+            return u ? <MoreMenu label="Manage" items={staffItems(u, me)} /> : null;
+          })(),
+        ),
+      )}
+    </div>
   );
 }
 

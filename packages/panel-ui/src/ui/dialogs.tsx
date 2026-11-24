@@ -13,7 +13,7 @@
  *   openCustom(render) → a dialog with any content (render gets `close`).
  */
 import { Select } from "./Select";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { dialogOpened } from "./dialogSignal";
 import { Icon } from "./Icon";
 import { bdPhoneProblem, normalizeBdPhone } from "@delivery-fast/shared/dist/phone.js";
@@ -25,15 +25,18 @@ export interface FieldOption {
   label: string;
   disabled?: boolean;
   group?: string;
+  /** Radio choices: a line under the label. */
+  hint?: string;
 }
 export interface FormField {
   id: string;
   label: string;
-  type?: "text" | "number" | "date" | "datetime-local" | "month" | "time" | "email" | "phone" | "select" | "textarea" | "static" | "checkbox" | "checks" | "file" | "password";
+  type?: "text" | "number" | "date" | "datetime-local" | "month" | "time" | "email" | "phone" | "select" | "textarea" | "static" | "section" | "checkbox" | "checks" | "radio" | "file" | "password";
   value?: string | number | boolean | null;
   /** Fixed, or worked out from the other values (zones of the chosen district). */
   options?: FieldOption[] | ((values: FormValues) => FieldOption[]);
-  required?: boolean;
+  /** Fixed, or worked out from the other values (required for staff, optional for a Franchise user). */
+  required?: boolean | ((values: FormValues) => boolean);
   placeholder?: string;
   hint?: ReactNode;
   full?: boolean;
@@ -47,6 +50,8 @@ export interface FormField {
   render?: ReactNode;
   /** A static field drawn from the form's current values (a message preview, a "Generate" button that fills a field). */
   live?: (values: FormValues, set: (id: string, value: string) => void) => ReactNode;
+  /** A section drawn as a tinted box around it and the fields after it, up to the next section (the sign-in account). */
+  boxed?: boolean;
   /** Typed text with suggestions (a datalist). */
   suggestions?: string[];
 }
@@ -152,9 +157,19 @@ function DialogHead({ title, description, onClose }: { title: ReactNode; descrip
   );
 }
 
+/** Fields split at their sections; a boxed section keeps its fields together in one box. */
+function blocksOf(fields: FormField[]) {
+  const blocks: { boxed: boolean; fields: FormField[] }[] = [];
+  for (const f of fields) {
+    if (f.type === "section" || !blocks.length) blocks.push({ boxed: f.type === "section" && !!f.boxed, fields: [] });
+    blocks[blocks.length - 1].fields.push(f);
+  }
+  return blocks;
+}
+
 const initialValues = (fields: FormField[]): FormValues => {
   const out: FormValues = {};
-  for (const f of fields) if (f.type !== "static") out[f.id] = f.type === "checkbox" ? (f.value ? "true" : "") : f.value == null ? "" : String(f.value);
+  for (const f of fields) if (f.type !== "static" && f.type !== "section") out[f.id] = f.type === "checkbox" ? (f.value ? "true" : "") : f.value == null ? "" : String(f.value);
   return out;
 };
 
@@ -167,11 +182,12 @@ function FormDialog({ config, done }: { config: FormConfig; done: (v: unknown) =
   const [review, setReview] = useState<[string, ReactNode][] | null>(null);
   const visible = (f: FormField) => !f.show || f.show(values);
 
+  const isRequired = (f: FormField, v = values) => (typeof f.required === "function" ? f.required(v) : !!f.required);
   const check = (f: FormField, v = values): string => {
-    if (!visible(f) || f.type === "static") return "";
+    if (!visible(f) || f.type === "static" || f.type === "section") return "";
     const value = (v[f.id] ?? "").trim();
-    if (f.type === "file") return f.required && !files[f.id] ? "Choose a file" : "";
-    if (f.required && !value) return f.type === "select" ? "Choose one" : f.type === "checks" ? "Choose at least one" : "This field is required";
+    if (f.type === "file") return isRequired(f, v) && !files[f.id] ? "Choose a file" : "";
+    if (isRequired(f, v) && !value) return f.type === "select" ? "Choose one" : f.type === "checks" ? "Choose at least one" : "This field is required";
     if (f.type === "phone" && value) return bdPhoneProblem(value) ?? "";
     return config.validate?.[f.id]?.(value, v) || "";
   };
@@ -183,7 +199,7 @@ function FormDialog({ config, done }: { config: FormConfig; done: (v: unknown) =
   const output = (): FormValues => {
     const out: FormValues = {};
     for (const f of config.fields) {
-      if (f.type === "static") continue;
+      if (f.type === "static" || f.type === "section") continue;
       const v = (values[f.id] ?? "").trim();
       out[f.id] = f.type === "phone" && v ? normalizeBdPhone(v) : v;
     }
@@ -236,9 +252,18 @@ function FormDialog({ config, done }: { config: FormConfig; done: (v: unknown) =
           </dl>
         ) : (
           <div className="form-grid">
-            {config.fields.filter(visible).map(f => (
-              <Field key={f.id} field={typeof f.options === "function" ? { ...f, options: f.options(values) } : f.live ? { ...f, render: f.live(values, set) } : f} value={values[f.id] ?? ""} error={errors[f.id]} onChange={v => set(f.id, v)} onFile={file => setFiles(x => ({ ...x, [f.id]: file }))} onBlur={() => setErrors(e => ({ ...e, [f.id]: check(f) }))} />
-            ))}
+            {blocksOf(config.fields.filter(visible)).map((b, i) => {
+              const fields = b.fields.map(f => (
+                <Field key={f.id} field={{ ...(typeof f.options === "function" ? { ...f, options: f.options(values) } : f.live ? { ...f, render: f.live(values, set) } : f), required: isRequired(f) }} value={values[f.id] ?? ""} error={errors[f.id]} onChange={v => set(f.id, v)} onFile={file => setFiles(x => ({ ...x, [f.id]: file }))} onBlur={() => setErrors(e => ({ ...e, [f.id]: check(f) }))} />
+              ));
+              return b.boxed ? (
+                <div key={i} className="form-box full">
+                  <div className="form-grid">{fields}</div>
+                </div>
+              ) : (
+                <Fragment key={i}>{fields}</Fragment>
+              );
+            })}
           </div>
         )}
         {formError ? (
@@ -261,8 +286,16 @@ function FormDialog({ config, done }: { config: FormConfig; done: (v: unknown) =
 
 function Field({ field: f, value, error, onChange, onFile, onBlur }: { field: FormField; value: string; error?: string; onChange: (v: string) => void; onFile: (f: File | null) => void; onBlur: () => void }) {
   const id = `of_${f.id}`;
-  const full = f.full || f.type === "textarea" || f.type === "static" || f.type === "checks";
-  const label = `${f.label}${f.required || f.type === "static" || f.type === "checkbox" ? "" : " (optional)"}`;
+  // A heading that splits a long form into parts (Business, Address, Sign-in account).
+  if (f.type === "section")
+    return (
+      <div className="form-section full">
+        <h3>{f.label}</h3>
+        {f.hint ? <p>{f.hint}</p> : null}
+      </div>
+    );
+  const full = f.full || f.type === "textarea" || f.type === "static" || f.type === "checks" || f.type === "radio";
+  const label = `${f.label}${f.required || f.type === "static" || f.type === "checkbox" || f.type === "radio" ? "" : " (optional)"}`;
   const common = { id, name: f.id, "aria-invalid": error ? true : undefined, "aria-describedby": error ? `${id}_err` : undefined, onBlur };
   let control: ReactNode;
   if (f.type === "static") control = <div style={{ color: "var(--ink-2)" }}>{f.render ?? f.value}</div>;
@@ -274,6 +307,20 @@ function Field({ field: f, value, error, onChange, onFile, onBlur }: { field: Fo
       </Select>
     );
   else if (f.type === "textarea") control = <textarea {...common} className="textarea" rows={f.rows || 3} value={value} placeholder={f.placeholder} maxLength={f.maxLength} onChange={e => onChange(e.target.value)} />;
+  else if (f.type === "radio")
+    control = (
+      <div className="radio-cards" role="radiogroup" aria-label={f.label} id={id}>
+        {((f.options as FieldOption[] | undefined) || []).map(o => (
+          <label key={o.value} className={`radio-card${value === o.value ? " on" : ""}`}>
+            <input type="radio" name={f.id} value={o.value} checked={value === o.value} disabled={o.disabled} onChange={() => onChange(o.value)} />
+            <span>
+              <strong>{o.label}</strong>
+              {o.hint ? <small>{o.hint}</small> : null}
+            </span>
+          </label>
+        ))}
+      </div>
+    );
   else if (f.type === "checks") control = <Checks label={f.label} options={(f.options as FieldOption[] | undefined) || []} value={value} onChange={onChange} />;
   else if (f.type === "checkbox")
     control = (

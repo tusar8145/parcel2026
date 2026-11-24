@@ -23,7 +23,6 @@ const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>>
   Registrations: lazy(() => import("@/pages/Registrations")),
   "E-commerce merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.EcommerceMerchants }))),
   "Banking & Financial merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.BankingMerchants }))),
-  Franchises: lazy(() => import("@/pages/Franchises")),
   "Service plans": lazy(() => import("@/pages/ServicePlans")),
   Riders: lazy(() => import("@/pages/Riders")),
   "Franchise riders": lazy(() => import("@/pages/Riders").then(m => ({ default: m.FranchiseRiders }))),

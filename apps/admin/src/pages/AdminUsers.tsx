@@ -17,12 +17,11 @@ import { localPhone } from "@panel/lib/format";
 import { confirm, openCustom, openForm, prompt, type FormValues } from "@panel/ui/dialogs";
 import { generatePassword, InvitePreview, passwordProblem } from "@panel/ui/AccountFields";
 import { Icon } from "@panel/ui/Icon";
-import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
+import { Button, Loading, PageHeading, Panel, Pill, Tabs, useDebounced, MoreMenu, type MenuItem } from "@panel/ui/kit";
 import { manageMfa } from "@panel/ui/Mfa";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
-import { openAccount, openCreate, openReplace, type Franchise } from "@/pages/Franchises";
-import { type Catalog } from "@/lib/admin";
+import { type Franchise } from "@/pages/Franchises";
 import { DialogFrame, Facts, groupHubs, phoneText, ROLE_LABEL, ROLE_SCOPE, STAFF_ROLES, when, useStaff, type Staff } from "@/lib/admin";
 import { startSupportAccess } from "@/lib/support";
 
@@ -46,7 +45,7 @@ const INVITE_ROLE: Record<string, string> = {
   "Finance Administrator": "FINANCE",
   "Merchant Support": "SUPPORT_AGENT",
   "Hub Manager": "HUB_OPERATOR",
-  /** A franchise account: opens Hub › Franchises' Add franchise form (hub, commission, sign-in). */
+  /** A Franchise user of a franchise hub (a hub can have several; the first one makes the hub's franchise). */
   Franchise: "FRANCHISE",
 };
 const pendingNote = (result?: { status?: string } | null) =>
@@ -155,10 +154,13 @@ function Administrators() {
   const staff = useStaff();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  // Active (and invited) people, or the suspended / disabled ones in their own tab.
+  const [tab, setTab] = useState<"active" | "suspended">("active");
+  const inTab = (status: string) => (tab === "active" ? status === "ACTIVE" : status !== "ACTIVE");
   const list = staff.data ?? [];
-  // Franchise accounts: listed here too (their own group), changed with the franchise's Account dialog.
+  // Franchise users: listed here too (their own group), one row each (a hub can have several).
   const franchisesQ = useQuery({ queryKey: ["admin", "franchises", "accounts"], queryFn: () => api<Franchise[]>("/franchises"), staleTime: 20_000 });
-  const franchises = (franchisesQ.data ?? []).filter(f => f.owner);
+  const franchises = (franchisesQ.data ?? []).flatMap(f => (f.users ?? []).map(u => ({ f, u })));
   const active = list.filter(u => u.status === "ACTIVE");
   const supers = active.filter(u => u.roles.some(r => r.role === "SUPER_ADMIN"));
   const on = (l: Staff[]) => l.filter(u => u.mfa?.enabled).length;
@@ -166,13 +168,14 @@ function Administrators() {
   const staffRoles = (u: Staff) => u.roles.filter(r => (STAFF_ROLES as readonly string[]).includes(r.role)).sort((a, b) => STAFF_ROLES.indexOf(a.role as never) - STAFF_ROLES.indexOf(b.role as never));
   const rows = list.filter(
     u =>
+      inTab(u.status) &&
       (!roleFilter || u.roles.some(r => r.role === roleFilter)) &&
       (!q || [u.name, u.email, u.phone, ...u.roles.map(r => ROLE_LABEL[r.role]), ...u.roles.map(r => r.hub?.name)].some(v => String(v ?? "").toLowerCase().includes(q))),
   );
   // Grouped by role (STAFF_ROLES order). Someone with several roles shows under the first, or under the filtered one.
   const groupOf = (u: Staff) => roleFilter || staffRoles(u)[0]?.role || "";
   const groups = roleFilter === "FRANCHISE" ? [] : [...STAFF_ROLES, ""].map(role => ({ role, users: rows.filter(u => groupOf(u) === role).sort((a, b) => a.name.localeCompare(b.name)) })).filter(g => g.users.length);
-  const franchiseRows = !roleFilter || roleFilter === "FRANCHISE" ? franchises.filter(f => !q || [f.name, f.code, f.hub.name, f.owner?.name, f.owner?.phone, f.owner?.email, "franchise"].some(v => String(v ?? "").toLowerCase().includes(q))).sort((a, b) => a.hub.name.localeCompare(b.hub.name)) : [];
+  const franchiseRows = !roleFilter || roleFilter === "FRANCHISE" ? franchises.filter(({ f, u }) => inTab(u.status) && (!q || [f.code, f.hub.name, u.name, u.phone, u.email, "franchise"].some(v => String(v ?? "").toLowerCase().includes(q)))).sort((a, b) => a.f.hub.name.localeCompare(b.f.hub.name) || a.u.name.localeCompare(b.u.name)) : [];
   const reloadFranchises = () => queryClient.invalidateQueries({ queryKey: ["admin", "franchises"] });
   const count = (role: string) => active.filter(u => u.roles.some(r => r.role === role)).length;
   const mine = list.find(u => u.id === user?.id)?.mfa?.enabled;
@@ -190,7 +193,7 @@ function Administrators() {
       </div>
       <Panel
         title="Platform administrator directory"
-        subtitle={`${list.length} administrators · ${on(list)} with two-step verification${franchises.length ? ` · ${franchises.length} franchise account${franchises.length === 1 ? "" : "s"}` : ""}`}
+        subtitle={`${list.length} administrators · ${on(list)} with two-step verification${franchises.length ? ` · ${franchises.length} franchise user${franchises.length === 1 ? "" : "s"}` : ""}`}
         tools={
           <>
             <Select className="select sm" aria-label="Role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
@@ -204,6 +207,17 @@ function Administrators() {
           </>
         }
       >
+        <div style={{ padding: "12px 16px 10px" }}>
+          <Tabs
+            label="Accounts"
+            value={tab}
+            onChange={v => setTab(v as "active" | "suspended")}
+            tabs={[
+              { id: "active", label: "Active", count: list.filter(u => u.status === "ACTIVE").length + franchises.filter(x => x.u.status === "ACTIVE").length },
+              { id: "suspended", label: "Suspended", count: list.filter(u => u.status !== "ACTIVE").length + franchises.filter(x => x.u.status !== "ACTIVE").length },
+            ]}
+          />
+        </div>
         {staff.isLoading ? (
           <Loading rows={5} />
         ) : (
@@ -223,7 +237,7 @@ function Administrators() {
                 {!groups.length && !franchiseRows.length ? (
                   <tr>
                     <td colSpan={6} className="faint" style={{ textAlign: "center" }}>
-                      No administrators match.
+                      {tab === "suspended" ? "No suspended accounts." : "No administrators match."}
                     </td>
                   </tr>
                 ) : null}
@@ -242,22 +256,17 @@ function Administrators() {
                         <span className="strong">{u.name}</span>
                         <span className="sub">{u.email || phoneText(u.phone)}</span>
                       </td>
-                      <td>{roles.map(r => ROLE_LABEL[r.role]).join(" · ")}</td>
-                      <td>{[...new Set(roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role])))].join(" · ")}</td>
+                      <td>{[...new Set(roles.map(r => ROLE_LABEL[r.role]))].join(" · ")}</td>
+                      <td>
+                        <HubNames names={[...new Set(roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role])))]} />
+                      </td>
                       <td>
                         <Pill tone={status === "Active" ? "good" : status === "Invited" ? "warn" : "bad"}>{status}</Pill>
                         <span className="sub">{u.mfa?.enabled ? "Two-step on" : u.mfa?.required ? "Two-step: set up at next sign-in" : "Two-step off"}</span>
                       </td>
                       <td>{u.lastLoginAt ? when(u.lastLoginAt) : "Not signed in yet"}</td>
                       <td className="nowrap">
-                        <Button size="sm" onClick={() => void manageStaff(u, user?.id)}>
-                          Manage
-                        </Button>{" "}
-                        {u.mfa?.enabled && u.id !== user?.id ? (
-                          <Button size="sm" title="Lost device: turn off two-step verification" onClick={() => void resetMfa(u)}>
-                            Reset 2FA
-                          </Button>
-                        ) : null}
+                        <MoreMenu label="Manage" items={staffItems(u, user?.id)} />
                       </td>
                     </tr>
                   );
@@ -265,34 +274,31 @@ function Administrators() {
                 ])}
                 {franchiseRows.length ? (
                   <tr className="group-row">
-                    <td colSpan={6}>{`Franchise · ${franchiseRows.length} ${franchiseRows.length === 1 ? "account" : "accounts"}`}</td>
+                    <td colSpan={6}>{`Franchise · ${franchiseRows.length} ${franchiseRows.length === 1 ? "user" : "users"}`}</td>
                   </tr>
                 ) : null}
-                {franchiseRows.map(f => {
-                  const o = f.owner!;
-                  const status = f.status !== "ACTIVE" || o.status !== "ACTIVE" ? "Suspended" : o.lastLoginAt ? "Active" : "Invited";
+                {franchiseRows.map(({ f, u }) => {
+                  const status = u.status !== "ACTIVE" ? "Suspended" : f.status !== "ACTIVE" ? "Franchise suspended" : u.lastLoginAt ? "Active" : "Invited";
                   return (
-                    <tr key={f.id}>
+                    <tr key={u.id}>
                       <td>
-                        <span className="strong">{o.name}</span>
-                        <span className="sub">{o.email || phoneText(o.phone)}</span>
+                        <span className="strong">{u.name}</span>
+                        <span className="sub">{u.email || phoneText(u.phone)}</span>
                       </td>
                       <td>
                         Franchise
-                        <span className="sub">{`${f.name} · ${f.code}`}</span>
+                        <span className="sub">{f.code}</span>
                       </td>
                       <td>{f.hub.name}</td>
                       <td>
                         <Pill tone={status === "Active" ? "good" : status === "Invited" ? "warn" : "bad"}>{status}</Pill>
                       </td>
-                      <td>{o.lastLoginAt ? when(o.lastLoginAt) : "Not signed in yet"}</td>
+                      <td>{u.lastLoginAt ? when(u.lastLoginAt) : "Not signed in yet"}</td>
                       <td className="nowrap">
-                        <Button size="sm" title="The franchise's sign-in: name, mobile, email, a new password (commission: Settings › Franchise)" onClick={() => void openAccount(f, reloadFranchises)}>
-                          Manage
-                        </Button>{" "}
-                        <Button size="sm" title="A new Franchise user for this hub: the current one is suspended" onClick={() => void openReplace(f, reloadFranchises)}>
-                          Replace user
-                        </Button>
+                        <MoreMenu
+                          label="Manage"
+                          items={franchiseUserItems(u, f.hub, reloadFranchises)}
+                        />
                       </td>
                     </tr>
                   );
@@ -339,26 +345,50 @@ async function resetMfa(u: Staff) {
   }
 }
 
-const manageStaff = (u: Staff, myId?: string) => openCustom(close => <StaffDialog u={u} self={u.id === myId} close={() => close()} />);
+/** Suspend or reactivate a staff account (signed out everywhere when suspended). */
+async function setStaffStatus(u: Staff, next: "ACTIVE" | "SUSPENDED") {
+  if (next === "SUSPENDED" && !(await confirm({ title: `Suspend ${u.name}?`, message: "They are signed out everywhere and can't sign in until you reactivate the account.", ok: "Suspend", danger: true }))) return false;
+  try {
+    await api(`/users/${u.id}`, { method: "PATCH", body: { status: next } });
+    await staffChanged();
+    toast(next === "SUSPENDED" ? `${u.name} is suspended and signed out.` : `${u.name} can sign in again.`, "good");
+    return true;
+  } catch (e) {
+    toastError(e);
+    return false;
+  }
+}
+
+/** A staff member's Manage menu (Admin users & roles, Hubs & zones). Your own account: details and edit only. */
+export function staffItems(u: Staff, myId?: string): (MenuItem | "sep")[] {
+  const self = u.id === myId;
+  return [
+    { label: "View details", icon: "file", onSelect: () => manageStaff(u, myId) },
+    { label: "Edit name, mobile, email", icon: "edit", onSelect: () => editStaff(u) },
+    ...(self
+      ? []
+      : [
+          ...(u.roles.some(r => r.role === "HUB_OPERATOR") ? [{ label: "Change hubs", icon: "pin" as const, onSelect: () => changeHubs(u) }] : []),
+          { label: "New password", icon: "lock" as const, onSelect: () => setStaffPassword(u) },
+          ...(u.mfa?.enabled ? [{ label: "Reset two-step verification", icon: "phone" as const, title: "Lost device: turn off two-step verification", onSelect: () => resetMfa(u) }] : []),
+          "sep" as const,
+          u.status === "ACTIVE"
+            ? { label: "Suspend account", icon: "alert" as const, danger: true, onSelect: () => setStaffStatus(u, "SUSPENDED") }
+            : { label: "Reactivate account", icon: "check" as const, onSelect: () => setStaffStatus(u, "ACTIVE") },
+        ]),
+  ];
+}
+
+export const manageStaff = (u: Staff, myId?: string) => openCustom(close => <StaffDialog u={u} self={u.id === myId} close={() => close()} />);
 
 function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () => void }) {
-  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const roles = u.roles.filter(r => (STAFF_ROLES as readonly string[]).includes(r.role));
   const status = u.status === "ACTIVE" ? (u.lastLoginAt ? "Active" : "Invited") : u.status === "SUSPENDED" ? "Suspended" : "Disabled";
   async function set(next: "ACTIVE" | "SUSPENDED") {
-    if (next === "SUSPENDED" && !(await confirm({ title: `Suspend ${u.name}?`, message: "They are signed out everywhere and can't sign in until you reactivate the account.", ok: "Suspend", danger: true }))) return;
     setBusy(true);
-    try {
-      await api(`/users/${u.id}`, { method: "PATCH", body: { status: next } });
-      await Promise.all([qc.invalidateQueries({ queryKey: ["admin", "staff"] }), qc.invalidateQueries({ queryKey: ["admin", "audit"] })]);
-      close();
-      toast(next === "SUSPENDED" ? `${u.name} is suspended and signed out.` : `${u.name} can sign in again.`, "good");
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    if (await setStaffStatus(u, next)) close();
+    setBusy(false);
   }
   return (
     <DialogFrame
@@ -367,7 +397,7 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
           {u.name} <Pill tone={status === "Active" ? "good" : status === "Invited" ? "warn" : "bad"}>{status}</Pill>
         </>
       }
-      subtitle={roles.map(r => ROLE_LABEL[r.role]).join(" · ")}
+      subtitle={[...new Set(roles.map(r => ROLE_LABEL[r.role]))].join(" · ")}
       close={close}
       foot={
         self ? (
@@ -381,6 +411,7 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
           <>
             <Button onClick={close}>Close</Button>
             <Button onClick={() => (close(), void editStaff(u))}>Edit details</Button>
+            {u.roles.some(r => r.role === "HUB_OPERATOR") ? <Button onClick={() => (close(), void changeHubs(u))}>Change hubs</Button> : null}
             <Button onClick={() => (close(), void setStaffPassword(u))}>Set new password</Button>
             {u.status === "ACTIVE" ? (
               <Button variant="danger" disabled={busy} onClick={() => void set("SUSPENDED")}>
@@ -399,7 +430,7 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
         rows={[
           ["Mobile", phoneText(u.phone)],
           ["Email", u.email || "—"],
-          ["Scope", [...new Set(roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role])))].join(" · ")],
+          ["Scope", <HubNames key="scope" names={[...new Set(roles.map(r => (r.role === "HUB_OPERATOR" ? r.hub?.name || "Hub" : ROLE_SCOPE[r.role])))]} />],
           ["Last sign-in", u.lastLoginAt ? when(u.lastLoginAt) : "Not signed in yet"],
         ]}
       />
@@ -410,7 +441,8 @@ function StaffDialog({ u, self, close }: { u: Staff; self: boolean; close: () =>
   );
 }
 
-const staffChanged = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "staff"] }), queryClient.invalidateQueries({ queryKey: ["admin", "audit"] }), queryClient.invalidateQueries({ queryKey: ["admin", "network"] })]);
+/** After a change to a person: Admin users & roles and Hubs & zones (its manager and franchise cards) both refresh. */
+const staffChanged = () => Promise.all(["staff", "audit", "network", "hubs", "franchises"].map(k => queryClient.invalidateQueries({ queryKey: ["admin", k] })));
 
 /** Name, sign-in mobile and email (PATCH /users/:id). */
 async function editStaff(u: Staff) {
@@ -458,19 +490,36 @@ async function setStaffPassword(u: Staff) {
   });
 }
 
-async function inviteAdmin() {
-  const picked = await inviteForm();
-  if (picked?.role && INVITE_ROLE[picked.role] === "FRANCHISE") {
-    const catalog = await queryClient.fetchQuery({ queryKey: ["admin", "catalog"], queryFn: () => api<Catalog>("/catalog"), staleTime: 5 * 60_000 }).catch(() => undefined);
-    await openCreate(null, catalog, () => Promise.all(["franchises", "staff", "hubs", "network", "audit"].map(k => queryClient.invalidateQueries({ queryKey: ["admin", k] }))));
+/** Suspend or reactivate one Franchise user (PATCH /users/:id): a suspended user is signed out at once. */
+async function setFranchiseUserStatus(u: { id: string; name: string; status: string }, hub: string, reload: () => Promise<unknown>) {
+  const suspend = u.status === "ACTIVE";
+  const ok = await confirm({
+    title: suspend ? `Suspend ${u.name}?` : `Reactivate ${u.name}?`,
+    message: suspend ? `${u.name} is signed out and can't sign in to ${hub}'s franchise panel. The hub's other Franchise users keep working.` : `${u.name} can sign in to ${hub}'s franchise panel again.`,
+    ok: suspend ? "Suspend" : "Reactivate",
+    danger: suspend,
+  });
+  if (!ok) return;
+  try {
+    await api(`/users/${u.id}`, { method: "PATCH", body: { status: suspend ? "SUSPENDED" : "ACTIVE" } });
+    toast(suspend ? `${u.name} is suspended.` : `${u.name} is active again.`, "good");
+    await reload();
+  } catch (e) {
+    toastError(e);
   }
 }
 
-async function inviteForm() {
+async function inviteAdmin() {
+  await inviteForm();
+}
+
+/** The invite form; from Hubs & zones it opens with the role and that hub already chosen. */
+export async function inviteForm(preset?: { role: "Hub Manager" | "Franchise"; hubId: string }) {
   const hubs = await queryClient.fetchQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<{ id: string; name: string; active: boolean; type?: string; district?: string }[]>("/hubs?includeInactive=true"), staleTime: 60_000 }).catch(() => []);
   const isHub = (v: FormValues) => INVITE_ROLE[v.role] === "HUB_OPERATOR";
   const isFranchise = (v: FormValues) => INVITE_ROLE[v.role] === "FRANCHISE";
-  const staffOnly = (v: FormValues) => !isFranchise(v);
+  // Franchise hubs: marked in Hubs & zones (a franchise is made with its first user) or already running one.
+  const franchiseHubs = (hubs as { id: string; name: string; active: boolean; type?: string; franchiseHub?: boolean; franchise?: { id: string } | null }[]).filter(h => h.active && (h.franchiseHub || h.type === "FRANCHISE"));
   const companyHubs = groupHubs(hubs.filter(h => h.active && h.type !== "FRANCHISE")).flatMap(g => g.hubs.map(h => ({ value: h.id, label: h.name, group: g.label })));
   return openForm({
     title: "Invite platform administrator",
@@ -478,39 +527,43 @@ async function inviteForm() {
     submit: "Create account",
     wide: true,
     fields: [
-      { id: "role", label: "Role", type: "select", required: true, full: true, value: "Operations Administrator", options: Object.keys(INVITE_ROLE).map(v => ({ value: v, label: v })) },
+      { id: "s_role", label: "Person and role", type: "section", hint: "Who they are and what they can do in the platform." },
+      { id: "role", label: "Role", type: "select", required: true, full: true, value: preset?.role ?? "Operations Administrator", options: Object.keys(INVITE_ROLE).map(v => ({ value: v, label: v })) },
+      { id: "name", label: "Name", required: true, full: true, placeholder: "Full name" },
+      { id: "s_hub", label: "Hub", type: "section", hint: "Where they work.", show: v => isHub(v) || isFranchise(v) },
       {
-        id: "franchiseNote",
-        label: "",
-        type: "static",
-        full: true,
+        id: "franchiseHubId",
+        label: "Franchise hub",
+        type: "select",
+        required: true,
+        value: preset?.role === "Franchise" ? preset.hubId : "",
         show: isFranchise,
-        render: <div className="callout">Create account opens the Add franchise form: the franchise, its franchise hub (marked in Hub › Hubs & zones), commission and the Franchise user's sign-in.</div>,
+        hint: "A hub can have several Franchise users; they all run the same franchise (named after the hub). Mark a hub as a franchise hub in Hub › Hubs & zones.",
+        options: [{ value: "", label: franchiseHubs.length ? "Choose the franchise hub" : "No franchise hub yet" }, ...franchiseHubs.map(h => ({ value: h.id, label: `${h.name}${h.franchise ? "" : " · new franchise"}` }))],
       },
-      { id: "name", label: "Administrator name", required: true, full: true, show: staffOnly, placeholder: "Full name" },
-      { id: "email", label: "Work email", type: "email", required: true, show: staffOnly, placeholder: "name@company.example" },
-      { id: "phone", label: "Mobile number", type: "phone", required: true, show: staffOnly, placeholder: "01XXXXXXXXX" },
-      // Hub Manager: the hub they run, grouped (franchise hubs have their own account, so they are left out).
-      { id: "hubId", label: "Hub", type: "select", value: "", show: isHub, options: [{ value: "", label: "Choose the hub" }, ...companyHubs] },
+      // Hub Manager: the hubs they run, grouped, as tick boxes (franchise hubs have Franchise users instead).
+      { id: "hubIds", label: "Hubs", type: "checks", required: true, full: true, value: preset?.role === "Hub Manager" ? preset.hubId : "", show: isHub, options: companyHubs, hint: "Tick every hub this Hub Manager runs." },
+      { id: "s_login", label: "Sign-in account (login)", type: "section", boxed: true, hint: "They sign in with this mobile number (or email)." },
+      { id: "phone", label: "Mobile number (sign-in)", type: "phone", required: true, placeholder: "01XXXXXXXXX" },
+      { id: "email", label: "Email (sign-in)", type: "email", required: v => !isFranchise(v), placeholder: "name@company.example" },
       {
         id: "setup",
         label: "How the account is finished",
-        type: "select",
+        type: "radio",
         required: true,
         full: true,
-        show: staffOnly,
         value: "invite",
         options: [
-          { value: "invite", label: "Send an invitation (SMS, and email): they sign in with a code sent to their mobile" },
-          { value: "password", label: "Set a password now (no invitation is sent): share it yourself" },
+          { value: "invite", label: "Send an invitation", hint: "SMS (and email): they sign in with a code sent to their mobile." },
+          { value: "password", label: "Set a password now", hint: "No invitation is sent: share the password yourself." },
         ],
       },
-      { id: "password", label: "Password", maxLength: 128, show: v => staffOnly(v) && v.setup === "password", placeholder: "At least 10 characters, a letter and a number", hint: "They sign in with this mobile number (or email) and this password." },
+      { id: "password", label: "Password", required: true, maxLength: 128, show: v => v.setup === "password", placeholder: "At least 10 characters, a letter and a number", hint: "They sign in with this mobile number (or email) and this password." },
       {
         id: "passwordTools",
         label: "",
         type: "static",
-        show: v => staffOnly(v) && v.setup === "password",
+        show: v => v.setup === "password",
         live: (_v, set) => (
           <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
             Generate a password
@@ -522,26 +575,41 @@ async function inviteForm() {
         label: "The invitation they get",
         type: "static",
         full: true,
-        show: v => staffOnly(v) && v.setup !== "password",
-        live: v => <InvitePreview input={{ kind: "staff", name: v.name, staffRole: v.role, hubId: isHub(v) && v.hubId ? v.hubId : undefined }} />,
+        show: v => v.setup !== "password",
+        live: v =>
+          isFranchise(v) ? (
+            <InvitePreview input={{ kind: "franchise", name: v.name, franchiseName: franchiseHubs.find(h => h.id === v.franchiseHubId)?.name ?? "", hubId: v.franchiseHubId || undefined }} />
+          ) : (
+            <InvitePreview input={{ kind: "staff", name: v.name, staffRole: v.role, hubId: isHub(v) ? v.hubIds.split(",").filter(Boolean)[0] : undefined }} />
+          ),
       },
     ],
     validate: {
-      hubId: (v, all) => (isHub(all) && !v ? "Choose the hub this Hub Manager runs." : ""),
+      hubIds: (v, all) => (isHub(all) && !v.split(",").filter(Boolean).length ? "Tick at least one hub this Hub Manager runs." : ""),
+      franchiseHubId: (v, all) => (isFranchise(all) && !v ? "Choose the franchise hub." : ""),
       password: (v, all) => (all.setup !== "password" ? "" : !v ? "Enter a password or generate one." : passwordProblem(v)),
     },
     onSubmit: async v => {
       const role = INVITE_ROLE[v.role];
       const withPassword = v.setup === "password";
-      // Franchise: this form closes and the Add franchise form opens (below).
-      if (role === "FRANCHISE") return;
+      if (role === "FRANCHISE") {
+        const hub = franchiseHubs.find(h => h.id === v.franchiseHubId);
+        const account = { phone: v.phone, email: v.email.trim() || undefined, password: withPassword ? v.password : undefined, sendSms: !withPassword };
+        // The hub's first user makes its franchise (commission at 0%: set it in Hubs & zones › More › Rates).
+        const r = hub?.franchise
+          ? await api<{ messageSent?: boolean; newAccount?: boolean }>(`/franchises/${hub.franchise.id}/users`, { method: "POST", body: { name: v.name.trim(), ...account } })
+          : await api<{ messageSent?: boolean; newAccount?: boolean }>("/franchises", { method: "POST", body: { contactName: v.name.trim(), hubId: v.franchiseHubId, ...account } });
+        await Promise.all(["franchises", "staff", "hubs", "network", "audit"].map(k => queryClient.invalidateQueries({ queryKey: ["admin", k] })));
+        const how = r.messageSent ? " The sign-in message was sent." : withPassword && r.newAccount ? ` Share the password: they sign in with ${localPhone(v.phone)} and it.` : r.newAccount ? " No message was sent: share the sign-in details yourself." : " This mobile already had an account: it keeps its own sign-in.";
+        return `${v.name.trim()} is now a Franchise user of ${hub?.name ?? "the hub"}.${how}`;
+      }
       await api("/users", {
         method: "POST",
         body: {
           name: v.name.trim(),
           phone: v.phone,
           email: v.email.trim(),
-          roles: [role === "HUB_OPERATOR" ? { role, hubId: v.hubId } : { role }],
+          roles: role === "HUB_OPERATOR" ? v.hubIds.split(",").filter(Boolean).map(hubId => ({ role, hubId })) : [{ role }],
           ...(withPassword ? { password: v.password, sendSms: false } : { sendSms: true }),
         },
       });
@@ -551,6 +619,75 @@ async function inviteForm() {
         : `Invitation sent to ${v.name.trim()}. They sign in with an SMS code sent to ${localPhone(v.phone)}.`;
     },
   });
+}
+
+/** A person's hubs: the first three, then "See more". */
+export function HubNames({ names }: { names: string[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? names : names.slice(0, 3);
+  return (
+    <>
+      {shown.join(" · ")}
+      {names.length > 3 ? (
+        <button type="button" className="link-button" style={{ display: "block", marginTop: 2, fontSize: 12 }} onClick={() => setAll(a => !a)}>
+          {all ? "See less" : `See more (${names.length - 3})`}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+/** The company hubs, grouped, as tick boxes (a Hub Manager can run several). */
+async function companyHubOptions() {
+  const hubs = await queryClient.fetchQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<{ id: string; name: string; code?: string; active: boolean; type?: string; district?: string }[]>("/hubs?includeInactive=true"), staleTime: 60_000 }).catch(() => []);
+  return groupHubs(hubs.filter(h => h.active && h.type !== "FRANCHISE")).flatMap(g => g.hubs.map(h => ({ value: h.id, label: h.name, group: g.label })));
+}
+
+/** A Hub Manager's hubs: tick the ones they run (roles added and removed to match). */
+async function changeHubs(u: Staff) {
+  const current = u.roles.filter(r => r.role === "HUB_OPERATOR" && r.hub);
+  await openForm({
+    title: `Hubs · ${u.name}`,
+    description: "The hubs this Hub Manager runs: their lists, counts and riders show only these hubs.",
+    submit: "Save hubs",
+    wide: true,
+    fields: [{ id: "hubIds", label: "Hubs", type: "checks", required: true, full: true, value: current.map(r => r.hub!.id).join(","), options: await companyHubOptions() }],
+    onSubmit: async v => {
+      const want = v.hubIds.split(",").filter(Boolean);
+      for (const id of want.filter(id => !current.some(r => r.hub!.id === id))) await api(`/users/${u.id}/roles`, { method: "POST", body: { role: "HUB_OPERATOR", hubId: id } });
+      for (const r of current.filter(r => !want.includes(r.hub!.id))) if (r.id) await api(`/users/${u.id}/roles/${r.id}`, { method: "DELETE" });
+      await staffChanged();
+      return `${u.name}'s hubs saved.`;
+    },
+  });
+}
+
+/** A Franchise user to another franchise hub (one hub per user). */
+async function changeFranchiseHub(u: { id: string; name: string }, hubId: string, reload: () => Promise<unknown>) {
+  const franchises = await api<Franchise[]>("/franchises").catch(() => []);
+  await openForm({
+    title: `Franchise hub · ${u.name}`,
+    description: "A Franchise user works for one franchise hub. They are signed out; the next sign-in opens the new hub's franchise.",
+    submit: "Move",
+    fields: [{ id: "hubId", label: "Franchise hub", type: "select", required: true, full: true, value: hubId, options: franchises.map(f => ({ value: f.hub.id, label: f.hub.name })) }],
+    onSubmit: async v => {
+      if (v.hubId === hubId) return;
+      await api(`/franchises/users/${u.id}`, { method: "PATCH", body: { hubId: v.hubId } });
+      await reload();
+      return `${u.name} now works for ${franchises.find(f => f.hub.id === v.hubId)?.hub.name ?? "the hub"}.`;
+    },
+  });
+}
+
+/** A Franchise user's options (Admin users & roles, Hubs & zones). */
+export function franchiseUserItems(u: { id: string; name: string; phone: string; email: string | null; status: string }, hub: { id: string; name: string }, reload: () => Promise<unknown>): (MenuItem | "sep")[] {
+  return [
+    { label: "Edit name, mobile, email", icon: "edit", onSelect: () => editStaff(u as unknown as Staff).then(reload) },
+    { label: "New password", icon: "lock", onSelect: () => setStaffPassword(u as unknown as Staff).then(reload) },
+    { label: "Change franchise hub", icon: "pin", onSelect: () => changeFranchiseHub(u, hub.id, reload) },
+    "sep",
+    { label: u.status === "ACTIVE" ? "Suspend user" : "Reactivate user", icon: "alert", danger: u.status === "ACTIVE", onSelect: () => setFranchiseUserStatus(u, hub.name, reload) },
+  ];
 }
 
 // ───────────── Approvals ─────────────

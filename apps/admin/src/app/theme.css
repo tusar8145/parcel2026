@@ -1,0 +1,46 @@
+/* Super admin: the panels' design (packages/panel-ui/src/skin.css) in Courier Operations' colours. Text meets WCAG AA. */
+html.df-skin {
+  --bg: #f6f1ec;
+  --surface-2: #fcf9f6;
+  --surface-3: #f5ece4;
+  --line: #ebe1d8;
+  --line-strong: #dccdbf;
+  --ink: #2b2019;
+  --ink-2: #4a3d34;
+  --muted: #6b5b50;
+  --faint: #7a695d;
+  --primary: #b9500f;
+  --primary-soft: #fff0e3;
+  --primary-line: #efc4a0;
+  --radius: 8px;
+  --shadow-sm: 0 2px 6px rgb(96 50 16 / 7%), 0 8px 20px -12px rgb(96 50 16 / 14%);
+  --shadow: 0 2px 5px rgb(96 50 16 / 10%), 0 10px 24px -12px rgb(96 50 16 / 20%);
+  --shadow-lg: 0 18px 48px rgb(70 34 8 / 20%);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+
+  --skin-scene: url("./sidebar-scene.svg");
+  --skin-menu: linear-gradient(180deg, #df8219 0%, #d2691a 36%, #c05619 68%, #a34415 100%);
+  --skin-mid: #cb6220;
+  --skin-deep: 90 30 0;
+  --skin-card: rgb(126 49 14 / 88%);
+  --skin-button: linear-gradient(95deg, #b9500f 0%, #d2691a 100%);
+  --skin-accent: #d2691a;
+  --skin-avatar: linear-gradient(160deg, #df8219, #b34a12);
+  --skin-picked: #fde3cd;
+  --skin-th: #fdf5ee;
+  --skin-th-ink: #8a4a1c;
+  --skin-row: #fffaf5;
+  --skin-glow: #fde2c6;
+  --skin-backdrop: rgb(48 24 8 / 48%);
+}
+
+/* This menu is longer than the Operations one: closer items, long names on two lines, a line between its groups. */
+.df-skin .admin-sidebar .nav-item { min-height: 42px; padding-block: 7px; line-height: 1.25; white-space: normal; }
+.df-skin .admin-sidebar .nav-item svg { width: 24px; height: 24px; }
+.df-skin .admin-sidebar .nav-sub-items .nav-item { min-height: 36px; }
+.df-skin .admin-sidebar .nav-sub-items .nav-item svg { width: 19px; height: 19px; }
+.df-skin .admin-sidebar .nav-group + .nav-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--side-line); }
+.df-skin .admin-sidebar .foot-link svg { width: 16px; height: 16px; }
+/* The version and "What's new" at the menu's foot. */
+.df-skin .admin-sidebar .sidebar-foot { border-top-color: var(--side-line); background: rgb(var(--skin-deep) / 26%); color: #fff; }
+.df-skin .admin-sidebar .sidebar-foot .link-button { color: #fff; text-decoration: underline; text-underline-offset: 2px; }

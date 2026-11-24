@@ -3,7 +3,7 @@
  * open applications (pending review and more information requested), rejected ones, and the ones approved in this
  * session; tabs To review · Rejected · Approved · All with counts, search, Export queue, KYC reviews and Invitations.
  * Review opens the application (approve with a package, reject with a reason, request more information).
- * The Approval center opens this page too.
+ * One menu item with the Approval center (it was the same page); its old address opens this page.
  */
 import { useMemo, useState } from "react";
 import { saveCsv } from "@panel/lib/csv";

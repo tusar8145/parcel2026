@@ -379,7 +379,7 @@ function Rows({ first, catalog, setSession, importConfig, close }: { first: Sess
       <Head title="Scan with phone" subtitle={`${who} · photos taken through the link appear below, read from the label. Check each row, then submit.`} close={close} />
       <div className="dialog-body" style={{ maxHeight: "calc(100vh - 190px)" }}>
         <div className="scan-layout" style={{ display: "grid", gridTemplateColumns: viewed ? "minmax(280px, 380px) 1fr" : "minmax(200px, 240px) 1fr", gap: 18, alignItems: "start" }}>
-          <div style={{ padding: 14, border: "1px solid var(--line)", borderRadius: 10, background: "#fbfcfe", minWidth: 0 }}>
+          <div style={{ padding: 14, border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface-2)", minWidth: 0 }}>
             {viewed ? (
               <PhotoView scan={viewed} url={photos.current.get(viewed.id)} load={() => photo(viewed.id)} onQr={() => setViewing(null)} />
             ) : (
@@ -429,7 +429,7 @@ function Rows({ first, catalog, setSession, importConfig, close }: { first: Sess
                   {scans.map(scan => {
                     const [label, tone] = scan.trackingId ? [`Booked · ${scan.trackingId}`, "good" as const] : STATUS[scan.status] || [scan.status, "info" as const];
                     return (
-                      <tr key={scan.id} style={viewing === scan.id ? { background: "#eef3ff" } : undefined}>
+                      <tr key={scan.id} style={viewing === scan.id ? { background: "var(--primary-soft)" } : undefined}>
                         <td>{scan.number}</td>
                         <td>
                           {scan.hasPhoto ? (

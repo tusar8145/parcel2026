@@ -17,6 +17,8 @@ export const hubSchema = z.object({
   /** Planning location (WGS84), used by maps and route optimisation. */
   lat: z.number().min(20).max(27).nullable().optional(),
   lng: z.number().min(88).max(93).nullable().optional(),
+  /** A franchise hub: a Franchise user can be made for it (Admin users & roles); it works as one once that user exists. */
+  franchiseHub: z.boolean().optional(),
 });
 /** Every field optional; `active` has no default here (a PATCH without it must not reactivate a hub). */
 export const updateHubSchema = hubSchema.extend({ active: z.boolean() }).partial();
@@ -80,6 +82,8 @@ export const listRidersQuerySchema = z.object({
   hubId: z.uuid().optional(),
   /** true: leave out franchise hubs' riders (super admin › Riders; they are under Franchises). */
   company: z.enum(["true", "false"]).transform(v => v === "true").optional(),
+  /** true: only franchise hubs' riders (super admin › Rider Manage › Franchise riders). */
+  franchise: z.enum(["true", "false"]).transform(v => v === "true").optional(),
   status: z.enum(["OFFLINE", "ONLINE", "ON_BREAK"]).optional(),
   active: z.enum(["true", "false"]).transform(v => v === "true").optional(),
   q: z.string().trim().max(80).optional(),

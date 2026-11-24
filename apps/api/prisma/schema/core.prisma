@@ -368,6 +368,8 @@ model Hub {
   pickupMerchants   Merchant[]            @relation("MerchantPickupHub")
   /// COMPANY (run by Delivery Fast) or FRANCHISE (run by a partner: franchise.prisma). Shown with a "Franchise" tag.
   type              HubType               @default(COMPANY)
+  /// Marked a franchise hub (Add / Edit hub): a Franchise user can be made for it. It works as one (type FRANCHISE) once that user exists.
+  franchiseHub      Boolean               @default(false)
   franchise         Franchise?
   pickupParcels     Parcel[]              @relation("ParcelPickupHub")
   franchiseDeposits FranchiseRemittance[] @relation("FranchiseRemittanceHub")

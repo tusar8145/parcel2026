@@ -1,6 +1,6 @@
 /**
- * The frame of every page: the classic super admin menu (groups and the collapsible Notification / Operational /
- * Hub settings), the top bar (merchant search, notifications) and the signed-in person; the Operations
+ * The frame of every page: the super admin menu (main items, sub-menus that fold out, Settings › Operational and
+ * Hub a level deeper), the top bar (merchant search, notifications, the signed-in person); the Operations
  * console is one click away at the bottom of the menu, as in the classic panel.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -8,13 +8,12 @@ import { createPortal } from "react-dom";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@panel/lib/api";
-import { useAuth } from "@panel/lib/auth";
 import { useConnection, useLive } from "@panel/lib/events";
 import { ago } from "@panel/lib/format";
 import { Icon } from "@panel/ui/Icon";
-import { confirm } from "@panel/ui/dialogs";
 import { toastError } from "@panel/ui/toast";
-import { GROUPS, legacyPath, PAGES, type PageDef } from "./nav";
+import { UserMenu } from "@panel/ui/UserMenu";
+import { foldersOf, legacyPath, MENU, pageById, PAGES, pagesIn, type MenuEntry, type PageDef } from "./nav";
 import { useMerchants } from "@/lib/admin";
 import "./sidebar.css";
 import WhatsNew from "./WhatsNew";
@@ -37,36 +36,29 @@ export default function Shell({ children, crumb }: { children: ReactNode; crumb:
   );
 }
 
-const initialsOf = (name?: string | null) =>
-  (name || "?")
-    .split(/\s+/)
-    .map(p => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-/** Applications waiting for review (the classic menu's Registrations / Approval center counts). */
+/** New applications waiting for review (Registrations & Approval center). */
 function useCounts(): Record<string, number | null> {
   const merchants = useMerchants();
   const n = merchants.data ? merchants.data.filter(m => m.status === "PENDING_REVIEW").length : null;
-  return { Registrations: n, Approvals: n };
+  return { Registrations: n };
 }
 
 function Sidebar() {
-  const { user, logout } = useAuth();
   const counts = useCounts();
   const nav = useRef<HTMLElement>(null);
   // The selected item's box: one highlight that slides from the old item to the new one (sidebar.css .nav-indicator).
   const track = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ top: number; left: number; width: number; height: number; shown: boolean; ready: boolean }>({ top: 0, left: 0, width: 0, height: 0, shown: false, ready: false });
   const { pathname } = useLocation();
-  const activeSub = PAGES.find(p => `/${p.slug}` === pathname)?.sub;
+  const activeId = PAGES.find(p => `/${p.slug}` === pathname)?.id;
+  // The sub-menus around the open page start open.
+  const trail = activeId ? foldersOf(activeId).join("|") : "";
   const [open, setOpen] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    if (activeSub) setOpen(o => ({ ...o, [activeSub]: true }));
+    if (trail) setOpen(o => ({ ...o, ...Object.fromEntries(trail.split("|").map(f => [f, true])) }));
     const t = setTimeout(() => nav.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" }), 50);
     return () => clearTimeout(t);
-  }, [pathname, activeSub]);
+  }, [pathname, trail]);
   useLayoutEffect(() => {
     const host = track.current;
     if (!host) return;
@@ -87,17 +79,35 @@ function Sidebar() {
       host.removeEventListener("transitionend", place);
     };
   }, [pathname, open]);
-  const signOut = async () => {
-    if (await confirm({ title: "Sign out?", message: `Sign out ${user?.name ?? "this account"} on this device?`, ok: "Sign out" })) await logout();
-  };
   const item = (p: PageDef) => {
     const n = counts[p.id];
     return (
       <NavLink key={p.id} to={`/${p.slug}`} className="nav-item">
         <Icon name={p.icon} />
-        <span>{p.label}</span>
-        {n != null ? <span className="nav-count">{n}</span> : null}
+        <span>{p.menu ?? p.label}</span>
+        {n ? <span className="nav-count" title={`${n} new request${n === 1 ? "" : "s"}`}>{n}</span> : null}
       </NavLink>
+    );
+  };
+  const entry = (e: MenuEntry): ReactNode => {
+    if (typeof e === "string") {
+      const p = pageById(e);
+      return p ? item(p) : null;
+    }
+    const isOpen = open[e.label] ?? false;
+    const here = pagesIn(e).some(id => id === activeId);
+    return (
+      <div key={e.label} className="nav-sub">
+        <button type="button" className={`nav-item nav-sub-toggle${here ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [e.label]: !isOpen }))}>
+          <Icon name={e.icon} />
+          <span>{e.label}</span>
+          <Icon name="chevronRight" size={14} />
+        </button>
+        {/* Always there, so it can slide open and closed; closed: not reachable by keyboard. */}
+        <div className={`nav-sub-wrap${isOpen ? " open" : ""}`} inert={!isOpen}>
+          <div className="nav-sub-items">{e.items.map(entry)}</div>
+        </div>
+      </div>
     );
   };
   return (
@@ -109,36 +119,12 @@ function Sidebar() {
       <nav className="nav" ref={nav}>
         <div className="nav-track" ref={track}>
         <div className={`nav-indicator${box.shown ? " shown" : ""}${box.ready ? " ready" : ""}`} aria-hidden="true" style={{ transform: `translate(${box.left}px, ${box.top}px)`, width: box.width, height: box.height }} />
-        {GROUPS.map(g => {
-          const pages = PAGES.filter(p => p.group === g.id);
-          const seen = new Set<string>();
-          return (
-            <div className="nav-group" key={g.id}>
-              <div className="nav-label">{g.label}</div>
-              {pages.map(p => {
-                if (!p.sub) return item(p);
-                if (seen.has(p.sub)) return null;
-                seen.add(p.sub);
-                const sub = p.sub;
-                const children = pages.filter(x => x.sub === sub);
-                const isOpen = open[sub] ?? false;
-                return (
-                  <div key={sub} className="nav-sub">
-                    <button type="button" className={`nav-item nav-sub-toggle${children.some(c => `/${c.slug}` === pathname) ? " has-active" : ""}`} aria-expanded={isOpen} onClick={() => setOpen(o => ({ ...o, [sub]: !isOpen }))}>
-                      <Icon name={sub === "Hub settings" ? "pin" : sub === "Notification settings" ? "bell" : sub === "Send Message" ? "message" : "settings"} />
-                      <span>{sub}</span>
-                      <Icon name="chevronRight" size={14} />
-                    </button>
-                    {/* Always there, so it can slide open and closed; closed: not reachable by keyboard. */}
-                    <div className={`nav-sub-wrap${isOpen ? " open" : ""}`} inert={!isOpen}>
-                      <div className="nav-sub-items">{children.map(item)}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+        {MENU.map(g => (
+          <div className="nav-group" key={g.label}>
+            <div className="nav-label">{g.label}</div>
+            {g.entries.map(entry)}
+          </div>
+        ))}
         </div>
         <div className="nav-extras">
           <a className="foot-link" href="/ops/" title="Open operations console" style={{ padding: "6px 8px", fontSize: 11.5, gap: 6 }}>
@@ -149,18 +135,6 @@ function Sidebar() {
       </nav>
       <div className="sidebar-foot">
         <WhatsNew />
-        <div className="profile">
-          <button type="button" className="profile-button" title="Sign out" onClick={() => void signOut()}>
-            <span className="avatar">{initialsOf(user?.name)}</span>
-            <span className="profile-meta">
-              <strong>{user?.name}</strong>
-              <small>Super administrator</small>
-            </span>
-          </button>
-          <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={() => void signOut()}>
-            <Icon name="logout" />
-          </button>
-        </div>
       </div>
     </aside>
   );
@@ -209,6 +183,7 @@ function Topbar({ crumb, onMenu }: { crumb: string; onMenu: () => void }) {
           />
         </div>
         <Bell />
+        <UserMenu lines={["Super administrator"]} />
       </div>
     </header>
   );

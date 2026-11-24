@@ -53,6 +53,15 @@ export const updateFranchiseSchema = z
   .object({ name: text(120).optional(), contactName: text(120).optional(), contactEmail: emailSchema.nullable().optional(), rates: commissionRatesSchema.partial().optional() })
   .refine(v => Object.values(v).some(x => x !== undefined), "Send at least one field to change");
 
+/** A new Franchise user for a franchise (the old one is suspended): its name, mobile, email, a password, the sign-in message. */
+export const replaceFranchiseOwnerSchema = z.object({
+  name: text(120),
+  phone: phoneSchema,
+  email: emailSchema.optional(),
+  password: passwordSchema.optional(),
+  sendSms: z.boolean().default(false),
+});
+
 /** The franchise's sign-in account (super admin): name, mobile, email and a new password (shared by hand). */
 export const franchiseAccountSchema = z
   .object({ name: text(120).optional(), phone: phoneSchema.optional(), email: emailSchema.nullable().optional(), password: passwordSchema.optional() })

@@ -1,5 +1,6 @@
 /**
- * Rider setup › Riders: the company's riders (franchise hubs' riders are under Franchises). Add a rider (hubs, a
+ * Rider Manage › Riders: the company's riders; Rider Manage › Franchise riders: franchise hubs' riders (same page,
+ * franchise mode: only franchise hubs). Add a rider (hubs, a
  * password to share by hand, the sign-in SMS off by default with its text shown first) and edit one: name, mobile,
  * email, the hubs they work for (several: the app works at the nearest), vehicle, zone, daily capacity, active,
  * a new password. API: GET /riders?company=true, POST /riders, PATCH /riders/:id.
@@ -45,11 +46,11 @@ const VEHICLES: [string, string][] = [
 const vehicleLabel = (v: string) => VEHICLES.find(([k]) => k === v)?.[1] ?? v;
 const STATUS: Record<string, [string, "good" | "warn" | "info"]> = { ONLINE: ["Online", "good"], ON_BREAK: ["On break", "warn"], OFFLINE: ["Offline", "info"] };
 
-async function companyHubs() {
-  return (await api<(HubRef & { active?: boolean; district?: string })[]>("/hubs").catch(() => [])).filter(h => h.type !== "FRANCHISE" && h.active !== false);
+async function hubsFor(franchise: boolean) {
+  return (await api<(HubRef & { active?: boolean; district?: string })[]>("/hubs").catch(() => [])).filter(h => (h.type === "FRANCHISE") === franchise && h.active !== false);
 }
 
-function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider): FormField[] {
+function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider, franchise = false): FormField[] {
   return [
     { id: "name", label: "Name", required: true, maxLength: 120, value: r?.name ?? "" },
     { id: "phone", label: "Mobile", type: "phone", required: true, value: r ? localPhone(r.phone) : "", placeholder: "01XXXXXXXXX" },
@@ -62,7 +63,9 @@ function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider): FormF
       value: r ? r.hubs.map(h => h.id).join(",") : "",
       // Inside Dhaka, Dhaka sub-urban, Outside Dhaka (franchise hubs are left out; one a rider is already on shows last).
       options: groupHubs(hubs).flatMap(g => g.hubs.map(h => ({ value: h.id, label: `${h.name} (${h.code})`, group: g.label }))),
-      hint: "Several hubs: the rider app works at the nearest one (cash is handed over there); parcels of any of them can be assigned to the rider.",
+      hint: franchise
+        ? "A franchise rider works only for its franchise hub (its parcels and its cash)."
+        : "Several hubs: the rider app works at the nearest one (cash is handed over there); parcels of any of them can be assigned to the rider.",
     },
     { id: "vehicle", label: "Vehicle", type: "select", required: true, value: r?.vehicle ?? "MOTORBIKE", options: VEHICLES.map(([value, label]) => ({ value, label })) },
     { id: "zone", label: "Usual zone", maxLength: 80, value: r?.zone ?? "" },
@@ -72,10 +75,16 @@ function riderFields(hubs: (HubRef & { district?: string })[], r?: Rider): FormF
 
 const hubIdsOf = (v: FormValues) => v.hubIds.split(",").filter(Boolean);
 
-export default function Riders() {
+export function FranchiseRiders() {
+  return <Riders franchise />;
+}
+
+export default function Riders({ franchise = false }: { franchise?: boolean; tab?: string }) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const list = useQuery({ queryKey: ["admin", "riders", q], queryFn: () => api<Rider[]>(`/riders?company=true${q.trim().length >= 2 ? `&q=${encodeURIComponent(q.trim())}` : ""}`) });
+  const list = useQuery({ queryKey: ["admin", "riders", franchise ? "franchise" : "company", q], queryFn: () => api<Rider[]>(`/riders?${franchise ? "franchise" : "company"}=true${q.trim().length >= 2 ? `&q=${encodeURIComponent(q.trim())}` : ""}`) });
+  const companyHubs = () => hubsFor(franchise);
+  const oneHub = (v: string) => (franchise && v.split(",").filter(Boolean).length > 1 ? "A franchise rider works for one franchise hub." : "");
   const reload = () => qc.invalidateQueries({ queryKey: ["admin", "riders"] });
 
   async function add() {
@@ -86,10 +95,10 @@ export default function Riders() {
       submit: "Add rider",
       wide: true,
       fields: [
-        ...riderFields(hubs),
+        ...riderFields(hubs, undefined, franchise),
         ...accountFields(v => ({ kind: "rider", name: v.name, hubId: hubIdsOf(v)[0] })),
       ],
-      validate: { password: passwordProblem },
+      validate: { password: passwordProblem, hubIds: oneHub },
       onSubmit: async v => {
         {
           const made = await api<Rider & { messageSent: boolean }>("/riders", {
@@ -122,7 +131,7 @@ export default function Riders() {
       submit: "Save",
       wide: true,
       fields: [
-        ...riderFields(hubs, r),
+        ...riderFields(hubs, r, franchise),
         { id: "active", label: "Active (can sign in and take parcels)", type: "checkbox", value: r.active, full: true },
         { id: "password", label: "New password", maxLength: 128, placeholder: "Leave empty to keep the current one", hint: "Share it with the rider yourself; it isn't sent." },
         {
@@ -136,7 +145,7 @@ export default function Riders() {
           ),
         },
       ],
-      validate: { password: passwordProblem },
+      validate: { password: passwordProblem, hubIds: oneHub },
       onSubmit: async v => {
         {
           await api(`/riders/${r.id}`, {
@@ -164,9 +173,9 @@ export default function Riders() {
   return (
     <>
       <PageHeading
-        eyebrow="Rider setup"
-        title="Riders"
-        subtitle="The company's riders. Franchise hubs' riders are under Franchises."
+        eyebrow="Rider Manage"
+        title={franchise ? "Franchise riders" : "Riders"}
+        subtitle={franchise ? "Franchise hubs' riders: each works only for its franchise hub. Franchises also add and edit them in their own panel." : "The company's riders. Franchise hubs' riders are under Franchise riders."}
         actions={
           <Button variant="primary" icon="plus" onClick={() => void add()}>
             Add rider

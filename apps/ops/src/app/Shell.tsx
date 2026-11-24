@@ -13,8 +13,8 @@ import { ago, num } from "@panel/lib/format";
 import { useOps } from "@/lib/ops";
 import { Icon } from "@panel/ui/Icon";
 import { toastError } from "@panel/ui/toast";
-import { confirm } from "@panel/ui/dialogs";
 import { Select } from "@panel/ui/Select";
+import { UserMenu } from "@panel/ui/UserMenu";
 import { PARCEL_PERIODS, type ParcelPeriod } from "@/lib/ops";
 import { allowedViews, financeFirst, GROUP_LABEL, JOURNEY, pathFor, tabBySlug, viewBySlug, VIEWS, type ViewDef } from "./nav";
 import { internalLink } from "./links";
@@ -115,7 +115,7 @@ function useMenuCounts() {
 
 function Sidebar() {
   const ops = useOps();
-  const { user, logout, hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
   const allowed = allowedViews(ops.menu);
   // Open support tickets, once the Support page has loaded them (shared/support.js counted them the same way).
   const qc = useQueryClient();
@@ -172,15 +172,6 @@ function Sidebar() {
   }, [pathname, journeyOpen, subOpen]);
   const groups = (["today", "journey", "queue", "money", "find", "manage"] as const).filter(g => VIEWS.some(v => v.group === g && allowed.has(v.id)));
   if (financeFirst(ops.menu.roles)) groups.sort((a, b) => (a === "money" ? -1 : b === "money" ? 1 : 0));
-  const initials = (user?.name || "?")
-    .split(/\s+/)
-    .map(p => p[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  const signOut = async () => {
-    if (await confirm({ title: "Sign out?", message: `Sign out ${user?.name ?? "this account"} on this device?`, ok: "Sign out" })) await logout();
-  };
   return (
     <aside className="sidebar" aria-label="Main menu">
       <div className="brand">
@@ -302,21 +293,6 @@ function Sidebar() {
           </a>
         </div>
       </nav>
-      <div className="sidebar-foot">
-        <div className="profile">
-          {/* Like the other panels: clicking your name asks to sign out. */}
-          <button type="button" className="profile-button" title="Sign out" onClick={signOut}>
-            <span className="avatar">{initials}</span>
-            <span className="profile-meta">
-              <strong>{user?.name}</strong>
-              <small>{ops.myHubs?.length ? `${ops.roleName} · ${ops.myHubs.map(h => h.name).join(", ")}` : ops.roleName}</small>
-            </span>
-          </button>
-          <button type="button" className="button ghost sm icon" title="Sign out" aria-label="Sign out" onClick={signOut}>
-            <Icon name="logout" />
-          </button>
-        </div>
-      </div>
     </aside>
   );
 }
@@ -347,6 +323,7 @@ function Topbar({ crumb, onMenu }: { crumb: string; onMenu: () => void }) {
         </span>
         <GlobalSearch />
         <Bell />
+        <UserMenu lines={[ops.roleName, ops.myHubs?.map(h => h.name).join(", ") ?? ""]} />
       </div>
     </header>
   );

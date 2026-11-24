@@ -8,9 +8,12 @@ import App from "@/app/App";
 import { arriveFromClassic } from "@/app/links";
 import "@panel/styles.css";
 import "@/app/motion.css";
+import "@panel/skin.css";
+import "@/app/theme.css";
 
 // Smooth opening and closing across Courier Operations (app/motion.css; dialogs fade out before they go).
-document.documentElement.classList.add("df-motion");
+// "df-skin": the panels' design (packages/panel-ui/src/skin.css), in this panel's colours (app/theme.css).
+document.documentElement.classList.add("df-motion", "df-skin");
 
 arriveFromClassic();
 

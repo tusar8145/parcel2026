@@ -7,6 +7,18 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.60.0 — 2026-11-24
+- Courier Operations: a new menu look. Orange panel with a landscape, white capital letters and thin line icons; every page, count and fold-out is where it was.
+- Courier Operations: your name and Sign out are now at the right end of the top bar (they were at the bottom of the menu).
+- Courier Operations: the whole console follows the menu's colours: orange buttons, links, tabs and icons, warm backgrounds, softer cards and tables. Status colours (green, amber, red, blue) and the map colours mean the same as before.
+- Courier Operations and super admin: the filled buttons no longer blink when the mouse moves onto them.
+- Super admin: the same new design and colours as Courier Operations, menu included. Your name and Sign out are at the right end of the top bar; the version and What's new stay at the foot of the menu.
+- Super admin: a shorter menu. Registrations and Approval center are one item, Registrations (it was the same page); its count shows new requests. Merchant Manage, Rider Manage, Monitoring, Send Message, Operational, Hub and Settings fold out; Settings holds Notification, Integration, Website & Branding and Mobile apps. Every page and old link still opens.
+- Super admin: franchise hubs. Tick "Franchise hub" when adding or editing a hub; a Franchise user (one per hub) is then made in Admin users & roles › Invite › Franchise, where only franchise hubs without a user are offered. Until it has its user, the hub works as a company hub.
+- Super admin: Replace user on a franchise suspends the old Franchise user and gives the franchise to a new one; the hub, its riders, commission and money records stay.
+- Super admin: Rider Manage › Franchise riders lists franchise hubs' riders; super admins can add and edit them too. Franchise commission, status and settlement are under Settings › Franchise (Hub › Franchises moved there).
+- Super admin › Admin users & roles: Invite has a Franchise type: it opens the franchise form (the franchise, its franchise hub, commission and the Franchise user's sign-in). Franchise accounts are listed there too, with Manage for their sign-in.
+
 ## 1.59.1 — 2026-11-23
 - Operations app (franchise): Today, Parcels, Riders and Cash refresh by themselves when you open a tab, come back to the app and every minute, so a delivery made by a rider shows without pulling down to refresh.
 - Operations app (franchise): parcels booked as drop-offs at the hub show on Today ("Waiting for drop-off") and in Parcels.

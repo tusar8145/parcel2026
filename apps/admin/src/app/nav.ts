@@ -1,67 +1,113 @@
 /**
- * The super admin menu (the classic panel's names, groups, sub-menus and order) and each page's address:
- * /admin/<slug>, the same slugs as the classic ?page= (so old links translate directly).
+ * The super admin menu (MENU: main items, some folding out into sub-menus) and each page's address: /admin/<slug>,
+ * the same slugs as the classic ?page= (so old links translate directly).
  */
 import type { IconName } from "@panel/ui/Icon";
 
 export interface PageDef {
   id: string;
+  /** The page's full name (top bar). */
   label: string;
+  /** A shorter name in the menu, where its sub-menu already says the rest. */
+  menu?: string;
   slug: string;
   icon: IconName;
-  group: "governance" | "merchants" | "riders" | "monitoring" | "platform";
-  /** A collapsible sub-menu inside Platform control. */
-  sub?: "Notification settings" | "Send Message" | "Operational settings" | "Hub settings";
-  /** Other classic ?page= values that open this page. */
+  /** Other classic ?page= values and old addresses that open this page. */
   legacy?: string[];
 }
 
 export const PAGES: PageDef[] = [
-  { id: "Overview", label: "Platform overview", slug: "overview", icon: "grid", group: "governance", legacy: ["dashboard"] },
-  { id: "Registrations", label: "Registrations", slug: "registrations", icon: "users", group: "governance" },
-  { id: "Approvals", label: "Approval center", slug: "approval-center", icon: "check", group: "governance", legacy: ["approvals"] },
-  { id: "Banking & Financial merchants", label: "Banking & Financial merchants", slug: "banking-and-financial-merchants", icon: "file", group: "merchants", legacy: ["banking-financial-merchants", "document-merchants"] },
-  { id: "E-commerce merchants", label: "E-commerce merchants", slug: "e-commerce-merchants", icon: "box", group: "merchants", legacy: ["ecommerce-merchants"] },
-  { id: "Service plans", label: "Service plans & pricing", slug: "service-plans", icon: "sheet", group: "merchants", legacy: ["service-plans-and-pricing"] },
-  { id: "Riders", label: "Riders", slug: "riders", icon: "truck", group: "riders" },
-  { id: "Rider plans", label: "Rider earning plans", slug: "rider-plans", icon: "truck", group: "riders", legacy: ["rider-earning-plans"] },
-  { id: "Live map", label: "Live map", slug: "live-map", icon: "pin", group: "monitoring" },
-  { id: "Platform activity", label: "Platform activity", slug: "platform-activity", icon: "chart", group: "monitoring" },
-  { id: "Audit log", label: "Audit & security log", slug: "audit-log", icon: "lock", group: "monitoring", legacy: ["audit-and-security-log"] },
-  { id: "Admin users", label: "Admin users & roles", slug: "admin-users", icon: "users", group: "platform", legacy: ["admin-users-and-roles"] },
-  { id: "Platform settings", label: "Global notifications", slug: "global-notifications", icon: "bell", group: "platform", sub: "Notification settings", legacy: ["platform-settings", "parcel-notifications"] },
-  { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "push", group: "platform", sub: "Send Message", legacy: ["push-messages"] },
-  { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "sms", group: "platform", sub: "Send Message" },
-  { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "mail", group: "platform", sub: "Send Message" },
-  { id: "Recent messages", label: "Recent messages", slug: "recent-messages", icon: "message", group: "platform", sub: "Send Message" },
-  { id: "Mobile apps", label: "Mobile apps", slug: "mobile-apps", icon: "phone", group: "platform" },
-  { id: "Website settings", label: "Website & branding", slug: "website-settings", icon: "edit", group: "platform", legacy: ["website-and-branding"] },
-  { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh", group: "platform", sub: "Operational settings" },
-  { id: "Receiver relations", label: "Receiver relations", slug: "receiver-relations", icon: "users", group: "platform", sub: "Operational settings" },
-  { id: "Fail delivery reasons", label: "Fail delivery reasons", slug: "fail-delivery-reasons", icon: "alert", group: "platform", sub: "Operational settings" },
-  { id: "Products", label: "Products", slug: "products", icon: "box", group: "platform", sub: "Operational settings" },
-  { id: "Priorities", label: "Priorities", slug: "priorities", icon: "alert", group: "platform", sub: "Operational settings" },
-  { id: "Delivery types", label: "Delivery types", slug: "delivery-types", icon: "truck", group: "platform", sub: "Operational settings" },
-  { id: "Invoice settings", label: "Invoice settings", slug: "invoice-settings", icon: "file", group: "platform", sub: "Operational settings" },
-  { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", group: "platform", sub: "Operational settings", legacy: ["import-template-settings"] },
-  { id: "Scan usage", label: "AI Scan with phone", slug: "scan-usage", icon: "camera", group: "platform", sub: "Operational settings" },
-  { id: "CN scan", label: "AI CN_Scan", slug: "cn-scan", icon: "camera", group: "platform", sub: "Operational settings" },
-  { id: "AI import", label: "AI Product & Address", slug: "ai-import", icon: "sheet", group: "platform", sub: "Operational settings" },
-  { id: "AI address reading", label: "AI best route", slug: "ai-address-reading", icon: "pin", group: "platform", sub: "Operational settings" },
-  { id: "Address", label: "Address", slug: "address", icon: "pin", group: "platform", sub: "Hub settings" },
-  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map", group: "platform", sub: "Hub settings" },
-  { id: "Franchises", label: "Franchises", slug: "franchises", icon: "share", group: "platform", sub: "Hub settings" },
-  { id: "Integration settings", label: "Integration settings", slug: "integration-settings", icon: "settings", group: "platform", legacy: ["channels-and-limits", "channel-and-limits"] },
-  { id: "System guide", label: "System guide", slug: "system-guide", icon: "help", group: "platform" },
+  { id: "Overview", label: "Platform overview", slug: "overview", icon: "grid", legacy: ["dashboard"] },
+  // Registrations and the Approval center were the same page: one item now; the old addresses still open it.
+  { id: "Registrations", label: "Registrations", slug: "registrations", icon: "users", legacy: ["approval-center", "approvals"] },
+  { id: "Banking & Financial merchants", label: "Banking & Financial merchants", menu: "Banking & Financial", slug: "banking-and-financial-merchants", icon: "file", legacy: ["banking-financial-merchants", "document-merchants"] },
+  { id: "E-commerce merchants", label: "E-commerce merchants", menu: "E-commerce", slug: "e-commerce-merchants", icon: "box", legacy: ["ecommerce-merchants"] },
+  { id: "Service plans", label: "Service plans & pricing", menu: "Service plan", slug: "service-plans", icon: "sheet", legacy: ["service-plans-and-pricing"] },
+  { id: "Riders", label: "Riders", slug: "riders", icon: "truck" },
+  { id: "Franchise riders", label: "Franchise riders", slug: "franchise-riders", icon: "truck" },
+  { id: "Rider plans", label: "Rider earning plans", slug: "rider-plans", icon: "truck", legacy: ["rider-earning-plans"] },
+  { id: "Live map", label: "Live map", slug: "live-map", icon: "pin" },
+  { id: "Platform activity", label: "Platform activity", slug: "platform-activity", icon: "chart" },
+  { id: "Audit log", label: "Audit & security log", slug: "audit-log", icon: "lock", legacy: ["audit-and-security-log"] },
+  { id: "Admin users", label: "Admin users & roles", slug: "admin-users", icon: "users", legacy: ["admin-users-and-roles"] },
+  { id: "Platform settings", label: "Global notifications", menu: "Notification", slug: "global-notifications", icon: "bell", legacy: ["platform-settings", "parcel-notifications"] },
+  { id: "Push messages", label: "Push messages", slug: "push-notifications", icon: "push", legacy: ["push-messages"] },
+  { id: "SMS messages", label: "SMS messages", slug: "sms-messages", icon: "sms" },
+  { id: "Email messages", label: "Email messages", slug: "email-messages", icon: "mail" },
+  { id: "Recent messages", label: "Recent messages", menu: "Message History", slug: "recent-messages", icon: "message" },
+  { id: "Mobile apps", label: "Mobile apps", slug: "mobile-apps", icon: "phone" },
+  { id: "Website settings", label: "Website & branding", menu: "Website & Branding", slug: "website-settings", icon: "edit", legacy: ["website-and-branding"] },
+  { id: "Return reasons", label: "Return reasons", slug: "return-reasons", icon: "refresh" },
+  { id: "Receiver relations", label: "Receiver relations", slug: "receiver-relations", icon: "users" },
+  { id: "Fail delivery reasons", label: "Fail delivery reasons", slug: "fail-delivery-reasons", icon: "alert" },
+  { id: "Products", label: "Products", slug: "products", icon: "box" },
+  { id: "Priorities", label: "Priorities", slug: "priorities", icon: "alert" },
+  { id: "Delivery types", label: "Delivery types", slug: "delivery-types", icon: "truck" },
+  { id: "Invoice settings", label: "Invoice settings", slug: "invoice-settings", icon: "file" },
+  { id: "Import settings", label: "Import Template settings", slug: "import-settings", icon: "upload", legacy: ["import-template-settings"] },
+  { id: "Scan usage", label: "AI Scan with phone", slug: "scan-usage", icon: "camera" },
+  { id: "CN scan", label: "AI CN_Scan", slug: "cn-scan", icon: "camera" },
+  { id: "AI import", label: "AI Product & Address", slug: "ai-import", icon: "sheet" },
+  { id: "AI address reading", label: "AI best route", slug: "ai-address-reading", icon: "pin" },
+  { id: "Address", label: "Address", slug: "address", icon: "pin" },
+  { id: "Hubs & zones", label: "Hubs & zones", slug: "hubs-and-zones", icon: "map" },
+  { id: "Franchises", label: "Franchise settings", menu: "Franchise", slug: "franchises", icon: "share" },
+  { id: "Integration settings", label: "Integration settings", menu: "Integration", slug: "integration-settings", icon: "settings", legacy: ["channels-and-limits", "channel-and-limits"] },
+  { id: "System guide", label: "System guide", slug: "system-guide", icon: "help" },
 ];
 
-export const GROUPS: { id: PageDef["group"]; label: string }[] = [
-  { id: "governance", label: "Governance" },
-  { id: "merchants", label: "Merchant management" },
-  { id: "riders", label: "Rider setup & pricing" },
-  { id: "monitoring", label: "Monitoring" },
-  { id: "platform", label: "Platform control" },
+/** A page (its id) or a sub-menu that folds out. */
+export type MenuEntry = string | { label: string; icon: IconName; items: MenuEntry[] };
+
+/** The menu, in two parts (a line between them). */
+export const MENU: { label: string; entries: MenuEntry[] }[] = [
+  {
+    label: "Business",
+    entries: [
+      "Overview",
+      "Registrations",
+      { label: "Merchant Manage", icon: "box", items: ["Banking & Financial merchants", "E-commerce merchants", "Service plans"] },
+      { label: "Rider Manage", icon: "truck", items: ["Riders", "Rider plans", "Franchise riders"] },
+      { label: "Monitoring", icon: "chart", items: ["Live map", "Platform activity", "Audit log"] },
+    ],
+  },
+  {
+    label: "Platform control",
+    entries: [
+      "Admin users",
+      { label: "Send Message", icon: "message", items: ["Push messages", "SMS messages", "Email messages", "Recent messages"] },
+      {
+        label: "Operational",
+        icon: "sheet",
+        items: ["Return reasons", "Receiver relations", "Fail delivery reasons", "Products", "Priorities", "Delivery types", "Invoice settings", "Import settings", "Scan usage", "CN scan", "AI import", "AI address reading"],
+      },
+      { label: "Hub", icon: "pin", items: ["Address", "Hubs & zones"] },
+      {
+        label: "Settings",
+        icon: "settings",
+        items: [
+          "Franchises",
+          "Platform settings",
+          "Integration settings",
+          "Website settings",
+          "Mobile apps",
+        ],
+      },
+      "System guide",
+    ],
+  },
 ];
+
+/** The pages a menu entry holds (itself, or everything in its sub-menus). */
+export const pagesIn = (e: MenuEntry): string[] => (typeof e === "string" ? [e] : e.items.flatMap(pagesIn));
+/** The sub-menus (their labels) that hold a page, outermost first. */
+export function foldersOf(id: string, entries: MenuEntry[] = MENU.flatMap(g => g.entries)): string[] {
+  for (const e of entries) {
+    if (typeof e === "string") continue;
+    if (pagesIn(e).includes(id)) return [e.label, ...foldersOf(id, e.items)];
+  }
+  return [];
+}
 
 export const pageBySlug = (slug?: string) => PAGES.find(p => p.slug === slug);
 export const pageById = (id: string) => PAGES.find(p => p.id === id);

@@ -21,12 +21,12 @@ const Notifications = lazy(() => import("@/pages/Notifications"));
 const PAGES: Record<string, LazyExoticComponent<ComponentType<{ tab?: string }>> | ComponentType<{ tab?: string }>> = {
   Overview,
   Registrations: lazy(() => import("@/pages/Registrations")),
-  Approvals: lazy(() => import("@/pages/Registrations")),
   "E-commerce merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.EcommerceMerchants }))),
   "Banking & Financial merchants": lazy(() => import("@/pages/Merchants").then(m => ({ default: m.BankingMerchants }))),
   Franchises: lazy(() => import("@/pages/Franchises")),
   "Service plans": lazy(() => import("@/pages/ServicePlans")),
   Riders: lazy(() => import("@/pages/Riders")),
+  "Franchise riders": lazy(() => import("@/pages/Riders").then(m => ({ default: m.FranchiseRiders }))),
   "Rider plans": lazy(() => import("@/pages/RiderPlans")),
   "Audit log": lazy(() => import("@/pages/AuditLog")),
   "Platform activity": lazy(() => import("@/pages/PlatformActivity")),
@@ -111,7 +111,7 @@ function Router() {
   }, [location.search, location.pathname, navigate]);
   const first = location.pathname.split("/")[1];
   const page = pageBySlug(first);
-  const crumb = first === "notifications" ? "Notifications" : page?.id === "Overview" ? "Overview" : page?.id === "Registrations" || page?.id === "Approvals" ? "Merchant approvals" : (page?.label ?? "");
+  const crumb = first === "notifications" ? "Notifications" : page?.id === "Overview" ? "Overview" : page?.id === "Registrations" ? "Merchant approvals" : (page?.label ?? "");
   return (
     <Shell crumb={crumb}>
       <Suspense fallback={<Loading rows={6} />}>

@@ -105,7 +105,7 @@ function Live({ openTracking }: { openTracking: () => void }) {
         <Panel title="Page views per minute" subtitle="The last 30 minutes · the newest minute in dark blue">
           <div role="img" aria-label={`Page views per minute, last 30 minutes: ${num(last30)}`} style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130, padding: "10px 16px 4px" }}>
             {l.perMinute.map((m, i) => (
-              <i key={m.minute} title={`${clock(m.minute)} · ${num(m.pageviews)} page views`} style={{ flex: 1, minHeight: 2, height: `${Math.max(2, Math.round((m.pageviews / max) * 100))}%`, background: i === l.perMinute.length - 1 ? "var(--primary)" : "#c7d7fe", borderRadius: "3px 3px 0 0" }} />
+              <i key={m.minute} title={`${clock(m.minute)} · ${num(m.pageviews)} page views`} style={{ flex: 1, minHeight: 2, height: `${Math.max(2, Math.round((m.pageviews / max) * 100))}%`, background: i === l.perMinute.length - 1 ? "var(--primary)" : "var(--primary-line)", borderRadius: "3px 3px 0 0" }} />
             ))}
           </div>
           <div className="row faint" style={{ justifyContent: "space-between", padding: "0 16px 12px", fontSize: 11 }}>

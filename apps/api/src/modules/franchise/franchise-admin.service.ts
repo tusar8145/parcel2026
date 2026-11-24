@@ -13,7 +13,7 @@ import { Prisma } from "../../generated/prisma/client";
 import { SessionService } from "../auth/session.service";
 import { NotifyService } from "../notifications/notify.service";
 import { FRANCHISE_CONFIG_KEY, readFranchiseConfig } from "./franchise-config";
-import type { createFranchiseSchema, franchiseAccountSchema, franchiseStatusSchema, updateFranchiseConfigSchema, updateFranchiseSchema } from "./franchise.schemas";
+import type { createFranchiseSchema, replaceFranchiseOwnerSchema, franchiseAccountSchema, franchiseStatusSchema, updateFranchiseConfigSchema, updateFranchiseSchema } from "./franchise.schemas";
 import { releaseApplicant } from "../applications/applicant-role";
 import { centralHubId } from "../money/accounts-config";
 
@@ -126,13 +126,15 @@ export class FranchiseAdminService {
       let hub: { id: string; code: string };
       if (input.hubId) {
         // An existing hub tagged as a franchise hub: it works as one from now on (its riders are the franchise's riders).
-        const existing = await tx.hub.findUnique({ where: { id: input.hubId }, select: { id: true, code: true, name: true, type: true, active: true } });
+        const existing = await tx.hub.findUnique({ where: { id: input.hubId }, select: { id: true, code: true, name: true, type: true, active: true, franchiseHub: true } });
         if (!existing) throw notFound("Hub");
         if (!existing.active) throw new AppError("HUB_INACTIVE", `${existing.name} isn't operating`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
-        if (existing.type === "FRANCHISE" || (await tx.franchise.findUnique({ where: { hubId: existing.id }, select: { id: true } })))
-          throw conflict("ALREADY_FRANCHISE_HUB", `${existing.name} is already a franchise hub`);
+        // One Franchise user per franchise hub; only hubs marked as franchise hubs (Hubs & zones) take one.
+        if (await tx.franchise.findUnique({ where: { hubId: existing.id }, select: { id: true } })) throw conflict("ALREADY_FRANCHISE_HUB", `${existing.name} already has a Franchise user`);
+        if (!existing.franchiseHub && existing.type !== "FRANCHISE")
+          throw new AppError("NOT_FRANCHISE_HUB", `${existing.name} isn't a franchise hub: mark it in Hub › Hubs & zones first`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
         if ((await centralHubId(tx)) === existing.id) throw new AppError("CENTRAL_HUB", `${existing.name} is the central hub: it can't be a franchise`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "hubId" });
-        hub = await tx.hub.update({ where: { id: existing.id }, data: { type: "FRANCHISE" }, select: { id: true, code: true } });
+        hub = await tx.hub.update({ where: { id: existing.id }, data: { type: "FRANCHISE", franchiseHub: true }, select: { id: true, code: true } });
       } else {
         const h = input.hub!;
         const hubCode = h.code ?? `FRH-${1000 + seq}`;
@@ -140,7 +142,7 @@ export class FranchiseAdminService {
         const clash = await tx.hub.findFirst({ where: { name: { equals: h.name.trim(), mode: "insensitive" } }, select: { code: true } });
         if (clash) throw new AppError("HUB_NAME_TAKEN", `Hub ${clash.code} already has the name ${h.name.trim()}`, HttpStatus.CONFLICT, { field: "hub.name" });
         hub = await tx.hub.create({
-          data: { code: hubCode, name: h.name, district: h.district, zone: h.zone ?? null, address: h.address, lat: h.lat ?? null, lng: h.lng ?? null, type: "FRANCHISE" },
+          data: { code: hubCode, name: h.name, district: h.district, zone: h.zone ?? null, address: h.address, lat: h.lat ?? null, lng: h.lng ?? null, type: "FRANCHISE", franchiseHub: true },
           select: { id: true, code: true },
         });
       }
@@ -189,6 +191,54 @@ export class FranchiseAdminService {
       return f;
     });
     return franchiseView(updated);
+  }
+
+  /**
+   * A new Franchise user for the franchise: the old one loses the franchise (suspended when it had nothing else; signed
+   * out everywhere), the new one (an existing account by mobile, or a new one) gets it. The hub, its riders, the
+   * commission and every money record stay with the franchise.
+   */
+  async replaceOwner(actor: Actor, id: string, input: z.infer<typeof replaceFranchiseOwnerSchema>, meta: RequestMeta) {
+    const outcome = await this.prisma.$transaction(async tx => {
+      const f = await tx.franchise.findUnique({ where: { id }, select: { id: true, hubId: true, ownerId: true, name: true } });
+      if (!f) throw notFound("Franchise");
+      const existing = await tx.user.findUnique({ where: { phone: input.phone }, select: { id: true, status: true, roles: { select: { role: true } } } });
+      if (existing?.id === f.ownerId) throw new AppError("SAME_USER", "This mobile is the current Franchise user: change it with Account instead", HttpStatus.UNPROCESSABLE_ENTITY, { field: "phone" });
+      let ownerId: string;
+      let invited = false;
+      if (existing) {
+        if (existing.status !== "ACTIVE") throw new AppError("USER_INACTIVE", "This account is suspended or deactivated", HttpStatus.UNPROCESSABLE_ENTITY, { field: "phone" });
+        if (existing.roles.some(r => STAFF_ROLES.has(r.role))) throw new AppError("STAFF_ACCOUNT", "This mobile belongs to a staff account: use another mobile", HttpStatus.UNPROCESSABLE_ENTITY, { field: "phone" });
+        if (await tx.franchise.findUnique({ where: { ownerId: existing.id }, select: { id: true } })) throw conflict("ALREADY_FRANCHISE", "This account already runs a franchise");
+        ownerId = existing.id;
+      } else {
+        if (input.email && (await tx.user.findUnique({ where: { email: input.email }, select: { id: true } }))) throw conflict("EMAIL_IN_USE", "This email address is already used by another account");
+        ownerId = (await tx.user.create({ data: { name: input.name, phone: input.phone, email: input.email, ...(input.password ? { passwordHash: await hashPassword(input.password) } : {}) }, select: { id: true } })).id;
+        invited = true;
+      }
+      // The old user: the franchise role goes; with nothing else left, the account is suspended.
+      await tx.userRole.deleteMany({ where: { userId: f.ownerId, role: "FRANCHISE" } });
+      const left = await tx.userRole.count({ where: { userId: f.ownerId } });
+      if (!left) await tx.user.update({ where: { id: f.ownerId }, data: { status: "SUSPENDED" } });
+      await tx.userRole.create({ data: { userId: ownerId, role: "FRANCHISE", hubId: f.hubId } });
+      await releaseApplicant(tx, ownerId);
+      const owner = await tx.user.findUniqueOrThrow({ where: { id: ownerId }, select: { id: true, name: true, phone: true, email: true } });
+      const franchise = await tx.franchise.update({
+        where: { id },
+        data: { ownerId, contactName: input.name, contactPhone: owner.phone, contactEmail: input.email ?? owner.email },
+        include: franchiseInclude,
+      });
+      await this.audit.record(actor, { action: "franchise.owner_replace", entityType: "franchise", entityId: id, data: { previousOwnerId: f.ownerId, previousSuspended: !left, ownerId, newAccount: invited } }, meta, tx);
+      return { franchise, owner, invited, previous: f.ownerId };
+    });
+    await this.sessions.revokeAllForUser(outcome.previous, "role_change").catch(() => undefined);
+    await this.sessions.revokeAllForUser(outcome.owner.id, "role_change").catch(() => undefined);
+    let messageSent = false;
+    if (input.sendSms) {
+      const { event, vars } = inviteMessage("franchise", { inviter: actor.kind === "user" ? actor.name : "Delivery Fast", name: outcome.owner.name ?? input.name, franchiseName: outcome.franchise.name, hubName: outcome.franchise.hub.name });
+      messageSent = (await this.notify.notifyNow({ event, to: { userId: outcome.owner.id, phone: outcome.owner.phone, email: outcome.owner.email, name: outcome.owner.name }, vars }).catch(() => [])).length > 0;
+    }
+    return { ...franchiseView(outcome.franchise), messageSent, newAccount: outcome.invited, passwordSet: outcome.invited && !!input.password };
   }
 
   /**

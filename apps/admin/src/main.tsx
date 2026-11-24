@@ -6,7 +6,11 @@ import { AuthProvider } from "@panel/lib/auth";
 import { queryClient } from "@panel/lib/queryClient";
 import App from "@/app/App";
 import "@panel/styles.css";
+import "@panel/skin.css";
+import "@/app/theme.css";
 
+// The panels' design (packages/panel-ui/src/skin.css), in this panel's colours (app/theme.css).
+document.documentElement.classList.add("df-skin");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

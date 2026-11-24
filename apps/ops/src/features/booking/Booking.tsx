@@ -356,7 +356,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
     </div>
   );
   const section = (title: string) => (
-    <div className="full" style={{ margin: "4px 0 -4px", paddingTop: 10, borderTop: "1px solid var(--line)", color: "#8792a2", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
+    <div className="full" style={{ margin: "4px 0 -4px", paddingTop: 10, borderTop: "1px solid var(--line)", color: "var(--primary)", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>
       {title}
     </div>
   );
@@ -565,7 +565,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
                       </label>
                     ))}
                   </div>
-                  {silent ? <p style={{ margin: "6px 0 0", color: "#8792a2", fontSize: 12 }}>This product doesn't send messages</p> : null}
+                  {silent ? <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12 }}>This product doesn't send messages</p> : null}
                 </details>
               ) : null}
             </>
@@ -668,7 +668,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
               </button>
             </div>,
           )}
-          <div className="full" aria-live="polite" style={{ fontSize: 13, color: "#637083" }}>
+          <div className="full" aria-live="polite" style={{ fontSize: 13, color: "var(--muted)" }}>
             {!view || quote?.q?.chargesOn === false ? null : quote?.q?.lines ? (
               <div style={{ display: "grid", gap: 3 }}>
                 {quote.q.lines.map((l, i) => (
@@ -684,7 +684,7 @@ function BookingDialog({ fixed, close }: { fixed?: BookingLine; close: () => voi
                   <span>Delivery charge{quote.q.package?.name ? ` · ${quote.q.package.name}` : ""}</span>
                   <span>{taka(quote.q.totalCharge)}</span>
                 </div>
-                {quote.q.returnCharge ? <div style={{ color: "#8792a2", fontSize: 12 }}>If it comes back: return charge {taka(quote.q.returnCharge)}</div> : null}
+                {quote.q.returnCharge ? <div style={{ color: "var(--muted)", fontSize: 12 }}>If it comes back: return charge {taka(quote.q.returnCharge)}</div> : null}
               </div>
             ) : (
               quote?.text ?? null

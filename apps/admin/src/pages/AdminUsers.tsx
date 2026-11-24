@@ -21,6 +21,8 @@ import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/
 import { manageMfa } from "@panel/ui/Mfa";
 import { Select } from "@panel/ui/Select";
 import { toast, toastError } from "@panel/ui/toast";
+import { openAccount, openCreate, openReplace, type Franchise } from "@/pages/Franchises";
+import { type Catalog } from "@/lib/admin";
 import { DialogFrame, Facts, groupHubs, phoneText, ROLE_LABEL, ROLE_SCOPE, STAFF_ROLES, when, useStaff, type Staff } from "@/lib/admin";
 import { startSupportAccess } from "@/lib/support";
 
@@ -44,6 +46,8 @@ const INVITE_ROLE: Record<string, string> = {
   "Finance Administrator": "FINANCE",
   "Merchant Support": "SUPPORT_AGENT",
   "Hub Manager": "HUB_OPERATOR",
+  /** A franchise account: opens Hub › Franchises' Add franchise form (hub, commission, sign-in). */
+  Franchise: "FRANCHISE",
 };
 const pendingNote = (result?: { status?: string } | null) =>
   result?.status === "PENDING" ? "Sent for approval: another super admin has to approve it before it takes effect." : "Saved: no other super admin can approve, so it took effect at once.";
@@ -152,6 +156,9 @@ function Administrators() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const list = staff.data ?? [];
+  // Franchise accounts: listed here too (their own group), changed with the franchise's Account dialog.
+  const franchisesQ = useQuery({ queryKey: ["admin", "franchises", "accounts"], queryFn: () => api<Franchise[]>("/franchises"), staleTime: 20_000 });
+  const franchises = (franchisesQ.data ?? []).filter(f => f.owner);
   const active = list.filter(u => u.status === "ACTIVE");
   const supers = active.filter(u => u.roles.some(r => r.role === "SUPER_ADMIN"));
   const on = (l: Staff[]) => l.filter(u => u.mfa?.enabled).length;
@@ -164,7 +171,9 @@ function Administrators() {
   );
   // Grouped by role (STAFF_ROLES order). Someone with several roles shows under the first, or under the filtered one.
   const groupOf = (u: Staff) => roleFilter || staffRoles(u)[0]?.role || "";
-  const groups = [...STAFF_ROLES, ""].map(role => ({ role, users: rows.filter(u => groupOf(u) === role).sort((a, b) => a.name.localeCompare(b.name)) })).filter(g => g.users.length);
+  const groups = roleFilter === "FRANCHISE" ? [] : [...STAFF_ROLES, ""].map(role => ({ role, users: rows.filter(u => groupOf(u) === role).sort((a, b) => a.name.localeCompare(b.name)) })).filter(g => g.users.length);
+  const franchiseRows = !roleFilter || roleFilter === "FRANCHISE" ? franchises.filter(f => !q || [f.name, f.code, f.hub.name, f.owner?.name, f.owner?.phone, f.owner?.email, "franchise"].some(v => String(v ?? "").toLowerCase().includes(q))).sort((a, b) => a.hub.name.localeCompare(b.hub.name)) : [];
+  const reloadFranchises = () => queryClient.invalidateQueries({ queryKey: ["admin", "franchises"] });
   const count = (role: string) => active.filter(u => u.roles.some(r => r.role === role)).length;
   const mine = list.find(u => u.id === user?.id)?.mfa?.enabled;
   const CARDS: [string, string, string][] = [
@@ -181,7 +190,7 @@ function Administrators() {
       </div>
       <Panel
         title="Platform administrator directory"
-        subtitle={`${list.length} administrators · ${on(list)} with two-step verification`}
+        subtitle={`${list.length} administrators · ${on(list)} with two-step verification${franchises.length ? ` · ${franchises.length} franchise account${franchises.length === 1 ? "" : "s"}` : ""}`}
         tools={
           <>
             <Select className="select sm" aria-label="Role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
@@ -189,6 +198,7 @@ function Administrators() {
               {STAFF_ROLES.map(r => (
                 <option key={r} value={r}>{`${ROLE_LABEL[r]} (${list.filter(u => u.roles.some(x => x.role === r)).length})`}</option>
               ))}
+              <option value="FRANCHISE">{`Franchise (${franchises.length})`}</option>
             </Select>
             <input className="input sm" type="search" placeholder="Search administrator..." aria-label="Search administrators" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
           </>
@@ -210,7 +220,7 @@ function Administrators() {
                 </tr>
               </thead>
               <tbody>
-                {!groups.length ? (
+                {!groups.length && !franchiseRows.length ? (
                   <tr>
                     <td colSpan={6} className="faint" style={{ textAlign: "center" }}>
                       No administrators match.
@@ -253,6 +263,40 @@ function Administrators() {
                   );
                   }),
                 ])}
+                {franchiseRows.length ? (
+                  <tr className="group-row">
+                    <td colSpan={6}>{`Franchise · ${franchiseRows.length} ${franchiseRows.length === 1 ? "account" : "accounts"}`}</td>
+                  </tr>
+                ) : null}
+                {franchiseRows.map(f => {
+                  const o = f.owner!;
+                  const status = f.status !== "ACTIVE" || o.status !== "ACTIVE" ? "Suspended" : o.lastLoginAt ? "Active" : "Invited";
+                  return (
+                    <tr key={f.id}>
+                      <td>
+                        <span className="strong">{o.name}</span>
+                        <span className="sub">{o.email || phoneText(o.phone)}</span>
+                      </td>
+                      <td>
+                        Franchise
+                        <span className="sub">{`${f.name} · ${f.code}`}</span>
+                      </td>
+                      <td>{f.hub.name}</td>
+                      <td>
+                        <Pill tone={status === "Active" ? "good" : status === "Invited" ? "warn" : "bad"}>{status}</Pill>
+                      </td>
+                      <td>{o.lastLoginAt ? when(o.lastLoginAt) : "Not signed in yet"}</td>
+                      <td className="nowrap">
+                        <Button size="sm" title="The franchise's sign-in: name, mobile, email, a new password (commission: Settings › Franchise)" onClick={() => void openAccount(f, reloadFranchises)}>
+                          Manage
+                        </Button>{" "}
+                        <Button size="sm" title="A new Franchise user for this hub: the current one is suspended" onClick={() => void openReplace(f, reloadFranchises)}>
+                          Replace user
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -415,38 +459,58 @@ async function setStaffPassword(u: Staff) {
 }
 
 async function inviteAdmin() {
+  const picked = await inviteForm();
+  if (picked?.role && INVITE_ROLE[picked.role] === "FRANCHISE") {
+    const catalog = await queryClient.fetchQuery({ queryKey: ["admin", "catalog"], queryFn: () => api<Catalog>("/catalog"), staleTime: 5 * 60_000 }).catch(() => undefined);
+    await openCreate(null, catalog, () => Promise.all(["franchises", "staff", "hubs", "network", "audit"].map(k => queryClient.invalidateQueries({ queryKey: ["admin", k] }))));
+  }
+}
+
+async function inviteForm() {
   const hubs = await queryClient.fetchQuery({ queryKey: ["admin", "hubs"], queryFn: () => api<{ id: string; name: string; active: boolean; type?: string; district?: string }[]>("/hubs?includeInactive=true"), staleTime: 60_000 }).catch(() => []);
   const isHub = (v: FormValues) => INVITE_ROLE[v.role] === "HUB_OPERATOR";
-  await openForm({
+  const isFranchise = (v: FormValues) => INVITE_ROLE[v.role] === "FRANCHISE";
+  const staffOnly = (v: FormValues) => !isFranchise(v);
+  const companyHubs = groupHubs(hubs.filter(h => h.active && h.type !== "FRANCHISE")).flatMap(g => g.hubs.map(h => ({ value: h.id, label: h.name, group: g.label })));
+  return openForm({
     title: "Invite platform administrator",
     description: "Send an invitation (the SMS text is shown below), or set a password and finish the account now. Elevated access is audited.",
     submit: "Create account",
     wide: true,
     fields: [
-      { id: "name", label: "Administrator name", required: true, full: true, placeholder: "Full name" },
-      { id: "email", label: "Work email", type: "email", required: true, placeholder: "name@company.example" },
-      { id: "phone", label: "Mobile number", type: "phone", required: true, placeholder: "01XXXXXXXXX" },
-      { id: "role", label: "Role", type: "select", required: true, value: "Operations Administrator", options: Object.keys(INVITE_ROLE).map(v => ({ value: v, label: v })) },
+      { id: "role", label: "Role", type: "select", required: true, full: true, value: "Operations Administrator", options: Object.keys(INVITE_ROLE).map(v => ({ value: v, label: v })) },
+      {
+        id: "franchiseNote",
+        label: "",
+        type: "static",
+        full: true,
+        show: isFranchise,
+        render: <div className="callout">Create account opens the Add franchise form: the franchise, its franchise hub (marked in Hub › Hubs & zones), commission and the Franchise user's sign-in.</div>,
+      },
+      { id: "name", label: "Administrator name", required: true, full: true, show: staffOnly, placeholder: "Full name" },
+      { id: "email", label: "Work email", type: "email", required: true, show: staffOnly, placeholder: "name@company.example" },
+      { id: "phone", label: "Mobile number", type: "phone", required: true, show: staffOnly, placeholder: "01XXXXXXXXX" },
       // Hub Manager: the hub they run, grouped (franchise hubs have their own account, so they are left out).
-      { id: "hubId", label: "Hub", type: "select", value: "", show: isHub, options: [{ value: "", label: "Choose the hub" }, ...groupHubs(hubs.filter(h => h.active && h.type !== "FRANCHISE")).flatMap(g => g.hubs.map(h => ({ value: h.id, label: h.name, group: g.label })))] },
+      { id: "hubId", label: "Hub", type: "select", value: "", show: isHub, options: [{ value: "", label: "Choose the hub" }, ...companyHubs] },
       {
         id: "setup",
         label: "How the account is finished",
         type: "select",
         required: true,
         full: true,
+        show: staffOnly,
         value: "invite",
         options: [
           { value: "invite", label: "Send an invitation (SMS, and email): they sign in with a code sent to their mobile" },
           { value: "password", label: "Set a password now (no invitation is sent): share it yourself" },
         ],
       },
-      { id: "password", label: "Password", maxLength: 128, show: v => v.setup === "password", placeholder: "At least 10 characters, a letter and a number", hint: "They sign in with this mobile number (or email) and this password." },
+      { id: "password", label: "Password", maxLength: 128, show: v => staffOnly(v) && v.setup === "password", placeholder: "At least 10 characters, a letter and a number", hint: "They sign in with this mobile number (or email) and this password." },
       {
         id: "passwordTools",
         label: "",
         type: "static",
-        show: v => v.setup === "password",
+        show: v => staffOnly(v) && v.setup === "password",
         live: (_v, set) => (
           <button type="button" className="button sm" onClick={() => set("password", generatePassword())}>
             Generate a password
@@ -458,7 +522,7 @@ async function inviteAdmin() {
         label: "The invitation they get",
         type: "static",
         full: true,
-        show: v => v.setup !== "password",
+        show: v => staffOnly(v) && v.setup !== "password",
         live: v => <InvitePreview input={{ kind: "staff", name: v.name, staffRole: v.role, hubId: isHub(v) && v.hubId ? v.hubId : undefined }} />,
       },
     ],
@@ -469,6 +533,8 @@ async function inviteAdmin() {
     onSubmit: async v => {
       const role = INVITE_ROLE[v.role];
       const withPassword = v.setup === "password";
+      // Franchise: this form closes and the Add franchise form opens (below).
+      if (role === "FRANCHISE") return;
       await api("/users", {
         method: "POST",
         body: {

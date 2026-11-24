@@ -1,7 +1,7 @@
 /* A proof image in place (click to enlarge) and the large view over the page. */
 .iz-thumb { position: relative; display: block; width: 100%; max-width: 360px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2, #f6f8fb); cursor: zoom-in; overflow: hidden; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
 .iz-thumb.light { background: #fff; }
-.iz-thumb:hover { border-color: var(--primary); box-shadow: 0 6px 18px -10px rgba(47, 85, 201, 0.6); }
+.iz-thumb:hover { border-color: var(--primary); box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--primary) 55%, transparent); }
 .iz-thumb img { display: block; width: 100%; max-height: 190px; object-fit: contain; border-radius: 6px; transition: transform 0.25s ease; }
 .iz-thumb:hover img { transform: scale(1.02); }
 .iz-hint { position: absolute; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: rgba(16, 24, 40, 0.65); color: #fff; font-size: 11px; font-weight: 600; opacity: 0; transition: opacity 0.18s ease; }

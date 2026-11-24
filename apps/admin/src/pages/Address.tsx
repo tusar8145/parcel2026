@@ -247,7 +247,7 @@ export default function Address() {
 
   const visible = <T extends Place>(items: T[]) => (showInactive ? items : items.filter(i => i.active));
   const row = (level: Level, item: Place & { zones?: Zone[]; areas?: Area[] }, selected: boolean, meta: string, pick?: () => void) => (
-    <li key={item.name} style={{ listStyle: "none", padding: "9px 10px", border: `1px solid ${selected ? "#9fb6f0" : "var(--line)"}`, borderRadius: 8, background: selected ? "#f3f6ff" : "#fff", opacity: item.active ? 1 : 0.78 }}>
+    <li key={item.name} style={{ listStyle: "none", padding: "9px 10px", border: `1px solid ${selected ? "var(--primary-line)" : "var(--line)"}`, borderRadius: 8, background: selected ? "var(--primary-soft)" : "#fff", opacity: item.active ? 1 : 0.78 }}>
       <div role={pick ? "button" : undefined} tabIndex={pick ? 0 : undefined} onClick={pick} onKeyDown={e => pick && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick())} className="row" style={{ justifyContent: "space-between", gap: 8, cursor: pick ? "pointer" : undefined }}>
         <strong style={{ fontSize: 13 }}>{item.name}</strong>
         <Pill tone={item.active ? "good" : "warn"}>{item.active ? "Active" : "Inactive"}</Pill>
@@ -361,7 +361,7 @@ export default function Address() {
                 <span className="faint">{`${num(t.totals.districts)} districts · ${num(t.totals.zones)} zones · ${num(t.totals.areas)} areas${inactive ? ` · ${num(inactive)} deactivated` : ""}`}</span>
               </div>
               {notice ? (
-                <div className="faint" role="status" style={{ margin: "0 0 10px", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 8, background: "#fafbfd", whiteSpace: "pre-line" }}>
+                <div className="faint" role="status" style={{ margin: "0 0 10px", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface-2)", whiteSpace: "pre-line" }}>
                   {notice}
                 </div>
               ) : null}

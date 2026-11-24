@@ -73,9 +73,9 @@ export default function Settings() {
                 gap: 8,
                 alignContent: "start",
                 padding: 14,
-                border: `1px solid ${highlight ? "#b2c5f5" : "var(--line)"}`,
+                border: `1px solid ${highlight ? "var(--primary-line)" : "var(--line)"}`,
                 borderRadius: 10,
-                background: highlight ? "#f5f8ff" : "var(--surface)",
+                background: highlight ? "var(--primary-soft)" : "var(--surface)",
               }}
             >
               <strong style={{ fontSize: 14 }}>{title}</strong>

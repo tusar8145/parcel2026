@@ -241,8 +241,8 @@ function BookingsChart({ series, text }: { series: PeriodFigures["series"]; text
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Bookings per ${series.bucket}, ${text}: ${num(total)} in total`} style={{ width: "100%", height: "auto" }}>
         <defs>
           <linearGradient id="adminFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#1d5fd0" stopOpacity=".13" />
-            <stop offset="100%" stopColor="#1d5fd0" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity=".13" />
+            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[1, 0.66, 0.33].map(f => (
@@ -284,7 +284,7 @@ interface Trend {
   previous: { booked: number; delivered: number; returned: number };
 }
 const LINES = [
-  { key: "booked", label: "Booked (not cancelled)", color: "#1d5fd0", upIsGood: true },
+  { key: "booked", label: "Booked (not cancelled)", color: "#d2691a", upIsGood: true },
   { key: "delivered", label: "Delivered", color: "#067647", upIsGood: true },
   { key: "returned", label: "Returned", color: "#d92d20", upIsGood: false },
 ] as const;

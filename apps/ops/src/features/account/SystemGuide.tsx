@@ -48,7 +48,7 @@ function GuideDialog({ close }: { close: () => void }) {
           <Icon name="x" size={18} />
         </button>
       </div>
-      <div className="dialog-body" style={{ background: "#f6f8fb", maxHeight: "calc(100vh - 140px)" }}>
+      <div className="dialog-body" style={{ background: "var(--bg)", maxHeight: "calc(100vh - 140px)" }}>
         {error ? <p style={{ color: "var(--bad)" }}>{error}</p> : null}
         <div ref={host} />
       </div>

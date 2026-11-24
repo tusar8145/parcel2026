@@ -127,7 +127,7 @@ function useMoney() {
 }
 
 const Card = ({ label, value, foot, tone }: { label: string; value: ReactNode; foot?: ReactNode; tone?: "key" | "due" | "good" }) => (
-  <div className="metric" style={tone === "key" ? { borderColor: "var(--primary-line)", background: "linear-gradient(180deg, #f5f8ff, #fff)" } : undefined}>
+  <div className="metric" style={tone === "key" ? { borderColor: "var(--primary-line)", background: "linear-gradient(180deg, var(--primary-soft), #fff)" } : undefined}>
     <div className="metric-head">
       <span>{label}</span>
     </div>

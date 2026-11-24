@@ -13,6 +13,7 @@ import { riderPasswordSchema } from "../network/network.schemas";
 import {
   createFranchiseSchema,
   franchiseAccountSchema,
+  replaceFranchiseOwnerSchema,
   franchiseAssignScanSchema,
   franchiseAssignSchema,
   franchiseDirectDeliverySchema,
@@ -284,6 +285,14 @@ export class FranchiseAdminController {
   @Get(":id")
   get(@Param("id", ParseUUIDPipe) id: string) {
     return this.admin.get(id);
+  }
+
+  @RequirePermissions("franchise:manage")
+  @Post(":id/owner")
+  @HttpCode(200)
+  @ApiZodBody(replaceFranchiseOwnerSchema)
+  replaceOwner(@CurrentActor() actor: Actor, @Param("id", ParseUUIDPipe) id: string, @ZBody(replaceFranchiseOwnerSchema) body: z.infer<typeof replaceFranchiseOwnerSchema>, @ReqMeta() meta: RequestMeta) {
+    return this.admin.replaceOwner(actor, id, body, meta);
   }
 
   @RequirePermissions("franchise:manage")

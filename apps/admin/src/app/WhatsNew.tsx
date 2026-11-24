@@ -27,7 +27,7 @@ export default function WhatsNew() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between", gap: 8, padding: "0 4px", fontSize: 12, color: "var(--faint)" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: 8, padding: "0 4px", fontSize: 12 }}>
         <span>{`Delivery Fast v${current.version}`}</span>
         <button type="button" className="link-button" style={{ fontSize: 12 }} onClick={() => setOpen(true)}>
           {"What's new"}

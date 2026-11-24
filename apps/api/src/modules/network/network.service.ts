@@ -20,6 +20,7 @@ import { env } from "../../config/env";
 import { NotifyService } from "../notifications/notify.service";
 import { inviteMessage } from "../notifications/account-invite";
 import { nearestOf } from "./nearest-hub";
+import { centralHubId } from "../money/accounts-config";
 
 const OPEN_DELIVERY_STATUSES: ParcelStatus[] = ["ASSIGNED", "OUT_FOR_DELIVERY", "RETRY_SCHEDULED", "EXCEPTION"];
 
@@ -133,7 +134,7 @@ export class NetworkService {
     await this.assertHubNameFree(input.name);
     input = { ...input, ...(await this.hubPlace(input.district, input.zone)) };
     const hub = await this.prisma.$transaction(async tx => {
-      const created = await tx.hub.create({ data: input });
+      const created = await tx.hub.create({ data: { ...input, franchiseHub: input.franchiseHub ?? false } });
       await this.audit.record(actor, { action: "hub.create", entityType: "hub", entityId: created.id, data: input }, meta, tx);
       return created;
     });
@@ -146,6 +147,11 @@ export class NetworkService {
     if (!current) throw notFound("Hub");
     if (input.code && input.code !== current.code && (await this.prisma.hub.findUnique({ where: { code: input.code } }))) throw conflict("HUB_CODE_TAKEN", `Hub code ${input.code} is already used`);
     if (input.name && !same(input.name, current.name)) await this.assertHubNameFree(input.name, id);
+    if (input.franchiseHub === true && !current.franchiseHub && (await centralHubId(this.prisma)) === id)
+      throw new AppError("CENTRAL_HUB", `${current.name} is the central hub: it can't be a franchise hub`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "franchiseHub" });
+    // Unmarked only while no Franchise user runs it (its money and riders depend on it).
+    if (input.franchiseHub === false && (current.franchiseHub || current.type === "FRANCHISE") && (current.type === "FRANCHISE" || (await this.prisma.franchise.count({ where: { hubId: id } }))))
+      throw new AppError("FRANCHISE_IN_USE", `${current.name} has a Franchise user: it stays a franchise hub`, HttpStatus.UNPROCESSABLE_ENTITY, { field: "franchiseHub" });
     // A new district needs a zone of that district: the old zone is checked against it too.
     if (input.zone !== undefined || (input.district !== undefined && !same(input.district, current.district)))
       input = { ...input, ...(await this.hubPlace(input.district ?? current.district, input.zone !== undefined ? input.zone : current.zone, current)) };
@@ -217,6 +223,7 @@ export class NetworkService {
         // A hub's riders: those at it now and those who also work for it.
         ...(query.hubId ? { OR: [{ hubId: query.hubId }, { hubs: { some: { hubId: query.hubId } } }] } : {}),
         ...(query.company ? { NOT: { hub: { type: "FRANCHISE" } } } : {}),
+        ...(query.franchise ? { hub: { type: "FRANCHISE" } } : {}),
         ...(managerHubs
           ? { AND: [{ OR: [{ hubId: { in: managerHubs } }, { hubs: { some: { hubId: { in: managerHubs } } } }] }] }
           : scope

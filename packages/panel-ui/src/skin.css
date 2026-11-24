@@ -1,0 +1,204 @@
+/*
+ * The panels' design (super admin, Courier Operations): a coloured menu with a drawn landscape at its foot, white
+ * capitals with thin line icons, the signed-in person in the top bar, and the same colour through the whole panel.
+ * Active with the "df-skin" class on <html> (each panel's main.tsx); merchants and the website don't have it.
+ * Each panel gives only its colours and drawing (app/theme.css): the shared tokens of styles.css and --skin-*.
+ * Status colours (good, warn, bad, info, violet) and the maps' legend colours are not changed.
+ */
+.df-skin .shell { --sidebar: 260px; }
+.df-skin .sidebar {
+  --side-line: rgb(255 255 255 / 28%);
+  border-right: 0;
+  color: #fff;
+  background:
+    var(--skin-scene) center bottom / 100% auto no-repeat,
+    var(--skin-menu);
+}
+.df-skin .sidebar :focus-visible { outline-color: #fff; }
+
+/* Logo in white, a line under it. */
+.df-skin .sidebar .brand { margin: 0 15px; padding: 18px 6px 13px; border-bottom: 1px solid var(--side-line); }
+.df-skin .sidebar .brand img { filter: brightness(0) invert(1); }
+.df-skin .sidebar .brand small { color: rgb(255 255 255 / 92%); }
+
+/* Items. */
+.df-skin .sidebar .nav { padding: 10px 10px 14px; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 45%) transparent; }
+.df-skin .sidebar .nav-group + .nav-group { margin-top: 2px; }
+.df-skin .sidebar .nav-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.df-skin .sidebar .nav-item { gap: 14px; min-height: 46px; padding: 9px 12px; white-space: nowrap; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; text-shadow: 0 1px 1px rgb(var(--skin-deep) / 35%); }
+.df-skin .sidebar .nav-item svg { width: 26px; height: 26px; stroke-width: 1.25; }
+.df-skin .sidebar .nav-item:hover,
+.df-skin .sidebar .nav-sub-toggle.has-active { color: #fff; }
+.df-skin .sidebar .nav-item:hover svg { color: #fff; }
+.df-skin .sidebar .nav-count,
+.df-skin .sidebar .nav-count.amber { background: rgb(var(--skin-deep) / 34%); color: #fff; font-size: 11.5px; text-shadow: none; }
+
+/* Fold-outs: a small solid arrow at the right, pointing down; up while open. */
+.df-skin .sidebar .nav-sub-toggle > svg:last-child { display: none; }
+.df-skin .sidebar .nav-sub-toggle::after { content: ""; flex: none; margin-left: auto; border: 4px solid transparent; border-top-color: currentColor; border-bottom-width: 0; transition: transform .28s ease; }
+.df-skin .sidebar .nav-sub-toggle:has(.nav-count)::after { margin-left: 0; }
+.df-skin .sidebar .nav-sub-toggle[aria-expanded="true"]::after { transform: rotate(180deg); }
+.df-skin .sidebar .nav-sub-items { margin-left: 24px; border-left-color: var(--side-line); }
+/* Folded: no gap left under the item. */
+.df-skin .sidebar .nav-sub-wrap:not(.open) > .nav-sub-items { margin-top: 0; margin-bottom: 0; }
+.df-skin .sidebar .nav-sub-items .nav-item { gap: 11px; min-height: 36px; padding: 6px 10px; font-weight: 600; }
+
+/* Parcel journey's numbered steps. */
+.df-skin .sidebar .nav-step { border-color: rgb(255 255 255 / 85%); background: var(--skin-mid); color: #fff; text-shadow: none; }
+.df-skin .sidebar .nav-item.journey:hover .nav-step { border-color: #fff; color: #fff; }
+.df-skin .sidebar .nav-item.journey + .nav-item.journey::before,
+.df-skin .sidebar .nav-item.journey:has(+ .nav-item.journey)::after { background: rgb(255 255 255 / 45%); }
+
+/* The open page: a see-through white box (it still slides from item to item). */
+.df-skin .sidebar .nav-indicator { background: rgb(255 255 255 / 24%); box-shadow: none; }
+.df-skin .sidebar .nav-indicator::before { display: none; }
+.df-skin .sidebar .nav-track .nav-item[aria-current="page"] { font-weight: 700; }
+.df-skin .sidebar .nav-track .nav-item[aria-current="page"] .nav-count { background: #fff; color: var(--primary); }
+.df-skin .sidebar .nav-track .nav-item[aria-current="page"] .nav-step { border-color: #fff; background: #fff; color: var(--primary); box-shadow: none; }
+
+/* Links at the end of the menu. */
+.df-skin .sidebar .nav-extras { margin-top: 10px; }
+.df-skin .sidebar .foot-link,
+.df-skin .sidebar .app-card { border-color: var(--side-line); background: var(--skin-card); color: #fff; }
+.df-skin .sidebar .foot-link:hover,
+.df-skin .sidebar .app-card:hover { border-color: #fff; color: #fff; }
+.df-skin .sidebar .app-card-icon { background: rgb(255 255 255 / 22%); }
+.df-skin .sidebar .app-card-text strong,
+.df-skin .sidebar .app-card-text small { color: #fff; }
+
+
+/* ── top bar ── */
+.df-skin .topbar { background: color-mix(in srgb, var(--surface-2) 94%, transparent); }
+.df-skin .user-menu-button { display: inline-flex; align-items: center; gap: 9px; max-width: 210px; padding: 3px 9px 3px 4px; border: 0; border-radius: 999px; background: none; color: var(--ink); font-weight: 600; cursor: pointer; }
+.df-skin .user-menu-button:hover,
+.df-skin .user-menu-button[aria-expanded="true"] { background: var(--surface-3); }
+.df-skin .user-menu-button::after { content: ""; flex: none; border: 4px solid transparent; border-top-color: var(--muted); border-bottom-width: 0; transition: transform .28s ease; }
+.df-skin .user-menu-button[aria-expanded="true"]::after { transform: rotate(180deg); }
+.df-skin .user-menu-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.df-skin .user-menu-button .avatar,
+.df-skin .user-menu-head .avatar { background: var(--skin-avatar); color: #fff; }
+.df-skin .user-menu-head { display: flex; align-items: center; gap: 11px; padding: 8px 10px 10px; }
+.df-skin .user-menu-head .avatar { width: 40px; height: 40px; font-size: 14px; }
+.df-skin .user-menu-head strong { display: block; color: var(--ink); overflow-wrap: anywhere; }
+.df-skin .user-menu-head small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.df-skin .user-menu .menu-item svg { width: 18px; height: 18px; stroke-width: 1.4; }
+/* Room for the person: their name only on wide screens, the two tools' words a little later than before. */
+@media (max-width: 1540px) { .df-skin .user-menu-name { display: none; } .df-skin .topbar .hide-sm { display: none; } }
+/* The menu button is for narrow screens only (the menu is always there on wide ones). */
+@media (min-width: 1025px) { .df-skin .topbar .menu-toggle { display: none; } }
+/* Narrower: the page's name alone, so it isn't cut. */
+@media (max-width: 1280px) { .df-skin .crumb { gap: 0; font-size: 0; } .df-skin .crumb strong { font-size: 14px; } }
+/* Phones: everything fits in one row (the search is its icon), so your account stays in reach. */
+@media (max-width: 720px) {
+  .df-skin .topbar { gap: 4px; padding: 0 10px; }
+  .df-skin .top-actions { gap: 5px; min-width: 0; }
+  .df-skin .top-actions > .dropdown-button { flex: 1 1 70px; width: auto !important; min-width: 0; }
+  .df-skin .top-actions > .dropdown-button > svg:first-child { display: none; }
+  .df-skin .topbar .button.sm { width: 32px; padding: 0; }
+  .df-skin .live-chip { padding: 6px; background: none; }
+  .df-skin .gs-trigger { flex: none; width: 34px; height: 34px; padding: 0; justify-content: center; }
+  .df-skin .gs-trigger-text,
+  .df-skin .gs-trigger kbd { display: none; }
+  .df-skin .user-menu-button { padding: 2px; }
+  .df-skin .user-menu-button::after { display: none; }
+}
+
+/* ── headings, cards ── */
+.df-skin .page-heading h1 { font-weight: 500; font-size: 25px; letter-spacing: -.005em; }
+.df-skin .eyebrow { color: var(--primary); }
+.df-skin .panel,
+.df-skin .metric,
+.df-skin .mini { border-color: transparent; box-shadow: var(--shadow-sm); }
+.df-skin button.metric:hover,
+.df-skin a.metric:hover { border-color: var(--primary-line); box-shadow: var(--shadow); }
+.df-skin .panel-title { font-weight: 600; }
+/* Figures: the menu's big thin icon, in its colour. */
+.df-skin .metric-head { align-items: flex-start; min-height: 28px; }
+.df-skin .metric-head svg { width: 27px; height: 27px; flex: none; color: var(--skin-accent); stroke-width: 1.25; }
+.df-skin .metric-value { font-weight: 600; }
+.df-skin .metric { grid-template-columns: minmax(0, 1fr); align-content: start; }
+.df-skin .metric-foot { padding-top: 8px; border-top: 1px solid var(--line); }
+.df-skin .metrics .metric-foot { flex-wrap: wrap; gap: 2px 8px; }
+.df-skin .metrics .metric-foot > span:first-child { flex: 1 0 auto; max-width: 100%; }
+.df-skin .metrics .metric-foot > span:last-child { white-space: normal; text-align: right; }
+.df-skin .metrics .metric-foot > span:only-child { text-align: left; }
+
+/* ── buttons, tabs, fields ── */
+.df-skin .button { border-radius: 999px; }
+.df-skin .button:hover { border-color: var(--primary-line); color: var(--primary); }
+.df-skin .button svg { stroke-width: 1.6; }
+.df-skin .button.primary { border-color: transparent; background: var(--skin-button); background-origin: border-box; box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent), inset 0 0 0 80px transparent; }
+/* The gradient stays and a shade fades in over it: changing a gradient to a plain colour blinks (the colour fades in from nothing). */
+.df-skin .button.primary:hover { border-color: transparent; background: var(--skin-button); background-origin: border-box; color: #fff; box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--primary) 80%, transparent), inset 0 0 0 80px rgb(0 0 0 / 16%); }
+.df-skin .button.danger:hover { color: var(--bad); border-color: #f1b8b8; }
+.df-skin .button.danger.solid:hover { background: #a32022; color: #fff; }
+.df-skin .button.ghost:hover { border-color: transparent; }
+.df-skin .bulk-bar .button.ghost:hover { background: rgb(255 255 255 / 16%); color: #fff; }
+.df-skin .input:focus,
+.df-skin .select:focus,
+.df-skin .textarea:focus,
+.df-skin .search input:focus,
+.df-skin .dropdown-button.open { border-color: var(--primary); box-shadow: var(--ring); }
+.df-skin .dropdown-button:hover:not(:disabled) { border-color: var(--primary-line); }
+.df-skin .dropdown-menu { border-color: var(--line); }
+.df-skin .dropdown-option.selected.active { background: var(--skin-picked); }
+.df-skin .switch-track:focus-visible { outline-color: var(--primary); }
+
+/* A page's tabs: as the menu (capitals, coloured box). */
+.df-skin .vtabs { border-color: transparent; border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.df-skin .vtab { font-size: 12px; font-weight: 650; text-transform: uppercase; }
+.df-skin .vtab[aria-selected="true"] { font-weight: 700; }
+.df-skin .vtab:hover { color: var(--primary); }
+.df-skin .vtab[aria-selected="true"]:hover { color: #fff; }
+.df-skin .vtabs-indicator { background: var(--skin-button); box-shadow: 0 8px 16px -9px color-mix(in srgb, var(--primary) 80%, transparent); }
+.df-skin .tab:hover { color: var(--primary); }
+
+/* ── tables ── */
+.df-skin .table th { background: var(--skin-th); color: var(--skin-th-ink); }
+.df-skin .table thead .sticky-actions { background: var(--skin-th); }
+.df-skin .table tbody tr:hover td,
+.df-skin .table tbody tr:hover .sticky-actions { background: var(--skin-row); }
+.df-skin .table tbody tr.group-row td,
+.df-skin .table tbody tr.group-row:hover td { background: var(--primary-soft); border-bottom-color: var(--primary-line); color: var(--skin-th-ink); }
+.df-skin .tracking { color: var(--primary); }
+.df-skin .skeleton { background-image: linear-gradient(90deg, var(--surface-3), var(--surface-2), var(--surface-3)); }
+
+/* ── the rest of the shared blues ── */
+.df-skin .callout:not(.warn):not(.bad):not(.good) { color: var(--skin-th-ink); }
+.df-skin .support-ticket.selected { box-shadow: var(--ring); }
+.df-skin .support-message.mine { background: var(--primary-soft); border-color: var(--primary-line); }
+.df-skin dialog.dialog { border-radius: 12px; }
+.df-skin dialog.dialog::backdrop { background: var(--skin-backdrop); }
+.df-skin .dialog-head h2,
+.df-skin .drawer-head h2 { font-weight: 600; }
+.df-skin .section-title { color: var(--primary); }
+.df-skin .center-page { background: radial-gradient(1200px 520px at 10% -10%, var(--skin-glow) 0, transparent 60%), var(--bg); }
+
+/* ── System guide (legacy/shared/system-guide.js brings its own sheet, in blue) ── */
+.df-skin .sg-tabs { background: var(--surface-3); }
+.df-skin .sg-tabs button { color: var(--muted); }
+.df-skin .sg-tabs button:hover { background: rgb(255 255 255 / 55%); color: var(--primary); }
+.df-skin .sg-tabs button[aria-selected="true"] { background: #fff; color: var(--primary); }
+.df-skin .sg-card { border-color: transparent; border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.df-skin .sg-head,
+.df-skin .sg th,
+.df-skin .sg td,
+.df-skin .sg-way table { border-color: var(--line); }
+.df-skin .sg th { background: var(--skin-th); color: var(--skin-th-ink); }
+.df-skin .sg-step,
+.df-skin .sg-role,
+.df-skin .sg-tools input,
+.df-skin .sg-chip { border-color: var(--line-strong); }
+.df-skin .sg-chip[aria-pressed="true"] { border-color: var(--primary-line); background: var(--primary-soft); color: var(--primary); }
+.df-skin .sg code { background: var(--primary-soft); color: var(--primary); }
+.df-skin .sg .sg-prefix:not(.manual) { background: var(--primary); }
+.df-skin .sg-step b.n { background: var(--primary-soft); color: var(--primary); }
+.df-skin .sg-stage-n { background: var(--primary); }
+.df-skin .sg-role details summary { color: var(--primary); }
+.df-skin .sg-bottom { background: var(--primary-soft); }
+
+/* Phones: a card's second note goes under the first, on the left. */
+@media (max-width: 720px) {
+  .df-skin .metrics .metric-foot > span { flex: 1 1 100%; }
+  .df-skin .metrics .metric-foot > span:last-child { text-align: left; }
+}

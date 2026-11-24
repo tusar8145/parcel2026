@@ -359,7 +359,7 @@ function Merchants({ seg, pkgs, initialQuery, reload }: { seg: Segment; pkgs: Pa
             </thead>
             <tbody>
               {shown.map(r => (
-                <tr key={r.merchant.id} data-merchant-row={r.merchant.code} style={initialQuery && r.merchant.code === initialQuery ? { background: "#f3f6ff" } : undefined}>
+                <tr key={r.merchant.id} data-merchant-row={r.merchant.code} style={initialQuery && r.merchant.code === initialQuery ? { background: "var(--primary-soft)" } : undefined}>
                   <td>
                     <span className="strong">{r.merchant.name}</span>
                     <span className="sub">

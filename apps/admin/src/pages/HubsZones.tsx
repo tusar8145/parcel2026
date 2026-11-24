@@ -11,7 +11,7 @@ import { Fragment, useState } from "react";
 import { useSearchParams } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, describe } from "@panel/lib/api";
-import { alertDialog, confirm, openForm } from "@panel/ui/dialogs";
+import { alertDialog, confirm, openForm , type FormField } from "@panel/ui/dialogs";
 import { Button, Loading, PageHeading, Panel, Pill, useDebounced } from "@panel/ui/kit";
 import { Pager, usePaged } from "@panel/ui/Pager";
 import { Select } from "@panel/ui/Select";
@@ -23,6 +23,8 @@ interface Hub {
   code: string;
   name: string;
   type?: string;
+  /** Marked a franchise hub: a Franchise user can be made for it (it works as one once that user exists). */
+  franchiseHub?: boolean;
   active: boolean;
   district?: string;
   zone?: string | null;
@@ -180,7 +182,7 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
     const zonesOf = (d: string) => (catalog?.zonesByDistrict?.[d] ?? []).map(z => ({ value: z, label: z }));
     await openForm({
       title: h ? `Edit ${h.name}` : "Add hub",
-      description: h ? `${h.code}${h.type === "FRANCHISE" ? " · franchise hub (its franchise is managed in Franchises)" : ""}` : "A company hub of the network. Franchise hubs are created in Franchises.",
+      description: h ? `${h.code}${h.type === "FRANCHISE" ? " · franchise hub (its franchise is managed in Settings › Franchise)" : ""}` : "A hub of the network. Tick Franchise hub to make a Franchise user for it later (Admin users & roles).",
       submit: "Save",
       wide: true,
       fields: [
@@ -194,10 +196,36 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
         { id: "capacity", label: "Capacity (parcels at once)", type: "number", min: 1, step: 1, value: h?.capacity ?? "" },
         { id: "lat", label: "Latitude", type: "number", step: "any", min: 20, max: 27, value: h?.lat ?? "" },
         { id: "lng", label: "Longitude", type: "number", step: "any", min: 88, max: 93, value: h?.lng ?? "" },
+        // A franchise hub: marked here; its Franchise user is made in Admin users & roles. Fixed once that user exists.
+        ...(h?.franchise
+          ? [{ id: "franchiseNote", label: "", type: "static", full: true, render: <div className="callout">{`Franchise hub of ${h.franchise.name}. It stays a franchise hub while it has a Franchise user (replace or suspend the user in Settings › Franchise).`}</div> } as FormField]
+          : h && h.id === data.central
+            ? []
+            : [
+                {
+                  id: "franchiseHub",
+                  label: "Franchise hub",
+                  type: "checkbox",
+                  full: true,
+                  value: !!(h?.franchiseHub || h?.type === "FRANCHISE"),
+                  hint: "A Franchise user can be made for it in Admin users & roles (one user per hub). Until then it works as a company hub.",
+                } as FormField,
+              ]),
       ],
       onSubmit: async v => {
         const opt = (k: string) => (v[k] === "" ? null : Number(v[k]));
-        const body = { name: v.name.trim(), district: v.district, zone: v.zone || null, address: v.address.trim(), inChargeName: v.inChargeName.trim() || null, inChargePhone: v.inChargePhone.trim() || null, capacity: opt("capacity"), lat: opt("lat"), lng: opt("lng") };
+        const body = {
+          name: v.name.trim(),
+          district: v.district,
+          zone: v.zone || null,
+          address: v.address.trim(),
+          inChargeName: v.inChargeName.trim() || null,
+          inChargePhone: v.inChargePhone.trim() || null,
+          capacity: opt("capacity"),
+          lat: opt("lat"),
+          lng: opt("lng"),
+          ...(v.franchiseHub !== undefined ? { franchiseHub: v.franchiseHub === "true" } : {}),
+        };
         if (h) await api(`/hubs/${h.id}`, { method: "PATCH", body });
         else await api("/hubs", { method: "POST", body: { ...body, code: v.code.trim() } });
         await reload();
@@ -312,9 +340,9 @@ function Hubs({ data, catalog }: { data: Network; catalog?: Catalog }) {
                     </td>
                   </tr>
                 ) : null}
-              <tr style={h.id === data.central ? { background: "#eff4ff", boxShadow: "inset 3px 0 0 var(--primary)" } : undefined}>
+              <tr style={h.id === data.central ? { background: "var(--primary-soft)", boxShadow: "inset 3px 0 0 var(--primary)" } : undefined}>
                 <td>
-                  <span className="strong">{h.name}</span> {h.type === "FRANCHISE" ? <Pill>Franchise</Pill> : null}{" "}
+                  <span className="strong">{h.name}</span> {h.type === "FRANCHISE" ? <Pill>Franchise</Pill> : h.franchiseHub ? <Pill tone="warn">Franchise · no user yet</Pill> : null}{" "}
                   {h.id === data.central ? (
                     <span className="pill" style={{ background: "var(--primary)", color: "#fff" }}>
                       ★ Central hub

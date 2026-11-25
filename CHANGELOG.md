@@ -7,6 +7,9 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.61.2 — 2026-11-25
+- Website: the uploaded logo is white in the navy footer, so its dark letters can be read.
+
 ## 1.61.1 — 2026-11-25
 - Website: the menu no longer moves over the logo when a logo is uploaded in Branding & company; the logo has a fixed place in the header and is there from the start.
 - Website: going from page to page is smooth: the header stays in place, the page fades in (no blank screen), the lettering no longer changes width while loading, the menu highlight is there at once and the footer no longer jumps. Pages open sooner too (fetched when you point at their link).

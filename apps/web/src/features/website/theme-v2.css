@@ -227,6 +227,8 @@ html[data-brand-custom] .v2-header .brand-mark:not(:has([data-brand-logo])){widt
 .footer.v2-footer{padding:64px 0 22px;background:var(--navy-2);color:#c8d1e3}
 .v2-footer .footer-grid{grid-template-columns:1.3fr repeat(4,minmax(0,1fr)) 1.45fr;gap:28px;padding-bottom:34px}
 .v2-footer .footer-brand [data-brand-mark]{width:210px;filter:brightness(0) invert(1)}
+/* An uploaded logo too: white on the navy (a logo with a see-through background). */
+.v2-footer .footer-brand [data-brand-logo]{filter:brightness(0) invert(1)}
 .v2-footer .footer-brand p{color:#c8d1e3}
 .v2-footer .footer-col strong{margin:4px 0 16px;color:#fff;font-size:16px;font-weight:800}
 .v2-footer .footer-col a,.v2-footer .footer-col span{display:block;margin:9px 0;color:#c8d1e3;font-size:14px}

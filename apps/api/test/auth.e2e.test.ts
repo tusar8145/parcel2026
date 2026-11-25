@@ -88,7 +88,13 @@ describe("auth", () => {
     expect(second.status).toBe(200);
     expect(second.body.refreshToken).not.toBe(first.refreshToken);
 
-    // Replaying the first token signals theft: everything in the family is revoked.
+    // Replayed right away it is two requests of the same browser racing (two tabs, a page and its header):
+    // that request fails, the session stays.
+    expect((await ctx.api("POST", "/auth/refresh", { body: { refreshToken: first.refreshToken } })).status).toBe(401);
+    expect((await ctx.api("GET", "/auth/me", { token: second.body.accessToken })).status).toBe(200);
+
+    // Replayed later it signals theft: everything in the family is revoked.
+    await ctx.prisma.session.updateMany({ where: { revokedReason: "rotated" }, data: { revokedAt: new Date(Date.now() - 60_000) } });
     expect((await ctx.api("POST", "/auth/refresh", { body: { refreshToken: first.refreshToken } })).status).toBe(401);
     expect((await ctx.api("POST", "/auth/refresh", { body: { refreshToken: second.body.refreshToken } })).status).toBe(401);
     const me = await ctx.api("GET", "/auth/me", { token: second.body.accessToken });

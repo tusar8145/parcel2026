@@ -144,6 +144,8 @@ describe("scan flow, franchise hubs and messaging (2026-11)", () => {
     const admin = await userWithRoles(ctx, [{ role: "SUPER_ADMIN" }], "Admin");
     // The Dhanmondi hub (a company hub) becomes a franchise hub, with a new owner account; R-7003 works there.
     const local = await riderUser(ctx, "R-7003", s.dhanmondi.id);
+    // Marked a franchise hub first (Hubs & zones › Edit hub); the franchise comes with its first Franchise user.
+    await ctx.prisma.hub.update({ where: { id: s.dhanmondi.id }, data: { franchiseHub: true } });
     const created = await ctx.api("POST", "/franchises", {
       token: admin.token,
       body: { name: "Dhanmondi Point", contactName: "Karim Owner", phone: "01913700001", hubId: s.dhanmondi.id, rates: { pickupPercent: 0, pickupMin: 0, deliveryPercent: 10, deliveryMin: 10, returnPercent: 0, returnMin: 0 } },

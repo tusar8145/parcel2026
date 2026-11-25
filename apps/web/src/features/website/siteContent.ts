@@ -21,3 +21,25 @@ export async function siteContent(): Promise<SiteContent> {
   } catch {}
   return FALLBACK;
 }
+
+type Social = Partial<Record<"facebook" | "instagram" | "linkedin" | "youtube" | "whatsapp", string>>;
+export interface SiteBranding {
+  social: Social;
+  /** The uploaded logo, null for the default one. */
+  logo: { url: string; alt: string } | null;
+}
+
+/** The company's logo and social links (Super admin › Branding & company), cached and cleared like the content above. */
+export async function siteBranding(): Promise<SiteBranding> {
+  try {
+    const res = await fetch(`${process.env.API_ORIGIN ?? "http://localhost:4000"}/api/v1/branding`, {
+      next: { tags: [SITE_CACHE_TAG], revalidate: 300 },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const branding = (await res.json()) as { companyName?: string; logoUrl?: string | null; social?: Social };
+      return { social: branding.social ?? {}, logo: branding.logoUrl ? { url: branding.logoUrl, alt: branding.companyName ?? "" } : null };
+    }
+  } catch {}
+  return { social: {}, logo: null };
+}

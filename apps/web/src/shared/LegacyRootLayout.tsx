@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import PwaInstall from "./PwaInstall";
 import BrandingRuntime from "./branding/BrandingRuntime";
+import { STATIC_PAGES, WEBSITE_ROUTES } from "@/features/website/routes";
 
 // Apps with their own markup, and so their own layer; every other panel shares panels.css. The website has its own (website/theme.css).
 const OWN_THEME = ["franchise", "application"];
@@ -10,12 +11,31 @@ const OWN_THEME = ["franchise", "application"];
 // full (Terms, Privacy, About) shows at once.
 const BOOT_CSS = "html:not(.legacy-ready) body:has([data-legacy-boot]):not(:has([data-static-page])){opacity:0}";
 
+// The new website hides only the part its scripts draw (main[data-boot]), so the header stays in place from page to
+// page; the part then fades in. A spinner shows when that takes longer than a moment.
+const SITE_BOOT_CSS =
+  "html:not(.legacy-ready) main[data-boot]{position:relative;min-height:100vh}" +
+  "html:not(.legacy-ready) main[data-boot]>*{opacity:0;pointer-events:none}" +
+  'html:not(.legacy-ready) main[data-boot]:before{content:"";position:absolute;top:min(34vh,260px);left:50%;width:34px;height:34px;margin-left:-17px;border:3px solid rgb(20 40 75 / 12%);border-top-color:#fbb51b;border-radius:50%;opacity:0;animation:site-spin .8s linear infinite,site-in .2s .4s forwards}' +
+  "html.legacy-ready main[data-boot]{animation:site-in .2s ease-out}" +
+  "@keyframes site-in{from{opacity:0}to{opacity:1}}@keyframes site-spin{to{transform:rotate(360deg)}}";
+
+// The website's own pages are fetched ahead (the HTML only, nothing runs) when the pointer rests on their link.
+const SITE_PREFETCH = JSON.stringify({
+  prefetch: [
+    {
+      where: { href_matches: ["/", ...WEBSITE_ROUTES.filter(r => r.index && r.path && r.path !== "merchant").map(r => `/${r.path}`), ...STATIC_PAGES.map(p => `/${p.path}`)] },
+      eagerness: "moderate",
+    },
+  ],
+});
+
 // The logo holds the name, so the written name beside it shows only for another company (data-brand-custom,
 // set by branding/runtime.ts), which replaces the logo with its own.
 const LOGO_CSS =
   "html:not([data-brand-custom]) :is(.brand-word,.brand-name,.fr-brand b){display:none}" +
   "html[data-brand-custom] [data-brand-mark]{display:none}" +
-  ".brand-mark:has([data-brand-mark]){width:auto!important;height:auto!important;max-width:100%}" +
+  ".brand-mark:has([data-brand-mark],[data-brand-logo]){width:auto!important;height:auto!important;max-width:100%}" +
   "[data-brand-mark]{max-width:100%;height:auto}" +
   "@media(max-width:520px){.header [data-brand-mark]{width:150px}}";
 
@@ -53,18 +73,21 @@ export default function LegacyRootLayout({ app, children, classic = false }: { a
   const css = read(`src/features/${app}/styles.css`);
   // The look on top of the page's own styles (so it wins): the website's own theme, else the panels' shared one.
   const theme = app === "website" ? read(`src/features/website/${classic ? "theme.css" : "theme-v2.css"}`) : read("src/shared/theme/tokens.css") + read(`src/shared/theme/${OWN_THEME.includes(app) ? app : "panels"}.css`);
+  const newSite = app === "website" && !classic;
   return (
     <html lang="en">
       <head>
+        {newSite ? <link rel="preload" as="font" type="font/woff2" href="/fonts/nunito-sans/nunito-sans-latin-wght-normal.woff2" crossOrigin="anonymous" /> : null}
         <link rel="manifest" href="/deliveryfast.webmanifest" />
         {/* The browser tab icon (Super admin › Branding & company; a default icon until one is uploaded). */}
         <link rel="icon" href="/api/v1/branding/icon" />
-        <style dangerouslySetInnerHTML={{ __html: BOOT_CSS + LOGO_CSS }} />
+        <style dangerouslySetInnerHTML={{ __html: (newSite ? SITE_BOOT_CSS : BOOT_CSS) + LOGO_CSS }} />
         <script dangerouslySetInnerHTML={{ __html: MODAL_GUARD }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
+        {newSite ? <script type="speculationrules" dangerouslySetInnerHTML={{ __html: SITE_PREFETCH }} /> : null}
         {theme ? <style dangerouslySetInnerHTML={{ __html: theme }} /> : null}
         <noscript>
-          <style>{"body{opacity:1!important}"}</style>
+          <style>{"body,main[data-boot]>*{opacity:1!important}"}</style>
         </noscript>
       </head>
       <body data-app={app} data-site={app === "website" ? (classic ? "classic" : "new") : undefined}>

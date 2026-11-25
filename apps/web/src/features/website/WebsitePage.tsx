@@ -19,7 +19,7 @@ import PanelAssetPrefetch from "./PanelAssetPrefetch";
 import { WEBSITE_ROUTES } from "./routes";
 import { scripts } from "./scripts";
 import SiteSwitches from "./SiteSwitches";
-import { siteContent } from "./siteContent";
+import { siteBranding, siteContent } from "./siteContent";
 import NewHeader from "./v2/Header";
 import NewHero from "./v2/Hero";
 import NewFooter from "./v2/Footer";
@@ -41,7 +41,7 @@ export default async function WebsitePage({
   panelAssets,
   classic = false,
 }: { staticPage?: { name: string; content: ReactNode }; panelAssets?: boolean; classic?: boolean } = {}) {
-  const site = await siteContent();
+  const [site, { logo }] = await Promise.all([siteContent(), siteBranding()]);
   return (
     <>
       {scripts.map(src => (
@@ -54,12 +54,12 @@ export default async function WebsitePage({
           <TopNote /> <SiteHeader legacy />
         </>
       ) : (
-        <NewHeader legacy />
+        <NewHeader legacy logo={logo} />
       )}{" "}
       {staticPage ? (
         <main data-static-page={staticPage.name}>{staticPage.content}</main>
       ) : (
-        <main>
+        <main data-boot={classic ? undefined : ""}>
           {" "}
           {classic ? (
             <>

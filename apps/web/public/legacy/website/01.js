@@ -8,7 +8,7 @@
     const escapeHtml=value=>String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
     const customerSessionKey="deliveryfast-customer-session";
     function readCustomerSession(){try{const value=JSON.parse(localStorage.getItem(customerSessionKey)||"null");return value&&typeof value==="object"?value:null}catch(error){console.error("Customer demo profile could not be loaded.",error);return null}}
-    let toastTimer,routeBeforeAuth="home",customerSession=readCustomerSession(),customerName=customerSession?.name||"",lastTrackingCode="";
+    let shownRoute="",toastTimer,routeBeforeAuth="home",customerSession=readCustomerSession(),customerName=customerSession?.name||"",lastTrackingCode="";
     window.deliveryFastCustomerSession=customerSession;
     function requireCustomerLogin(returnTo){
       routeBeforeAuth=returnTo||"support";
@@ -97,7 +97,7 @@
       updateCustomerHeader();
       document.title=DF.route.title(route);
       document.getElementById("navLinks").classList.remove("open");document.getElementById("menuButton").setAttribute("aria-expanded","false");
-      if(route==="home"){pageView.hidden=true;pageView.innerHTML="";main.append(...homeContent);return}
+      if(route==="home"){shownRoute="";pageView.hidden=true;pageView.innerHTML="";main.append(...homeContent);return}
       homeContent.forEach(node=>node.remove());pageView.hidden=false;
       let content="";
       if(route==="tracking")content=routeFrame(route,trackingMarkup(code));
@@ -154,7 +154,9 @@
       else content=routeFrame(route,`<div class="route-card"><h2>Application prepared</h2><p class="route-note">This is a frontend demo; your information has not been sent to a courier.</p><button class="button button-primary" type="button" data-route="home">Back to Delivery Fast</button></div>`);
       if(window.DFReact?.owns(route))content=routeFrame(route,`<div class="react-view" data-react-view="${route}"></div>`);
       if(customerSession&&["account","orders","addresses","profile","payments","support","request","tracking","pricing"].includes(route))content=customerAreaShell(content,route);
-      pageView.innerHTML=content;window.scrollTo({top:0,behavior:"smooth"});
+      pageView.innerHTML=content;window.scrollTo({top:0,behavior:"instant"});
+      // Another page: it fades in (not when the same page is drawn again with new data).
+      if(path!==shownRoute){shownRoute=path;if(document.documentElement.classList.contains("legacy-ready")&&!matchMedia("(prefers-reduced-motion: reduce)").matches)pageView.animate?.([{opacity:0},{opacity:1}],{duration:200,easing:"ease-out"})}
       if(route==="request")setRequestStep(0);
       if(route==="pricing")updatePrice();
       if(route==="tracking"&&code)track(code);

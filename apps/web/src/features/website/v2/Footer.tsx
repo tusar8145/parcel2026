@@ -1,18 +1,7 @@
 import BrandMark from "../components/BrandMark";
-import { SITE_CACHE_TAG } from "../siteContent";
+import { siteBranding, type SiteBranding } from "../siteContent";
 
-type Social = Partial<Record<"facebook" | "instagram" | "linkedin" | "youtube" | "whatsapp", string>>;
-
-/** The company's social links (Super admin › Branding & company); none set: the column says where to follow later. */
-async function socialLinks(): Promise<Social> {
-  try {
-    const res = await fetch(`${process.env.API_ORIGIN ?? "http://localhost:4000"}/api/v1/branding`, { next: { tags: [SITE_CACHE_TAG], revalidate: 300 }, signal: AbortSignal.timeout(3000) });
-    if (res.ok) return ((await res.json()) as { social?: Social }).social ?? {};
-  } catch {}
-  return {};
-}
-
-const ICONS: Record<keyof Social, string> = {
+const ICONS: Record<keyof SiteBranding["social"], string> = {
   facebook: "M14 8h3V4h-3c-2.8 0-4.5 1.8-4.5 4.6V11H7v4h2.5v9h4v-9h3l.5-4h-3.5V8.8c0-.5.3-.8 1-.8z",
   linkedin: "M5 9h3.5v11H5zM6.8 3.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM10.5 9H14v1.6c.5-.9 1.7-1.9 3.5-1.9 3.6 0 4 2.4 4 5.4V20H18v-5.2c0-1.3 0-2.9-1.8-2.9s-2.1 1.4-2.1 2.8V20h-3.6z",
   youtube: "M22 8.2a3 3 0 0 0-2.1-2.1C18 5.6 12 5.6 12 5.6s-6 0-7.9.5A3 3 0 0 0 2 8.2 31 31 0 0 0 1.6 12 31 31 0 0 0 2 15.8a3 3 0 0 0 2.1 2.1c1.9.5 7.9.5 7.9.5s6 0 7.9-.5a3 3 0 0 0 2.1-2.1c.4-1.2.4-3.8.4-3.8s0-2.6-.4-3.8zM10 15.1V8.9l5.2 3.1z",
@@ -21,8 +10,8 @@ const ICONS: Record<keyof Social, string> = {
 };
 
 export default async function Footer() {
-  const social = await socialLinks();
-  const links = (Object.keys(ICONS) as (keyof Social)[]).filter(k => social[k]?.trim());
+  const { social, logo } = await siteBranding();
+  const links = (Object.keys(ICONS) as (keyof SiteBranding["social"])[]).filter(k => social[k]?.trim());
   return (
     <footer className="footer v2-footer">
       <div className="shell">
@@ -30,7 +19,7 @@ export default async function Footer() {
           <div className="footer-brand">
             <a className="brand" href="/" aria-label="Delivery Fast home">
               <span className="brand-mark">
-                <BrandMark light />
+                <BrandMark light logo={logo} />
               </span>
               <span className="brand-word">
                 {"delivery "}

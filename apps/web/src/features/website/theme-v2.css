@@ -7,13 +7,23 @@
 @font-face{font-family:"Nunito Sans";font-style:normal;font-display:swap;font-weight:200 1000;src:url(/fonts/nunito-sans/nunito-sans-latin-wght-normal.woff2) format("woff2-variations");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 @font-face{font-family:"Nunito Sans";font-style:normal;font-display:swap;font-weight:200 1000;src:url(/fonts/nunito-sans/nunito-sans-latin-ext-wght-normal.woff2) format("woff2-variations");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 
+/* Arial at Nunito Sans' widths: the words don't move when the font arrives. */
+@font-face{font-family:"Nunito Sans Fallback";font-weight:100 599;src:local("Arial");size-adjust:101.2%;ascent-override:99.9%;descent-override:34.9%;line-gap-override:0%}
+@font-face{font-family:"Nunito Sans Fallback";font-weight:600 1000;src:local("Arial Bold"),local("Arial");size-adjust:99.7%;ascent-override:101.4%;descent-override:35.4%;line-gap-override:0%}
+
 :root{
   --navy:#14284b;--navy-2:#0f1f3d;--navy-soft:#eef4fb;--yellow:#fbb51b;--yellow-deep:#f0a400;--yellow-soft:#fff6dc;--orange:#e97c0c;--link:#1f4fa8;
   --ink:#14284b;--muted:#4b5873;--line:#e3e9f2;--paper:#fff;--canvas:#fff;
   --pink:#eef4fb;--pink-2:#fff6dc;--green:#1f4fa8;--green-dark:#14284b;--mint:#eef4fb;--lime:#fbb51b;--navy-band:#14284b;
   --shadow:0 18px 44px -20px rgb(15 31 61 / 28%);--shadow-sm:0 8px 22px -14px rgb(15 31 61 / 30%);
-  font-family:"Nunito Sans","Noto Sans Bengali",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-family:"Nunito Sans","Nunito Sans Fallback","Noto Sans Bengali",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
 }
+/* Page to page: the header stays as it is, the rest crosses over softly (browsers without this just open the page). */
+@media(prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}
+.v2-header{view-transition-name:site-header}
+::view-transition-group(root),::view-transition-old(root),::view-transition-new(root){animation-duration:.18s}
+::view-transition-group(site-header),::view-transition-new(site-header){animation:none}
+::view-transition-old(site-header){display:none}
 body{color:var(--muted);background:#fff;font-size:15px;line-height:1.6}
 h1,h2,h3,h4{color:var(--navy)}
 :focus-visible{outline:2px solid var(--link);outline-offset:2px}
@@ -60,6 +70,11 @@ h1,h2,h3,h4{color:var(--navy)}
 .nav{height:78px;gap:16px}
 .nav-links a,.v2-cta .button{white-space:nowrap}
 .brand-mark [data-brand-mark]{width:184px}
+/* The logo's place in the header is always the same size, whichever logo is in it (default or uploaded). */
+.v2-header .brand{flex:none}
+.v2-header .brand-mark{flex:none;width:184px!important;height:44px!important;justify-items:start}
+.v2-header .brand-mark [data-brand-logo]{max-width:100%!important;max-height:100%!important;object-fit:contain;object-position:left center}
+html[data-brand-custom] .v2-header .brand-mark:not(:has([data-brand-logo])){width:auto!important}
 .nav-links{gap:2px;color:var(--navy);font-size:15px;font-weight:800}
 .nav-links>a,.v2-drop>a{display:inline-flex;align-items:center;gap:4px;padding:8px 14px;border-radius:9px}
 .nav-links>a:hover,.v2-drop>a:hover{background:var(--navy-soft);color:var(--navy)}
@@ -226,7 +241,7 @@ h1,h2,h3,h4{color:var(--navy)}
 .v2-footer .footer-bottom a{color:var(--yellow)}
 
 /* ── inner pages ── */
-.route-view{padding:48px 0 80px;background:linear-gradient(180deg,var(--navy-soft) 0,#fff 340px)}
+.route-view{min-height:calc(100vh - 118px);padding:48px 0 80px;background:linear-gradient(180deg,var(--navy-soft) 0,#fff 340px)}
 .route-back{color:var(--navy)}
 .route-back:hover{color:var(--link)}
 .route-intro h1{color:var(--navy);font-weight:900;letter-spacing:-.015em}
@@ -274,6 +289,7 @@ h1,h2,h3,h4{color:var(--navy)}
   .v2-contact a span{display:none}
   .nav{height:66px}
   .brand-mark [data-brand-mark]{width:150px}
+  .v2-header .brand-mark{width:150px!important}
   .v2-cta .button{display:none}
   .hero.v2-hero{padding:0 0 96px;background:#fff}
   .v2-hero-photo{display:none}

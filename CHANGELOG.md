@@ -7,6 +7,11 @@ Every fix or feature adds a new version at the top: `## x.y.z — YYYY-MM-DD`, t
 change (`- …`), written for the people who use the panels. Fixes raise the last number (1.0.0 → 1.0.1),
 new features the middle one (1.0.1 → 1.1.0), big changes the first one (1.1.0 → 2.0.0).
 
+## 1.61.1 — 2026-11-25
+- Website: the menu no longer moves over the logo when a logo is uploaded in Branding & company; the logo has a fixed place in the header and is there from the start.
+- Website: going from page to page is smooth: the header stays in place, the page fades in (no blank screen), the lettering no longer changes width while loading, the menu highlight is there at once and the footer no longer jumps. Pages open sooner too (fetched when you point at their link).
+- Website: Log in and Sign up keep the header on screen while the sign-in is checked.
+
 ## 1.61.0 — 2026-11-25
 - Website: a new design, now the main site: navy and yellow, a top bar with contact details, a quick tracking box and log in, a Help menu, Merchant Login and Merchant Dashboard buttons, a hero with an example tracking strip, picture cards for the services, a one-row price estimate, a partner banner, and a navy footer with branches, contact and social links. Every page, form and feature is as before.
 - Website: Log in and Sign up are a two-part card: a navy side with the title and what you get, and a roomier form with larger fields and a full-width button.

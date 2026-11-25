@@ -13,7 +13,7 @@ import SiteFooter from "./components/SiteFooter";
 import CookieConsent from "./react/CookieConsent";
 import LegacyHashRedirect from "./LegacyHashRedirect";
 import SiteSwitches from "./SiteSwitches";
-import { siteContent } from "./siteContent";
+import { siteBranding, siteContent } from "./siteContent";
 import NewHeader from "./v2/Header";
 import NewHero from "./v2/Hero";
 import NewFooter from "./v2/Footer";
@@ -21,7 +21,7 @@ import { Partners as NewPartners, Services as NewServices } from "./v2/Sections"
 
 /** React-first homepage; the other website routes still use the legacy router for now. */
 export default async function WebsiteHomePage({ classic = false }: { classic?: boolean } = {}) {
-  const site = await siteContent();
+  const [site, { logo }] = await Promise.all([siteContent(), siteBranding()]);
   return (
     <>
       {" "}
@@ -31,7 +31,7 @@ export default async function WebsiteHomePage({ classic = false }: { classic?: b
           <TopNote /> <SiteHeader />
         </>
       ) : (
-        <NewHeader />
+        <NewHeader logo={logo} />
       )}{" "}
       <LegacyHashRedirect />
       <main>

@@ -6,7 +6,19 @@
  * #navLinks, #menuButton and `.nav-actions` holding [data-open="login"] / [data-open="request"]: kept here.
  */
 import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { usePathname } from "next/navigation";
 import BrandMark from "../components/BrandMark";
+
+/** The menu item each page belongs to. */
+const PAGES: [RegExp, string][] = [
+  [/^\/services/, "services"],
+  [/^\/pricing/, "pricing"],
+  [/^\/(partners|merchant|become-a-rider|become-a-franchise)/, "partners"],
+  [/^\/(help|track|support|privacy|terms)/, "help"],
+  [/^\/about/, "about"],
+  [/^\/$/, "home"],
+];
+const menuItem = (path: string) => PAGES.find(([re]) => re.test(path))?.[1] ?? "";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -33,7 +45,11 @@ function refreshOnce() {
   return refreshing;
 }
 
-export default function Header({ legacy = false }: { legacy?: boolean }) {
+export default function Header({ legacy = false, logo }: { legacy?: boolean; logo?: { url: string; alt: string } | null }) {
+  // The selected menu item, drawn by the server (no late highlight); the effect below moves it afterwards.
+  const pathname = usePathname();
+  const [first] = useState(() => menuItem(pathname));
+  const current = (key: string) => (key === first ? ("page" as const) : undefined);
   const [menuOpen, setMenuOpen] = useState(false);
   const [customer, setCustomer] = useState(false);
   /** Signed in at all (any role): known on the home page from the session check below; undefined until then. */
@@ -94,25 +110,11 @@ export default function Header({ legacy = false }: { legacy?: boolean }) {
   useEffect(() => {
     const nav = document.getElementById("navLinks");
     if (!nav) return;
-    const PAGE: [RegExp, string][] = [
-      [/^\/services/, "services"],
-      [/^\/pricing/, "pricing"],
-      [/^\/(partners|merchant|become-a-rider|become-a-franchise)/, "partners"],
-      [/^\/(help|track|support|privacy|terms)/, "help"],
-      [/^\/about/, "about"],
-    ];
-    const current = () => {
-      const path = location.pathname;
-      const page = PAGE.find(([re]) => re.test(path));
-      if (page) return page[1];
-      if (path !== "/") return "";
-      return "home";
-    };
     let frame = 0;
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const key = current();
+        const key = menuItem(location.pathname);
         nav.querySelectorAll<HTMLElement>("[data-nav]").forEach(a => (a.dataset.nav === key ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
       });
     };
@@ -197,7 +199,7 @@ export default function Header({ legacy = false }: { legacy?: boolean }) {
       <div className="shell nav">
         <a className="brand" href="/" aria-label="Delivery Fast home">
           <span className="brand-mark">
-            <BrandMark />
+            <BrandMark logo={logo} />
           </span>
           <span className="brand-word">
             {"delivery "}
@@ -205,20 +207,20 @@ export default function Header({ legacy = false }: { legacy?: boolean }) {
           </span>
         </a>
         <nav className={`nav-links${!legacy && menuOpen ? " open" : ""}`} id="navLinks" aria-label="Main navigation" onClick={closeMenu}>
-          <a className="v2-home" href="/" data-nav="home">
+          <a className="v2-home" href="/" data-nav="home" aria-current={current("home")}>
             Home
           </a>
-          <a href="/services" data-nav="services">
+          <a href="/services" data-nav="services" aria-current={current("services")}>
             Services
           </a>
-          <a href="/pricing" data-route="pricing" data-nav="pricing">
+          <a href="/pricing" data-route="pricing" data-nav="pricing" aria-current={current("pricing")}>
             Pricing
           </a>
-          <a href="/partners" data-nav="partners">
+          <a href="/partners" data-nav="partners" aria-current={current("partners")}>
             Partner with us
           </a>
           <div className="v2-drop">
-            <a href="/help" data-nav="help">
+            <a href="/help" data-nav="help" aria-current={current("help")}>
               Help <Chevron />
             </a>
             <div className="v2-drop-menu">
@@ -233,7 +235,7 @@ export default function Header({ legacy = false }: { legacy?: boolean }) {
               <a href="/terms">Terms of Service</a>
             </div>
           </div>
-          <a href="/about" data-nav="about">
+          <a href="/about" data-nav="about" aria-current={current("about")}>
             About us
           </a>
         </nav>

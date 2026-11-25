@@ -69,21 +69,11 @@ const SPIN_CSS = `
 `;
 
 /**
- * Login and Sign up: a full-screen loader while the session is checked (nothing of the page shows yet); when someone
+ * Login and Sign up: the form waits while the session is checked (the page's own spinner shows meanwhile); when someone
  * is already signed in, the "Opening your workspace" loader until their panel opens (to use another account, sign out first).
  */
 export function AlreadySignedIn({ user }: { user: SessionUser | null | undefined }) {
-  // Checking: the whole page waits behind the loader (no login page first); signed out, the page shows as usual.
-  if (user === undefined)
-    return createPortal(
-      <div className="df-opening" aria-busy="true" role="status" aria-label="Checking your sign-in">
-        <style>{SPIN_CSS}</style>
-        <div className="df-opening-card">
-          <span className="df-spinner" />
-        </div>
-      </div>,
-      document.body,
-    );
+  // Checking: no form yet. The page is still hidden behind its spinner (main[data-boot]), under a header that stays put.
   if (!user) return null;
   const signOut = () => void df().auth.logout().then(() => location.reload());
   // On the page itself (not inside the card), so it covers the header and footer too.
